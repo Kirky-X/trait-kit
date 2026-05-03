@@ -1,3 +1,20 @@
+error[E0277]: the trait bound `BadBuilder: ModuleBuilder<MyModule>` is not satisfied
+  --> tests/ui/builder_not_impl_module_builder.rs:18:20
+   |
+18 |     type Builder = BadBuilder;
+   |                    ^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `ModuleBuilder<MyModule>` is not implemented for `BadBuilder`
+  --> tests/ui/builder_not_impl_module_builder.rs:8:1
+   |
+ 8 | struct BadBuilder;
+   | ^^^^^^^^^^^^^^^^^
+note: required by a bound in `trait_kit::core::Module::Builder`
+  --> src/core/module.rs
+   |
+   |     type Builder: ModuleBuilder<Self>;
+   |                   ^^^^^^^^^^^^^^^^^^^ required by this bound in `Module::Builder`
+
 error[E0599]: the method `kit` exists for struct `BadBuilder`, but its trait bounds were not satisfied
   --> tests/ui/builder_not_impl_module_builder.rs:25:24
    |
