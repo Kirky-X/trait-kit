@@ -1,0 +1,30 @@
+[advisories]
+ignore = []
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "Unlicense",
+]
+confidence-threshold = 0.8
+private = { ignore = true }
+
+[bans]
+multiple-versions = "warn"
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-org = { github = [] }
+allow-git = []
