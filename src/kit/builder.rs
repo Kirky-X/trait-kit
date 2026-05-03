@@ -34,6 +34,66 @@ impl<M: Module, B: ModuleBuilder<M>> IntoKitModuleBuilder<M> for B {
     }
 }
 
+/// A builder wrapper that can build and register a module's capability.
+///
+/// Created by calling `.kit(&kit)` on any standard builder.
+///
+/// Does NOT implement `WithConfig` or `WithRequirements` — those must be
+/// called before `.kit()`.
+pub struct KitModuleBuilder<M: Module, B> {
+    builder: B,
+    kit: Kit,
+    _phantom: PhantomData<M>,
+}
+
+impl<M: Module, B: ModuleBuilder<M>> KitModuleBuilder<M, B> {
+    /// Create a new KitModuleBuilder.
+    pub fn new(builder: B, kit: Kit) -> Self {
+        KitModuleBuilder {
+            builder,
+            kit,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Build the module and register its capability.
+    ///
+    /// Returns the built capability on success.
+    /// On failure, returns `KitError::BuildFailed` or `KitError::DuplicateCapability`.
+    ///
+    /// # Type Constraint
+    ///
+    /// `M::Capability` must be convertible to `Arc<K::Capability>` for the provided key `K`.
+    /// Typically, `M::Capability = Arc<dyn Trait + Send + Sync>` and `K::Capability = dyn Trait`.
+    ///
+    /// # Failure Behavior
+    ///
+    /// If build succeeds but registration fails (key already exists),
+    /// the built capability is discarded and `DuplicateCapability` is returned.
+    pub fn provide<K>(self) -> Result<Arc<K::Capability>, KitError>
+    where
+        K: CapabilityKey,
+        M::Capability: Clone + Into<Arc<K::Capability>>,
+    {
+        let module_name = M::NAME;
+
+        // Build the capability
+        let capability = self.builder.build().map_err(|e| KitError::BuildFailed {
+            module: module_name,
+            source: Box::new(e),
+        })?;
+
+        // Clone for registration (original kept for return)
+        let arc_capability: Arc<K::Capability> = capability.clone().into();
+
+        // Register in Kit (clone again since provide takes ownership)
+        self.kit.provide::<K>(Arc::clone(&arc_capability))?;
+
+        // Return the registered capability
+        Ok(arc_capability)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,65 +194,5 @@ mod tests {
     fn test_error_display() {
         let err = TestError("oops");
         assert_eq!(err.to_string(), "oops");
-    }
-}
-
-/// A builder wrapper that can build and register a module's capability.
-///
-/// Created by calling `.kit(&kit)` on any standard builder.
-///
-/// Does NOT implement `WithConfig` or `WithRequirements` — those must be
-/// called before `.kit()`.
-pub struct KitModuleBuilder<M: Module, B> {
-    builder: B,
-    kit: Kit,
-    _phantom: PhantomData<M>,
-}
-
-impl<M: Module, B: ModuleBuilder<M>> KitModuleBuilder<M, B> {
-    /// Create a new KitModuleBuilder.
-    pub fn new(builder: B, kit: Kit) -> Self {
-        KitModuleBuilder {
-            builder,
-            kit,
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Build the module and register its capability.
-    ///
-    /// Returns the built capability on success.
-    /// On failure, returns `KitError::BuildFailed` or `KitError::DuplicateCapability`.
-    ///
-    /// # Type Constraint
-    ///
-    /// `M::Capability` must be convertible to `Arc<K::Capability>` for the provided key `K`.
-    /// Typically, `M::Capability = Arc<dyn Trait + Send + Sync>` and `K::Capability = dyn Trait`.
-    ///
-    /// # Failure Behavior
-    ///
-    /// If build succeeds but registration fails (key already exists),
-    /// the built capability is discarded and `DuplicateCapability` is returned.
-    pub fn provide<K>(self) -> Result<Arc<K::Capability>, KitError>
-    where
-        K: CapabilityKey,
-        M::Capability: Clone + Into<Arc<K::Capability>>,
-    {
-        let module_name = M::NAME;
-
-        // Build the capability
-        let capability = self.builder.build().map_err(|e| KitError::BuildFailed {
-            module: module_name,
-            source: Box::new(e),
-        })?;
-
-        // Clone for registration (original kept for return)
-        let arc_capability: Arc<K::Capability> = capability.clone().into();
-
-        // Register in Kit (clone again since provide takes ownership)
-        self.kit.provide::<K>(Arc::clone(&arc_capability))?;
-
-        // Return the registered capability
-        Ok(arc_capability)
     }
 }
