@@ -1,0 +1,24 @@
+error[E0599]: the method `kit` exists for struct `BadBuilder`, but its trait bounds were not satisfied
+  --> tests/ui/builder_not_impl_module_builder.rs:25:24
+   |
+ 8 | struct BadBuilder;
+   | ----------------- method `kit` not found for this struct because it doesn't satisfy `BadBuilder: ModuleBuilder<_>` or `_: IntoKitModuleBuilder<_>`
+...
+25 |     let _ = BadBuilder.kit(&kit);
+   |                        ^^^ method cannot be called on `BadBuilder` due to unsatisfied trait bounds
+   |
+   = note: the following trait bounds were not satisfied:
+           `BadBuilder: ModuleBuilder<_>`
+           which is required by `BadBuilder: trait_kit::prelude::IntoKitModuleBuilder<_>`
+           `&BadBuilder: ModuleBuilder<_>`
+           which is required by `&BadBuilder: trait_kit::prelude::IntoKitModuleBuilder<_>`
+           `&mut BadBuilder: ModuleBuilder<_>`
+           which is required by `&mut BadBuilder: trait_kit::prelude::IntoKitModuleBuilder<_>`
+note: the trait `ModuleBuilder` must be implemented
+  --> src/core/builder.rs
+   |
+   | pub trait ModuleBuilder<M: Module> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `kit`, perhaps you need to implement it:
+           candidate #1: `trait_kit::prelude::IntoKitModuleBuilder`

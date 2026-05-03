@@ -1,0 +1,25 @@
+error[E0277]: the trait bound `Arc<(dyn Logger + Send + Sync + 'static)>: From<Arc<ConcreteLogger>>` is not satisfied
+  --> tests/ui/provide_type_mismatch.rs:55:47
+   |
+55 |     let _ = BadLoggerBuilder::new().kit(&kit).provide::<MainLogger>(); // should fail: Arc<ConcreteLogger> != Arc<dyn Logger>
+   |                                               ^^^^^^^ the trait `From<Arc<ConcreteLogger>>` is not implemented for `Arc<(dyn Logger + Send + Sync + 'static)>`
+   |
+   = help: the following other types implement trait `From<T>`:
+             `Arc<B>` implements `From<Cow<'_, B>>`
+             `Arc<ByteStr>` implements `From<Arc<[u8]>>`
+             `Arc<CStr>` implements `From<&CStr>`
+             `Arc<CStr>` implements `From<&mut CStr>`
+             `Arc<CStr>` implements `From<CString>`
+             `Arc<OsStr>` implements `From<&OsStr>`
+             `Arc<OsStr>` implements `From<&mut OsStr>`
+             `Arc<OsStr>` implements `From<OsString>`
+           and $N others
+   = note: required for `Arc<ConcreteLogger>` to implement `Into<Arc<(dyn Logger + Send + Sync + 'static)>>`
+note: required by a bound in `KitModuleBuilder::<M, B>::provide`
+  --> src/kit/builder.rs
+   |
+   |     pub fn provide<K>(self) -> Result<Arc<K::Capability>, KitError>
+   |            ------- required by a bound in this associated function
+...
+   |         M::Capability: Clone + Into<Arc<K::Capability>>,
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `KitModuleBuilder::<M, B>::provide`
