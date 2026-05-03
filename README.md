@@ -13,7 +13,7 @@
 [docs-url]: https://docs.rs/trait-kit
 [license-badge]: https://img.shields.io/badge/license-MIT-blue?style=flat-square
 [license-url]: https://github.com/Kirky-X/trait-kit/blob/main/LICENSE
-[msrv-badge]: https://img.shields.io/badge/MSRV-1.71-orange?style=flat-square
+[msrv-badge]: https://img.shields.io/badge/MSRV-1.76-orange?style=flat-square
 [msrv-url]: https://github.com/Kirky-X/trait-kit
 
 **trait-kit** is a lightweight Rust library that defines a standardized module interface and provides a centralized capability & configuration management center (`Kit`). It gives you a consistent, type-safe way to define modules, inject dependencies, and manage capabilities — without committing to a heavy DI framework.
@@ -35,7 +35,7 @@
 
 ### MSRV
 
-Minimum Supported Rust Version: **1.71**
+Minimum Supported Rust Version: **1.76**
 
 ### Installation
 
@@ -344,7 +344,7 @@ trait-kit gives you the **standardization** of a DI framework with the **explici
 
 ### Build Requirements
 
-- Rust **1.71** or later (stable).
+- Rust **1.76** or later (stable).
 - No external tooling required (no protoc, no openssl, no system libraries).
 
 ### Development Commands
