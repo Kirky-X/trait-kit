@@ -1,0 +1,19 @@
+[package]
+name = "trait-kit"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.71"
+authors = ["Kirky.X"]
+repository = "https://github.com/Kirky-X/trait-kit.git"
+description = "Module Standard Interface and Capability Management Center — A lightweight Rust library that provides a standard interface for module definition and Kit capability management."
+keywords = ["module", "trait", "capability", "kit", "interface"]
+license = "MIT"
+categories = ["rust-patterns", "development-tools"]
+readme = "README.md"
+
+[dependencies]
+arc-swap = { version = "1", default-features = false }
+thiserror = { version = "2", default-features = false }
+
+[dev-dependencies]
+trybuild = "1"
