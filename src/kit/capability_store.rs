@@ -3,6 +3,7 @@
 //! Capability store — internal storage for capabilities.
 
 use std::any::{Any, TypeId};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -37,11 +38,13 @@ impl CapabilityStore {
             .write()
             .expect("CapabilityStore write lock poisoned");
         let key = TypeId::of::<K>();
-        if store.contains_key(&key) {
-            return Err(KitError::DuplicateCapability { key: K::NAME });
+        match store.entry(key) {
+            Entry::Vacant(e) => {
+                e.insert(Box::new(value));
+                Ok(())
+            }
+            Entry::Occupied(_) => Err(KitError::DuplicateCapability { key: K::NAME }),
         }
-        store.insert(key, Box::new(value));
-        Ok(())
     }
 
     /// Register or replace a capability.

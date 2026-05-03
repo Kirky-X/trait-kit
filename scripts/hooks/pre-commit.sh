@@ -242,6 +242,16 @@ else
     echo "    安装: cargo install cargo-llvm-cov"
 fi
 
+# 6c — 清理覆盖率中间文件
+echo "  ${CYAN}▶${NC} 清理 profraw/profdata 中间文件..."
+profraw_count=$(find . -maxdepth 1 -name "*.profraw" -o -name "*.profdata" 2>/dev/null | wc -l)
+if [ "$profraw_count" -gt 0 ]; then
+    rm -f ./*.profraw ./*.profdata 2>/dev/null || true
+    echo "  ${GREEN}✓${NC} 已清理 ${profraw_count} 个覆盖率中间文件"
+else
+    echo "  ${GREEN}✓${NC} 无覆盖率中间文件需要清理"
+fi
+
 # ═══════════════════════════════════════════════════════════════════
 # Phase 7 — 结果汇总
 # ═══════════════════════════════════════════════════════════════════

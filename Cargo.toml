@@ -2,7 +2,7 @@
 name = "trait-kit"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.63"
+rust-version = "1.76"
 authors = ["Kirky.X"]
 repository = "https://github.com/Kirky-X/trait-kit.git"
 description = "Module Standard Interface and Capability Management Center — A lightweight Rust library that provides a standard interface for module definition and Kit capability management."
