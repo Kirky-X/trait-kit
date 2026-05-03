@@ -32,7 +32,10 @@ impl CapabilityStore {
     where
         K: CapabilityKey,
     {
-        let mut store = self.inner.write().unwrap();
+        let mut store = self
+            .inner
+            .write()
+            .expect("CapabilityStore write lock poisoned");
         let key = TypeId::of::<K>();
         if store.contains_key(&key) {
             return Err(KitError::DuplicateCapability { key: K::NAME });
@@ -48,7 +51,10 @@ impl CapabilityStore {
     where
         K: CapabilityKey,
     {
-        let mut store = self.inner.write().unwrap();
+        let mut store = self
+            .inner
+            .write()
+            .expect("CapabilityStore write lock poisoned");
         store.insert(TypeId::of::<K>(), Box::new(value));
     }
 
@@ -59,7 +65,10 @@ impl CapabilityStore {
     where
         K: CapabilityKey,
     {
-        let store = self.inner.read().unwrap();
+        let store = self
+            .inner
+            .read()
+            .expect("CapabilityStore read lock poisoned");
         let key = TypeId::of::<K>();
         let boxed = store
             .get(&key)
@@ -75,7 +84,10 @@ impl CapabilityStore {
     where
         K: CapabilityKey,
     {
-        let store = self.inner.read().unwrap();
+        let store = self
+            .inner
+            .read()
+            .expect("CapabilityStore read lock poisoned");
         store.contains_key(&TypeId::of::<K>())
     }
 }
@@ -99,7 +111,10 @@ mod tests {
     #[test]
     fn default_creates_empty_store() {
         let store = CapabilityStore::default();
-        let inner = store.inner.read().unwrap();
+        let inner = store
+            .inner
+            .read()
+            .expect("CapabilityStore read lock poisoned");
         assert!(inner.is_empty(), "default CapabilityStore should be empty");
     }
 

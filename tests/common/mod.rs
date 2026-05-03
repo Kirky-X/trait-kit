@@ -119,15 +119,6 @@ pub struct UserRequirements {
     pub logger: Arc<dyn Logger + Send + Sync>,
 }
 
-// === UserServiceKey ===
-
-pub struct UserServiceKey;
-
-impl CapabilityKey for UserServiceKey {
-    type Capability = dyn UserService + Send + Sync;
-    const NAME: &'static str = "user_service";
-}
-
 // === UserModule ===
 
 pub struct UserModule;

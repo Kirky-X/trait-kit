@@ -123,6 +123,12 @@ impl Default for Kit {
     }
 }
 
+impl std::fmt::Debug for Kit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Kit").finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
