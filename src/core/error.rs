@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn module_failed_display_and_source() {
-        let inner = std::io::Error::new(std::io::ErrorKind::Other, "inner error");
+        let inner = std::io::Error::other("inner error");
         let error = BuildError::ModuleFailed {
             module: "fail_mod",
             source: Box::new(inner),

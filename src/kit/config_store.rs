@@ -3,6 +3,7 @@
 //! Config store — internal storage for configuration handles.
 
 use std::any::{Any, TypeId};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
@@ -36,18 +37,18 @@ impl ConfigStore {
         let mut store = self.inner.write().expect("ConfigStore write lock poisoned");
         let key = TypeId::of::<K>();
 
-        // Check if key exists; if so, update the existing handle instead of replacing it
-        if let Some(existing) = store.get(&key) {
-            let handle = existing
-                .downcast_ref::<ConfigHandle<K::Config>>()
-                .expect("type mismatch in config store");
-            handle.set(config);
-            return;
+        match store.entry(key) {
+            Entry::Occupied(e) => {
+                let handle = e
+                    .get()
+                    .downcast_ref::<ConfigHandle<K::Config>>()
+                    .expect("type mismatch in config store");
+                handle.set(config);
+            }
+            Entry::Vacant(e) => {
+                e.insert(Box::new(ConfigHandle::new(config)));
+            }
         }
-
-        // Create new handle
-        let handle = ConfigHandle::new(config);
-        store.insert(key, Box::new(handle));
     }
 
     /// Get a configuration handle.

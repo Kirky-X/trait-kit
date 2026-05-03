@@ -169,13 +169,10 @@ mod tests {
     fn provide_build_failure() {
         let kit = Kit::new();
         let result = FailingBuilder.kit(&kit).provide::<TestCapKey>();
-        assert!(result.is_err());
-        if let Err(e) = &result {
-            assert!(e.to_string().contains("failed to build module"));
-            assert!(e.to_string().contains("failing_module"));
-        } else {
-            panic!("expected build failure error");
-        }
+        assert!(result.is_err(), "build should fail");
+        let err = result.err().unwrap();
+        assert!(err.to_string().contains("failed to build module"));
+        assert!(err.to_string().contains("failing_module"));
     }
 
     #[test]
@@ -183,13 +180,10 @@ mod tests {
         let kit = Kit::new();
         TestBuilder.kit(&kit).provide::<TestCapKey>().unwrap();
         let result = TestBuilder.kit(&kit).provide::<TestCapKey>();
-        assert!(result.is_err());
-        if let Err(e) = &result {
-            assert!(e.to_string().contains("already exists"));
-            assert!(e.to_string().contains("test_cap"));
-        } else {
-            panic!("expected duplicate capability error");
-        }
+        assert!(result.is_err(), "duplicate should fail");
+        let err = result.err().unwrap();
+        assert!(err.to_string().contains("already exists"));
+        assert!(err.to_string().contains("test_cap"));
     }
 
     #[test]

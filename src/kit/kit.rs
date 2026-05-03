@@ -217,6 +217,12 @@ mod tests {
     }
 
     #[test]
+    fn debug_format_outputs_kit() {
+        let kit = Kit::new();
+        assert_eq!(format!("{:?}", kit), "Kit");
+    }
+
+    #[test]
     fn clone_shares_inner_state() {
         let kit = Kit::new();
         kit.set_config::<TestCfg>(10);
