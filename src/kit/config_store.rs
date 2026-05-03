@@ -28,14 +28,26 @@ impl ConfigStore {
     /// Set a configuration value.
     ///
     /// Creates a new `ConfigHandle<T>` and stores it.
-    /// If key already exists, replaces the handle.
+    /// If key already exists, updates the existing handle's value.
     pub fn set_config<K>(&self, config: K::Config)
     where
         K: ConfigKey,
     {
         let mut store = self.inner.write().expect("ConfigStore write lock poisoned");
+        let key = TypeId::of::<K>();
+
+        // Check if key exists; if so, update the existing handle instead of replacing it
+        if let Some(existing) = store.get(&key) {
+            let handle = existing
+                .downcast_ref::<ConfigHandle<K::Config>>()
+                .expect("type mismatch in config store");
+            handle.set(config);
+            return;
+        }
+
+        // Create new handle
         let handle = ConfigHandle::new(config);
-        store.insert(TypeId::of::<K>(), Box::new(handle));
+        store.insert(key, Box::new(handle));
     }
 
     /// Get a configuration handle.
