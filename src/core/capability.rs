@@ -15,6 +15,20 @@
 /// - `Send + Sync + 'static` — required for thread-safe storage in Kit
 ///
 /// The key type itself must satisfy `'static` for TypeId stability.
+///
+/// # Example
+///
+/// ```
+/// use trait_kit::core::capability::CapabilityKey;
+///
+/// struct MyKey;
+/// impl CapabilityKey for MyKey {
+///     type Capability = dyn Send + Sync;
+///     const NAME: &'static str = "my_key";
+/// }
+///
+/// let _ = MyKey::NAME;
+/// ```
 pub trait CapabilityKey: 'static {
     /// The capability trait object type.
     /// Must satisfy `?Sized + Send + Sync + 'static`.
