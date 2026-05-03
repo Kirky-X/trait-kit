@@ -26,7 +26,11 @@ pub trait IntoKitModuleBuilder<M: Module> {
 }
 
 /// Blanket implementation for all ModuleBuilder types.
-impl<M: Module, B: ModuleBuilder<M>> IntoKitModuleBuilder<M> for B {
+impl<M, B> IntoKitModuleBuilder<M> for B
+where
+    M: Module<Builder = B>,
+    B: ModuleBuilder<M>,
+{
     type Builder = B;
 
     fn kit(self, kit: &Kit) -> KitModuleBuilder<M, Self::Builder> {
@@ -73,24 +77,22 @@ impl<M: Module, B: ModuleBuilder<M>> KitModuleBuilder<M, B> {
     pub fn provide<K>(self) -> Result<Arc<K::Capability>, KitError>
     where
         K: CapabilityKey,
-        M::Capability: Clone + Into<Arc<K::Capability>>,
+        M: Module<Capability = Arc<K::Capability>>,
     {
         let module_name = M::NAME;
 
         // Build the capability
-        let capability = self.builder.build().map_err(|e| KitError::BuildFailed {
-            module: module_name,
-            source: Box::new(e),
-        })?;
+        let capability: Arc<K::Capability> =
+            self.builder.build().map_err(|e| KitError::BuildFailed {
+                module: module_name,
+                source: Box::new(e),
+            })?;
 
-        // Clone for registration (original kept for return)
-        let arc_capability: Arc<K::Capability> = capability.clone().into();
-
-        // Register in Kit (clone again since provide takes ownership)
-        self.kit.provide::<K>(Arc::clone(&arc_capability))?;
+        // Register in Kit
+        self.kit.provide::<K>(Arc::clone(&capability))?;
 
         // Return the registered capability
-        Ok(arc_capability)
+        Ok(capability)
     }
 }
 
