@@ -18,6 +18,20 @@ use arc_swap::ArcSwap;
 /// Note: `Config` must be `Sized` (no `?Sized` bound) because `ArcSwap<T>` requires `T: Sized`.
 ///
 /// The key type itself must satisfy `'static` for TypeId stability.
+///
+/// # Example
+///
+/// ```
+/// use trait_kit::core::config::ConfigKey;
+///
+/// struct MyConfig;
+/// impl ConfigKey for MyConfig {
+///     type Config = i32;
+///     const NAME: &'static str = "my_config";
+/// }
+///
+/// assert_eq!(MyConfig::NAME, "my_config");
+/// ```
 pub trait ConfigKey: 'static {
     /// The configuration value type.
     /// Must satisfy `Send + Sync + 'static` and `Sized`.
@@ -43,6 +57,19 @@ pub trait ConfigKey: 'static {
 /// # Type Constraints
 ///
 /// `T` must satisfy `Send + Sync + 'static` and `Sized`.
+///
+/// # Example
+///
+/// ```
+/// use trait_kit::core::config::ConfigHandle;
+///
+/// let handle = ConfigHandle::new(42);
+/// assert_eq!(*handle.load(), 42);
+///
+/// let cloned = handle.clone();
+/// handle.set(100);
+/// assert_eq!(*cloned.load(), 100);
+/// ```
 #[derive(Debug)]
 pub struct ConfigHandle<T: Send + Sync + 'static> {
     inner: Arc<ArcSwap<T>>,

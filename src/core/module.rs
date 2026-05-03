@@ -4,6 +4,8 @@
 
 use std::error::Error;
 
+use super::builder::ModuleBuilder;
+
 /// The standard interface that all modules must implement.
 ///
 /// A module declares:
@@ -21,7 +23,31 @@ use std::error::Error;
 /// - `Capability`: Typically `Arc<dyn SomeTrait + Send + Sync>`.
 /// - `Error`: Must satisfy `std::error::Error + Send + Sync + 'static`.
 /// - `Builder`: Must implement `ModuleBuilder<Self>`.
-pub trait Module {
+///
+/// # Example
+///
+/// ```
+/// use trait_kit::prelude::*;
+/// use std::sync::Arc;
+///
+/// struct MyModule;
+/// impl Module for MyModule {
+///     const NAME: &'static str = "my_module";
+///     type Config = NoConfig;
+///     type Requirements = NoRequirements;
+///     type Capability = Arc<i32>;
+///     type Error = std::convert::Infallible;
+///     type Builder = MyBuilder;
+/// }
+///
+/// struct MyBuilder;
+/// impl ModuleBuilder<MyModule> for MyBuilder {
+///     fn build(self) -> Result<Arc<i32>, std::convert::Infallible> {
+///         Ok(Arc::new(42))
+///     }
+/// }
+/// ```
+pub trait Module: Sized {
     /// The diagnostic name of this module.
     const NAME: &'static str;
 
@@ -43,5 +69,5 @@ pub trait Module {
 
     /// The standard builder for this module.
     /// Must implement `ModuleBuilder<Self>` (enforced at usage points).
-    type Builder;
+    type Builder: ModuleBuilder<Self>;
 }
