@@ -3,8 +3,8 @@
 //! Kit — the capability and configuration management center.
 
 pub mod builder;
-pub mod capability_store;
-pub mod config_store;
+pub(crate) mod capability_store;
+pub(crate) mod config_store;
 pub mod error;
 #[allow(clippy::module_inception)]
 pub mod kit;

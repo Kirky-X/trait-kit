@@ -82,7 +82,6 @@ impl<T: Send + Sync + 'static> Clone for ConfigHandle<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::config::ConfigKey;
 
     #[allow(dead_code)]
     struct TestConfig;

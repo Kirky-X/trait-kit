@@ -33,7 +33,7 @@ impl ConfigStore {
     where
         K: ConfigKey,
     {
-        let mut store = self.inner.write().unwrap();
+        let mut store = self.inner.write().expect("ConfigStore write lock poisoned");
         let handle = ConfigHandle::new(config);
         store.insert(TypeId::of::<K>(), Box::new(handle));
     }
@@ -46,7 +46,7 @@ impl ConfigStore {
     where
         K: ConfigKey,
     {
-        let store = self.inner.read().unwrap();
+        let store = self.inner.read().expect("ConfigStore read lock poisoned");
         let key = TypeId::of::<K>();
         let boxed = store
             .get(&key)
@@ -62,7 +62,7 @@ impl ConfigStore {
     where
         K: ConfigKey,
     {
-        let store = self.inner.read().unwrap();
+        let store = self.inner.read().expect("ConfigStore read lock poisoned");
         store.contains_key(&TypeId::of::<K>())
     }
 }
@@ -87,7 +87,7 @@ mod tests {
     #[test]
     fn default_creates_empty_store() {
         let store = ConfigStore::default();
-        let inner = store.inner.read().unwrap();
+        let inner = store.inner.read().expect("ConfigStore read lock poisoned");
         assert!(inner.is_empty(), "default ConfigStore should be empty");
     }
 
