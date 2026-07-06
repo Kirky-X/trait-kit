@@ -8,3 +8,6 @@ pub use crate::kit::{Kit, Ready, Unbuilt};
 
 #[cfg(feature = "confers")]
 pub use crate::kit::config::Configurable;
+
+#[cfg(feature = "confers-macros")]
+pub use crate::kit::config::ModuleConfig;
