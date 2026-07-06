@@ -124,7 +124,10 @@ impl DependencyGraph {
                 if let Some(&dep_idx) = index.get(dep_id) {
                     if visited[dep_idx] == 1 {
                         // Found cycle — extract it
-                        let start = stack.iter().position(|&x| x == dep_idx).unwrap();
+                        let start = stack
+                            .iter()
+                            .position(|&x| x == dep_idx)
+                            .expect("invariant: dep_idx must be in stack (visited[dep_idx] == 1)");
                         for &idx in &stack[start..] {
                             cycle_names.push(entries[idx].name);
                         }
@@ -185,6 +188,12 @@ impl DependencyGraph {
     #[must_use]
     pub fn entries(&self) -> &[ModuleEntry] {
         &self.entries
+    }
+
+    /// Look up a module's diagnostic name by `TypeId` in O(1).
+    #[must_use]
+    pub fn name_of(&self, type_id: TypeId) -> Option<&'static str> {
+        self.index.get(&type_id).map(|&idx| self.entries[idx].name)
     }
 }
 

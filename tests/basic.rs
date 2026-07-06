@@ -107,7 +107,7 @@ fn test_missing_config_error() {
 
     assert!(result.is_err());
     match result.unwrap_err() {
-        KitError::BuildFailed { module, .. } => assert_eq!(module, "db_pool"),
+        KitError::BuildFailed { context, .. } => assert_eq!(context, "db_pool"),
         other => panic!("expected BuildFailed, got: {other}"),
     }
 }
@@ -207,9 +207,11 @@ fn test_cycle_detection() {
 fn kit_error_display_and_source_behavior() {
     use std::error::Error;
 
-    // Display: NotReady
+    // Display: NotReady (deprecated — typestate pattern makes it unreachable)
+    #[allow(deprecated)]
+    let not_ready = KitError::NotReady;
     assert_eq!(
-        KitError::NotReady.to_string(),
+        not_ready.to_string(),
         "kit is not ready; call build() first"
     );
 
@@ -244,17 +246,20 @@ fn kit_error_display_and_source_behavior() {
     // Display: BuildFailed (contains source message)
     let source: Box<dyn Error + Send + Sync> = "inner failure".into();
     let build = KitError::BuildFailed {
-        module: "db",
+        context: "db",
         source,
     };
-    assert!(build.to_string().contains("failed to build module `db`"));
+    assert!(build.to_string().contains("failed to build `db`"));
     assert!(build.to_string().contains("inner failure"));
 
     // Error::source() for BuildFailed returns Some
     assert!(build.source().is_some());
 
     // Error::source() for other variants returns None
-    assert!(KitError::NotReady.source().is_none());
+    #[allow(deprecated)]
+    {
+        assert!(KitError::NotReady.source().is_none());
+    }
     assert!(cycle.source().is_none());
     assert!(dep.source().is_none());
 }
@@ -304,8 +309,8 @@ mod confers_loader {
         let result = kit.load_config::<FailingConfig>();
 
         match result {
-            Err(KitError::BuildFailed { module, source }) => {
-                assert_eq!(module, "load_config");
+            Err(KitError::BuildFailed { context, source }) => {
+                assert_eq!(context, "load_config");
                 assert!(source.to_string().contains("intentional load failure"));
             }
             other => panic!("expected BuildFailed, got: {other:?}"),
@@ -339,10 +344,9 @@ mod confers_loader {
 #[cfg(feature = "confers")]
 mod confers_derive_bridge {
     use std::error::Error;
+    use serial_test::serial;
     use trait_kit::prelude::*;
 
-    // Verify Configurable bridges to confers::Config derive macro's load_sync().
-    // Uses a unique env_prefix to avoid collisions with the host environment.
     #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, confers::Config)]
     #[config(env_prefix = "TRAIT_KIT_T026_")]
     struct DerivedConfig {
@@ -357,9 +361,8 @@ mod confers_derive_bridge {
     }
 
     #[test]
+    #[serial]
     fn load_config_bridges_to_confers_derive_load_sync() {
-        // Path 1: default value applies when env var is absent.
-        // Combined into a single test to avoid env-var races between parallel tests.
         std::env::remove_var("TRAIT_KIT_T026_FIELD");
 
         let kit = Kit::new();
@@ -371,7 +374,6 @@ mod confers_derive_bridge {
         assert_eq!(config.field, "fallback_value");
         drop(kit);
 
-        // Path 2: env var overrides default.
         std::env::set_var("TRAIT_KIT_T026_FIELD", "from_env");
         let kit = Kit::new();
         let result = kit.load_config::<DerivedConfig>();
@@ -493,6 +495,7 @@ mod encryption {
     }
 
     // 32-byte master key for XChaCha20-Poly1305 + HKDF.
+    // pragma: allowlist secret
     const MASTER_KEY: [u8; 32] = *b"0123456789abcdef0123456789abcdef";
 
     #[test]
