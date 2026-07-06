@@ -16,10 +16,10 @@ pub trait ModuleMeta: 'static {
 /// Implemented by the user for each module.
 pub trait AutoBuilder: ModuleMeta {
     /// The capability type this module provides. Must be Clone.
-    type Capability: Clone + 'static + Send + Sync;
+    type Capability: Clone + 'static;
 
     /// The error type returned on build failure.
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: std::error::Error + 'static;
 
     /// Build the module's capability using the provided Kit.
     fn build(kit: &crate::kit::Kit) -> Result<Self::Capability, Self::Error>;
@@ -30,7 +30,5 @@ pub trait AutoBuilder: ModuleMeta {
 /// Takes `&Kit<Unbuilt>` (same memory layout as `&Kit<Ready>`)
 /// because during the build phase we only have the unbuilt Kit.
 pub type BuildFn = Box<
-    dyn FnOnce(&crate::kit::Kit) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<dyn std::error::Error + Send + Sync>>
-        + Send
-        + Sync,
+    dyn FnOnce(&crate::kit::Kit) -> Result<Box<dyn std::any::Any>, Box<dyn std::error::Error>>,
 >;

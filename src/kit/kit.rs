@@ -54,10 +54,10 @@ impl Kit {
             .map_err(|name| KitError::AlreadyRegistered { module: name })?;
 
         let build_fn: BuildFn = Box::new(|kit| {
-            let capability = M::build(kit).map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+            let capability = M::build(kit).map_err(|e| -> Box<dyn std::error::Error> {
                 Box::new(e)
             })?;
-            Ok(Box::new(capability) as Box<dyn Any + Send + Sync>)
+            Ok(Box::new(capability) as Box<dyn Any>)
         });
 
         self.builders.borrow_mut().insert(TypeId::of::<M>(), build_fn);
@@ -65,7 +65,7 @@ impl Kit {
     }
 
     /// Set a configuration value.
-    pub fn set_config<C: Send + Sync + Clone + 'static>(&self, config: C) {
+    pub fn set_config<C: Clone + 'static>(&self, config: C) {
         self.configs.insert(config);
     }
 
@@ -75,7 +75,7 @@ impl Kit {
     }
 
     /// Get a configuration value.
-    pub fn config<C: Send + Sync + Clone + 'static>(&self) -> Result<C, KitError> {
+    pub fn config<C: Clone + 'static>(&self) -> Result<C, KitError> {
         self.get_config::<C>()
     }
 
@@ -154,7 +154,7 @@ impl<S> Kit<S> {
     }
 
     /// Get a configuration value.
-    fn get_config<C: Send + Sync + Clone + 'static>(&self) -> Result<C, KitError> {
+    fn get_config<C: Clone + 'static>(&self) -> Result<C, KitError> {
         self.configs
             .get_cloned::<C>()
             .ok_or(KitError::MissingConfig {
@@ -176,7 +176,7 @@ impl Kit<Ready> {
     }
 
     /// Get a configuration value.
-    pub fn config<C: Send + Sync + Clone + 'static>(&self) -> Result<C, KitError> {
+    pub fn config<C: Clone + 'static>(&self) -> Result<C, KitError> {
         self.get_config::<C>()
     }
 
@@ -186,7 +186,7 @@ impl Kit<Ready> {
     }
 
     /// Check if a config is registered.
-    pub fn contains_config<C: Send + Sync + Clone + 'static>(&self) -> bool {
+    pub fn contains_config<C: Clone + 'static>(&self) -> bool {
         self.configs.get_cloned::<C>().is_some()
     }
 }
