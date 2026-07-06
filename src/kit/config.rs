@@ -11,6 +11,24 @@
 //! Level 2 (`confers-macros` feature) adds the `ModuleConfig` trait for
 //! module-level config metadata (path + default) and re-exports the
 //! `confers::Config` derive macro so users can `use trait_kit::kit::Config;`.
+//!
+//! # Three-tier inheritance system (三层继承)
+//!
+//! The confers integration is built on a three-tier inheritance model:
+//!
+//! 1. **Module capability inheritance (模块能力继承)** — `#[derive(Config)]`
+//!    auto-implements serialization, deserialization, hot-reload subscription,
+//!    encryption markers, and validation rules. `ModuleConfig` binds each
+//!    config type to its module's configuration path (`PATH`).
+//!
+//! 2. **Cargo feature inheritance (cargo feature 继承)** — feature flags form
+//!    a dependency chain: `confers-encryption` → `confers-hot-reload` →
+//!    `confers-macros` → `confers`. Enabling a higher level automatically
+//!    enables all lower levels.
+//!
+//! 3. **Config value inheritance (配置值继承)** — the encryption key is
+//!    derived from `ModuleConfig::PATH` via HKDF, so the same master key
+//!    produces different field keys for different modules.
 
 /// Trait for types that can load themselves from a configuration source.
 ///
