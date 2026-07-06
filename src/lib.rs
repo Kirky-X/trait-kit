@@ -4,6 +4,10 @@
 //!
 //! 提供模块定义标准接口和 Kit 能力管理中心的轻量实现。
 
+#![deny(unsafe_code)]
+#![warn(clippy::all, clippy::pedantic)]
+#![allow(clippy::module_name_repetitions)]
+
 pub mod core;
 pub mod kit;
 

@@ -52,7 +52,8 @@ struct DbPoolModule;
 impl ModuleMeta for DbPoolModule {
     const NAME: &'static str = "db_pool";
     fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-        static DEPS: &[(&str, std::any::TypeId)] = &[("logger", std::any::TypeId::of::<LoggerModule>())];
+        static DEPS: &[(&str, std::any::TypeId)] =
+            &[("logger", std::any::TypeId::of::<LoggerModule>())];
         DEPS
     }
 }
@@ -215,10 +216,7 @@ fn kit_error_display_and_source_behavior() {
     let cycle = KitError::CycleDetected {
         cycle: vec!["a", "b", "a"],
     };
-    assert_eq!(
-        cycle.to_string(),
-        "dependency cycle detected: a → b → a"
-    );
+    assert_eq!(cycle.to_string(), "dependency cycle detected: a → b → a");
 
     // Display: DependencyMissing
     let dep = KitError::DependencyMissing {
