@@ -37,6 +37,7 @@ impl AutoBuilder for LoggerModule {
 
 #[derive(Clone, Debug)]
 struct DbConfig {
+    #[allow(dead_code)]
     url: String,
     max_connections: u32,
 }

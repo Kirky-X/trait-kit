@@ -50,6 +50,25 @@ jobs:
           files: ./lcov.info
           fail_ci_if_error: false
 
+  msrv:
+    name: MSRV 1.91
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+      - uses: swatinem/rust-cache@v2
+      - run: cargo test --all-features --no-fail-fast
+
+  nightly:
+    name: nightly (future-compat)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: swatinem/rust-cache@v2
+      - run: cargo test --all-features --no-fail-fast
+
   security:
     name: cargo-audit + cargo-deny
     runs-on: ubuntu-latest
