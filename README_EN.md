@@ -1,8 +1,10 @@
 # `TraitKit`
 
-[![Crates.io][crates-badge]][crates-url]
-[![Docs.rs][docs-badge]][docs-url]
-[![MIT licensed][license-badge]][license-url]
+<p align="center">
+  <img src="assets/trait-kit-logo.svg" width="200" alt="trait-kit logo">
+</p>
+
+[![Crates.io][crates-badge]][crates-url][![Docs.rs][docs-badge]][docs-url][![MIT licensed][license-badge]][license-url]
 [![MSRV][msrv-badge]][msrv-url]
 
 [crates-badge]: https://img.shields.io/crates/v/trait-kit?style=flat-square
