@@ -194,3 +194,62 @@ fn test_cycle_detection() {
     let result = graph.validate();
     assert!(result.is_err());
 }
+
+#[test]
+fn kit_error_display_and_source_behavior() {
+    use std::error::Error;
+
+    // Display: NotReady
+    assert_eq!(
+        KitError::NotReady.to_string(),
+        "kit is not ready; call build() first"
+    );
+
+    // Display: CycleDetected
+    let cycle = KitError::CycleDetected {
+        cycle: vec!["a", "b", "a"],
+    };
+    assert_eq!(
+        cycle.to_string(),
+        "dependency cycle detected: a → b → a"
+    );
+
+    // Display: DependencyMissing
+    let dep = KitError::DependencyMissing {
+        module: "db",
+        missing: "logger",
+    };
+    assert_eq!(
+        dep.to_string(),
+        "module `db` depends on `logger` which is not registered"
+    );
+
+    // Display: AlreadyRegistered
+    let dup = KitError::AlreadyRegistered { module: "logger" };
+    assert_eq!(dup.to_string(), "module `logger` is already registered");
+
+    // Display: MissingCapability
+    let cap = KitError::MissingCapability { key: "logger" };
+    assert_eq!(cap.to_string(), "missing capability `logger`");
+
+    // Display: MissingConfig
+    let cfg = KitError::MissingConfig { key: "db_url" };
+    assert_eq!(cfg.to_string(), "missing config `db_url`");
+
+    // Display: BuildFailed (contains source message)
+    let source: Box<dyn Error + Send + Sync> = "inner failure".into();
+    let build = KitError::BuildFailed {
+        module: "db",
+        source,
+    };
+    assert!(build.to_string().contains("failed to build module `db`"));
+    assert!(build.to_string().contains("inner failure"));
+
+    // Error::source() for BuildFailed returns Some
+    assert!(build.source().is_some());
+
+    // Error::source() for other variants returns None
+    assert!(KitError::NotReady.source().is_none());
+    assert!(cycle.source().is_none());
+    assert!(dep.source().is_none());
+}
