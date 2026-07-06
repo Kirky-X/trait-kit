@@ -1,11 +1,9 @@
-# TraitKit
+# `TraitKit`
 
 [![Crates.io][crates-badge]][crates-url]
 [![Docs.rs][docs-badge]][docs-url]
 [![MIT licensed][license-badge]][license-url]
 [![MSRV][msrv-badge]][msrv-url]
-
-<!-- Note: Badges will resolve once the crate is published to crates.io -->
 
 [crates-badge]: https://img.shields.io/crates/v/trait-kit?style=flat-square
 [crates-url]: https://crates.io/crates/trait-kit
@@ -13,21 +11,22 @@
 [docs-url]: https://docs.rs/trait-kit
 [license-badge]: https://img.shields.io/badge/license-MIT-blue?style=flat-square
 [license-url]: https://github.com/Kirky-X/trait-kit/blob/main/LICENSE
-[msrv-badge]: https://img.shields.io/badge/MSRV-1.76-orange?style=flat-square
+[msrv-badge]: https://img.shields.io/badge/MSRV-1.91-orange?style=flat-square
 [msrv-url]: https://github.com/Kirky-X/trait-kit
 
-**trait-kit** is a lightweight Rust library that defines a standardized module interface and provides a centralized capability & configuration management center (`Kit`). It gives you a consistent, type-safe way to define modules, inject dependencies, and manage capabilities — without committing to a heavy DI framework.
+**trait-kit** is a lightweight Rust library that provides a standardized module interface and a centralized capability & configuration management center (`Kit`). It uses a typestate pattern (`Kit<Unbuilt>` → `Kit<Ready>`) for build-time validation, with `RefCell`-based interior mutability for single-threaded, `!Sync` by design.
 
 ---
 
 ## Features
 
-- **Standardized Module Interface** — The `Module` trait defines a uniform contract: every module declares its Config, Requirements, Capability, Error, and Builder. Consistent initialization everywhere.
-- **Type-Safe Capability Management** — Register and retrieve capabilities via typed `CapabilityKey`s. No stringly-typed lookups. Trait-object-safe with full `Send + Sync` support.
-- **Thread-Safe Config Center** — `ConfigHandle<T>` provides live configuration updates with lock-free reads via `arc-swap`. Multiple handles share the same underlying storage; updates propagate instantly.
-- **Clean Builder Integration** — `.kit(&kit).provide::<K>()` builds a module and registers its capability in one fluent chain. Config and requirements are injected before `.kit()`, enforced at compile time.
-- **Explicit Composition** — No magic auto-wiring. You control the initialization order and dependency construction. The code is readable, debuggable, and easy to refactor.
-- **Minimal Dependencies** — Only `arc-swap` (internal) and `thiserror` (public error types). No heavy DI framework, no proc macros, no runtime reflection.
+- **Standardized Module Interface** — The `ModuleMeta` + `AutoBuilder` traits define a uniform contract: every module declares its name, dependencies, capability type, and build logic. Consistent initialization everywhere.
+- **Typestate Build Validation** — `Kit<Unbuilt>` registers modules and configs; `kit.build()` validates the dependency graph (cycle detection, missing deps) and returns `Kit<Ready>`. Build errors surface before your app starts.
+- **Type-Safe Capability Retrieval** — Capabilities are stored and retrieved by module type (`kit.require::<LoggerModule>()`), not string keys. No downcasting, no runtime lookups.
+- **Configuration Center** — `kit.set_config(value)` / `kit.config::<C>()` store and retrieve typed configs via a `TypeMap` keyed by `TypeId`. No `ConfigKey` or `ConfigHandle` boilerplate.
+- **Optional confers Integration** — Four-level feature flags integrate [`confers`](https://crates.io/crates/confers) for derive-macro config loading, hot-reload subscriptions, and XChaCha20-Poly1305 encrypted config storage.
+- **Minimal Dependencies** — Only `thiserror` is required. `confers`, `serde`, and `serde_json` are optional, pulled in only when you enable the corresponding feature.
+- **`#![deny(unsafe_code)]`** — No `unsafe` anywhere in the crate.
 
 ---
 
@@ -35,7 +34,7 @@
 
 ### MSRV
 
-Minimum Supported Rust Version: **1.76**
+Minimum Supported Rust Version: **1.91**
 
 ### Installation
 
@@ -45,68 +44,45 @@ cargo add trait-kit
 
 ### Minimal Example
 
-Define a logger module, register it to Kit, and retrieve it:
+Define a logger module, register it, build the Kit, and retrieve the capability:
 
 ```rust
 use std::sync::Arc;
 use trait_kit::prelude::*;
 
-// 1. Define a capability trait
-trait Logger: Send + Sync {
-    fn info(&self, msg: &str);
-}
-
-// 2. Define a capability key
-struct MainLogger;
-
-impl CapabilityKey for MainLogger {
-    type Capability = dyn Logger + Send + Sync;
-    const NAME: &'static str = "main_logger";
-}
-
-// 3. Define a module
-struct LoggerModule;
-
-impl Module for LoggerModule {
-    const NAME: &'static str = "logger_module";
-    type Config = NoConfig;
-    type Requirements = NoRequirements;
-    type Capability = Arc<dyn Logger + Send + Sync>;
-    type Error = std::convert::Infallible;
-    type Builder = LoggerModuleBuilder;
-}
-
-// 4. Define a builder
-struct LoggerModuleBuilder;
-
-impl ModuleBuilder<LoggerModule> for LoggerModuleBuilder {
-    fn build(self) -> Result<Arc<dyn Logger + Send + Sync>, std::convert::Infallible> {
-        Ok(Arc::new(ConsoleLogger))
-    }
-}
-
-struct ConsoleLogger;
-
-impl Logger for ConsoleLogger {
+// 1. Define a capability (any Clone type)
+struct StdoutLogger;
+impl StdoutLogger {
     fn info(&self, msg: &str) {
-        println!("[INFO] {msg}");
+        println!("[LOG] {msg}");
     }
 }
 
-// 5. Use it
+// 2. Define a module (ModuleMeta + AutoBuilder)
+struct LoggerModule;
+impl ModuleMeta for LoggerModule {
+    const NAME: &'static str = "logger";
+    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+        &[]
+    }
+}
+impl AutoBuilder for LoggerModule {
+    type Capability = Arc<StdoutLogger>;
+    type Error = KitError;
+    fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+        Ok(Arc::new(StdoutLogger))
+    }
+}
+
+// 3. Register, build, and use
 fn main() {
-    let kit = Kit::new();
+    let mut kit = Kit::new();
+    kit.register::<LoggerModule>().unwrap();
+    let kit = kit.build().unwrap();
 
-    let logger = LoggerModuleBuilder
-        .kit(&kit)
-        .provide::<MainLogger>()
-        .unwrap();
-
+    let logger = kit.require::<LoggerModule>().unwrap();
     logger.info("Hello from trait-kit!");
-
-    // Retrieve from Kit later
-    let from_kit: Arc<dyn Logger + Send + Sync> = kit.require::<MainLogger>().unwrap();
-    from_kit.info("Retrieved from Kit");
+    assert!(kit.contains::<LoggerModule>());
 }
 ```
 
@@ -116,213 +92,232 @@ fn main() {
 
 ### Module with Configuration
 
+Configs are typed values stored in the Kit's `TypeMap`. Modules retrieve them via `kit.config::<C>()` during build:
+
 ```rust
 use std::sync::Arc;
 use trait_kit::prelude::*;
 
-#[derive(Debug, Clone, PartialEq)]
-struct AppConfig {
-    pub debug: bool,
+#[derive(Clone, Debug)]
+struct DbConfig {
+    url: String,
+    max_connections: u32,
 }
 
-struct CfgModule;
-struct CfgBuilder {
-    config: Option<AppConfig>,
+struct DbPool {
+    config: DbConfig,
 }
 
-impl CfgBuilder {
-    fn new() -> Self {
-        CfgBuilder { config: None }
+struct DbPoolModule;
+impl ModuleMeta for DbPoolModule {
+    const NAME: &'static str = "db_pool";
+    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+        &[]
+    }
+}
+impl AutoBuilder for DbPoolModule {
+    type Capability = Arc<DbPool>;
+    type Error = KitError;
+    fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
+        let config: DbConfig = kit.config()?;
+        Ok(Arc::new(DbPool { config }))
     }
 }
 
-impl Module for CfgModule {
-    const NAME: &'static str = "cfg_module";
-    type Config = AppConfig;
-    type Requirements = NoRequirements;
-    type Capability = Arc<dyn Send + Sync>;
-    type Error = BuildError;
-    type Builder = CfgBuilder;
-}
+fn main() {
+    let mut kit = Kit::new();
+    kit.set_config(DbConfig {
+        url: "postgres://localhost".into(),
+        max_connections: 10,
+    });
+    kit.register::<DbPoolModule>().unwrap();
+    let kit = kit.build().unwrap();
 
-impl WithConfig<CfgModule> for CfgBuilder {
-    fn config(self, config: AppConfig) -> Self {
-        CfgBuilder { config: Some(config) }
-    }
+    let pool = kit.require::<DbPoolModule>().unwrap();
+    assert_eq!(pool.config.max_connections, 10);
 }
-
-impl ModuleBuilder<CfgModule> for CfgBuilder {
-    fn build(self) -> Result<Arc<dyn Send + Sync>, BuildError> {
-        let _cfg = self.config.ok_or(BuildError::MissingConfig {
-            module: "cfg_module",
-        })?;
-        // Initialize module with configuration
-        Ok(Arc::new(()))
-    }
-}
-
-struct CfgCapKey;
-impl CapabilityKey for CfgCapKey {
-    type Capability = dyn Send + Sync;
-    const NAME: &'static str = "cfg_capability";
-}
-
-// Usage
-let kit = Kit::new();
-CfgBuilder::new()
-    .config(AppConfig { debug: true })
-    .kit(&kit)
-    .provide::<CfgCapKey>()
-    .unwrap();
 ```
 
 ### Module with Dependencies
 
+Modules declare dependencies via `ModuleMeta::dependencies()`. The Kit validates the dependency graph at build time and constructs modules in topological order:
+
 ```rust
 use std::sync::Arc;
 use trait_kit::prelude::*;
 
-trait Logger: Send + Sync {
-    fn info(&self, msg: &str);
+struct Logger;
+impl Logger {
+    fn info(&self, msg: &str) { println!("[LOG] {msg}"); }
 }
 
-struct ConsoleLogger;
-impl Logger for ConsoleLogger {
-    fn info(&self, msg: &str) {
-        println!("{msg}");
+struct LoggerModule;
+impl ModuleMeta for LoggerModule {
+    const NAME: &'static str = "logger";
+    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] { &[] }
+}
+impl AutoBuilder for LoggerModule {
+    type Capability = Arc<Logger>;
+    type Error = KitError;
+    fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+        Ok(Arc::new(Logger))
     }
 }
 
-struct MyReqs {
-    pub logger: Arc<dyn Logger + Send + Sync>,
+struct Storage {
+    _logger: Arc<Logger>,
 }
 
-struct DepModule;
-struct DepBuilder {
-    requirements: Option<MyReqs>,
+struct StorageModule;
+impl ModuleMeta for StorageModule {
+    const NAME: &'static str = "storage";
+    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+        static DEPS: &[(&str, std::any::TypeId)] =
+            &[("logger", std::any::TypeId::of::<LoggerModule>())];
+        DEPS
+    }
 }
-
-impl DepBuilder {
-    fn new() -> Self {
-        DepBuilder { requirements: None }
+impl AutoBuilder for StorageModule {
+    type Capability = Arc<Storage>;
+    type Error = KitError;
+    fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
+        let logger = kit.require::<LoggerModule>()?;
+        Ok(Arc::new(Storage { _logger: logger }))
     }
 }
 
-impl Module for DepModule {
-    const NAME: &'static str = "dep_module";
-    type Config = NoConfig;
-    type Requirements = MyReqs;
-    type Capability = Arc<dyn Send + Sync>;
-    type Error = BuildError;
-    type Builder = DepBuilder;
+fn main() {
+    let mut kit = Kit::new();
+    kit.register::<LoggerModule>().unwrap();
+    kit.register::<StorageModule>().unwrap();
+    let kit = kit.build().unwrap();
+
+    let storage = kit.require::<StorageModule>().unwrap();
+    let _ = storage;
 }
-
-impl WithRequirements<DepModule> for DepBuilder {
-    fn requirements(self, reqs: MyReqs) -> Self {
-        DepBuilder { requirements: Some(reqs) }
-    }
-}
-
-impl ModuleBuilder<DepModule> for DepBuilder {
-    fn build(self) -> Result<Arc<dyn Send + Sync>, BuildError> {
-        let _reqs = self.requirements.ok_or(BuildError::MissingRequirements {
-            module: "dep_module",
-        })?;
-        // Use _reqs.logger during initialization
-        Ok(Arc::new(()))
-    }
-}
-
-struct DepCapKey;
-impl CapabilityKey for DepCapKey {
-    type Capability = dyn Send + Sync;
-    const NAME: &'static str = "dep_capability";
-}
-
-// Usage
-let kit = Kit::new();
-let logger: Arc<dyn Logger + Send + Sync> = Arc::new(ConsoleLogger);
-
-DepBuilder::new()
-    .requirements(MyReqs { logger: logger.clone() })
-    .kit(&kit)
-    .provide::<DepCapKey>()
-    .unwrap();
-```
-
-### Configuration Center
-
-```rust
-use trait_kit::prelude::*;
-
-#[derive(Debug, Clone, PartialEq)]
-struct AppConfig {
-    version: String,
-    debug: bool,
-}
-
-struct AppConfigKey;
-
-impl ConfigKey for AppConfigKey {
-    type Config = AppConfig;
-    const NAME: &'static str = "app_config";
-}
-
-let kit = Kit::new();
-
-kit.set_config::<AppConfigKey>(AppConfig {
-    version: "1.0.0".to_string(),
-    debug: false,
-});
-
-let handle = kit.config::<AppConfigKey>().unwrap();
-println!("Current: {:?}", handle.load());
-
-// All handles share the same underlying storage
-handle.set(AppConfig {
-    version: "2.0.0".to_string(),
-    debug: true,
-});
-```
-
-### Layered Composition
-
-Build a logger → inject it into storage → inject both into a user service — all managed by Kit:
-
-```rust
-// See full example: examples/layered_app.rs
-let kit = Kit::new();
-
-let logger = LoggerModuleBuilder.kit(&kit).provide::<MainLogger>()?;
-let storage = StorageBuilder::new()
-    .logger(logger.clone())
-    .kit(&kit)
-    .provide::<MainStorage>()?;
-let user_service = UserBuilder::new()
-    .logger(logger)
-    .storage(storage)
-    .kit(&kit)
-    .provide::<UserServiceKey>()?;
-
-user_service.create_user("Alice");
 ```
 
 ### Kit API Overview
 
-| Method                       | Description                                   |
-| ---------------------------- | --------------------------------------------- |
-| `Kit::new()`                 | Create an empty Kit.                          |
-| `kit.provide::<K>()`         | Register a capability (fails if key exists).  |
-| `kit.replace::<K>()`         | Register or overwrite a capability.           |
-| `kit.require::<K>()`         | Retrieve a capability (fails if missing).     |
-| `kit.contains::<K>()`        | Check if a capability is registered.          |
-| `kit.set_config::<K>()`      | Set a configuration value.                    |
-| `kit.config::<K>()`          | Get a shared `ConfigHandle` for live updates. |
-| `kit.contains_config::<K>()` | Check if a config key exists.                 |
+| Method                              | Available on    | Description                                            |
+| ----------------------------------- | --------------- | ------------------------------------------------------ |
+| `Kit::new()`                        | —               | Create an empty `Kit<Unbuilt>`.                        |
+| `kit.register::<M>()`              | `Kit<Unbuilt>`  | Register a module for construction.                    |
+| `kit.set_config::<C>(value)`       | `Kit<Unbuilt>`  | Store a typed config value.                            |
+| `kit.config::<C>()`                | Both            | Retrieve a cloned config value.                        |
+| `kit.build()`                       | `Kit<Unbuilt>`  | Validate graph and build all modules → `Kit<Ready>`.   |
+| `kit.require::<M>()`               | `Kit<Ready>`    | Retrieve a capability (errors if missing).             |
+| `kit.optional::<M>()`              | `Kit<Ready>`    | Retrieve a capability (returns `None` if missing).     |
+| `kit.contains::<M>()`              | `Kit<Ready>`    | Check if a capability was built.                       |
+| `kit.contains_config::<C>()`       | `Kit<Ready>`    | Check if a config value exists.                        |
 
-### Crate Feature Flags
+---
 
-trait-kit currently has **no optional features**. All functionality is available out of the box.
+## Configuration: confers Integration
+
+trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.4 via four-level feature flags. Each level inherits from the previous, forming a layered capability system.
+
+### Feature Flags
+
+| Feature               | Enables                                         | Description                                      |
+| --------------------- | ----------------------------------------------- | ------------------------------------------------ |
+| `confers`             | `dep:confers`, `dep:serde`                      | `Configurable` trait + `Kit::load_config`        |
+| `confers-macros`      | `confers`                                       | `ModuleConfig` trait + `Config` derive re-export |
+| `confers-hot-reload`  | `confers-macros`, `confers/watch`               | `subscribe` / `reload_config` API                |
+| `confers-encryption`  | `confers-hot-reload`, `confers/encryption`, `dep:serde_json` | `set_encrypted` / `get_encrypted` API |
+
+Enable the desired level in `Cargo.toml`:
+
+```toml
+[dependencies]
+trait-kit = { version = "0.1", features = ["confers-encryption"] }
+```
+
+### Three-Tier Inheritance System
+
+1. **Module capability inheritance** (Layer 1): `ModuleConfig` trait declares `PATH` and `default_value()`, binding a config type to its module's configuration path.
+
+2. **Cargo feature inheritance** (Layer 2): Each feature level inherits the previous (`confers-encryption` → `confers-hot-reload` → `confers-macros` → `confers`). Enabling a higher level automatically enables all lower levels.
+
+3. **Config value inheritance** (Layer 3): The encryption key is derived from `ModuleConfig::PATH` via HKDF, so the same master key produces different field keys for different modules.
+
+### Level 1: Config Loader Pattern
+
+Define a `Configurable` implementation that bridges to confers' `#[derive(Config)]` macro:
+
+```rust,ignore
+use trait_kit::prelude::*;
+use trait_kit::kit::Config;
+
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, Config)]
+#[config(env_prefix = "APP_")]
+struct AppConfig {
+    #[config(default = "localhost".to_string())]
+    host: String,
+}
+
+impl Configurable for AppConfig {
+    fn load() -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(AppConfig::load_sync()?)
+    }
+}
+
+let kit = Kit::new();
+kit.load_config::<AppConfig>()?;  // loads from env/defaults via confers
+let kit = kit.build()?;
+let config: AppConfig = kit.config()?;
+```
+
+### Level 2: Module Config Metadata
+
+Add `ModuleConfig` to declare the config path and default value:
+
+```rust,ignore
+use trait_kit::kit::config::ModuleConfig;
+
+impl ModuleConfig for AppConfig {
+    const PATH: &'static str = "config/app.toml";
+    fn default_value() -> Self {
+        Self { host: "localhost".to_string() }
+    }
+}
+```
+
+### Level 3: Hot-Reload Subscriptions
+
+Subscribe callbacks that fire when a config is reloaded:
+
+```rust,ignore
+use std::cell::Cell;
+use std::rc::Rc;
+
+let kit = Kit::new();
+let called = Rc::new(Cell::new(false));
+let called_clone = Rc::clone(&called);
+kit.subscribe::<AppConfig>(move || {
+    called_clone.set(true);
+});
+
+kit.reload_config::<AppConfig>()?;  // reloads via Configurable::load, notifies subscribers
+assert!(called.get());
+```
+
+### Level 4: Encrypted Config Storage
+
+Encrypt configs at rest with XChaCha20-Poly1305. The encryption key is derived from the master key and `ModuleConfig::PATH` via HKDF:
+
+```rust,ignore
+let kit = Kit::new();
+let secret = AppConfig { host: "production-db".to_string() };
+let master_key = [0u8; 32]; // 32-byte master key
+
+kit.set_encrypted(&secret, &master_key)?;
+let kit = kit.build()?;
+
+// Only retrievable with the correct master key
+let decrypted: AppConfig = kit.get_encrypted(&master_key)?;
+assert_eq!(decrypted, secret);
+```
 
 ---
 
@@ -344,30 +339,23 @@ trait-kit gives you the **standardization** of a DI framework with the **explici
 
 ### Build Requirements
 
-- Rust **1.76** or later (stable).
+- Rust **1.91** or later (stable).
 - No external tooling required (no protoc, no openssl, no system libraries).
 
 ### Development Commands
 
 ```sh
-# Run all tests
+# Run all tests (default features)
 cargo test
 
-# Run example programs
-cargo test --examples
-cargo run --example basic_logger
-cargo run --example service_injection
-cargo run --example config_center
-cargo run --example layered_app
+# Run all tests (all confers features)
+cargo test --all-features
 
 # Lint
-cargo clippy -- -D warnings
+cargo clippy --all-features -- -D warnings
 
-# Format
-cargo fmt -- --check
-
-# Compile-fail tests (trybuild)
-cargo test --test compile_fail
+# Format check
+cargo fmt --check
 ```
 
 ### Code of Conduct
@@ -376,10 +364,9 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 
 ### Pull Request Process
 
-1. Ensure all tests pass and Clippy is clean.
-2. Add tests for new functionality (unit, integration, or compile-fail as appropriate).
-3. Update examples if public API changes.
-4. Keep the README in sync with any API changes.
+1. Ensure all tests pass and Clippy is clean (`cargo clippy --all-features -- -D warnings`).
+2. Add tests for new functionality.
+3. Keep the README in sync with any API changes.
 
 ---
 
@@ -388,12 +375,3 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 This project is licensed under the [MIT License](LICENSE).
 
 © 2026 Kirky.X
-
----
-
-## Related Links
-
-- [API Documentation (docs.rs)](https://docs.rs/trait_kit)
-- [Crate on crates.io](https://crates.io/crates/trait_kit)
-- [GitHub Repository](https://github.com/Kirky-X/trait-kit)
-- [Issue Tracker](https://github.com/Kirky-X/trait-kit/issues)
