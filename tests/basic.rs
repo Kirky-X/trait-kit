@@ -8,8 +8,6 @@ use trait_kit::prelude::*;
 assert_not_impl_any!(Kit<Unbuilt>: Sync);
 assert_not_impl_any!(Kit<Ready>: Sync);
 
-// === Logger module (no dependencies) ===
-
 struct StdoutLogger;
 impl StdoutLogger {
     fn info(&self, msg: &str) {
@@ -33,16 +31,12 @@ impl AutoBuilder for LoggerModule {
     }
 }
 
-// === Config ===
-
 #[derive(Clone, Debug)]
 struct DbConfig {
     #[allow(dead_code)]
     url: String,
     max_connections: u32,
 }
-
-// === DbPool module (depends on Logger) ===
 
 struct DbPool {
     _logger: Arc<StdoutLogger>,
@@ -264,8 +258,6 @@ fn kit_error_display_and_source_behavior() {
     assert!(dep.source().is_none());
 }
 
-// === Configurable trait + load_config (confers feature) ===
-
 #[cfg(feature = "confers")]
 mod confers_loader {
     use std::error::Error;
@@ -343,8 +335,8 @@ mod confers_loader {
 
 #[cfg(feature = "confers")]
 mod confers_derive_bridge {
-    use std::error::Error;
     use serial_test::serial;
+    use std::error::Error;
     use trait_kit::prelude::*;
 
     #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, confers::Config)]
@@ -652,8 +644,6 @@ mod encryption {
     }
 }
 
-// === Coverage: graph API surface ===
-
 #[cfg(test)]
 mod graph_coverage {
     use std::any::TypeId;
@@ -826,9 +816,6 @@ mod graph_coverage {
     }
 }
 
-// === Coverage: Kit::build cycle path + Debug + load_config_or_default ===
-
-#[cfg(test)]
 mod kit_build_coverage {
     use std::sync::Arc;
     use trait_kit::prelude::*;
@@ -933,8 +920,6 @@ mod kit_build_coverage {
     }
 }
 
-// === Coverage: reload_config error path ===
-
 #[cfg(feature = "confers-hot-reload")]
 mod reload_config_coverage {
     use std::error::Error;
@@ -1005,13 +990,12 @@ mod reload_config_coverage {
         }
         let kit = Kit::new();
         // No subscribers registered — reload should still succeed.
-        kit.reload_config::<NoSubConfig>().expect("reload should succeed");
+        kit.reload_config::<NoSubConfig>()
+            .expect("reload should succeed");
         let kit = kit.build().expect("build should succeed");
         let _: NoSubConfig = kit.config().expect("config should be stored");
     }
 }
-
-// === Coverage: load_config_or_default ===
 
 #[cfg(feature = "confers-macros")]
 mod load_config_or_default_coverage {

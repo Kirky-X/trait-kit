@@ -300,10 +300,12 @@ impl Kit {
             source: Box::new(e),
         })?;
 
-        let field_key = derive_field_key(master_key, C::PATH, KEY_DERIVATION_VERSION)
-            .map_err(|e| KitError::BuildFailed {
-                context: "set_encrypted",
-                source: Box::new(e),
+        let field_key =
+            derive_field_key(master_key, C::PATH, KEY_DERIVATION_VERSION).map_err(|e| {
+                KitError::BuildFailed {
+                    context: "set_encrypted",
+                    source: Box::new(e),
+                }
             })?;
 
         let (nonce, ciphertext) = XChaCha20Crypto::new()
@@ -398,10 +400,12 @@ impl Kit<Ready> {
                 key: std::any::type_name::<C>(),
             })?;
 
-        let field_key = derive_field_key(master_key, C::PATH, KEY_DERIVATION_VERSION)
-            .map_err(|e| KitError::BuildFailed {
-                context: "get_encrypted",
-                source: Box::new(e),
+        let field_key =
+            derive_field_key(master_key, C::PATH, KEY_DERIVATION_VERSION).map_err(|e| {
+                KitError::BuildFailed {
+                    context: "get_encrypted",
+                    source: Box::new(e),
+                }
             })?;
 
         let plaintext = XChaCha20Crypto::new()

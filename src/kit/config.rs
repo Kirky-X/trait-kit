@@ -49,8 +49,6 @@ pub trait Configurable: Clone + 'static {
     fn load() -> Result<Self, Box<dyn std::error::Error>>;
 }
 
-// === Level 2: module-level config inheritance ===
-
 /// Re-export of the `confers::Config` derive macro.
 ///
 /// Allows `use trait_kit::kit::Config;` to derive the configuration loader
@@ -78,8 +76,6 @@ pub trait ModuleConfig: Clone + 'static {
     /// or no source is configured).
     fn default_value() -> Self;
 }
-
-// === Level 4: encrypted config storage ===
 
 /// Re-export of confers' XChaCha20-Poly1305 cipher (synchronous API).
 #[cfg(feature = "confers-encryption")]
