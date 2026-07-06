@@ -14,43 +14,45 @@
 [msrv-badge]: https://img.shields.io/badge/MSRV-1.91-orange?style=flat-square
 [msrv-url]: https://github.com/Kirky-X/trait-kit
 
-**trait-kit** is a lightweight Rust library that provides a standardized module interface and a centralized capability & configuration management center (`Kit`). It uses a typestate pattern (`Kit<Unbuilt>` → `Kit<Ready>`) for build-time validation, with `RefCell`-based interior mutability for single-threaded, `!Sync` by design.
+**trait-kit** 是一个轻量级 Rust 库，提供标准化的模块接口和集中的能力与配置管理中心（`Kit`）。采用 typestate 模式（`Kit<Unbuilt>` → `Kit<Ready>`）进行构建期校验，基于 `RefCell` 的内部可变性实现单线程、按设计 `!Sync`。
+
+[English](README_EN.md) | 中文
 
 ---
 
-## Features
+## 特性
 
-- **Standardized Module Interface** — The `ModuleMeta` + `AutoBuilder` traits define a uniform contract: every module declares its name, dependencies, capability type, and build logic. Consistent initialization everywhere.
-- **Typestate Build Validation** — `Kit<Unbuilt>` registers modules and configs; `kit.build()` validates the dependency graph (cycle detection, missing deps) and returns `Kit<Ready>`. Build errors surface before your app starts.
-- **Type-Safe Capability Retrieval** — Capabilities are stored and retrieved by module type (`kit.require::<LoggerModule>()`), not string keys. No downcasting, no runtime lookups.
-- **Configuration Center** — `kit.set_config(value)` / `kit.config::<C>()` store and retrieve typed configs via a `TypeMap` keyed by `TypeId`. No `ConfigKey` or `ConfigHandle` boilerplate.
-- **Optional confers Integration** — Four-level feature flags integrate [`confers`](https://crates.io/crates/confers) for derive-macro config loading, hot-reload subscriptions, and XChaCha20-Poly1305 encrypted config storage.
-- **Minimal Dependencies** — Only `thiserror` is required. `confers`, `serde`, and `serde_json` are optional, pulled in only when you enable the corresponding feature.
-- **`#![deny(unsafe_code)]`** — No `unsafe` anywhere in the crate.
+- **标准化模块接口** — `ModuleMeta` + `AutoBuilder` trait 定义统一契约：每个模块声明其名称、依赖、能力类型和构建逻辑。到处都是一致的初始化方式。
+- **Typestate 构建校验** — `Kit<Unbuilt>` 注册模块和配置；`kit.build()` 校验依赖图（循环检测、缺失依赖）并返回 `Kit<Ready>`。构建错误在应用启动前暴露。
+- **类型安全的能力检索** — 能力按模块类型存储和检索（`kit.require::<LoggerModule>()`），而非字符串 key。无需向下转型，无需运行时查找。
+- **配置中心** — `kit.set_config(value)` / `kit.config::<C>()` 通过以 `TypeId` 为 key 的 `TypeMap` 存取类型化配置。无需 `ConfigKey` 或 `ConfigHandle` 样板代码。
+- **可选 confers 集成** — 四级 feature flag 集成 [`confers`](https://crates.io/crates/confers)，提供 derive 宏配置加载、热重载订阅和 XChaCha20-Poly1305 加密配置存储。
+- **最小依赖** — 仅需 `thiserror`。`confers`、`serde`、`serde_json` 均为可选，仅在启用对应 feature 时引入。
+- **`#![deny(unsafe_code)]`** — 整个 crate 无任何 `unsafe`。
 
 ---
 
-## Quick Start
+## 快速开始
 
 ### MSRV
 
-Minimum Supported Rust Version: **1.91**
+最低支持的 Rust 版本：**1.91**
 
-### Installation
+### 安装
 
 ```sh
 cargo add trait-kit
 ```
 
-### Minimal Example
+### 最小示例
 
-Define a logger module, register it, build the Kit, and retrieve the capability:
+定义一个 logger 模块，注册它，构建 Kit，然后检索能力：
 
 ```rust
 use std::sync::Arc;
 use trait_kit::prelude::*;
 
-// 1. Define a capability (any Clone type)
+// 1. 定义一个能力（任何 Clone 类型）
 struct StdoutLogger;
 impl StdoutLogger {
     fn info(&self, msg: &str) {
@@ -58,7 +60,7 @@ impl StdoutLogger {
     }
 }
 
-// 2. Define a module (ModuleMeta + AutoBuilder)
+// 2. 定义一个模块（ModuleMeta + AutoBuilder）
 struct LoggerModule;
 impl ModuleMeta for LoggerModule {
     const NAME: &'static str = "logger";
@@ -74,7 +76,7 @@ impl AutoBuilder for LoggerModule {
     }
 }
 
-// 3. Register, build, and use
+// 3. 注册、构建并使用
 fn main() {
     let mut kit = Kit::new();
     kit.register::<LoggerModule>().unwrap();
@@ -88,11 +90,11 @@ fn main() {
 
 ---
 
-## Usage
+## 用法
 
-### Module with Configuration
+### 带配置的模块
 
-Configs are typed values stored in the Kit's `TypeMap`. Modules retrieve them via `kit.config::<C>()` during build:
+配置是存储在 Kit 的 `TypeMap` 中的类型化值。模块在构建期间通过 `kit.config::<C>()` 检索：
 
 ```rust
 use std::sync::Arc;
@@ -138,9 +140,9 @@ fn main() {
 }
 ```
 
-### Module with Dependencies
+### 带依赖的模块
 
-Modules declare dependencies via `ModuleMeta::dependencies()`. The Kit validates the dependency graph at build time and constructs modules in topological order:
+模块通过 `ModuleMeta::dependencies()` 声明依赖。Kit 在构建期校验依赖图并按拓扑序构造模块：
 
 ```rust
 use std::sync::Arc;
@@ -197,53 +199,53 @@ fn main() {
 }
 ```
 
-### Kit API Overview
+### Kit API 概览
 
-| Method                              | Available on    | Description                                            |
+| 方法                                 | 可用状态        | 描述                                                   |
 | ----------------------------------- | --------------- | ------------------------------------------------------ |
-| `Kit::new()`                        | —               | Create an empty `Kit<Unbuilt>`.                        |
-| `kit.register::<M>()`              | `Kit<Unbuilt>`  | Register a module for construction.                    |
-| `kit.set_config::<C>(value)`       | `Kit<Unbuilt>`  | Store a typed config value.                            |
-| `kit.config::<C>()`                | Both            | Retrieve a cloned config value.                        |
-| `kit.build()`                       | `Kit<Unbuilt>`  | Validate graph and build all modules → `Kit<Ready>`.   |
-| `kit.require::<M>()`               | `Kit<Ready>`    | Retrieve a capability (errors if missing).             |
-| `kit.optional::<M>()`              | `Kit<Ready>`    | Retrieve a capability (returns `None` if missing).     |
-| `kit.contains::<M>()`              | `Kit<Ready>`    | Check if a capability was built.                       |
-| `kit.contains_config::<C>()`       | `Kit<Ready>`    | Check if a config value exists.                        |
+| `Kit::new()`                        | —               | 创建一个空的 `Kit<Unbuilt>`。                          |
+| `kit.register::<M>()`              | `Kit<Unbuilt>`  | 注册一个模块以供构造。                                 |
+| `kit.set_config::<C>(value)`       | `Kit<Unbuilt>`  | 存储一个类型化配置值。                                 |
+| `kit.config::<C>()`                | 两者皆可        | 检索一个克隆的配置值。                                 |
+| `kit.build()`                       | `Kit<Unbuilt>`  | 校验依赖图并构建所有模块 → `Kit<Ready>`。              |
+| `kit.require::<M>()`               | `Kit<Ready>`    | 检索一个能力（缺失时返回错误）。                       |
+| `kit.optional::<M>()`              | `Kit<Ready>`    | 检索一个能力（缺失时返回 `None`）。                    |
+| `kit.contains::<M>()`              | `Kit<Ready>`    | 检查某个能力是否已构建。                               |
+| `kit.contains_config::<C>()`       | `Kit<Ready>`    | 检查某个配置值是否存在。                               |
 
 ---
 
-## Configuration: confers Integration
+## 配置：confers 集成
 
-trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.4 via four-level feature flags. Each level inherits from the previous, forming a layered capability system.
+trait-kit 通过四级 feature flag 集成 [`confers`](https://crates.io/crates/confers) 0.4。每一级继承前一级，形成分层能力系统。
 
-### Feature Flags
+### Feature Flag
 
-| Feature               | Enables                                         | Description                                      |
+| Feature               | 启用                                            | 描述                                             |
 | --------------------- | ----------------------------------------------- | ------------------------------------------------ |
 | `confers`             | `dep:confers`, `dep:serde`                      | `Configurable` trait + `Kit::load_config`        |
-| `confers-macros`      | `confers`                                       | `ModuleConfig` trait + `Config` derive re-export |
+| `confers-macros`      | `confers`                                       | `ModuleConfig` trait + `Config` derive 再导出    |
 | `confers-hot-reload`  | `confers-macros`, `confers/watch`               | `subscribe` / `reload_config` API                |
 | `confers-encryption`  | `confers-hot-reload`, `confers/encryption`, `dep:serde_json` | `set_encrypted` / `get_encrypted` API |
 
-Enable the desired level in `Cargo.toml`:
+在 `Cargo.toml` 中启用所需级别：
 
 ```toml
 [dependencies]
 trait-kit = { version = "0.1", features = ["confers-encryption"] }
 ```
 
-### Three-Tier Inheritance System
+### 三层继承系统
 
-1. **Module capability inheritance** (Layer 1): `ModuleConfig` trait declares `PATH` and `default_value()`, binding a config type to its module's configuration path.
+1. **模块能力继承**（Layer 1）：`ModuleConfig` trait 声明 `PATH` 和 `default_value()`，将配置类型绑定到其模块的配置路径。
 
-2. **Cargo feature inheritance** (Layer 2): Each feature level inherits the previous (`confers-encryption` → `confers-hot-reload` → `confers-macros` → `confers`). Enabling a higher level automatically enables all lower levels.
+2. **Cargo feature 继承**（Layer 2）：每一级 feature 继承前一级（`confers-encryption` → `confers-hot-reload` → `confers-macros` → `confers`）。启用高级别会自动启用所有低级别。
 
-3. **Config value inheritance** (Layer 3): The encryption key is derived from `ModuleConfig::PATH` via HKDF, so the same master key produces different field keys for different modules.
+3. **配置值继承**（Layer 3）：加密密钥通过 HKDF 从 `ModuleConfig::PATH` 派生，因此同一主密钥可为不同模块生成不同的字段密钥。
 
-### Level 1: Config Loader Pattern
+### Level 1：配置加载器模式
 
-Define a `Configurable` implementation that bridges to confers' `#[derive(Config)]` macro:
+定义一个 `Configurable` 实现，桥接到 confers 的 `#[derive(Config)]` 宏：
 
 ```rust,ignore
 use trait_kit::prelude::*;
@@ -263,14 +265,14 @@ impl Configurable for AppConfig {
 }
 
 let kit = Kit::new();
-kit.load_config::<AppConfig>()?;  // loads from env/defaults via confers
+kit.load_config::<AppConfig>()?;  // 通过 confers 从环境变量/默认值加载
 let kit = kit.build()?;
 let config: AppConfig = kit.config()?;
 ```
 
-### Level 2: Module Config Metadata
+### Level 2：模块配置元数据
 
-Add `ModuleConfig` to declare the config path and default value:
+添加 `ModuleConfig` 以声明配置路径和默认值：
 
 ```rust,ignore
 use trait_kit::kit::config::ModuleConfig;
@@ -283,9 +285,9 @@ impl ModuleConfig for AppConfig {
 }
 ```
 
-### Level 3: Hot-Reload Subscriptions
+### Level 3：热重载订阅
 
-Subscribe callbacks that fire when a config is reloaded:
+订阅回调在配置重新加载时触发：
 
 ```rust,ignore
 use std::cell::Cell;
@@ -298,80 +300,80 @@ kit.subscribe::<AppConfig>(move || {
     called_clone.set(true);
 });
 
-kit.reload_config::<AppConfig>()?;  // reloads via Configurable::load, notifies subscribers
+kit.reload_config::<AppConfig>()?;  // 通过 Configurable::load 重新加载，通知订阅者
 assert!(called.get());
 ```
 
-### Level 4: Encrypted Config Storage
+### Level 4：加密配置存储
 
-Encrypt configs at rest with XChaCha20-Poly1305. The encryption key is derived from the master key and `ModuleConfig::PATH` via HKDF:
+使用 XChaCha20-Poly1305 加密静态配置。加密密钥通过 HKDF 从主密钥和 `ModuleConfig::PATH` 派生：
 
 ```rust,ignore
 let kit = Kit::new();
 let secret = AppConfig { host: "production-db".to_string() };
-let master_key = [0u8; 32]; // 32-byte master key
+let master_key = [0u8; 32]; // 32 字节主密钥
 
 kit.set_encrypted(&secret, &master_key)?;
 let kit = kit.build()?;
 
-// Only retrievable with the correct master key
+// 仅在主密钥正确时可解密
 let decrypted: AppConfig = kit.get_encrypted(&master_key)?;
 assert_eq!(decrypted, secret);
 ```
 
 ---
 
-## Why trait-kit?
+## 为什么选择 trait-kit？
 
-trait-kit sits between "raw manual wiring" and "full DI framework":
+trait-kit 介于"纯手动接线"和"完整 DI 框架"之间：
 
-| Approach                 | Pros                                      | Cons                                       |
-| ------------------------ | ----------------------------------------- | ------------------------------------------ |
-| **Manual wiring**        | Simple, no deps.                          | Ad-hoc patterns, inconsistent per project. |
-| **trait-kit**            | Standard pattern, type-safe, lightweight. | You still wire dependencies explicitly.    |
-| **Full DI (shaku etc.)** | Auto-resolved, less glue code.            | Heavier deps, magic, harder to debug.      |
+| 方案                     | 优点                                       | 缺点                                           |
+| ------------------------ | ------------------------------------------ | ---------------------------------------------- |
+| **手动接线**             | 简单，无依赖。                             | 模式临时化，每个项目不一致。                   |
+| **trait-kit**            | 标准模式，类型安全，轻量。                 | 仍需显式接线依赖。                             |
+| **完整 DI（shaku 等）**  | 自动解析，胶水代码少。                     | 依赖更重，魔法多，调试困难。                   |
 
-trait-kit gives you the **standardization** of a DI framework with the **explicitness** of manual wiring.
+trait-kit 给你 DI 框架的**标准化** + 手动接线的**显式性**。
 
 ---
 
-## Contributing
+## 贡献
 
-### Build Requirements
+### 构建要求
 
-- Rust **1.91** or later (stable).
-- No external tooling required (no protoc, no openssl, no system libraries).
+- Rust **1.91** 或更高版本（stable）。
+- 无需外部工具（无需 protoc、openssl 或系统库）。
 
-### Development Commands
+### 开发命令
 
 ```sh
-# Run all tests (default features)
+# 运行所有测试（默认 feature）
 cargo test
 
-# Run all tests (all confers features)
+# 运行所有测试（所有 confers feature）
 cargo test --all-features
 
 # Lint
 cargo clippy --all-features -- -D warnings
 
-# Format check
+# 格式检查
 cargo fmt --check
 ```
 
-### Code of Conduct
+### 行为准则
 
-This project follows the [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-conduct). All contributors are expected to uphold it.
+本项目遵循 [Rust 行为准则](https://www.rust-lang.org/policies/code-of-conduct)。所有贡献者都应遵守。
 
-### Pull Request Process
+### Pull Request 流程
 
-1. Ensure all tests pass and Clippy is clean (`cargo clippy --all-features -- -D warnings`).
-2. Add tests for new functionality.
-3. Keep the README in sync with any API changes.
+1. 确保所有测试通过且 Clippy 无告警（`cargo clippy --all-features -- -D warnings`）。
+2. 为新功能添加测试。
+3. 保持 README 与 API 变更同步。
 
 ---
 
-## License
+## 许可证
 
-This project is licensed under the [MIT License](LICENSE).
+本项目基于 [MIT 许可证](LICENSE)授权。
 
 © 2026 Kirky.X
