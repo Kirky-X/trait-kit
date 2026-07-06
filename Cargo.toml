@@ -15,4 +15,5 @@ readme = "README.md"
 thiserror = { version = "2", default-features = false }
 
 [dev-dependencies]
+static_assertions = "1"
 trybuild = "1"
