@@ -1,4 +1,4 @@
-// Copyright © 2026 Kirky.X. All rights reserved.
+// Copyright © 2026 Kirky.X
 
 //! Kit error types.
 

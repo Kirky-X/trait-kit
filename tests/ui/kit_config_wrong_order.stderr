@@ -1,5 +1,0 @@
-error[E0599]: no method named `config` found for struct `KitModuleBuilder<M, B>` in the current scope
-  --> tests/ui/kit_config_wrong_order.rs:50:40
-   |
-50 |     let _ = MyBuilder::new().kit(&kit).config(MyConfig { value: 1 });
-   |                                        ^^^^^^ method not found in `KitModuleBuilder<MyModule, MyBuilder>`

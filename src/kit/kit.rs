@@ -1,119 +1,193 @@
-// Copyright © 2026 Kirky.X. All rights reserved.
+// Copyright © 2026 Kirky.X
 
 //! Kit — the capability and configuration management center.
+//!
+//! Uses typestate pattern: `Kit` (unbuilt) → `Kit<Ready>` (after `build()`).
 
-use std::sync::Arc;
+use std::any::{Any, TypeId};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
-use crate::core::capability::CapabilityKey;
-use crate::core::config::{ConfigHandle, ConfigKey};
+use crate::core::error::KitError;
+use crate::core::meta::{AutoBuilder, BuildFn};
 
-use crate::kit::capability_store::CapabilityStore;
-use crate::kit::config_store::ConfigStore;
-use crate::kit::error::KitError;
+use super::graph::{DependencyGraph, GraphError, ModuleEntry};
+use super::typemap::TypeMap;
 
-/// The inner storage for Kit.
-///
-/// Held behind `Arc<KitInner>` to enable shared ownership.
-struct KitInner {
-    capabilities: CapabilityStore,
-    configs: ConfigStore,
-}
+/// Marker type for the unbuilt state.
+pub struct Unbuilt;
+
+/// Marker type for the ready (built) state.
+pub struct Ready;
 
 /// The capability and configuration management center.
-///
-/// Kit is a shared facade that holds capabilities and configurations.
-/// It uses interior mutability (`&self` methods for write operations).
-///
-/// # Cloning Semantics
-///
-/// `Kit::clone()` shares the same `KitInner`. Changes made on one clone
-/// are immediately visible on all other clones.
-///
-/// # Thread Safety
-///
-/// Kit satisfies `Send + Sync`. Internal storage uses `RwLock`.
-#[derive(Clone)]
-pub struct Kit {
-    inner: Arc<KitInner>,
+pub struct Kit<S = Unbuilt> {
+    builders: RefCell<HashMap<TypeId, BuildFn>>,
+    graph: DependencyGraph,
+    configs: TypeMap,
+    capabilities: TypeMap,
+    _state: std::marker::PhantomData<S>,
 }
 
 impl Kit {
     /// Create a new empty Kit.
     pub fn new() -> Self {
         Kit {
-            inner: Arc::new(KitInner {
-                capabilities: CapabilityStore::new(),
-                configs: ConfigStore::new(),
-            }),
+            builders: RefCell::new(HashMap::new()),
+            graph: DependencyGraph::new(),
+            configs: TypeMap::new(),
+            capabilities: TypeMap::new(),
+            _state: std::marker::PhantomData,
         }
     }
 
-    // === Capability API ===
+    /// Register a module for construction.
+    pub fn register<M: AutoBuilder>(&mut self) -> Result<(), KitError> {
+        let entry = ModuleEntry {
+            type_id: TypeId::of::<M>(),
+            name: M::NAME,
+            dependencies: M::dependencies().iter().map(|(n, id)| (*n, *id)).collect(),
+        };
 
-    /// Register a capability.
-    ///
-    /// Returns `Err(KitError::DuplicateCapability)` if key already exists.
-    pub fn provide<K>(&self, value: Arc<K::Capability>) -> Result<(), KitError>
-    where
-        K: CapabilityKey,
-    {
-        self.inner.capabilities.provide::<K>(value)
+        self.graph
+            .add(entry)
+            .map_err(|name| KitError::AlreadyRegistered { module: name })?;
+
+        let build_fn: BuildFn = Box::new(|kit| {
+            let capability = M::build(kit).map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+                Box::new(e)
+            })?;
+            Ok(Box::new(capability) as Box<dyn Any + Send + Sync>)
+        });
+
+        self.builders.borrow_mut().insert(TypeId::of::<M>(), build_fn);
+        Ok(())
     }
-
-    /// Register or replace a capability.
-    ///
-    /// If key exists, replaces the value. If not, inserts.
-    pub fn replace<K>(&self, value: Arc<K::Capability>)
-    where
-        K: CapabilityKey,
-    {
-        self.inner.capabilities.replace::<K>(value)
-    }
-
-    /// Retrieve a capability.
-    ///
-    /// Returns `Err(KitError::MissingCapability)` if key not found.
-    pub fn require<K>(&self) -> Result<Arc<K::Capability>, KitError>
-    where
-        K: CapabilityKey,
-    {
-        self.inner.capabilities.require::<K>()
-    }
-
-    /// Check if a capability exists.
-    pub fn contains<K>(&self) -> bool
-    where
-        K: CapabilityKey,
-    {
-        self.inner.capabilities.contains::<K>()
-    }
-
-    // === Config API ===
 
     /// Set a configuration value.
-    pub fn set_config<K>(&self, config: K::Config)
-    where
-        K: ConfigKey,
-    {
-        self.inner.configs.set_config::<K>(config)
+    pub fn set_config<C: Send + Sync + Clone + 'static>(&self, config: C) {
+        self.configs.insert(config);
     }
 
-    /// Get a configuration handle.
+    /// Retrieve a capability. During build phase, returns already-built capabilities.
+    pub fn require<M: AutoBuilder>(&self) -> Result<M::Capability, KitError> {
+        self.require_capability::<M>()
+    }
+
+    /// Get a configuration value.
+    pub fn config<C: Send + Sync + Clone + 'static>(&self) -> Result<C, KitError> {
+        self.get_config::<C>()
+    }
+
+    /// Validate the dependency graph and build all modules in topological order.
     ///
-    /// Returns `Err(KitError::MissingConfig)` if key not found.
-    pub fn config<K>(&self) -> Result<ConfigHandle<K::Config>, KitError>
-    where
-        K: ConfigKey,
-    {
-        self.inner.configs.config::<K>()
+    /// After this call, all capabilities are available via `require()`.
+    pub fn build(self) -> Result<Kit<Ready>, KitError> {
+        // Validate the graph
+        let sorted = match self.graph.validate() {
+            Ok(sorted) => sorted,
+            Err(GraphError::DependencyMissing { module, missing }) => {
+                return Err(KitError::DependencyMissing { module, missing });
+            }
+            Err(GraphError::CycleDetected { cycle }) => {
+                return Err(KitError::CycleDetected { cycle });
+            }
+        };
+
+        // Build all modules in topological order.
+        // We borrow self immutably to pass &Kit to build functions,
+        // and use RefCell to mutably access builders.
+        {
+            let kit_ref: &Self = &self;
+
+            for type_id in &sorted {
+                let build_fn = kit_ref.builders.borrow_mut().remove(type_id).ok_or(
+                    KitError::MissingCapability {
+                        key: kit_ref.module_name(*type_id),
+                    },
+                )?;
+
+                let module_name = kit_ref.module_name(*type_id);
+
+                let result = (build_fn)(kit_ref);
+                match result {
+                    Ok(boxed) => {
+                        kit_ref.capabilities.insert_boxed(*type_id, boxed);
+                    }
+                    Err(e) => {
+                        return Err(KitError::BuildFailed {
+                            module: module_name,
+                            source: e,
+                        });
+                    }
+                }
+            }
+        }
+        // All borrows dropped here. Now we can move fields out of self.
+
+        Ok(Kit {
+            builders: self.builders,
+            graph: self.graph,
+            configs: self.configs,
+            capabilities: self.capabilities,
+            _state: std::marker::PhantomData,
+        })
     }
 
-    /// Check if a configuration exists.
-    pub fn contains_config<K>(&self) -> bool
-    where
-        K: ConfigKey,
-    {
-        self.inner.configs.contains_config::<K>()
+    fn module_name(&self, type_id: TypeId) -> &'static str {
+        self.graph
+            .entries()
+            .iter()
+            .find(|e| e.type_id == type_id)
+            .map(|e| e.name)
+            .unwrap_or("<unknown>")
+    }
+}
+
+impl<S> Kit<S> {
+    /// Retrieve a capability by its module type.
+    fn require_capability<M: AutoBuilder>(&self) -> Result<M::Capability, KitError> {
+        let type_id = TypeId::of::<M>();
+        self.capabilities
+            .get_cloned_by_type_id::<M::Capability>(type_id)
+            .ok_or(KitError::MissingCapability { key: M::NAME })
+    }
+
+    /// Get a configuration value.
+    fn get_config<C: Send + Sync + Clone + 'static>(&self) -> Result<C, KitError> {
+        self.configs
+            .get_cloned::<C>()
+            .ok_or(KitError::MissingConfig {
+                key: std::any::type_name::<C>(),
+            })
+    }
+}
+
+impl Kit<Ready> {
+    /// Retrieve a capability by its module type.
+    pub fn require<M: AutoBuilder>(&self) -> Result<M::Capability, KitError> {
+        self.require_capability::<M>()
+    }
+
+    /// Retrieve an optional capability. Returns `None` if not built.
+    pub fn optional<M: AutoBuilder>(&self) -> Option<M::Capability> {
+        let type_id = TypeId::of::<M>();
+        self.capabilities.get_cloned_by_type_id::<M::Capability>(type_id)
+    }
+
+    /// Get a configuration value.
+    pub fn config<C: Send + Sync + Clone + 'static>(&self) -> Result<C, KitError> {
+        self.get_config::<C>()
+    }
+
+    /// Check if a capability has been built.
+    pub fn contains<M: AutoBuilder>(&self) -> bool {
+        self.capabilities.contains_by_type_id(TypeId::of::<M>())
+    }
+
+    /// Check if a config is registered.
+    pub fn contains_config<C: Send + Sync + Clone + 'static>(&self) -> bool {
+        self.configs.get_cloned::<C>().is_some()
     }
 }
 
@@ -129,106 +203,8 @@ impl std::fmt::Debug for Kit {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::core::capability::CapabilityKey;
-    use crate::core::config::ConfigKey;
-
-    struct TestKey;
-    impl CapabilityKey for TestKey {
-        type Capability = dyn Send + Sync;
-        const NAME: &'static str = "test_key";
-    }
-
-    struct TestCfg;
-    impl ConfigKey for TestCfg {
-        type Config = i32;
-        const NAME: &'static str = "test_cfg";
-    }
-
-    #[test]
-    fn default_creates_empty_kit() {
-        let kit = Kit::default();
-        assert!(!kit.contains::<TestKey>());
-        assert!(kit.require::<TestKey>().is_err());
-        assert!(!kit.contains_config::<TestCfg>());
-        assert!(kit.config::<TestCfg>().is_err());
-    }
-
-    #[test]
-    fn provide_and_require_capability() {
-        let kit = Kit::new();
-        kit.provide::<TestKey>(Arc::new(1i32) as Arc<dyn Send + Sync>)
-            .unwrap();
-        assert!(kit.contains::<TestKey>());
-        assert!(kit.require::<TestKey>().is_ok());
-    }
-
-    #[test]
-    fn replace_capability() {
-        let kit = Kit::new();
-        assert!(!kit.contains::<TestKey>());
-        kit.replace::<TestKey>(Arc::new(1i32) as Arc<dyn Send + Sync>);
-        assert!(kit.contains::<TestKey>());
-    }
-
-    #[test]
-    fn provide_duplicate_returns_error() {
-        let kit = Kit::new();
-        kit.provide::<TestKey>(Arc::new(1i32) as Arc<dyn Send + Sync>)
-            .unwrap();
-        let err = kit
-            .provide::<TestKey>(Arc::new(2i32) as Arc<dyn Send + Sync>)
-            .unwrap_err();
-        assert_eq!(err.to_string(), "capability `test_key` already exists");
-    }
-
-    #[test]
-    fn config_missing_returns_error() {
-        let kit = Kit::new();
-        let result = kit.config::<TestCfg>();
-        assert!(result.is_err());
-        assert!(matches!(
-            result,
-            Err(KitError::MissingConfig { key: "test_cfg" })
-        ));
-    }
-
-    #[test]
-    fn set_config_and_retrieve() {
-        let kit = Kit::new();
-        assert!(!kit.contains_config::<TestCfg>());
-        kit.set_config::<TestCfg>(42);
-        assert!(kit.contains_config::<TestCfg>());
-        let handle = kit.config::<TestCfg>().unwrap();
-        assert_eq!(*handle.load(), 42);
-    }
-
-    #[test]
-    fn require_missing_returns_error() {
-        let kit = Kit::new();
-        let result = kit.require::<TestKey>();
-        assert!(result.is_err());
-        assert!(matches!(
-            result,
-            Err(KitError::MissingCapability { key: "test_key" })
-        ));
-    }
-
-    #[test]
-    fn debug_format_outputs_kit() {
-        let kit = Kit::new();
-        assert_eq!(format!("{:?}", kit), "Kit");
-    }
-
-    #[test]
-    fn clone_shares_inner_state() {
-        let kit = Kit::new();
-        kit.set_config::<TestCfg>(10);
-        let cloned = kit.clone();
-        kit.set_config::<TestCfg>(20);
-        let handle = cloned.config::<TestCfg>().unwrap();
-        assert_eq!(*handle.load(), 20);
+impl std::fmt::Debug for Kit<Ready> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Kit<Ready>").finish()
     }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright © 2026 Kirky.X. All rights reserved.
+# Copyright © 2026 Kirky.X
 # 安装/卸载 Git Hooks（symlink 方式，Windows 兼容）
 # 运行：bash scripts/hooks/setup-hooks.sh
 # 卸载：bash scripts/hooks/setup-hooks.sh --uninstall

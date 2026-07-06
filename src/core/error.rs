@@ -1,113 +1,90 @@
-// Copyright © 2026 Kirky.X. All rights reserved.
+// Copyright © 2026 Kirky.X
 
-//! Build error types for module initialization.
+//! Error types for Kit operations.
 
-use std::error::Error;
 use std::fmt;
 
-/// Default build error type for modules.
-///
-/// Modules can use this enum or define their own error type that satisfies
-/// `std::error::Error + Send + Sync + 'static`.
+/// The error type for Kit operations.
 #[derive(Debug)]
-pub enum BuildError {
-    /// Configuration was not provided to the builder.
-    MissingConfig { module: &'static str },
-
-    /// Requirements (dependencies) were not provided to the builder.
-    MissingRequirements { module: &'static str },
-
-    /// Configuration content is invalid.
-    InvalidConfig {
-        module: &'static str,
-        reason: &'static str,
+pub enum KitError {
+    /// A dependency cycle was detected during build validation.
+    CycleDetected {
+        /// The cycle path, e.g. ["A", "B", "C", "A"].
+        cycle: Vec<&'static str>,
     },
 
-    /// Module-specific failure with source error.
-    ModuleFailed {
+    /// A module depends on another module that was not registered.
+    DependencyMissing {
+        /// The module that has the missing dependency.
         module: &'static str,
-        source: Box<dyn Error + Send + Sync>,
+        /// The missing dependency.
+        missing: &'static str,
+    },
+
+    /// `build()` was not called before `require()`.
+    NotReady,
+
+    /// A module with the same name was already registered.
+    AlreadyRegistered {
+        /// The duplicate module name.
+        module: &'static str,
+    },
+
+    /// Module build failed.
+    BuildFailed {
+        /// The module name.
+        module: &'static str,
+        /// The original build error.
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    /// Required capability not found after build.
+    MissingCapability {
+        /// The capability key name.
+        key: &'static str,
+    },
+
+    /// Required configuration not found.
+    MissingConfig {
+        /// The config key name.
+        key: &'static str,
     },
 }
 
-impl fmt::Display for BuildError {
+impl fmt::Display for KitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BuildError::MissingConfig { module } => {
-                write!(f, "missing config for module `{module}`")
+            KitError::CycleDetected { cycle } => {
+                write!(f, "dependency cycle detected: {}", cycle.join(" → "))
             }
-            BuildError::MissingRequirements { module } => {
-                write!(f, "missing requirements for module `{module}`")
+            KitError::DependencyMissing { module, missing } => {
+                write!(
+                    f,
+                    "module `{module}` depends on `{missing}` which is not registered"
+                )
             }
-            BuildError::InvalidConfig { module, reason } => {
-                write!(f, "invalid config for module `{module}`: {reason}")
+            KitError::NotReady => write!(f, "kit is not ready; call build() first"),
+            KitError::AlreadyRegistered { module } => {
+                write!(f, "module `{module}` is already registered")
             }
-            BuildError::ModuleFailed { module, source } => {
-                write!(f, "module `{module}` failed: {source}")
+            KitError::BuildFailed { module, source } => {
+                write!(f, "failed to build module `{module}`: {source}")
+            }
+            KitError::MissingCapability { key } => {
+                write!(f, "missing capability `{key}`")
+            }
+            KitError::MissingConfig { key } => {
+                write!(f, "missing config `{key}`")
             }
         }
     }
 }
 
-impl Error for BuildError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
+impl std::error::Error for KitError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            BuildError::ModuleFailed { source, .. } => Some(source.as_ref()),
+            KitError::BuildFailed { source, .. } => Some(source.as_ref()),
             _ => None,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn missing_config_display() {
-        let error = BuildError::MissingConfig {
-            module: "my_module",
-        };
-        let msg = error.to_string();
-        assert!(msg.contains("my_module"));
-        assert!(msg.contains("missing config"));
-        assert!(error.source().is_none());
-    }
-
-    #[test]
-    fn missing_requirements_display() {
-        let error = BuildError::MissingRequirements {
-            module: "test_module",
-        };
-        let msg = error.to_string();
-        assert!(msg.contains("test_module"));
-        assert!(msg.contains("missing requirements"));
-        assert!(error.source().is_none());
-    }
-
-    #[test]
-    fn invalid_config_display() {
-        let error = BuildError::InvalidConfig {
-            module: "cfg_module",
-            reason: "bad value",
-        };
-        let msg = error.to_string();
-        assert!(msg.contains("cfg_module"));
-        assert!(msg.contains("invalid config"));
-        assert!(msg.contains("bad value"));
-        assert!(error.source().is_none());
-    }
-
-    #[test]
-    fn module_failed_display_and_source() {
-        let inner = std::io::Error::other("inner error");
-        let error = BuildError::ModuleFailed {
-            module: "fail_mod",
-            source: Box::new(inner),
-        };
-        let msg = error.to_string();
-        assert!(msg.contains("fail_mod"));
-        assert!(msg.contains("failed"));
-        assert!(msg.contains("inner error"));
-        assert!(error.source().is_some());
     }
 }
