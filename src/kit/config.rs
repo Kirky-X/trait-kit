@@ -56,3 +56,32 @@ pub trait ModuleConfig: Clone + 'static {
     /// or no source is configured).
     fn default_value() -> Self;
 }
+
+// === Level 4: encrypted config storage ===
+
+/// Re-export of confers' XChaCha20-Poly1305 cipher (synchronous API).
+#[cfg(feature = "confers-encryption")]
+pub use confers::XChaCha20Crypto;
+
+/// Re-export of confers' HKDF-based per-field key derivation.
+#[cfg(feature = "confers-encryption")]
+pub use confers::derive_field_key;
+
+/// Encrypted configuration blob: nonce + ciphertext.
+///
+/// Stored in `Kit`'s `encrypted_configs` map keyed by `TypeId`. Use
+/// [`Kit::set_encrypted`](super::kit::Kit::set_encrypted) /
+/// [`Kit::get_encrypted`](super::kit::Kit::get_encrypted) to populate
+/// and read values.
+///
+/// Layer 3 of the inheritance system: the encryption key is derived from
+/// `ModuleConfig::PATH`, so the encrypted blob is bound to the module's
+/// declared configuration path.
+#[cfg(feature = "confers-encryption")]
+#[derive(Debug, Clone)]
+pub struct EncryptedBlob {
+    /// XChaCha20-Poly1305 nonce (24 bytes).
+    pub nonce: Vec<u8>,
+    /// Ciphertext + Poly1305 authentication tag.
+    pub ciphertext: Vec<u8>,
+}

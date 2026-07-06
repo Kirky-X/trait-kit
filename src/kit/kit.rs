@@ -13,6 +13,8 @@ use std::rc::Rc;
 use crate::core::error::KitError;
 use crate::core::meta::{AutoBuilder, BuildFn};
 
+#[cfg(feature = "confers-encryption")]
+use super::config::EncryptedBlob;
 use super::graph::{DependencyGraph, GraphError, ModuleEntry};
 use super::typemap::TypeMap;
 
@@ -26,6 +28,10 @@ pub struct Ready;
 #[cfg(feature = "confers-hot-reload")]
 type SubscriberMap = RefCell<HashMap<TypeId, Vec<Rc<dyn Fn()>>>>;
 
+/// Type alias for the encrypted config store (single-threaded, `!Sync`).
+#[cfg(feature = "confers-encryption")]
+type EncryptedConfigMap = RefCell<HashMap<TypeId, EncryptedBlob>>;
+
 /// The capability and configuration management center.
 pub struct Kit<S = Unbuilt> {
     builders: RefCell<HashMap<TypeId, BuildFn>>,
@@ -34,6 +40,8 @@ pub struct Kit<S = Unbuilt> {
     capabilities: TypeMap,
     #[cfg(feature = "confers-hot-reload")]
     subscribers: SubscriberMap,
+    #[cfg(feature = "confers-encryption")]
+    encrypted_configs: EncryptedConfigMap,
     _state: std::marker::PhantomData<S>,
 }
 
@@ -48,6 +56,8 @@ impl Kit {
             capabilities: TypeMap::new(),
             #[cfg(feature = "confers-hot-reload")]
             subscribers: RefCell::new(HashMap::new()),
+            #[cfg(feature = "confers-encryption")]
+            encrypted_configs: RefCell::new(HashMap::new()),
             _state: std::marker::PhantomData,
         }
     }
@@ -182,6 +192,8 @@ impl Kit {
             capabilities: self.capabilities,
             #[cfg(feature = "confers-hot-reload")]
             subscribers: self.subscribers,
+            #[cfg(feature = "confers-encryption")]
+            encrypted_configs: self.encrypted_configs,
             _state: std::marker::PhantomData,
         })
     }
@@ -260,6 +272,109 @@ impl<S> Kit<S> {
             cb();
         }
         Ok(())
+    }
+
+    // === Level 4: encrypted config storage ===
+
+    /// Encrypt and store a configuration value.
+    ///
+    /// Requires the `confers-encryption` feature. Serializes `value` to JSON,
+    /// derives a per-field key from `master_key` and `C::PATH` via HKDF, then
+    /// encrypts with XChaCha20-Poly1305. The resulting nonce + ciphertext is
+    /// stored in `encrypted_configs`, separate from the plaintext `TypeMap`.
+    ///
+    /// Layer 3 of the inheritance system: the encryption key is bound to
+    /// `ModuleConfig::PATH`, so the same master key produces different field
+    /// keys for different modules.
+    ///
+    /// # Errors
+    ///
+    /// Returns `KitError::BuildFailed` if serialization, key derivation, or
+    /// encryption fails.
+    #[cfg(feature = "confers-encryption")]
+    pub fn set_encrypted<C>(&self, value: &C, master_key: &[u8]) -> Result<(), KitError>
+    where
+        C: super::config::ModuleConfig + serde::Serialize,
+    {
+        use super::config::{derive_field_key, XChaCha20Crypto};
+
+        let plaintext = serde_json::to_vec(value).map_err(|e| KitError::BuildFailed {
+            module: "set_encrypted",
+            source: Box::new(e),
+        })?;
+
+        let field_key =
+            derive_field_key(master_key, C::PATH, "v1").map_err(|e| KitError::BuildFailed {
+                module: "set_encrypted",
+                source: Box::new(e),
+            })?;
+
+        let (nonce, ciphertext) = XChaCha20Crypto::new()
+            .encrypt(&plaintext, &field_key)
+            .map_err(|e| KitError::BuildFailed {
+                module: "set_encrypted",
+                source: Box::new(e),
+            })?;
+
+        self.encrypted_configs
+            .borrow_mut()
+            .insert(TypeId::of::<C>(), EncryptedBlob { nonce, ciphertext });
+        Ok(())
+    }
+
+    /// Retrieve and decrypt a configuration value.
+    ///
+    /// Requires the `confers-encryption` feature. Looks up the encrypted
+    /// blob for type `C`, derives the per-field key from `master_key` and
+    /// `C::PATH`, decrypts with XChaCha20-Poly1305, then deserializes from
+    /// JSON. The `master_key` must match the one passed to `set_encrypted`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `KitError::MissingConfig` if no encrypted blob for `C` exists.
+    /// Returns `KitError::BuildFailed` if key derivation, decryption, or
+    /// deserialization fails (e.g. wrong master key, tampered ciphertext).
+    #[cfg(feature = "confers-encryption")]
+    pub fn get_encrypted<C>(&self, master_key: &[u8]) -> Result<C, KitError>
+    where
+        C: super::config::ModuleConfig + serde::de::DeserializeOwned,
+    {
+        use super::config::{derive_field_key, XChaCha20Crypto};
+
+        let blob = self
+            .encrypted_configs
+            .borrow()
+            .get(&TypeId::of::<C>())
+            .cloned()
+            .ok_or(KitError::MissingConfig {
+                key: std::any::type_name::<C>(),
+            })?;
+
+        let field_key =
+            derive_field_key(master_key, C::PATH, "v1").map_err(|e| KitError::BuildFailed {
+                module: "get_encrypted",
+                source: Box::new(e),
+            })?;
+
+        let plaintext = XChaCha20Crypto::new()
+            .decrypt(&blob.nonce, &blob.ciphertext, &field_key)
+            .map_err(|e| KitError::BuildFailed {
+                module: "get_encrypted",
+                source: Box::new(e),
+            })?;
+
+        serde_json::from_slice(&plaintext).map_err(|e| KitError::BuildFailed {
+            module: "get_encrypted",
+            source: Box::new(e),
+        })
+    }
+
+    /// Check if an encrypted config of type `C` is registered.
+    #[cfg(feature = "confers-encryption")]
+    pub fn contains_encrypted<C: super::config::ModuleConfig>(&self) -> bool {
+        self.encrypted_configs
+            .borrow()
+            .contains_key(&TypeId::of::<C>())
     }
 }
 
