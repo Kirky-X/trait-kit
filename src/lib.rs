@@ -1,4 +1,4 @@
-// Copyright © 2026 Kirky.X. All rights reserved.
+// Copyright © 2026 Kirky.X
 
 //! trait-kit — 模块标准接口与能力管理中心
 //!

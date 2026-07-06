@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright © 2026 Kirky.X. All rights reserved.
+# Copyright © 2026 Kirky.X
 # Pre-commit hook: 终极 7 阶段检查（Pre-flight → Format → Static Analysis → Dependency → Doc → Spell → Test）
 # 触发：git commit
 # 标准：零错误、零告警、全检查、自动修复

@@ -1,5 +1,0 @@
-error[E0599]: no method named `requirements` found for struct `KitModuleBuilder<M, B>` in the current scope
-  --> tests/ui/kit_requirements_wrong_order.rs:49:40
-   |
-49 |     let _ = MyBuilder::new().kit(&kit).requirements(MyRequirements {
-   |             ---------------------------^^^^^^^^^^^^ method not found in `KitModuleBuilder<MyModule, MyBuilder>`
