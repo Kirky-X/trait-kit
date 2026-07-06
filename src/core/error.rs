@@ -41,7 +41,7 @@ pub enum KitError {
         module: &'static str,
         /// The original build error.
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: Box<dyn std::error::Error>,
     },
 
     /// Required capability not found after build.
