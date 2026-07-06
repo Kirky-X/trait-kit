@@ -1,6 +1,12 @@
 use std::sync::Arc;
 
+use static_assertions::assert_not_impl_any;
 use trait_kit::prelude::*;
+
+// Compile-time guarantee: Kit is !Sync by design (uses RefCell for interior
+// mutability on single-threaded typestate builds).
+assert_not_impl_any!(Kit<Unbuilt>: Sync);
+assert_not_impl_any!(Kit<Ready>: Sync);
 
 // === Logger module (no dependencies) ===
 
