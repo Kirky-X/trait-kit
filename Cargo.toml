@@ -12,8 +12,22 @@ categories = ["rust-patterns", "development-tools"]
 readme = "README.md"
 
 [dependencies]
+confers = { version = "0.4.0", default-features = false, optional = true }
 thiserror = { version = "2", default-features = false }
 
 [dev-dependencies]
 static_assertions = "1"
 trybuild = "1"
+
+[features]
+default = []
+# Level 1: basic confers integration (Store + Config trait).
+confers = ["dep:confers"]
+# Level 2: module-level config inheritance (ModuleConfig trait + Config re-export).
+# confers 0.4 ships macros as a non-optional workspace member, so this level
+# is a semantic marker for trait-kit's ModuleConfig surface.
+confers-macros = ["confers"]
+# Level 3: hot-reload subscription (maps to confers `watch` feature).
+confers-hot-reload = ["confers-macros", "confers/watch"]
+# Level 4: encrypted config storage (maps to confers `encryption` feature).
+confers-encryption = ["confers-hot-reload", "confers/encryption"]
