@@ -384,3 +384,38 @@ mod confers_derive_bridge {
         assert_eq!(config.field, "from_env");
     }
 }
+
+#[cfg(feature = "confers-macros")]
+mod module_config_trait {
+    use trait_kit::kit::config::ModuleConfig;
+    use trait_kit::kit::Config;
+
+    #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, Config)]
+    struct ModuleStub {
+        #[config(default = "stub".to_string())]
+        name: String,
+    }
+
+    impl ModuleConfig for ModuleStub {
+        const PATH: &'static str = "config/module_stub.toml";
+
+        fn default_value() -> Self {
+            Self {
+                name: "default".to_string(),
+            }
+        }
+    }
+
+    #[test]
+    fn module_config_trait_requires_path_and_default() {
+        assert_eq!(ModuleStub::PATH, "config/module_stub.toml");
+        let default = ModuleStub::default_value();
+        assert_eq!(default.name, "default");
+    }
+
+    #[test]
+    fn derive_config_macro_re_exported() {
+        // If this compiles, `use trait_kit::kit::Config;` succeeded.
+        let _ = std::marker::PhantomData::<ModuleStub>;
+    }
+}
