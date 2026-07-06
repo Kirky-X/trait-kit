@@ -7,6 +7,8 @@
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::HashMap;
+#[cfg(feature = "confers-hot-reload")]
+use std::rc::Rc;
 
 use crate::core::error::KitError;
 use crate::core::meta::{AutoBuilder, BuildFn};
@@ -20,12 +22,18 @@ pub struct Unbuilt;
 /// Marker type for the ready (built) state.
 pub struct Ready;
 
+/// Type alias for hot-reload subscriber callbacks (single-threaded, `!Sync`).
+#[cfg(feature = "confers-hot-reload")]
+type SubscriberMap = RefCell<HashMap<TypeId, Vec<Rc<dyn Fn()>>>>;
+
 /// The capability and configuration management center.
 pub struct Kit<S = Unbuilt> {
     builders: RefCell<HashMap<TypeId, BuildFn>>,
     graph: DependencyGraph,
     configs: TypeMap,
     capabilities: TypeMap,
+    #[cfg(feature = "confers-hot-reload")]
+    subscribers: SubscriberMap,
     _state: std::marker::PhantomData<S>,
 }
 
@@ -38,6 +46,8 @@ impl Kit {
             graph: DependencyGraph::new(),
             configs: TypeMap::new(),
             capabilities: TypeMap::new(),
+            #[cfg(feature = "confers-hot-reload")]
+            subscribers: RefCell::new(HashMap::new()),
             _state: std::marker::PhantomData,
         }
     }
@@ -170,6 +180,8 @@ impl Kit {
             graph: self.graph,
             configs: self.configs,
             capabilities: self.capabilities,
+            #[cfg(feature = "confers-hot-reload")]
+            subscribers: self.subscribers,
             _state: std::marker::PhantomData,
         })
     }
@@ -199,6 +211,55 @@ impl<S> Kit<S> {
             .ok_or(KitError::MissingConfig {
                 key: std::any::type_name::<C>(),
             })
+    }
+
+    /// Subscribe a callback to be invoked when config of type `C` is reloaded.
+    ///
+    /// Requires the `confers-hot-reload` feature. The callback receives no
+    /// arguments; use `Kit::config::<C>()` inside it to read the new value.
+    /// Callbacks are stored in a `RefCell` (single-threaded, `!Sync`).
+    ///
+    /// Layer 2 of the inheritance system: cargo feature chain
+    /// `confers-hot-reload` → `confers-macros` → `confers`.
+    #[cfg(feature = "confers-hot-reload")]
+    pub fn subscribe<C: 'static>(&self, callback: impl Fn() + 'static) {
+        let callback: Rc<dyn Fn()> = Rc::new(callback);
+        self.subscribers
+            .borrow_mut()
+            .entry(TypeId::of::<C>())
+            .or_default()
+            .push(callback);
+    }
+
+    /// Reload a configuration via its [`Configurable`] implementation and
+    /// notify all subscribers of type `C`.
+    ///
+    /// Requires the `confers-hot-reload` feature. Calls `C::load()`, stores
+    /// the result via `set_config`, then invokes every `subscribe::<C>`
+    /// callback. Errors from `load()` are mapped to `KitError::BuildFailed`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `KitError::BuildFailed` if `Configurable::load` fails.
+    #[cfg(feature = "confers-hot-reload")]
+    pub fn reload_config<C: super::config::Configurable>(&self) -> Result<(), KitError> {
+        let config = C::load().map_err(|e| KitError::BuildFailed {
+            module: "reload_config",
+            source: e,
+        })?;
+        self.configs.insert(config);
+        // Notify subscribers: clone the Rc list out to avoid holding the
+        // RefCell borrow across user callbacks (which may re-enter subscribe).
+        let callbacks: Vec<Rc<dyn Fn()>> = self
+            .subscribers
+            .borrow()
+            .get(&TypeId::of::<C>())
+            .cloned()
+            .unwrap_or_default();
+        for cb in &callbacks {
+            cb();
+        }
+        Ok(())
     }
 }
 

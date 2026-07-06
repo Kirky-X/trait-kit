@@ -419,3 +419,52 @@ mod module_config_trait {
         let _ = std::marker::PhantomData::<ModuleStub>;
     }
 }
+
+#[cfg(feature = "confers-hot-reload")]
+mod hot_reload {
+    use std::cell::Cell;
+    use std::error::Error;
+    use std::rc::Rc;
+    use trait_kit::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct ReloadableConfig {
+        value: u32,
+    }
+
+    impl Configurable for ReloadableConfig {
+        fn load() -> Result<Self, Box<dyn Error>> {
+            Ok(Self { value: 99 })
+        }
+    }
+
+    #[test]
+    fn subscribe_callback_invoked_on_reload() {
+        let kit = Kit::new();
+        let called = Rc::new(Cell::new(false));
+        let called_clone = Rc::clone(&called);
+        kit.subscribe::<ReloadableConfig>(move || {
+            called_clone.set(true);
+        });
+
+        kit.reload_config::<ReloadableConfig>()
+            .expect("reload should succeed");
+        let kit = kit.build().expect("build should succeed");
+
+        assert!(called.get(), "callback should have been invoked");
+        let config: ReloadableConfig = kit.config().expect("config should be retrievable");
+        assert_eq!(config.value, 99);
+    }
+
+    #[test]
+    fn reload_config_updates_stored_value() {
+        let kit = Kit::new();
+        kit.set_config(ReloadableConfig { value: 1 });
+        kit.reload_config::<ReloadableConfig>()
+            .expect("reload should override prior value");
+        let kit = kit.build().expect("build should succeed");
+
+        let config: ReloadableConfig = kit.config().expect("config should be retrievable");
+        assert_eq!(config.value, 99);
+    }
+}
