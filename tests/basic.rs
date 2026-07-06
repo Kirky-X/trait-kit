@@ -278,7 +278,7 @@ mod confers_loader {
 
     #[test]
     fn load_config_stores_value_when_load_succeeds() {
-        let mut kit = Kit::new();
+        let kit = Kit::new();
         kit.load_config::<StubConfig>()
             .expect("load should succeed");
         let kit = kit.build().expect("build should succeed");
@@ -299,7 +299,7 @@ mod confers_loader {
 
     #[test]
     fn load_config_propagates_error_when_load_fails() {
-        let mut kit = Kit::new();
+        let kit = Kit::new();
         let result = kit.load_config::<FailingConfig>();
 
         match result {
@@ -324,7 +324,7 @@ mod confers_loader {
 
     #[test]
     fn load_config_overrides_prior_set_config() {
-        let mut kit = Kit::new();
+        let kit = Kit::new();
         kit.set_config(OverridableConfig { value: "initial" });
         kit.load_config::<OverridableConfig>()
             .expect("load should override prior value");
@@ -332,5 +332,55 @@ mod confers_loader {
 
         let stored: OverridableConfig = kit.config().expect("config should be retrievable");
         assert_eq!(stored.value, "loaded");
+    }
+}
+
+#[cfg(feature = "confers")]
+mod confers_derive_bridge {
+    use std::error::Error;
+    use trait_kit::prelude::*;
+
+    // Verify Configurable bridges to confers::Config derive macro's load_sync().
+    // Uses a unique env_prefix to avoid collisions with the host environment.
+    #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, confers::Config)]
+    #[config(env_prefix = "TRAIT_KIT_T026_")]
+    struct DerivedConfig {
+        #[config(default = "fallback_value".to_string())]
+        field: String,
+    }
+
+    impl Configurable for DerivedConfig {
+        fn load() -> Result<Self, Box<dyn Error>> {
+            Ok(DerivedConfig::load_sync()?)
+        }
+    }
+
+    #[test]
+    fn load_config_bridges_to_confers_derive_load_sync() {
+        // Path 1: default value applies when env var is absent.
+        // Combined into a single test to avoid env-var races between parallel tests.
+        std::env::remove_var("TRAIT_KIT_T026_FIELD");
+
+        let kit = Kit::new();
+        kit.load_config::<DerivedConfig>()
+            .expect("load should succeed via confers derive load_sync()");
+        let kit = kit.build().expect("build should succeed");
+
+        let config: DerivedConfig = kit.config().expect("config should be retrievable");
+        assert_eq!(config.field, "fallback_value");
+        drop(kit);
+
+        // Path 2: env var overrides default.
+        std::env::set_var("TRAIT_KIT_T026_FIELD", "from_env");
+        let kit = Kit::new();
+        let result = kit.load_config::<DerivedConfig>();
+        std::env::remove_var("TRAIT_KIT_T026_FIELD");
+
+        let kit = match result {
+            Ok(()) => kit.build().expect("build should succeed"),
+            Err(e) => panic!("load_config failed: {e:?}"),
+        };
+        let config: DerivedConfig = kit.config().expect("config should be retrievable");
+        assert_eq!(config.field, "from_env");
     }
 }
