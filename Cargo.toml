@@ -13,17 +13,18 @@ readme = "README.md"
 
 [dependencies]
 confers = { version = "0.4.0", default-features = false, optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
 thiserror = { version = "2", default-features = false }
 
 [dev-dependencies]
-serde = { version = "1", features = ["derive"] }
 static_assertions = "1"
 trybuild = "1"
 
 [features]
 default = []
 # Level 1: basic confers integration (Store + Config trait).
-confers = ["dep:confers"]
+confers = ["dep:confers", "dep:serde"]
 # Level 2: module-level config inheritance (ModuleConfig trait + Config re-export).
 # confers 0.4 ships macros as a non-optional workspace member, so this level
 # is a semantic marker for trait-kit's ModuleConfig surface.
@@ -31,4 +32,4 @@ confers-macros = ["confers"]
 # Level 3: hot-reload subscription (maps to confers `watch` feature).
 confers-hot-reload = ["confers-macros", "confers/watch"]
 # Level 4: encrypted config storage (maps to confers `encryption` feature).
-confers-encryption = ["confers-hot-reload", "confers/encryption"]
+confers-encryption = ["confers-hot-reload", "confers/encryption", "dep:serde", "dep:serde_json"]

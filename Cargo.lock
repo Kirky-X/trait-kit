@@ -1225,6 +1225,8 @@ name = "trait-kit"
 version = "0.1.0"
 dependencies = [
  "confers",
+ "serde",
+ "serde_json",
  "static_assertions",
  "thiserror",
  "trybuild",

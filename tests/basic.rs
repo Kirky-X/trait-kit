@@ -468,3 +468,130 @@ mod hot_reload {
         assert_eq!(config.value, 99);
     }
 }
+
+#[cfg(feature = "confers-encryption")]
+mod encryption {
+    use trait_kit::kit::config::ModuleConfig;
+    use trait_kit::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+    struct SecretConfig {
+        api_key: String,
+        port: u16,
+    }
+
+    impl ModuleConfig for SecretConfig {
+        const PATH: &'static str = "config/secret.toml";
+
+        fn default_value() -> Self {
+            Self {
+                api_key: "default_key".to_string(),
+                port: 8080,
+            }
+        }
+    }
+
+    // 32-byte master key for XChaCha20-Poly1305 + HKDF.
+    const MASTER_KEY: [u8; 32] = *b"0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn encrypted_config_roundtrip() {
+        let kit = Kit::new();
+        let original = SecretConfig {
+            api_key: "sk-12345".to_string(),
+            port: 5432,
+        };
+        kit.set_encrypted(&original, &MASTER_KEY)
+            .expect("encrypt should succeed");
+        assert!(kit.contains_encrypted::<SecretConfig>());
+        let kit = kit.build().expect("build should succeed");
+
+        let decrypted: SecretConfig = kit
+            .get_encrypted(&MASTER_KEY)
+            .expect("decrypt should succeed");
+        assert_eq!(decrypted, original);
+    }
+
+    #[test]
+    fn get_encrypted_fails_with_wrong_key() {
+        let kit = Kit::new();
+        let original = SecretConfig {
+            api_key: "sk-12345".to_string(),
+            port: 5432,
+        };
+        kit.set_encrypted(&original, &MASTER_KEY)
+            .expect("encrypt should succeed");
+        let kit = kit.build().expect("build should succeed");
+
+        let wrong_key = *b"fedcba9876543210fedcba9876543210";
+        let result: Result<SecretConfig, _> = kit.get_encrypted(&wrong_key);
+        assert!(
+            result.is_err(),
+            "decryption with wrong key should fail (proves real encryption, not plaintext storage)"
+        );
+    }
+
+    #[test]
+    fn get_encrypted_returns_missing_config_error_when_not_set() {
+        let kit = Kit::new();
+        let kit = kit.build().expect("build should succeed");
+
+        let result: Result<SecretConfig, _> = kit.get_encrypted(&MASTER_KEY);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            KitError::MissingConfig { key } => {
+                assert!(key.contains("SecretConfig"));
+            }
+            other => panic!("expected MissingConfig, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_encrypted_overwrites_prior_value() {
+        let kit = Kit::new();
+        kit.set_encrypted(
+            &SecretConfig {
+                api_key: "old_key".to_string(),
+                port: 1111,
+            },
+            &MASTER_KEY,
+        )
+        .expect("first encrypt should succeed");
+        kit.set_encrypted(
+            &SecretConfig {
+                api_key: "new_key".to_string(),
+                port: 2222,
+            },
+            &MASTER_KEY,
+        )
+        .expect("overwrite should succeed");
+        let kit = kit.build().expect("build should succeed");
+
+        let decrypted: SecretConfig = kit
+            .get_encrypted(&MASTER_KEY)
+            .expect("decrypt should return latest value");
+        assert_eq!(decrypted.api_key, "new_key");
+        assert_eq!(decrypted.port, 2222);
+    }
+
+    #[test]
+    fn encrypted_storage_is_separate_from_plaintext_typemap() {
+        // set_encrypted must NOT populate the plaintext TypeMap — the value
+        // should only exist in encrypted_configs, retrievable solely via
+        // get_encrypted with the correct master key.
+        let kit = Kit::new();
+        kit.set_encrypted(
+            &SecretConfig {
+                api_key: "sk-12345".to_string(),
+                port: 5432,
+            },
+            &MASTER_KEY,
+        )
+        .expect("encrypt should succeed");
+        assert!(kit.contains_encrypted::<SecretConfig>());
+        let kit = kit.build().expect("build should succeed");
+        // Plaintext TypeMap should NOT contain the config.
+        assert!(!kit.contains_config::<SecretConfig>());
+        assert!(kit.config::<SecretConfig>().is_err());
+    }
+}
