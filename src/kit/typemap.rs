@@ -30,12 +30,12 @@ impl TypeMap {
         self.inner.borrow_mut().insert(key, Box::new(value));
     }
 
-    /// Insert a boxed value by raw TypeId.
+    /// Insert a boxed value by raw `TypeId`.
     pub fn insert_boxed(&self, type_id: TypeId, value: Box<dyn Any>) {
         self.inner.borrow_mut().insert(type_id, value);
     }
 
-    /// Returns `true` if the map contains a value for the given TypeId.
+    /// Returns `true` if the map contains a value for the given `TypeId`.
     pub fn contains_by_type_id(&self, type_id: TypeId) -> bool {
         self.inner.borrow().contains_key(&type_id)
     }
@@ -51,7 +51,7 @@ impl TypeMap {
             .cloned()
     }
 
-    /// Downcast by raw TypeId to the given type and clone.
+    /// Downcast by raw `TypeId` to the given type and clone.
     pub fn get_cloned_by_type_id<T: Clone + 'static>(&self, type_id: TypeId) -> Option<T> {
         self.inner
             .borrow()

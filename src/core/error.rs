@@ -10,7 +10,7 @@ pub enum KitError {
     /// A dependency cycle was detected during build validation.
     #[error("dependency cycle detected: {}", cycle.join(" → "))]
     CycleDetected {
-        /// The cycle path, e.g. ["A", "B", "C", "A"].
+        /// The cycle path, e.g. `["A", "B", "C", "A"]`.
         cycle: Vec<&'static str>,
     },
 

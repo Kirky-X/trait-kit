@@ -7,11 +7,11 @@ use std::collections::{HashMap, VecDeque};
 
 /// A node in the dependency graph.
 pub struct ModuleEntry {
-    /// The module's TypeId.
+    /// The module's `TypeId`.
     pub type_id: TypeId,
     /// The module's diagnostic name.
     pub name: &'static str,
-    /// (name, TypeId) pairs of modules this module depends on.
+    /// (name, `TypeId`) pairs of modules this module depends on.
     pub dependencies: Vec<(&'static str, TypeId)>,
 }
 
@@ -23,6 +23,7 @@ pub struct DependencyGraph {
 
 impl DependencyGraph {
     /// Create an empty graph.
+    #[must_use]
     pub fn new() -> Self {
         DependencyGraph {
             entries: Vec::new(),
@@ -30,7 +31,11 @@ impl DependencyGraph {
         }
     }
 
-    /// Add a module to the graph. Returns an error if the module is already registered.
+    /// Add a module to the graph.
+    ///
+    /// # Errors
+    ///
+    /// Returns the module's name if it is already registered.
     pub fn add(&mut self, entry: ModuleEntry) -> Result<(), &'static str> {
         if self.index.contains_key(&entry.type_id) {
             return Err(entry.name);
@@ -42,7 +47,12 @@ impl DependencyGraph {
     }
 
     /// Validate the graph: check for missing dependencies and cycles.
-    /// Returns the topologically sorted TypeIds on success.
+    /// Returns the topologically sorted `TypeIds` on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns `GraphError::DependencyMissing` if a module depends on an unregistered module.
+    /// Returns `GraphError::CycleDetected` if a dependency cycle is found.
     pub fn validate(&self) -> Result<Vec<TypeId>, GraphError> {
         // Check for missing dependencies
         for entry in &self.entries {
@@ -99,11 +109,6 @@ impl DependencyGraph {
 
     /// Find a cycle in the graph using DFS (for error reporting).
     fn find_cycle(&self) -> Vec<&'static str> {
-        let n = self.entries.len();
-        let mut visited = vec![0u8; n]; // 0=unvisited, 1=in-stack, 2=done
-        let mut stack = Vec::new();
-        let mut cycle_names = Vec::new();
-
         fn dfs(
             node: usize,
             entries: &[ModuleEntry],
@@ -139,9 +144,21 @@ impl DependencyGraph {
             false
         }
 
+        let n = self.entries.len();
+        let mut visited = vec![0u8; n]; // 0=unvisited, 1=in-stack, 2=done
+        let mut stack = Vec::new();
+        let mut cycle_names = Vec::new();
+
         for i in 0..n {
             if visited[i] == 0
-                && dfs(i, &self.entries, &self.index, &mut visited, &mut stack, &mut cycle_names)
+                && dfs(
+                    i,
+                    &self.entries,
+                    &self.index,
+                    &mut visited,
+                    &mut stack,
+                    &mut cycle_names,
+                )
             {
                 return cycle_names;
             }
@@ -151,6 +168,7 @@ impl DependencyGraph {
     }
 
     /// Get the registered names of all dependencies for a module.
+    #[must_use]
     pub fn dependency_names(&self, type_id: TypeId) -> Vec<&'static str> {
         if let Some(&idx) = self.index.get(&type_id) {
             self.entries[idx]
@@ -164,6 +182,7 @@ impl DependencyGraph {
     }
 
     /// Get all entries in registration order.
+    #[must_use]
     pub fn entries(&self) -> &[ModuleEntry] {
         &self.entries
     }

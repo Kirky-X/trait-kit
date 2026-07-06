@@ -31,6 +31,7 @@ pub struct Kit<S = Unbuilt> {
 
 impl Kit {
     /// Create a new empty Kit.
+    #[must_use]
     pub fn new() -> Self {
         Kit {
             builders: RefCell::new(HashMap::new()),
@@ -42,6 +43,10 @@ impl Kit {
     }
 
     /// Register a module for construction.
+    ///
+    /// # Errors
+    ///
+    /// Returns `KitError::AlreadyRegistered` if a module with the same `TypeId` was already registered.
     pub fn register<M: AutoBuilder>(&mut self) -> Result<(), KitError> {
         let entry = ModuleEntry {
             type_id: TypeId::of::<M>(),
@@ -54,13 +59,14 @@ impl Kit {
             .map_err(|name| KitError::AlreadyRegistered { module: name })?;
 
         let build_fn: BuildFn = Box::new(|kit| {
-            let capability = M::build(kit).map_err(|e| -> Box<dyn std::error::Error> {
-                Box::new(e)
-            })?;
+            let capability =
+                M::build(kit).map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
             Ok(Box::new(capability) as Box<dyn Any>)
         });
 
-        self.builders.borrow_mut().insert(TypeId::of::<M>(), build_fn);
+        self.builders
+            .borrow_mut()
+            .insert(TypeId::of::<M>(), build_fn);
         Ok(())
     }
 
@@ -70,11 +76,19 @@ impl Kit {
     }
 
     /// Retrieve a capability. During build phase, returns already-built capabilities.
+    ///
+    /// # Errors
+    ///
+    /// Returns `KitError::MissingCapability` if the module has not been built yet.
     pub fn require<M: AutoBuilder>(&self) -> Result<M::Capability, KitError> {
         self.require_capability::<M>()
     }
 
     /// Get a configuration value.
+    ///
+    /// # Errors
+    ///
+    /// Returns `KitError::MissingConfig` if no value of type `C` was set.
     pub fn config<C: Clone + 'static>(&self) -> Result<C, KitError> {
         self.get_config::<C>()
     }
@@ -82,6 +96,13 @@ impl Kit {
     /// Validate the dependency graph and build all modules in topological order.
     ///
     /// After this call, all capabilities are available via `require()`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `KitError::DependencyMissing` if a registered module depends on an unregistered module.
+    /// Returns `KitError::CycleDetected` if a dependency cycle is found.
+    /// Returns `KitError::MissingCapability` if a build function is missing for a sorted module.
+    /// Returns `KitError::BuildFailed` if a module's `build` callback returns an error.
     pub fn build(self) -> Result<Kit<Ready>, KitError> {
         // Validate the graph
         let sorted = match self.graph.validate() {
@@ -139,8 +160,7 @@ impl Kit {
             .entries()
             .iter()
             .find(|e| e.type_id == type_id)
-            .map(|e| e.name)
-            .unwrap_or("<unknown>")
+            .map_or("<unknown>", |e| e.name)
     }
 }
 
@@ -165,6 +185,10 @@ impl<S> Kit<S> {
 
 impl Kit<Ready> {
     /// Retrieve a capability by its module type.
+    ///
+    /// # Errors
+    ///
+    /// Returns `KitError::MissingCapability` if the module was not registered or not built.
     pub fn require<M: AutoBuilder>(&self) -> Result<M::Capability, KitError> {
         self.require_capability::<M>()
     }
@@ -172,10 +196,15 @@ impl Kit<Ready> {
     /// Retrieve an optional capability. Returns `None` if not built.
     pub fn optional<M: AutoBuilder>(&self) -> Option<M::Capability> {
         let type_id = TypeId::of::<M>();
-        self.capabilities.get_cloned_by_type_id::<M::Capability>(type_id)
+        self.capabilities
+            .get_cloned_by_type_id::<M::Capability>(type_id)
     }
 
     /// Get a configuration value.
+    ///
+    /// # Errors
+    ///
+    /// Returns `KitError::MissingConfig` if no value of type `C` was set.
     pub fn config<C: Clone + 'static>(&self) -> Result<C, KitError> {
         self.get_config::<C>()
     }
