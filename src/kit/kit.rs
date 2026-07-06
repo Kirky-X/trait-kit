@@ -75,6 +75,25 @@ impl Kit {
         self.configs.insert(config);
     }
 
+    /// Load a configuration via its [`Configurable`] implementation and store it.
+    ///
+    /// Requires the `confers` feature. The type must implement `Configurable`,
+    /// typically by delegating to `confers::Config`'s derived `load_sync()`.
+    /// The loaded value overrides any prior `set_config` of the same type.
+    ///
+    /// # Errors
+    ///
+    /// Returns `KitError::BuildFailed` if `Configurable::load` fails.
+    #[cfg(feature = "confers")]
+    pub fn load_config<C: super::config::Configurable>(&self) -> Result<(), KitError> {
+        let config = C::load().map_err(|e| KitError::BuildFailed {
+            module: "load_config",
+            source: e,
+        })?;
+        self.set_config(config);
+        Ok(())
+    }
+
     /// Retrieve a capability. During build phase, returns already-built capabilities.
     ///
     /// # Errors
