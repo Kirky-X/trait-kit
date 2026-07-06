@@ -7,4 +7,7 @@ pub mod graph;
 pub mod kit;
 pub(crate) mod typemap;
 
+#[cfg(feature = "confers")]
+pub mod config;
+
 pub use kit::{Kit, Ready, Unbuilt};

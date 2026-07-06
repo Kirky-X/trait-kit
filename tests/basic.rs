@@ -257,3 +257,80 @@ fn kit_error_display_and_source_behavior() {
     assert!(cycle.source().is_none());
     assert!(dep.source().is_none());
 }
+
+// === Configurable trait + load_config (confers feature) ===
+
+#[cfg(feature = "confers")]
+mod confers_loader {
+    use std::error::Error;
+    use trait_kit::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct StubConfig {
+        value: u32,
+    }
+
+    impl Configurable for StubConfig {
+        fn load() -> Result<Self, Box<dyn Error>> {
+            Ok(Self { value: 42 })
+        }
+    }
+
+    #[test]
+    fn load_config_stores_value_when_load_succeeds() {
+        let mut kit = Kit::new();
+        kit.load_config::<StubConfig>()
+            .expect("load should succeed");
+        let kit = kit.build().expect("build should succeed");
+
+        assert!(kit.contains_config::<StubConfig>());
+        let stored: StubConfig = kit.config().expect("config should be retrievable");
+        assert_eq!(stored.value, 42);
+    }
+
+    #[derive(Clone, Debug)]
+    struct FailingConfig;
+
+    impl Configurable for FailingConfig {
+        fn load() -> Result<Self, Box<dyn Error>> {
+            Err("intentional load failure".into())
+        }
+    }
+
+    #[test]
+    fn load_config_propagates_error_when_load_fails() {
+        let mut kit = Kit::new();
+        let result = kit.load_config::<FailingConfig>();
+
+        match result {
+            Err(KitError::BuildFailed { module, source }) => {
+                assert_eq!(module, "load_config");
+                assert!(source.to_string().contains("intentional load failure"));
+            }
+            other => panic!("expected BuildFailed, got: {other:?}"),
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct OverridableConfig {
+        value: &'static str,
+    }
+
+    impl Configurable for OverridableConfig {
+        fn load() -> Result<Self, Box<dyn Error>> {
+            Ok(Self { value: "loaded" })
+        }
+    }
+
+    #[test]
+    fn load_config_overrides_prior_set_config() {
+        let mut kit = Kit::new();
+        kit.set_config(OverridableConfig { value: "initial" });
+        kit.load_config::<OverridableConfig>()
+            .expect("load should override prior value");
+        let kit = kit.build().expect("build should succeed");
+
+        let stored: OverridableConfig = kit.config().expect("config should be retrievable");
+        assert_eq!(stored.value, "loaded");
+    }
+}
