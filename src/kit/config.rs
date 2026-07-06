@@ -122,3 +122,51 @@ impl EncryptedBlob {
         &self.ciphertext
     }
 }
+
+#[cfg(all(test, feature = "confers-encryption"))]
+mod encrypted_blob_tests {
+    use super::EncryptedBlob;
+
+    #[test]
+    fn getters_return_raw_slices() {
+        let blob = EncryptedBlob {
+            nonce: vec![1, 2, 3],
+            ciphertext: vec![4, 5, 6],
+        };
+        assert_eq!(blob.nonce(), &[1, 2, 3]);
+        assert_eq!(blob.ciphertext(), &[4, 5, 6]);
+    }
+
+    #[test]
+    fn getters_return_empty_for_empty_blob() {
+        let blob = EncryptedBlob {
+            nonce: Vec::new(),
+            ciphertext: Vec::new(),
+        };
+        assert!(blob.nonce().is_empty());
+        assert!(blob.ciphertext().is_empty());
+    }
+
+    #[test]
+    fn clone_produces_equal_blob() {
+        let blob = EncryptedBlob {
+            nonce: vec![1, 2, 3],
+            ciphertext: vec![4, 5, 6],
+        };
+        let cloned = blob.clone();
+        assert_eq!(blob.nonce(), cloned.nonce());
+        assert_eq!(blob.ciphertext(), cloned.ciphertext());
+    }
+
+    #[test]
+    fn debug_format_contains_fields() {
+        let blob = EncryptedBlob {
+            nonce: vec![1, 2, 3],
+            ciphertext: vec![4, 5, 6],
+        };
+        let s = format!("{:?}", blob);
+        assert!(s.contains("EncryptedBlob"));
+        assert!(s.contains("nonce"));
+        assert!(s.contains("ciphertext"));
+    }
+}

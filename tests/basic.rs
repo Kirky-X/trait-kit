@@ -598,4 +598,495 @@ mod encryption {
         assert!(!kit.contains_config::<SecretConfig>());
         assert!(kit.config::<SecretConfig>().is_err());
     }
+
+    #[test]
+    fn encrypted_blob_getters_via_roundtrip() {
+        // The pub(crate) fields can't be constructed directly from
+        // integration tests; verify getters indirectly by confirming
+        // set_encrypted + get_encrypted round-trips (which exercises
+        // nonce()/ciphertext() inside Kit::get_encrypted).
+        let kit = Kit::new();
+        kit.set_encrypted(
+            &SecretConfig {
+                api_key: "sk-12345".to_string(),
+                port: 5432,
+            },
+            &MASTER_KEY,
+        )
+        .expect("encrypt should succeed");
+        let kit = kit.build().expect("build should succeed");
+        let ok: Result<SecretConfig, _> = kit.get_encrypted(&MASTER_KEY);
+        assert!(ok.is_ok());
+    }
+
+    #[test]
+    fn set_encrypted_propagates_serialization_error() {
+        use trait_kit::kit::config::ModuleConfig;
+
+        #[derive(Clone)]
+        struct Unserializable;
+        impl serde::Serialize for Unserializable {
+            fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                Err(serde::ser::Error::custom("intentional serialize failure"))
+            }
+        }
+        impl ModuleConfig for Unserializable {
+            const PATH: &'static str = "config/unserializable.toml";
+            fn default_value() -> Self {
+                Self
+            }
+        }
+
+        let kit = Kit::new();
+        let result = kit.set_encrypted(&Unserializable, &MASTER_KEY);
+        match result {
+            Err(KitError::BuildFailed { context, source }) => {
+                assert_eq!(context, "set_encrypted");
+                assert!(source.to_string().contains("intentional serialize failure"));
+            }
+            other => panic!("expected BuildFailed, got: {other:?}"),
+        }
+    }
+}
+
+// === Coverage: graph API surface ===
+
+#[cfg(test)]
+mod graph_coverage {
+    use std::any::TypeId;
+    use trait_kit::kit::graph::{DependencyGraph, GraphError, ModuleEntry};
+
+    fn entry(name: &'static str, deps: Vec<(&'static str, TypeId)>) -> ModuleEntry {
+        ModuleEntry {
+            type_id: TypeId::of::<()>(),
+            name,
+            dependencies: deps,
+        }
+    }
+
+    // Use distinct placeholder types so each entry has a unique TypeId.
+    struct A;
+    struct B;
+    struct C;
+
+    #[test]
+    fn name_of_returns_registered_name() {
+        let mut g = DependencyGraph::new();
+        g.add(ModuleEntry {
+            type_id: TypeId::of::<A>(),
+            name: "a",
+            dependencies: vec![],
+        })
+        .unwrap();
+        assert_eq!(g.name_of(TypeId::of::<A>()), Some("a"));
+        assert_eq!(g.name_of(TypeId::of::<B>()), None);
+    }
+
+    #[test]
+    fn dependency_names_returns_registered_deps() {
+        let mut g = DependencyGraph::new();
+        g.add(ModuleEntry {
+            type_id: TypeId::of::<A>(),
+            name: "a",
+            dependencies: vec![("b", TypeId::of::<B>())],
+        })
+        .unwrap();
+        g.add(ModuleEntry {
+            type_id: TypeId::of::<B>(),
+            name: "b",
+            dependencies: vec![],
+        })
+        .unwrap();
+        assert_eq!(g.dependency_names(TypeId::of::<A>()), vec!["b"]);
+        assert_eq!(g.dependency_names(TypeId::of::<B>()), Vec::<&str>::new());
+        // Unknown type returns empty.
+        assert_eq!(g.dependency_names(TypeId::of::<C>()), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn entries_returns_registration_order() {
+        let mut g = DependencyGraph::new();
+        g.add(ModuleEntry {
+            type_id: TypeId::of::<A>(),
+            name: "a",
+            dependencies: vec![],
+        })
+        .unwrap();
+        g.add(ModuleEntry {
+            type_id: TypeId::of::<B>(),
+            name: "b",
+            dependencies: vec![],
+        })
+        .unwrap();
+        let names: Vec<_> = g.entries().iter().map(|e| e.name).collect();
+        assert_eq!(names, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn default_creates_empty_graph() {
+        let g = DependencyGraph::default();
+        assert!(g.entries().is_empty());
+    }
+
+    #[test]
+    fn add_rejects_duplicate_type_id() {
+        let mut g = DependencyGraph::new();
+        g.add(ModuleEntry {
+            type_id: TypeId::of::<A>(),
+            name: "a",
+            dependencies: vec![],
+        })
+        .unwrap();
+        let err = g
+            .add(ModuleEntry {
+                type_id: TypeId::of::<A>(),
+                name: "a_dup",
+                dependencies: vec![],
+            })
+            .unwrap_err();
+        assert_eq!(err, "a_dup");
+    }
+
+    #[test]
+    fn validate_returns_dependency_missing_for_unknown_dep() {
+        let mut g = DependencyGraph::new();
+        g.add(ModuleEntry {
+            type_id: TypeId::of::<A>(),
+            name: "a",
+            dependencies: vec![("missing", TypeId::of::<B>())],
+        })
+        .unwrap();
+        match g.validate() {
+            Err(GraphError::DependencyMissing { module, missing }) => {
+                assert_eq!(module, "a");
+                assert_eq!(missing, "missing");
+            }
+            other => panic!("expected DependencyMissing, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn find_cycle_traverses_unvisited_branch() {
+        // Graph: a → b → c → b (cycle between b and c, a leads in)
+        // This exercises the `if visited[dep_idx] == 0 && dfs(...)` true branch.
+        let mut g = DependencyGraph::new();
+        g.add(ModuleEntry {
+            type_id: TypeId::of::<A>(),
+            name: "a",
+            dependencies: vec![("b", TypeId::of::<B>())],
+        })
+        .unwrap();
+        g.add(ModuleEntry {
+            type_id: TypeId::of::<B>(),
+            name: "b",
+            dependencies: vec![("c", TypeId::of::<C>())],
+        })
+        .unwrap();
+        g.add(ModuleEntry {
+            type_id: TypeId::of::<C>(),
+            name: "c",
+            dependencies: vec![("b", TypeId::of::<B>())], // back-edge to b
+        })
+        .unwrap();
+
+        match g.validate() {
+            Err(GraphError::CycleDetected { cycle }) => {
+                assert!(cycle.contains(&"b"));
+                assert!(cycle.contains(&"c"));
+            }
+            other => panic!("expected CycleDetected, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_succeeds_for_acyclic_graph() {
+        let mut g = DependencyGraph::new();
+        g.add(ModuleEntry {
+            type_id: TypeId::of::<A>(),
+            name: "a",
+            dependencies: vec![],
+        })
+        .unwrap();
+        g.add(ModuleEntry {
+            type_id: TypeId::of::<B>(),
+            name: "b",
+            dependencies: vec![("a", TypeId::of::<A>())],
+        })
+        .unwrap();
+        assert!(g.validate().is_ok());
+    }
+
+    // Suppress unused warning for the helper.
+    #[test]
+    fn entry_helper_compiles() {
+        let _ = entry("x", vec![]);
+    }
+}
+
+// === Coverage: Kit::build cycle path + Debug + load_config_or_default ===
+
+#[cfg(test)]
+mod kit_build_coverage {
+    use std::sync::Arc;
+    use trait_kit::prelude::*;
+
+    struct CycleA;
+    impl ModuleMeta for CycleA {
+        const NAME: &'static str = "cycle_a";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            static DEPS: &[(&str, std::any::TypeId)] =
+                &[("cycle_b", std::any::TypeId::of::<CycleB>())];
+            DEPS
+        }
+    }
+    impl AutoBuilder for CycleA {
+        type Capability = Arc<()>;
+        type Error = KitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(()))
+        }
+    }
+
+    struct CycleB;
+    impl ModuleMeta for CycleB {
+        const NAME: &'static str = "cycle_b";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            static DEPS: &[(&str, std::any::TypeId)] =
+                &[("cycle_a", std::any::TypeId::of::<CycleA>())];
+            DEPS
+        }
+    }
+    impl AutoBuilder for CycleB {
+        type Capability = Arc<()>;
+        type Error = KitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(()))
+        }
+    }
+
+    #[test]
+    fn kit_build_returns_cycle_detected_for_mutual_deps() {
+        let mut kit = Kit::new();
+        kit.register::<CycleA>().unwrap();
+        kit.register::<CycleB>().unwrap();
+        match kit.build() {
+            Err(KitError::CycleDetected { cycle }) => {
+                assert!(cycle.iter().any(|n| *n == "cycle_a"));
+                assert!(cycle.iter().any(|n| *n == "cycle_b"));
+            }
+            other => panic!("expected CycleDetected, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn kit_debug_shows_module_and_config_counts() {
+        let mut kit = Kit::new();
+        kit.set_config(42i32);
+        kit.set_config("hello".to_string());
+        let s = format!("{:?}", kit);
+        assert!(s.contains("Kit<Unbuilt>"));
+        assert!(s.contains("modules: 0"));
+        assert!(s.contains("configs: 2"));
+
+        kit.register::<CycleA>().unwrap();
+        let s2 = format!("{:?}", kit);
+        assert!(s2.contains("modules: 1"));
+    }
+
+    #[test]
+    fn kit_ready_debug_shows_counts() {
+        // Use a non-cyclic module so build() succeeds.
+        struct Solo;
+        impl ModuleMeta for Solo {
+            const NAME: &'static str = "solo";
+            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                &[]
+            }
+        }
+        impl AutoBuilder for Solo {
+            type Capability = Arc<()>;
+            type Error = KitError;
+            fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+                Ok(Arc::new(()))
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.set_config(99u64);
+        kit.register::<Solo>().unwrap();
+        let kit = kit.build().unwrap();
+        let s = format!("{:?}", kit);
+        assert!(s.contains("Kit<Ready>"));
+        assert!(s.contains("modules: 1"));
+        assert!(s.contains("configs: 1"));
+    }
+
+    #[test]
+    fn kit_default_equals_new() {
+        let kit = Kit::default();
+        let s = format!("{:?}", kit);
+        assert!(s.contains("modules: 0"));
+        assert!(s.contains("configs: 0"));
+    }
+}
+
+// === Coverage: reload_config error path ===
+
+#[cfg(feature = "confers-hot-reload")]
+mod reload_config_coverage {
+    use std::error::Error;
+    use trait_kit::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct FailingReloadConfig;
+
+    impl Configurable for FailingReloadConfig {
+        fn load() -> Result<Self, Box<dyn Error>> {
+            Err("reload intentional failure".into())
+        }
+    }
+
+    #[test]
+    fn reload_config_propagates_load_error() {
+        let kit = Kit::new();
+        let result = kit.reload_config::<FailingReloadConfig>();
+        match result {
+            Err(KitError::BuildFailed { context, source }) => {
+                assert_eq!(context, "reload_config");
+                assert!(source.to_string().contains("reload intentional failure"));
+            }
+            other => panic!("expected BuildFailed, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reload_config_invokes_multiple_subscribers() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        struct MultiSubConfig;
+        impl Configurable for MultiSubConfig {
+            fn load() -> Result<Self, Box<dyn Error>> {
+                Ok(Self)
+            }
+        }
+
+        let kit = Kit::new();
+        let counter = Rc::new(Cell::new(0u32));
+        let c1 = Rc::clone(&counter);
+        let c2 = Rc::clone(&counter);
+
+        kit.subscribe::<MultiSubConfig>(move || {
+            c1.set(c1.get() + 1);
+        });
+        kit.subscribe::<MultiSubConfig>(move || {
+            c2.set(c2.get() + 10);
+        });
+
+        kit.reload_config::<MultiSubConfig>()
+            .expect("reload should succeed");
+
+        // Both subscribers should have fired: 1 + 10 = 11.
+        assert_eq!(counter.get(), 11);
+    }
+
+    #[test]
+    fn subscribe_and_reload_with_no_subscribers_succeeds() {
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        struct NoSubConfig;
+        impl Configurable for NoSubConfig {
+            fn load() -> Result<Self, Box<dyn Error>> {
+                Ok(Self)
+            }
+        }
+        let kit = Kit::new();
+        // No subscribers registered — reload should still succeed.
+        kit.reload_config::<NoSubConfig>().expect("reload should succeed");
+        let kit = kit.build().expect("build should succeed");
+        let _: NoSubConfig = kit.config().expect("config should be stored");
+    }
+}
+
+// === Coverage: load_config_or_default ===
+
+#[cfg(feature = "confers-macros")]
+mod load_config_or_default_coverage {
+    use std::error::Error;
+    use trait_kit::kit::config::ModuleConfig;
+    use trait_kit::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, trait_kit::kit::Config)]
+    struct WithDefault {
+        #[config(default = "loaded".to_string())]
+        field: String,
+    }
+
+    impl ModuleConfig for WithDefault {
+        const PATH: &'static str = "config/with_default.toml";
+        fn default_value() -> Self {
+            Self {
+                field: "fallback".to_string(),
+            }
+        }
+    }
+
+    impl Configurable for WithDefault {
+        fn load() -> Result<Self, Box<dyn Error>> {
+            // Simulate load failure — should fall back to default_value.
+            Err("load failed, using default".into())
+        }
+    }
+
+    #[test]
+    fn load_config_or_default_uses_default_when_load_fails() {
+        let kit = Kit::new();
+        kit.load_config_or_default::<WithDefault>()
+            .expect("should never error");
+        let kit = kit.build().expect("build should succeed");
+        let cfg: WithDefault = kit.config().expect("config should be stored");
+        assert_eq!(cfg.field, "fallback");
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct LoadOkConfig {
+        v: u32,
+    }
+
+    impl ModuleConfig for LoadOkConfig {
+        const PATH: &'static str = "config/load_ok.toml";
+        fn default_value() -> Self {
+            Self { v: 0 }
+        }
+    }
+
+    impl Configurable for LoadOkConfig {
+        fn load() -> Result<Self, Box<dyn Error>> {
+            Ok(Self { v: 42 })
+        }
+    }
+
+    #[test]
+    fn load_config_or_default_uses_loaded_value_when_load_succeeds() {
+        let kit = Kit::new();
+        kit.load_config_or_default::<LoadOkConfig>()
+            .expect("should never error");
+        let kit = kit.build().expect("build should succeed");
+        let cfg: LoadOkConfig = kit.config().expect("config should be stored");
+        assert_eq!(cfg.v, 42);
+    }
+
+    #[test]
+    fn load_config_or_default_overrides_prior_set_config() {
+        let kit = Kit::new();
+        kit.set_config(LoadOkConfig { v: 1 });
+        kit.load_config_or_default::<LoadOkConfig>()
+            .expect("should override");
+        let kit = kit.build().expect("build should succeed");
+        let cfg: LoadOkConfig = kit.config().expect("config should be stored");
+        assert_eq!(cfg.v, 42);
+    }
 }

@@ -121,4 +121,49 @@ mod tests {
         let map = TypeMap::new();
         assert_eq!(map.get_cloned::<i32>(), None);
     }
+
+    #[test]
+    fn contains_returns_correct_bool() {
+        let map = TypeMap::new();
+        assert!(!map.contains::<i32>());
+        map.insert(42i32);
+        assert!(map.contains::<i32>());
+        assert!(!map.contains::<u64>());
+    }
+
+    #[test]
+    fn len_returns_entry_count() {
+        let map = TypeMap::new();
+        assert_eq!(map.len(), 0);
+        map.insert(1i32);
+        assert_eq!(map.len(), 1);
+        map.insert("a".to_string());
+        assert_eq!(map.len(), 2);
+    }
+
+    #[test]
+    fn default_creates_empty_map() {
+        let map = TypeMap::default();
+        assert_eq!(map.len(), 0);
+        assert!(map.get_cloned::<i32>().is_none());
+    }
+
+    #[test]
+    fn contains_by_type_id_returns_false_for_missing() {
+        let map = TypeMap::new();
+        let tid = std::any::TypeId::of::<i32>();
+        assert!(!map.contains_by_type_id(tid));
+    }
+
+    #[test]
+    fn get_cloned_by_type_id_returns_none_for_wrong_type() {
+        let map = TypeMap::new();
+        let tid_i32 = std::any::TypeId::of::<i32>();
+        map.insert_boxed(tid_i32, Box::new(42i32));
+        // Request wrong type via a different TypeId
+        let tid_u64 = std::any::TypeId::of::<u64>();
+        assert_eq!(map.get_cloned_by_type_id::<u64>(tid_u64), None);
+        // Even right TypeId but wrong downcast type returns None
+        assert_eq!(map.get_cloned_by_type_id::<u64>(tid_i32), None);
+    }
 }
