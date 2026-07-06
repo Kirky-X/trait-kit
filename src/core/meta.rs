@@ -33,5 +33,5 @@ pub trait AutoBuilder: ModuleMeta {
 ///
 /// Takes `&Kit<Unbuilt>` (same memory layout as `&Kit<Ready>`)
 /// because during the build phase we only have the unbuilt Kit.
-pub type BuildFn =
+pub(crate) type BuildFn =
     Box<dyn FnOnce(&crate::kit::Kit) -> Result<Box<dyn std::any::Any>, Box<dyn std::error::Error>>>;

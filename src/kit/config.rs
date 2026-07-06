@@ -65,6 +65,10 @@ pub use confers::Config;
 /// (re-exported as [`Config`]), modules gain both loading and fallback
 /// capabilities. `ModuleConfig` does not require `Configurable` — a module
 /// may provide a default without a loader, or vice versa.
+///
+/// `default_value()` is not invoked automatically by `Kit` internally;
+/// callers must opt-in via [`Kit::load_config_or_default`](super::kit::Kit::load_config_or_default)
+/// when they want load-with-fallback semantics.
 #[cfg(feature = "confers-macros")]
 pub trait ModuleConfig: Clone + 'static {
     /// Configuration file path relative to the application root.
@@ -99,7 +103,22 @@ pub use confers::derive_field_key;
 #[derive(Debug, Clone)]
 pub struct EncryptedBlob {
     /// XChaCha20-Poly1305 nonce (24 bytes).
-    pub nonce: Vec<u8>,
+    pub(crate) nonce: Vec<u8>,
     /// Ciphertext + Poly1305 authentication tag.
-    pub ciphertext: Vec<u8>,
+    pub(crate) ciphertext: Vec<u8>,
+}
+
+#[cfg(feature = "confers-encryption")]
+impl EncryptedBlob {
+    /// Returns the XChaCha20-Poly1305 nonce (24 bytes).
+    #[must_use]
+    pub fn nonce(&self) -> &[u8] {
+        &self.nonce
+    }
+
+    /// Returns the ciphertext + Poly1305 authentication tag.
+    #[must_use]
+    pub fn ciphertext(&self) -> &[u8] {
+        &self.ciphertext
+    }
 }

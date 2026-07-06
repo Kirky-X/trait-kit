@@ -40,6 +40,16 @@ impl TypeMap {
         self.inner.borrow().contains_key(&type_id)
     }
 
+    /// Returns `true` if the map contains a value of type `T`.
+    pub fn contains<T: 'static>(&self) -> bool {
+        self.inner.borrow().contains_key(&TypeId::of::<T>())
+    }
+
+    /// Returns the number of entries currently stored.
+    pub(crate) fn len(&self) -> usize {
+        self.inner.borrow().len()
+    }
+
     /// Downcast the stored value to `T` and clone it.
     /// Returns `None` if the key doesn't exist or the type doesn't match.
     pub fn get_cloned<T: Clone + 'static>(&self) -> Option<T> {
