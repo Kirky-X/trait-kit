@@ -7,6 +7,7 @@
 #![deny(unsafe_code)]
 #![warn(clippy::all, clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
+#![doc = include_str!("../README.md")]
 
 pub mod core;
 pub mod kit;
