@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect width="256" height="256" fill="#ffffff"/>
+
+  <!-- Hexagonal outer frame (toolkit container) -->
+  <polygon points="128,24 216,76 216,180 128,232 40,180 40,76"
+           fill="none" stroke="#CE422B" stroke-width="8" stroke-linejoin="round"/>
+
+  <!-- Inner hexagon (subtle background) -->
+  <polygon points="128,48 196,88 196,168 128,208 60,168 60,88"
+           fill="#CE422B" fill-opacity="0.08" stroke="none"/>
+
+  <!-- Three interlocking module blocks (puzzle pieces) -->
+
+  <!-- Top module (charcoal) -->
+  <path d="M 96 104 L 96 84 Q 96 76 104 76 L 120 76 Q 128 76 128 84 Q 128 92 120 92 L 112 92 L 112 104 Z"
+        fill="#2D2D2D"/>
+  <rect x="96" y="104" width="32" height="24" rx="2" fill="#2D2D2D"/>
+
+  <!-- Middle-right module (orange) -->
+  <path d="M 160 128 L 160 108 Q 160 100 152 100 L 136 100 Q 128 100 128 108 Q 128 116 136 116 L 144 116 L 144 128 Z"
+        fill="#CE422B"/>
+  <rect x="128" y="128" width="32" height="24" rx="2" fill="#CE422B"/>
+
+  <!-- Bottom-left module (charcoal with orange accent) -->
+  <path d="M 96 152 L 96 172 Q 96 180 104 180 L 120 180 Q 128 180 128 172 Q 128 164 120 164 L 112 164 L 112 152 Z"
+        fill="#2D2D2D"/>
+  <rect x="96" y="128" width="32" height="24" rx="2" fill="#2D2D2D"/>
+
+  <!-- Connection points (small dots representing module composition) -->
+  <circle cx="128" cy="108" r="3" fill="#CE422B"/>
+  <circle cx="128" cy="140" r="3" fill="#CE422B"/>
+  <circle cx="112" cy="128" r="3" fill="#ffffff"/>
+  <circle cx="144" cy="116" r="3" fill="#ffffff"/>
+
+  <!-- Bottom label "trait-kit" -->
+  <text x="128" y="220" text-anchor="middle"
+        font-family="ui-monospace, 'SF Mono', Monaco, monospace"
+        font-size="12" font-weight="600" fill="#2D2D2D">trait-kit</text>
+</svg>
