@@ -23,6 +23,21 @@ use super::typemap::TypeMap;
 #[cfg(feature = "confers-encryption")]
 const KEY_DERIVATION_VERSION: &str = "v1";
 
+/// Derive a per-field encryption key, mapping HKDF failures to `KitError`.
+#[cfg(feature = "confers-encryption")]
+fn derive_kit_field_key(
+    master_key: &[u8],
+    path: &'static str,
+    context: &'static str,
+) -> Result<[u8; 32], KitError> {
+    super::config::derive_field_key(master_key, path, KEY_DERIVATION_VERSION).map_err(|e| {
+        KitError::BuildFailed {
+            context,
+            source: Box::new(e),
+        }
+    })
+}
+
 /// Marker type for the unbuilt state.
 pub struct Unbuilt;
 
@@ -293,20 +308,14 @@ impl Kit {
     where
         C: super::config::ModuleConfig + serde::Serialize,
     {
-        use super::config::{derive_field_key, XChaCha20Crypto};
+        use super::config::XChaCha20Crypto;
 
         let plaintext = serde_json::to_vec(value).map_err(|e| KitError::BuildFailed {
             context: "set_encrypted",
             source: Box::new(e),
         })?;
 
-        let field_key =
-            derive_field_key(master_key, C::PATH, KEY_DERIVATION_VERSION).map_err(|e| {
-                KitError::BuildFailed {
-                    context: "set_encrypted",
-                    source: Box::new(e),
-                }
-            })?;
+        let field_key = derive_kit_field_key(master_key, C::PATH, "set_encrypted")?;
 
         let (nonce, ciphertext) = XChaCha20Crypto::new()
             .encrypt(&plaintext, &field_key)
@@ -389,7 +398,7 @@ impl Kit<Ready> {
     where
         C: super::config::ModuleConfig + serde::de::DeserializeOwned,
     {
-        use super::config::{derive_field_key, XChaCha20Crypto};
+        use super::config::XChaCha20Crypto;
 
         let blob = self
             .encrypted_configs
@@ -400,13 +409,7 @@ impl Kit<Ready> {
                 key: std::any::type_name::<C>(),
             })?;
 
-        let field_key =
-            derive_field_key(master_key, C::PATH, KEY_DERIVATION_VERSION).map_err(|e| {
-                KitError::BuildFailed {
-                    context: "get_encrypted",
-                    source: Box::new(e),
-                }
-            })?;
+        let field_key = derive_kit_field_key(master_key, C::PATH, "get_encrypted")?;
 
         let plaintext = XChaCha20Crypto::new()
             .decrypt(&blob.nonce, &blob.ciphertext, &field_key)
