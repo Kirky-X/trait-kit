@@ -1,7 +1,5 @@
-# `TraitKit`
-
 <p align="center">
-  <img src="assets/trait-kit-logo.svg" width="200" alt="trait-kit logo">
+  <img src="assets/trait-kit.svg" width="200" alt="trait-kit logo">
 </p>
 
 [![Crates.io][crates-badge]][crates-url][![Docs.rs][docs-badge]][docs-url][![MIT licensed][license-badge]][license-url][![MSRV][msrv-badge]][msrv-url]
@@ -233,7 +231,7 @@ trait-kit 通过四级 feature flag 集成 [`confers`](https://crates.io/crates/
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.1", features = ["confers-encryption"] }
+trait-kit = { version = "0.2", features = ["confers-encryption"] }
 ```
 
 ### 三层继承系统

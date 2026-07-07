@@ -1,11 +1,8 @@
-# `TraitKit`
-
 <p align="center">
-  <img src="assets/trait-kit-logo.svg" width="200" alt="trait-kit logo">
+  <img src="assets/trait-kit.svg" width="200" alt="trait-kit logo">
 </p>
 
-[![Crates.io][crates-badge]][crates-url][![Docs.rs][docs-badge]][docs-url][![MIT licensed][license-badge]][license-url]
-[![MSRV][msrv-badge]][msrv-url]
+[![Crates.io][crates-badge]][crates-url][![Docs.rs][docs-badge]][docs-url][![MIT licensed][license-badge]][license-url][![MSRV][msrv-badge]][msrv-url]
 
 [crates-badge]: https://img.shields.io/crates/v/trait-kit?style=flat-square
 [crates-url]: https://crates.io/crates/trait-kit
@@ -234,7 +231,7 @@ Enable the desired level in `Cargo.toml`:
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.1", features = ["confers-encryption"] }
+trait-kit = { version = "0.2", features = ["confers-encryption"] }
 ```
 
 ### Three-Tier Inheritance System
