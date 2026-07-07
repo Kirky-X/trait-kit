@@ -47,6 +47,7 @@ jobs:
         if: ${{ env.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@v7
         with:
+          token: ${{ env.CODECOV_TOKEN }}
           files: ./lcov.info
           fail_ci_if_error: false
 
