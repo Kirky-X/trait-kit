@@ -103,7 +103,9 @@ impl Kit {
 
         let build_fn: BuildFn = Box::new(|kit| {
             let capability =
-                M::build(kit).map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+                M::build(kit).map_err(|e| -> Box<dyn std::error::Error + Send + 'static> {
+                    Box::new(e)
+                })?;
             Ok(Box::new(capability) as Box<dyn Any>)
         });
 

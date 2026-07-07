@@ -47,11 +47,12 @@ pub struct Ready;
 /// capability trait bound `AsyncAutoBuilder::Capability: Send + Sync + 'static`
 /// guarantees both.
 ///
-/// The error variant is `Box<dyn Error>` (without `+ Send`) to match
-/// `KitError::BuildFailed::source`. The future is still `Send` because the
-/// error is only constructed in the early-return path of `?` and never held
-/// across an `.await` — the only await point is `M::build(kit).await`, whose
-/// `M::Error: Send` bound is enforced by the trait.
+/// The error variant is `Box<dyn Error + Send + 'static>` to match
+/// `KitError::BuildFailed::source` (which is `Send` so that `KitError: Send`
+/// and `tokio::spawn(async move { kit.build().await })` compiles on a
+/// multi-threaded runtime). The future is `Send` because both
+/// `Box<dyn Any + Send + Sync>` and `Box<dyn Error + Send + 'static>` are
+/// `Send`.
 #[allow(
     clippy::type_complexity,
     reason = "Pin<Box<dyn Future + Send>> is the canonical dyn-compatible async dispatch type; mirrors AsyncAutoBuilder::build"
@@ -61,8 +62,9 @@ pub(crate) type AsyncBuildFn = Box<
         &'a AsyncKit,
     ) -> Pin<
         Box<
-            dyn Future<Output = Result<Box<dyn Any + Send + Sync>, Box<dyn std::error::Error>>>
-                + Send
+            dyn Future<
+                    Output = Result<Box<dyn Any + Send + Sync>, Box<dyn std::error::Error + Send + 'static>>,
+                > + Send
                 + 'a,
         >,
     > + Send + Sync,
@@ -128,9 +130,9 @@ impl AsyncKit {
 
         let build_fn: AsyncBuildFn = Box::new(|kit| {
             Box::pin(async move {
-                let cap = M::build(kit)
-                    .await
-                    .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+                let cap = M::build(kit).await.map_err(|e| -> Box<dyn std::error::Error + Send + 'static> {
+                    Box::new(e)
+                })?;
                 Ok(Box::new(cap) as Box<dyn Any + Send + Sync>)
             })
         });
@@ -590,6 +592,27 @@ mod tests {
     fn async_kit_is_send_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<AsyncKit>();
+    }
+
+    // --- MED-002: Send-ness assertions for KitError and build() result ---
+
+    /// Verifies HIGH-001: `KitError` is `Send` (so it can cross
+    /// `tokio::spawn` boundaries). Before HIGH-001, `KitError::BuildFailed::source`
+    /// was `Box<dyn Error>` (without `+ Send`), which made the entire enum
+    /// `!Send` and blocked `tokio::spawn(async move { kit.build().await })`.
+    #[test]
+    fn kit_error_is_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<KitError>();
+    }
+
+    /// Verifies HIGH-001: `AsyncKit::build()`'s return type is `Send`, so the
+    /// spawned future's output satisfies `tokio::spawn`'s `Send` requirement
+    /// on a multi-threaded runtime.
+    #[test]
+    fn async_kit_build_result_is_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<Result<AsyncKit<Ready>, KitError>>();
     }
 
     // --- T008 tests for AsyncKit::build() ---

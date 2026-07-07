@@ -27,7 +27,7 @@ pub trait AutoBuilder: ModuleMeta {
     type Capability: Clone + 'static;
 
     /// The error type returned on build failure.
-    type Error: std::error::Error + 'static;
+    type Error: std::error::Error + Send + 'static;
 
     /// Build the module's capability using the provided Kit.
     ///
@@ -83,8 +83,9 @@ pub trait AsyncAutoBuilder: ModuleMeta {
 ///
 /// Takes `&Kit<Unbuilt>` (same memory layout as `&Kit<Ready>`)
 /// because during the build phase we only have the unbuilt Kit.
-pub(crate) type BuildFn =
-    Box<dyn FnOnce(&crate::kit::Kit) -> Result<Box<dyn std::any::Any>, Box<dyn std::error::Error>>>;
+pub(crate) type BuildFn = Box<
+    dyn FnOnce(&crate::kit::Kit) -> Result<Box<dyn std::any::Any>, Box<dyn std::error::Error + Send + 'static>>,
+>;
 
 #[cfg(all(test, feature = "async"))]
 mod async_tests {
