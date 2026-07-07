@@ -126,7 +126,6 @@ impl AsyncTypeMap {
     /// # Panics
     ///
     /// Panics if the inner `RwLock` is poisoned. See [`Self::insert`] for context.
-    #[allow(dead_code, reason = "consumed by AsyncKit Debug impl in Phase 1b")]
     pub(crate) fn len(&self) -> usize {
         let guard = self
             .inner

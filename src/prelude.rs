@@ -23,7 +23,7 @@ pub use crate::kit::config::ModuleConfig;
 #[cfg(all(test, feature = "async"))]
 mod tests {
     //! Verify the async re-exports reachable through `prelude::*` compile
-    //! against the expected concrete types (async_kit::Ready / Unbuilt), not
+    //! against the expected concrete types (`async_kit::Ready` / `Unbuilt`), not
     //! the sync variants. This guards against a regression where lib.rs
     //! aliases the wrong `Ready`/`Unbuilt` markers.
     use crate::prelude::*;
