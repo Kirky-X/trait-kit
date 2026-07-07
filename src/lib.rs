@@ -16,3 +16,8 @@ pub mod core;
 pub mod kit;
 
 pub mod prelude;
+
+#[cfg(feature = "async")]
+pub use core::meta::AsyncAutoBuilder;
+#[cfg(feature = "async")]
+pub use kit::{AsyncKit, AsyncReady, AsyncUnbuilt};
