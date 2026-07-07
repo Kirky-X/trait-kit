@@ -44,10 +44,3 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: target/package/*.crate
-
-  publish-crates:
-    name: Publish to crates.io
-    runs-on: ubuntu-latest
-    needs: create-release
-    steps:
-      - run: echo "publish test"
