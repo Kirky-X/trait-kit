@@ -214,6 +214,156 @@ fn main() {
 
 ---
 
+## AsyncKit：异步能力管理
+
+`AsyncKit` 是同步 `Kit` 的 `Send + Sync` 异步对应版本，采用 `Arc<RwLock>` 替代 `RefCell` 实现内部可变性，可跨线程共享、跨 `.await` 持有。镜像同步 `Kit` 的 typestate 模式（`AsyncKit<Unbuilt>` → `AsyncKit<Ready>`），支持异步模块构造（数据库连接池、HTTP 客户端、缓存后端）和跨模块依赖注入。
+
+- **`Send + Sync`** — `AsyncKit` 本身可跨线程共享，能力对象要求 `Clone + Send + Sync + 'static`。
+- **异步拓扑构造** — `build().await` 按依赖图拓扑序逐个调用模块的异步 `build`，循环检测和缺失依赖在启动期暴露。
+- **跨模块依赖注入** — 模块 `build` 回调中可 `kit.require::<DepModule>()?` 获取已构造的依赖能力。
+- **无额外依赖** — `async` feature 仅启用 Rust 原生 async，不引入 `async-trait` 或运行时依赖。
+
+### Feature 启用
+
+`AsyncKit` 通过 `async` feature 启用，不引入额外依赖：
+
+```toml
+[dependencies]
+trait-kit = { version = "0.2.2", features = ["async"] }
+```
+
+> 运行时（如 `tokio`）由应用自行选择，trait-kit 不绑定。
+
+### 最小示例
+
+定义一个异步 logger 模块，注册、异步构建并检索能力：
+
+```rust
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use trait_kit::prelude::*;
+
+// 1. 能力类型：Clone + Send + Sync
+#[derive(Clone)]
+struct Logger { name: String }
+impl Logger {
+    fn info(&self, msg: &str) { println!("[{}] {msg}", self.name); }
+}
+
+// 2. 异步模块：ModuleMeta + AsyncAutoBuilder
+struct LoggerModule;
+impl ModuleMeta for LoggerModule {
+    const NAME: &'static str = "logger";
+    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] { &[] }
+}
+impl AsyncAutoBuilder for LoggerModule {
+    type Capability = Arc<Logger>;
+    type Error = KitError;
+    fn build<'a>(
+        _kit: &'a AsyncKit,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        Box::pin(async move {
+            Ok(Arc::new(Logger { name: "async-logger".into() }))
+        })
+    }
+}
+
+// 3. 注册、异步构建、检索
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut kit = AsyncKit::new();
+    kit.register::<LoggerModule>()?;
+
+    let kit = kit.build().await?;                  // 拓扑构造
+    let logger = kit.require::<LoggerModule>()?;   // Arc<Logger>
+    logger.info("Hello from AsyncKit!");
+    assert!(kit.contains::<LoggerModule>());
+    Ok(())
+}
+```
+
+### 跨模块依赖注入
+
+模块通过 `ModuleMeta::dependencies()` 声明依赖，`build().await` 按拓扑序构造。依赖模块在 `build` 回调中通过 `kit.require::<DepModule>()?` 获取已构造的能力：
+
+```rust
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use trait_kit::prelude::*;
+
+struct Logger;
+impl Logger { fn info(&self, msg: &str) { println!("[LOG] {msg}"); } }
+
+struct LoggerModule;
+impl ModuleMeta for LoggerModule {
+    const NAME: &'static str = "logger";
+    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] { &[] }
+}
+impl AsyncAutoBuilder for LoggerModule {
+    type Capability = Arc<Logger>;
+    type Error = KitError;
+    fn build<'a>(
+        _kit: &'a AsyncKit,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        Box::pin(async move { Ok(Arc::new(Logger)) })
+    }
+}
+
+struct Storage { logger: Arc<Logger> }
+
+struct StorageModule;
+impl ModuleMeta for StorageModule {
+    const NAME: &'static str = "storage";
+    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+        static DEPS: &[(&str, std::any::TypeId)] =
+            &[("logger", std::any::TypeId::of::<LoggerModule>())];
+        DEPS
+    }
+}
+impl AsyncAutoBuilder for StorageModule {
+    type Capability = Arc<Storage>;
+    type Error = KitError;
+    fn build<'a>(
+        kit: &'a AsyncKit,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        Box::pin(async move {
+            // 拓扑序保证 LoggerModule 已构造
+            let logger = kit.require::<LoggerModule>()?;
+            Ok(Arc::new(Storage { logger }))
+        })
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut kit = AsyncKit::new();
+    kit.register::<LoggerModule>()?;
+    kit.register::<StorageModule>()?;   // 声明依赖，注册顺序无关
+    let kit = kit.build().await?;
+    let storage = kit.require::<StorageModule>()?;
+    storage.logger.info("dependency injected");
+    Ok(())
+}
+```
+
+### `AsyncKit` API 概览
+
+| 方法                                 | 可用状态          | 描述                                                       |
+| ----------------------------------- | ----------------- | ---------------------------------------------------------- |
+| `AsyncKit::new()`                   | —                 | 创建一个空的 `AsyncKit<Unbuilt>`。                         |
+| `kit.register::<M>()`               | `AsyncKit<Unbuilt>` | 注册一个异步模块以供构造。                                |
+| `kit.set_config::<C>(value)`        | `AsyncKit<Unbuilt>` | 存储一个类型化配置值（`Send + Sync`）。                   |
+| `kit.config::<C>()`                 | 两者皆可          | 检索一个克隆的配置值。                                     |
+| `kit.build().await`                 | `AsyncKit<Unbuilt>` | 校验依赖图并异步构建所有模块 → `AsyncKit<Ready>`。         |
+| `kit.require::<M>()`                | 两者皆可          | 检索一个能力（缺失时返回错误）。                           |
+| `kit.optional::<M>()`               | `AsyncKit<Ready>`   | 检索一个能力（缺失时返回 `None`）。                        |
+| `kit.contains::<M>()`               | `AsyncKit<Ready>`   | 检查某个能力是否已构建。                                   |
+| `kit.contains_config::<C>()`        | `AsyncKit<Ready>`   | 检查某个配置值是否存在。                                   |
+
+---
+
 ## 配置：confers 集成
 
 trait-kit 通过四级 feature flag 集成 [`confers`](https://crates.io/crates/confers) 0.4。每一级继承前一级，形成分层能力系统。
