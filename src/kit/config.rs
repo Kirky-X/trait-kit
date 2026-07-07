@@ -160,7 +160,7 @@ mod encrypted_blob_tests {
             nonce: vec![1, 2, 3],
             ciphertext: vec![4, 5, 6],
         };
-        let s = format!("{:?}", blob);
+        let s = format!("{blob:?}");
         assert!(s.contains("EncryptedBlob"));
         assert!(s.contains("nonce"));
         assert!(s.contains("ciphertext"));

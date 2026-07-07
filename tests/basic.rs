@@ -861,8 +861,8 @@ mod kit_build_coverage {
         kit.register::<CycleB>().unwrap();
         match kit.build() {
             Err(KitError::CycleDetected { cycle }) => {
-                assert!(cycle.iter().any(|n| *n == "cycle_a"));
-                assert!(cycle.iter().any(|n| *n == "cycle_b"));
+                assert!(cycle.contains(&"cycle_a"));
+                assert!(cycle.contains(&"cycle_b"));
             }
             other => panic!("expected CycleDetected, got: {other:?}"),
         }

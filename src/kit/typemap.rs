@@ -158,12 +158,12 @@ mod tests {
     #[test]
     fn get_cloned_by_type_id_returns_none_for_wrong_type() {
         let map = TypeMap::new();
-        let tid_i32 = std::any::TypeId::of::<i32>();
-        map.insert_boxed(tid_i32, Box::new(42i32));
+        let i32_id = std::any::TypeId::of::<i32>();
+        map.insert_boxed(i32_id, Box::new(42i32));
         // Request wrong type via a different TypeId
-        let tid_u64 = std::any::TypeId::of::<u64>();
-        assert_eq!(map.get_cloned_by_type_id::<u64>(tid_u64), None);
+        let u64_id = std::any::TypeId::of::<u64>();
+        assert_eq!(map.get_cloned_by_type_id::<u64>(u64_id), None);
         // Even right TypeId but wrong downcast type returns None
-        assert_eq!(map.get_cloned_by_type_id::<u64>(tid_i32), None);
+        assert_eq!(map.get_cloned_by_type_id::<u64>(i32_id), None);
     }
 }
