@@ -22,7 +22,7 @@
 //!    config type to its module's configuration path (`PATH`).
 //!
 //! 2. **Cargo feature inheritance (cargo feature 继承)** — feature flags form
-//!    a dependency chain: `confers-encryption` → `confers-hot-reload` →
+//!    a dependency chain: `encryption` → `hot-reload` →
 //!    `confers-macros` → `confers`. Enabling a higher level automatically
 //!    enables all lower levels.
 //!
@@ -78,11 +78,11 @@ pub trait ModuleConfig: Clone + 'static {
 }
 
 /// Re-export of confers' XChaCha20-Poly1305 cipher (synchronous API).
-#[cfg(feature = "confers-encryption")]
+#[cfg(feature = "encryption")]
 pub use confers::XChaCha20Crypto;
 
 /// Re-export of confers' HKDF-based per-field key derivation.
-#[cfg(feature = "confers-encryption")]
+#[cfg(feature = "encryption")]
 pub use confers::derive_field_key;
 
 /// Encrypted configuration blob: nonce + ciphertext.
@@ -95,7 +95,7 @@ pub use confers::derive_field_key;
 /// Layer 3 of the inheritance system: the encryption key is derived from
 /// `ModuleConfig::PATH`, so the encrypted blob is bound to the module's
 /// declared configuration path.
-#[cfg(feature = "confers-encryption")]
+#[cfg(feature = "encryption")]
 #[derive(Debug, Clone)]
 pub struct EncryptedBlob {
     /// XChaCha20-Poly1305 nonce (24 bytes).
@@ -104,7 +104,7 @@ pub struct EncryptedBlob {
     pub(crate) ciphertext: Vec<u8>,
 }
 
-#[cfg(feature = "confers-encryption")]
+#[cfg(feature = "encryption")]
 impl EncryptedBlob {
     /// Returns the XChaCha20-Poly1305 nonce (24 bytes).
     #[must_use]
@@ -119,7 +119,7 @@ impl EncryptedBlob {
     }
 }
 
-#[cfg(all(test, feature = "confers-encryption"))]
+#[cfg(all(test, feature = "encryption"))]
 mod encrypted_blob_tests {
     use super::EncryptedBlob;
 

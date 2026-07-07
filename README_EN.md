@@ -224,21 +224,21 @@ trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.4 via 
 | --------------------- | ----------------------------------------------- | ------------------------------------------------ |
 | `confers`             | `dep:confers`, `dep:serde`                      | `Configurable` trait + `Kit::load_config`        |
 | `confers-macros`      | `confers`                                       | `ModuleConfig` trait + `Config` derive re-export |
-| `confers-hot-reload`  | `confers-macros`, `confers/watch`               | `subscribe` / `reload_config` API                |
-| `confers-encryption`  | `confers-hot-reload`, `confers/encryption`, `dep:serde_json` | `set_encrypted` / `get_encrypted` API |
+| `hot-reload`  | `confers-macros`, `confers/watch`               | `subscribe` / `reload_config` API                |
+| `encryption`  | `hot-reload`, `confers/encryption`, `dep:serde_json` | `set_encrypted` / `get_encrypted` API |
 
 Enable the desired level in `Cargo.toml`:
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.2", features = ["confers-encryption"] }
+trait-kit = { version = "0.2", features = ["encryption"] }
 ```
 
 ### Three-Tier Inheritance System
 
 1. **Module capability inheritance** (Layer 1): `ModuleConfig` trait declares `PATH` and `default_value()`, binding a config type to its module's configuration path.
 
-2. **Cargo feature inheritance** (Layer 2): Each feature level inherits the previous (`confers-encryption` → `confers-hot-reload` → `confers-macros` → `confers`). Enabling a higher level automatically enables all lower levels.
+2. **Cargo feature inheritance** (Layer 2): Each feature level inherits the previous (`encryption` → `hot-reload` → `confers-macros` → `confers`). Enabling a higher level automatically enables all lower levels.
 
 3. **Config value inheritance** (Layer 3): The encryption key is derived from `ModuleConfig::PATH` via HKDF, so the same master key produces different field keys for different modules.
 
