@@ -251,6 +251,47 @@ impl<S> AsyncKit<S> {
                 key: std::any::type_name::<C>(),
             })
     }
+
+    /// Retrieve a capability by its module type.
+    ///
+    /// Available on both `AsyncKit<Unbuilt>` (inside `AsyncAutoBuilder::build`
+    /// callbacks, for cross-module dependency injection during `build()`) and
+    /// `AsyncKit<Ready>` (after `build()` completes).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KitError::MissingCapability`] if the module has not been
+    /// built yet (its `TypeId` is absent from the capabilities map).
+    pub fn require<M: AsyncAutoBuilder>(&self) -> Result<M::Capability, KitError> {
+        let type_id = TypeId::of::<M>();
+        self.capabilities
+            .get_cloned_by_type_id::<M::Capability>(type_id)
+            .ok_or(KitError::MissingCapability { key: M::NAME })
+    }
+}
+
+impl AsyncKit<Ready> {
+    /// Retrieve an optional capability. Returns `None` if the module has not
+    /// been built (its `TypeId` is absent from the capabilities map).
+    #[must_use]
+    pub fn optional<M: AsyncAutoBuilder>(&self) -> Option<M::Capability> {
+        let type_id = TypeId::of::<M>();
+        self.capabilities
+            .get_cloned_by_type_id::<M::Capability>(type_id)
+    }
+
+    /// Check if a capability has been built (its `TypeId` is present in the
+    /// capabilities map).
+    #[must_use]
+    pub fn contains<M: AsyncAutoBuilder>(&self) -> bool {
+        self.capabilities.contains_by_type_id(TypeId::of::<M>())
+    }
+
+    /// Check if a config of type `C` has been registered.
+    #[must_use]
+    pub fn contains_config<C: Clone + Send + Sync + 'static>(&self) -> bool {
+        self.configs.contains::<C>()
+    }
 }
 
 impl Default for AsyncKit {
@@ -636,6 +677,101 @@ mod tests {
                 }
             ),
             "expected BuildFailed for mock-err-module, got {err:?}"
+        );
+    }
+
+    // --- T010 tests for AsyncKit<Ready> retrieval API (require/optional/contains/contains_config) ---
+
+    #[test]
+    fn async_kit_ready_require_returns_capability() {
+        let mut kit = AsyncKit::new();
+        kit.register::<MockModule>()
+            .expect("register should succeed");
+        let built = block_on(kit.build()).expect("build should succeed");
+        let cap = built
+            .require::<MockModule>()
+            .expect("require on built module should succeed");
+        assert_eq!(cap.value, 42);
+    }
+
+    #[test]
+    fn async_kit_ready_require_missing_returns_error() {
+        // Empty kit: MockModule is never registered/built, so its TypeId is
+        // absent from the capabilities map. `require` must return MissingCapability.
+        let kit = AsyncKit::new();
+        let built = block_on(kit.build()).expect("empty build should succeed");
+        let err = built
+            .require::<MockModule>()
+            .expect_err("require on unbuilt module should error");
+        assert!(
+            matches!(err, KitError::MissingCapability { key: "mock-module" }),
+            "expected MissingCapability for mock-module, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn async_kit_ready_optional_returns_some_for_built() {
+        let mut kit = AsyncKit::new();
+        kit.register::<MockModule>()
+            .expect("register should succeed");
+        let built = block_on(kit.build()).expect("build should succeed");
+        let cap = built
+            .optional::<MockModule>()
+            .expect("optional on built module should return Some");
+        assert_eq!(cap.value, 42);
+    }
+
+    #[test]
+    fn async_kit_ready_optional_returns_none_for_unbuilt() {
+        let kit = AsyncKit::new();
+        let built = block_on(kit.build()).expect("empty build should succeed");
+        assert!(
+            built.optional::<MockModule>().is_none(),
+            "optional on unbuilt module should return None"
+        );
+    }
+
+    #[test]
+    fn async_kit_ready_contains_returns_true_for_built() {
+        let mut kit = AsyncKit::new();
+        kit.register::<MockModule>()
+            .expect("register should succeed");
+        let built = block_on(kit.build()).expect("build should succeed");
+        assert!(
+            built.contains::<MockModule>(),
+            "contains should return true for built module"
+        );
+    }
+
+    #[test]
+    fn async_kit_ready_contains_returns_false_for_unbuilt() {
+        let kit = AsyncKit::new();
+        let built = block_on(kit.build()).expect("empty build should succeed");
+        assert!(
+            !built.contains::<MockModule>(),
+            "contains should return false for unbuilt module"
+        );
+    }
+
+    #[test]
+    fn async_kit_ready_contains_config_returns_true() {
+        let kit = AsyncKit::new();
+        kit.set_config(42i32);
+        let built = block_on(kit.build()).expect("build should succeed");
+        assert!(
+            built.contains_config::<i32>(),
+            "contains_config should return true for stored i32 config"
+        );
+    }
+
+    #[test]
+    fn async_kit_ready_contains_config_returns_false() {
+        let kit = AsyncKit::new();
+        kit.set_config(42i32);
+        let built = block_on(kit.build()).expect("build should succeed");
+        assert!(
+            !built.contains_config::<u64>(),
+            "contains_config should return false for absent u64 config"
         );
     }
 }
