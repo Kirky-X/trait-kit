@@ -1270,6 +1270,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "trait-kit-example"
+version = "0.1.0"
+dependencies = [
+ "confers",
+ "serde",
+ "trait-kit",
+]
+
+[[package]]
 name = "trybuild"
 version = "1.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -87,3 +87,36 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: cargo-deny (license / ban / advisory)
         uses: EmbarkStudios/cargo-deny-action@v2
+
+  examples:
+    name: examples (${{ matrix.example }}, ${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # default_basic — no features
+          - { example: default_basic,    toolchain: stable,   features: "" }
+          - { example: default_basic,    toolchain: "1.91.0", features: "" }
+          # confers_loader — Level 1
+          - { example: confers_loader,   toolchain: stable,   features: "confers" }
+          - { example: confers_loader,   toolchain: "1.91.0", features: "confers" }
+          # confers_macros — Level 2
+          - { example: confers_macros,   toolchain: stable,   features: "confers-macros" }
+          - { example: confers_macros,   toolchain: "1.91.0", features: "confers-macros" }
+          # hot_reload — Level 3
+          - { example: hot_reload,       toolchain: stable,   features: "hot-reload" }
+          - { example: hot_reload,       toolchain: "1.91.0", features: "hot-reload" }
+          # encryption — Level 4
+          - { example: encryption,       toolchain: stable,   features: "encryption" }
+          - { example: encryption,       toolchain: "1.91.0", features: "encryption" }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - uses: swatinem/rust-cache@v2
+      - name: Build example
+        run: cargo build -p trait-kit-example --example ${{ matrix.example }} ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }}
+      - name: Run example (exit 0)
+        run: cargo run -p trait-kit-example --example ${{ matrix.example }} ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }}
