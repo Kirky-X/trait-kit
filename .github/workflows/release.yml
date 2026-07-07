@@ -1,9 +1,9 @@
-# Rust Release：tag (v*) 触发 → 创建 GitHub Release → 并行(上传 .crate 包 + 发布 crates.io)
 name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - 'v*'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -13,7 +13,7 @@ env:
   CARGO_TERM_COLOR: always
 
 permissions:
-  contents: write # create release + upload assets
+  contents: write
 
 jobs:
   create-release:
@@ -27,47 +27,26 @@ jobs:
         id: release
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
         with:
-          body: |
-            ## Downloads
-
-            ### Crate package
-            The `trait-kit-${{ github.ref_name }}.crate` source package is available in the **Assets** section below. Install with:
-            ```sh
-            cargo install trait-kit --version ${{ github.ref_name }}
-            ```
-            Or add to `Cargo.toml`:
-            ```toml
-            trait-kit = { version = "${{ github.ref_name }}", features = ["confers-macros"] }
-            ```
-
-            ### Source code
-            GitHub auto-generates `Source code (zip)` and `Source code (tar.gz)` archives — find them in the **Assets** section below.
-
-            Alternatively, clone the source at this tag:
-            ```sh
-            git clone --branch ${{ github.ref_name }} https://github.com/${{ github.repository }}.git
-            ```
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
 
   build-package:
-    name: Build .crate package
+    name: Build Crate Package
     runs-on: ubuntu-latest
     needs: create-release
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30  # stable
-      - name: Build .crate package
+      - name: Build crate package
         run: cargo package --locked
-      - name: Upload .crate to Release
+      - name: Upload crate to Release
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
         with:
           files: target/package/*.crate
 
-  # 仅当配置了 CARGO_REGISTRY_TOKEN 才发布到 crates.io；否则跳过，不报错。
   publish-crates:
-    name: Publish to crates.io (条件)
+    name: Publish to crates.io
     runs-on: ubuntu-latest
     needs: create-release
     env:
