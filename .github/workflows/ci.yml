@@ -55,7 +55,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.91.0
+      # Pin toolchain via input (not action tag) — dependabot won't bump the MSRV anchor.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.91.0"
       - uses: swatinem/rust-cache@v2
       - run: cargo test --all-features --no-fail-fast
 
