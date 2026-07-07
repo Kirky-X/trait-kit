@@ -35,3 +35,7 @@ cargo run -p trait-kit-example --example encryption --features encryption
 
 - The example crate is `publish = false` and is a workspace member of the root `trait-kit` workspace. It is never published to crates.io.
 - Each example exits 0 on success and panics on failure (assertions).
+
+---
+
+[← Back to trait-kit](../../README.md)
