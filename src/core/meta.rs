@@ -90,20 +90,20 @@ pub(crate) type BuildFn =
 mod async_tests {
     use super::*;
     use crate::kit::async_kit::AsyncKit;
-    use crate::kit::async_typemap::AsyncTypeMap;
-    use crate::kit::graph::DependencyGraph;
     use std::future::Future;
-    use std::marker::PhantomData;
     use std::pin::Pin;
-    use std::sync::{Arc, RwLock};
-    use std::task::{self, Poll, Wake};
+    use std::sync::Arc;
+    use std::task::{self, Poll};
 
     /// Minimal single-threaded `Future` executor for tests (no extra deps).
     ///
-    /// Safe: relies on `Arc<W: Wake>` → `Waker` conversion (stable since 1.51).
-    /// Used because the `async` feature deliberately stays dep-free.
+    /// Uses `Waker::noop()` (stable since 1.85) because the `async` feature
+    /// deliberately stays dep-free (no `tokio` / `futures` test runtime).
     fn block_on<F: Future>(future: F) -> F::Output {
-        let waker: task::Waker = Arc::new(NoopWaker).into();
+        let waker = task::Waker::noop();
+        // `Context::from_waker` takes `&Waker`; clippy::needless_borrow is a
+        // false positive here (removing the `&` would be a type error).
+        #[allow(clippy::needless_borrow)]
         let mut cx = task::Context::from_waker(&waker);
         let mut future = std::pin::pin!(future);
         loop {
@@ -111,25 +111,6 @@ mod async_tests {
                 Poll::Ready(v) => return v,
                 Poll::Pending => std::hint::spin_loop(),
             }
-        }
-    }
-
-    struct NoopWaker;
-    impl Wake for NoopWaker {
-        fn wake(self: Arc<Self>) {}
-    }
-
-    /// Build an `AsyncKit<Unbuilt>` directly from struct fields — Phase 1a stub
-    /// has no `new()` constructor yet.
-    fn make_stub_kit() -> AsyncKit {
-        use std::any::TypeId;
-        use std::collections::HashMap;
-        AsyncKit {
-            builders: Arc::new(RwLock::new(HashMap::<TypeId, ()>::new())),
-            graph: DependencyGraph::new(),
-            configs: AsyncTypeMap::new(),
-            capabilities: AsyncTypeMap::new(),
-            _state: PhantomData,
         }
     }
 
@@ -173,7 +154,7 @@ mod async_tests {
 
     #[test]
     fn async_auto_builder_returns_pin_box_future() {
-        let kit = make_stub_kit();
+        let kit = AsyncKit::new();
         let fut = MockLoggerModule::build(&kit);
         let result = block_on(fut);
         assert!(result.is_ok());
