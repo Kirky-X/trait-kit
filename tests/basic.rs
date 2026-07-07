@@ -415,7 +415,7 @@ mod module_config_trait {
     }
 }
 
-#[cfg(feature = "confers-hot-reload")]
+#[cfg(feature = "hot-reload")]
 mod hot_reload {
     use std::cell::Cell;
     use std::error::Error;
@@ -464,7 +464,7 @@ mod hot_reload {
     }
 }
 
-#[cfg(feature = "confers-encryption")]
+#[cfg(feature = "encryption")]
 mod encryption {
     use trait_kit::kit::config::ModuleConfig;
     use trait_kit::prelude::*;
@@ -920,7 +920,7 @@ mod kit_build_coverage {
     }
 }
 
-#[cfg(feature = "confers-hot-reload")]
+#[cfg(feature = "hot-reload")]
 mod reload_config_coverage {
     use std::error::Error;
     use trait_kit::prelude::*;

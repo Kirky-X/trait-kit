@@ -15,5 +15,5 @@ pub use kit::{Kit, Ready, Unbuilt};
 #[cfg(feature = "confers-macros")]
 pub use config::Config;
 
-#[cfg(feature = "confers-encryption")]
+#[cfg(feature = "encryption")]
 pub use config::EncryptedBlob;

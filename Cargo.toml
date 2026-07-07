@@ -31,6 +31,6 @@ confers = ["dep:confers", "dep:serde"]
 # is a semantic marker for trait-kit's ModuleConfig surface.
 confers-macros = ["confers"]
 # Level 3: hot-reload subscription (maps to confers `watch` feature).
-confers-hot-reload = ["confers-macros", "confers/watch"]
+hot-reload = ["confers-macros", "confers/watch"]
 # Level 4: encrypted config storage (maps to confers `encryption` feature).
-confers-encryption = ["confers-hot-reload", "confers/encryption", "dep:serde", "dep:serde_json"]
+encryption = ["hot-reload", "confers/encryption", "dep:serde", "dep:serde_json"]

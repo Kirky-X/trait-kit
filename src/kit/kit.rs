@@ -7,24 +7,24 @@
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::HashMap;
-#[cfg(feature = "confers-hot-reload")]
+#[cfg(feature = "hot-reload")]
 use std::rc::Rc;
 
 use crate::core::error::KitError;
 use crate::core::meta::{AutoBuilder, BuildFn};
 
-#[cfg(feature = "confers-encryption")]
+#[cfg(feature = "encryption")]
 use super::config::EncryptedBlob;
 use super::graph::{DependencyGraph, GraphError, ModuleEntry};
 use super::typemap::TypeMap;
 
 /// HKDF key-derivation version label bound into every per-field key.
 /// Bumping this rotates all encrypted configs without changing master keys.
-#[cfg(feature = "confers-encryption")]
+#[cfg(feature = "encryption")]
 const KEY_DERIVATION_VERSION: &str = "v1";
 
 /// Derive a per-field encryption key, mapping HKDF failures to `KitError`.
-#[cfg(feature = "confers-encryption")]
+#[cfg(feature = "encryption")]
 fn derive_kit_field_key(
     master_key: &[u8],
     path: &'static str,
@@ -45,11 +45,11 @@ pub struct Unbuilt;
 pub struct Ready;
 
 /// Type alias for hot-reload subscriber callbacks (single-threaded, `!Sync`).
-#[cfg(feature = "confers-hot-reload")]
+#[cfg(feature = "hot-reload")]
 type SubscriberMap = RefCell<HashMap<TypeId, Vec<Rc<dyn Fn()>>>>;
 
 /// Type alias for the encrypted config store (single-threaded, `!Sync`).
-#[cfg(feature = "confers-encryption")]
+#[cfg(feature = "encryption")]
 type EncryptedConfigMap = RefCell<HashMap<TypeId, EncryptedBlob>>;
 
 /// The capability and configuration management center.
@@ -58,9 +58,9 @@ pub struct Kit<S = Unbuilt> {
     graph: DependencyGraph,
     configs: TypeMap,
     capabilities: TypeMap,
-    #[cfg(feature = "confers-hot-reload")]
+    #[cfg(feature = "hot-reload")]
     subscribers: SubscriberMap,
-    #[cfg(feature = "confers-encryption")]
+    #[cfg(feature = "encryption")]
     encrypted_configs: EncryptedConfigMap,
     _state: std::marker::PhantomData<S>,
 }
@@ -74,9 +74,9 @@ impl Kit {
             graph: DependencyGraph::new(),
             configs: TypeMap::new(),
             capabilities: TypeMap::new(),
-            #[cfg(feature = "confers-hot-reload")]
+            #[cfg(feature = "hot-reload")]
             subscribers: RefCell::new(HashMap::new()),
-            #[cfg(feature = "confers-encryption")]
+            #[cfg(feature = "encryption")]
             encrypted_configs: RefCell::new(HashMap::new()),
             _state: std::marker::PhantomData,
         }
@@ -187,9 +187,9 @@ impl Kit {
             graph: self.graph,
             configs: self.configs,
             capabilities: self.capabilities,
-            #[cfg(feature = "confers-hot-reload")]
+            #[cfg(feature = "hot-reload")]
             subscribers: self.subscribers,
-            #[cfg(feature = "confers-encryption")]
+            #[cfg(feature = "encryption")]
             encrypted_configs: self.encrypted_configs,
             _state: std::marker::PhantomData,
         })
@@ -231,13 +231,13 @@ impl<S> Kit<S> {
 
     /// Subscribe a callback to be invoked when config of type `C` is reloaded.
     ///
-    /// Requires the `confers-hot-reload` feature. The callback receives no
+    /// Requires the `hot-reload` feature. The callback receives no
     /// arguments; use `Kit::config::<C>()` inside it to read the new value.
     /// Callbacks are stored in a `RefCell` (single-threaded, `!Sync`).
     ///
     /// Layer 2 of the inheritance system: cargo feature chain
-    /// `confers-hot-reload` → `confers-macros` → `confers`.
-    #[cfg(feature = "confers-hot-reload")]
+    /// `hot-reload` → `confers-macros` → `confers`.
+    #[cfg(feature = "hot-reload")]
     pub fn subscribe<C: 'static>(&self, callback: impl Fn() + 'static) {
         let callback: Rc<dyn Fn()> = Rc::new(callback);
         self.subscribers
@@ -250,7 +250,7 @@ impl<S> Kit<S> {
     /// Reload a configuration via its [`Configurable`] implementation and
     /// notify all subscribers of type `C`.
     ///
-    /// Requires the `confers-hot-reload` feature. Calls `C::load()`, stores
+    /// Requires the `hot-reload` feature. Calls `C::load()`, stores
     /// the result via `set_config`, then invokes every `subscribe::<C>`
     /// callback. Errors from `load()` are mapped to `KitError::BuildFailed`.
     ///
@@ -265,7 +265,7 @@ impl<S> Kit<S> {
     /// # Errors
     ///
     /// Returns `KitError::BuildFailed` if `Configurable::load` fails.
-    #[cfg(feature = "confers-hot-reload")]
+    #[cfg(feature = "hot-reload")]
     pub fn reload_config<C: super::config::Configurable>(&self) -> Result<(), KitError> {
         let config = C::load().map_err(|e| KitError::BuildFailed {
             context: "reload_config",
@@ -290,7 +290,7 @@ impl<S> Kit<S> {
 impl Kit {
     /// Encrypt and store a configuration value.
     ///
-    /// Requires the `confers-encryption` feature. Serializes `value` to JSON,
+    /// Requires the `encryption` feature. Serializes `value` to JSON,
     /// derives a per-field key from `master_key` and `C::PATH` via HKDF, then
     /// encrypts with XChaCha20-Poly1305. The resulting nonce + ciphertext is
     /// stored in `encrypted_configs`, separate from the plaintext `TypeMap`.
@@ -303,7 +303,7 @@ impl Kit {
     ///
     /// Returns `KitError::BuildFailed` if serialization, key derivation, or
     /// encryption fails.
-    #[cfg(feature = "confers-encryption")]
+    #[cfg(feature = "encryption")]
     pub fn set_encrypted<C>(&self, value: &C, master_key: &[u8]) -> Result<(), KitError>
     where
         C: super::config::ModuleConfig + serde::Serialize,
@@ -331,7 +331,7 @@ impl Kit {
     }
 
     /// Check if an encrypted config of type `C` is registered.
-    #[cfg(feature = "confers-encryption")]
+    #[cfg(feature = "encryption")]
     pub fn contains_encrypted<C: super::config::ModuleConfig>(&self) -> bool {
         self.encrypted_configs
             .borrow()
@@ -383,7 +383,7 @@ impl Kit<Ready> {
 
     /// Retrieve and decrypt a configuration value.
     ///
-    /// Requires the `confers-encryption` feature. Looks up the encrypted
+    /// Requires the `encryption` feature. Looks up the encrypted
     /// blob for type `C`, derives the per-field key from `master_key` and
     /// `C::PATH`, decrypts with XChaCha20-Poly1305, then deserializes from
     /// JSON. The `master_key` must match the one passed to `set_encrypted`.
@@ -393,7 +393,7 @@ impl Kit<Ready> {
     /// Returns `KitError::MissingConfig` if no encrypted blob for `C` exists.
     /// Returns `KitError::BuildFailed` if key derivation, decryption, or
     /// deserialization fails (e.g. wrong master key, tampered ciphertext).
-    #[cfg(feature = "confers-encryption")]
+    #[cfg(feature = "encryption")]
     pub fn get_encrypted<C>(&self, master_key: &[u8]) -> Result<C, KitError>
     where
         C: super::config::ModuleConfig + serde::de::DeserializeOwned,

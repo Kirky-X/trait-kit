@@ -224,21 +224,21 @@ trait-kit 通过四级 feature flag 集成 [`confers`](https://crates.io/crates/
 | --------------------- | ----------------------------------------------- | ------------------------------------------------ |
 | `confers`             | `dep:confers`, `dep:serde`                      | `Configurable` trait + `Kit::load_config`        |
 | `confers-macros`      | `confers`                                       | `ModuleConfig` trait + `Config` derive 再导出    |
-| `confers-hot-reload`  | `confers-macros`, `confers/watch`               | `subscribe` / `reload_config` API                |
-| `confers-encryption`  | `confers-hot-reload`, `confers/encryption`, `dep:serde_json` | `set_encrypted` / `get_encrypted` API |
+| `hot-reload`  | `confers-macros`, `confers/watch`               | `subscribe` / `reload_config` API                |
+| `encryption`  | `hot-reload`, `confers/encryption`, `dep:serde_json` | `set_encrypted` / `get_encrypted` API |
 
 在 `Cargo.toml` 中启用所需级别：
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.2", features = ["confers-encryption"] }
+trait-kit = { version = "0.2", features = ["encryption"] }
 ```
 
 ### 三层继承系统
 
 1. **模块能力继承**（Layer 1）：`ModuleConfig` trait 声明 `PATH` 和 `default_value()`，将配置类型绑定到其模块的配置路径。
 
-2. **Cargo feature 继承**（Layer 2）：每一级 feature 继承前一级（`confers-encryption` → `confers-hot-reload` → `confers-macros` → `confers`）。启用高级别会自动启用所有低级别。
+2. **Cargo feature 继承**（Layer 2）：每一级 feature 继承前一级（`encryption` → `hot-reload` → `confers-macros` → `confers`）。启用高级别会自动启用所有低级别。
 
 3. **配置值继承**（Layer 3）：加密密钥通过 HKDF 从 `ModuleConfig::PATH` 派生，因此同一主密钥可为不同模块生成不同的字段密钥。
 
