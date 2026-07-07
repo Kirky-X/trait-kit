@@ -24,6 +24,8 @@ trybuild = "1"
 
 [features]
 default = []
+# AsyncKit: Send + Sync async capability management (no extra deps, Rust native async).
+async = []
 # Level 1: basic confers integration (Store + Config trait).
 confers = ["dep:confers", "dep:serde"]
 # Level 2: module-level config inheritance (ModuleConfig trait + Config re-export).
