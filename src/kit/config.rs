@@ -1,4 +1,7 @@
-// Copyright © 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X
+//
+// Licensed under the MIT License
+// See LICENSE file in the project root for full license information.
 
 //! Configuration loader trait for the "loader pattern" integration with confers.
 //!
