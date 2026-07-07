@@ -10,10 +10,20 @@ pub mod graph;
 pub mod kit;
 pub(crate) mod typemap;
 
+#[cfg(feature = "async")]
+pub mod async_kit;
+#[cfg(feature = "async")]
+pub mod async_typemap;
+
 #[cfg(feature = "confers")]
 pub mod config;
 
 pub use kit::{Kit, Ready, Unbuilt};
+
+#[cfg(feature = "async")]
+pub use async_kit::{AsyncKit, Ready as AsyncReady, Unbuilt as AsyncUnbuilt};
+#[cfg(feature = "async")]
+pub use async_typemap::AsyncTypeMap;
 
 #[cfg(feature = "confers-macros")]
 pub use config::Config;
