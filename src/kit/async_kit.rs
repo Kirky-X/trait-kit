@@ -147,6 +147,12 @@ impl AsyncKit {
     ///
     /// Overwrites any prior value of the same type. Configs are read during
     /// `build()` via [`AsyncKit::config`] inside module `build` callbacks.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `configs` [`RwLock`] is poisoned (a worker thread
+    /// panicked while holding the write lock). See [`register`](Self::register)
+    /// for context on lock poisoning.
     pub fn set_config<C: Clone + Send + Sync + 'static>(&self, config: C) {
         self.configs.insert(config);
     }
@@ -267,6 +273,11 @@ impl<S> AsyncKit<S> {
     /// # Errors
     ///
     /// Returns [`KitError::MissingConfig`] if no value of type `C` was set.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `configs` [`RwLock`] is poisoned. See
+    /// [`register`](Self::register) for context on lock poisoning.
     pub fn config<C: Clone + Send + Sync + 'static>(&self) -> Result<C, KitError> {
         self.configs
             .get_cloned::<C>()
@@ -285,6 +296,11 @@ impl<S> AsyncKit<S> {
     ///
     /// Returns [`KitError::MissingCapability`] if the module has not been
     /// built yet (its `TypeId` is absent from the capabilities map).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `capabilities` [`RwLock`] is poisoned. See
+    /// [`register`](Self::register) for context on lock poisoning.
     pub fn require<M: AsyncAutoBuilder>(&self) -> Result<M::Capability, KitError> {
         let type_id = TypeId::of::<M>();
         self.capabilities
@@ -296,6 +312,11 @@ impl<S> AsyncKit<S> {
 impl AsyncKit<Ready> {
     /// Retrieve an optional capability. Returns `None` if the module has not
     /// been built (its `TypeId` is absent from the capabilities map).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `capabilities` [`RwLock`] is poisoned. See
+    /// [`register`](Self::register) for context on lock poisoning.
     #[must_use]
     pub fn optional<M: AsyncAutoBuilder>(&self) -> Option<M::Capability> {
         let type_id = TypeId::of::<M>();
@@ -305,12 +326,22 @@ impl AsyncKit<Ready> {
 
     /// Check if a capability has been built (its `TypeId` is present in the
     /// capabilities map).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `capabilities` [`RwLock`] is poisoned. See
+    /// [`register`](Self::register) for context on lock poisoning.
     #[must_use]
     pub fn contains<M: AsyncAutoBuilder>(&self) -> bool {
         self.capabilities.contains_by_type_id(TypeId::of::<M>())
     }
 
     /// Check if a config of type `C` has been registered.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `configs` [`RwLock`] is poisoned. See
+    /// [`register`](Self::register) for context on lock poisoning.
     #[must_use]
     pub fn contains_config<C: Clone + Send + Sync + 'static>(&self) -> bool {
         self.configs.contains::<C>()
