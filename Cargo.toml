@@ -34,3 +34,8 @@ confers-macros = ["confers"]
 hot-reload = ["confers-macros", "confers/watch"]
 # Level 4: encrypted config storage (maps to confers `encryption` feature).
 encryption = ["hot-reload", "confers/encryption", "dep:serde", "dep:serde_json"]
+
+[workspace]
+resolver = "2"
+members = [".", "examples/trait-kit-example"]
+default-members = ["."]

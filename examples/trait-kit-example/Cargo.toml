@@ -1,0 +1,44 @@
+[package]
+name = "trait-kit-example"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91"
+publish = false
+
+[dependencies]
+trait-kit = { path = "../..", default-features = false }
+# serde + confers are direct deps because #[derive(Config)] expands to code that
+# references confers::* / serde::* paths from the *caller's* crate.
+serde = { version = "1", features = ["derive"], optional = true }
+confers = { version = "0.4", default-features = false, optional = true }
+
+[features]
+default = []
+confers = ["dep:confers", "dep:serde", "trait-kit/confers"]
+confers-macros = ["confers", "trait-kit/confers-macros"]
+hot-reload = ["confers-macros", "trait-kit/hot-reload"]
+encryption = ["hot-reload", "trait-kit/encryption"]
+
+[[example]]
+name = "default_basic"
+path = "examples/default_basic.rs"
+
+[[example]]
+name = "confers_loader"
+path = "examples/confers_loader.rs"
+required-features = ["confers"]
+
+[[example]]
+name = "confers_macros"
+path = "examples/confers_macros.rs"
+required-features = ["confers-macros"]
+
+[[example]]
+name = "hot_reload"
+path = "examples/hot_reload.rs"
+required-features = ["hot-reload"]
+
+[[example]]
+name = "encryption"
+path = "examples/encryption.rs"
+required-features = ["encryption"]
