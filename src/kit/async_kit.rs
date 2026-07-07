@@ -79,7 +79,6 @@ pub struct AsyncKit<S = Unbuilt> {
     builders: Arc<RwLock<HashMap<TypeId, AsyncBuildFn>>>,
     graph: DependencyGraph,
     configs: AsyncTypeMap,
-    #[allow(dead_code, reason = "Phase 1b T008+T009 adds build()/require() that read this field")]
     capabilities: AsyncTypeMap,
     _state: PhantomData<S>,
 }
@@ -382,35 +381,11 @@ mod tests {
     use std::pin::Pin;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
-    use std::task::{self, Poll};
-
-    /// Minimal single-threaded `Future` executor for tests (no extra deps).
-    ///
-    /// Mirrors the helper in `core::meta::async_tests`. Uses `Waker::noop()`
-    /// (stable since 1.85) because the `async` feature stays dep-free.
-    fn block_on<F: Future>(future: F) -> F::Output {
-        let waker = task::Waker::noop();
-        #[allow(clippy::needless_borrow, reason = "Context::from_waker takes &Waker")]
-        let mut cx = task::Context::from_waker(&waker);
-        let mut future = std::pin::pin!(future);
-        loop {
-            match future.as_mut().poll(&mut cx) {
-                Poll::Ready(v) => return v,
-                Poll::Pending => std::hint::spin_loop(),
-            }
-        }
-    }
+    use crate::test_helpers::{block_on, MockError};
 
     #[derive(Debug, Clone, PartialEq)]
     struct MockCap {
         value: i32,
-    }
-
-    #[derive(Debug, thiserror::Error)]
-    #[allow(dead_code, reason = "mock error type verifies trait signature only")]
-    enum MockError {
-        #[error("mock build failed: {0}")]
-        Failed(String),
     }
 
     struct MockModule;

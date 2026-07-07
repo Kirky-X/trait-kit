@@ -94,37 +94,11 @@ mod async_tests {
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::Arc;
-    use std::task::{self, Poll};
-
-    /// Minimal single-threaded `Future` executor for tests (no extra deps).
-    ///
-    /// Uses `Waker::noop()` (stable since 1.85) because the `async` feature
-    /// deliberately stays dep-free (no `tokio` / `futures` test runtime).
-    fn block_on<F: Future>(future: F) -> F::Output {
-        let waker = task::Waker::noop();
-        // `Context::from_waker` takes `&Waker`; clippy::needless_borrow is a
-        // false positive here (removing the `&` would be a type error).
-        #[allow(clippy::needless_borrow)]
-        let mut cx = task::Context::from_waker(&waker);
-        let mut future = std::pin::pin!(future);
-        loop {
-            match future.as_mut().poll(&mut cx) {
-                Poll::Ready(v) => return v,
-                Poll::Pending => std::hint::spin_loop(),
-            }
-        }
-    }
+    use crate::test_helpers::{block_on, MockError};
 
     #[derive(Debug, Clone, PartialEq)]
     struct LoggerCapability {
         name: String,
-    }
-
-    #[derive(Debug, thiserror::Error)]
-    #[allow(dead_code, reason = "mock error type verifies trait signature only")]
-    enum MockError {
-        #[error("mock build failed: {0}")]
-        Failed(String),
     }
 
     struct MockLoggerModule;
