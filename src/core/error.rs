@@ -29,7 +29,7 @@ pub enum KitError {
     BuildFailed {
         context: &'static str,
         #[source]
-        source: Box<dyn std::error::Error>,
+        source: Box<dyn std::error::Error + Send + 'static>,
     },
 
     #[error("missing capability `{key}`")]

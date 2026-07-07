@@ -49,7 +49,7 @@ pub trait Configurable: Clone + 'static {
     /// # Errors
     ///
     /// Returns an error if the configuration could not be loaded.
-    fn load() -> Result<Self, Box<dyn std::error::Error>>;
+    fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>>;
 }
 
 /// Re-export of the `confers::Config` derive macro.
