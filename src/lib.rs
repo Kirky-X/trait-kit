@@ -1,4 +1,7 @@
-// Copyright © 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X
+//
+// Licensed under the MIT License
+// See LICENSE file in the project root for full license information.
 
 //! trait-kit — 模块标准接口与能力管理中心
 //!
