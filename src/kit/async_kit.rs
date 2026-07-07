@@ -158,6 +158,27 @@ impl AsyncKit {
     /// the build callback receives a `&AsyncKit` reference and may read
     /// configs (and, once prior modules are built, capabilities) from it.
     ///
+    /// # Cross-Module Dependency Injection
+    ///
+    /// Because modules are constructed in topological order and each
+    /// capability is inserted into the shared [`AsyncTypeMap`] immediately
+    /// after its `build` future resolves, a module's `build` callback may
+    /// call `kit.require::<DepModule>()?` to pull in the capability of any
+    /// already-built dependency. This is the canonical DI pattern and works
+    /// transitively (A→B→C chains). The `require` method lives in
+    /// `impl<S> AsyncKit<S>` so it is available on `&AsyncKit<Unbuilt>`
+    /// during `build()` as well as on `&AsyncKit<Ready>` afterwards.
+    ///
+    /// ```text
+    /// // Inside an AsyncAutoBuilder::build callback:
+    /// let dep_cap = kit.require::<DepModule>()?;  // dep was built earlier
+    /// ```
+    ///
+    /// The kit's `capabilities` map is backed by `Arc<RwLock<...>>`, so a
+    /// write is visible to subsequent `require` calls without additional
+    /// synchronization. The build callback must not hold a write guard
+    /// across `.await` (the build pipeline never does this).
+    ///
     /// # Errors
     ///
     /// - [`KitError::DependencyMissing`] if a registered module declares a
@@ -772,6 +793,367 @@ mod tests {
         assert!(
             !built.contains_config::<u64>(),
             "contains_config should return false for absent u64 config"
+        );
+    }
+
+    // === T012 mocks: cross-module dependency injection (R-004) ===
+    //
+    // MockBModule: no deps, cap = Arc<Bcap{n:42}>.
+    // MockAModule: declares dep on MockBModule; build() calls
+    //   `kit.require::<MockBModule>()?` and embeds B's n into A's cap.
+    //   This is the canonical DI pattern from design.md Decision 3.
+    // MockCModule / MockChainBModule / MockChainAModule: transitive
+    //   A→B→C chain; each build callback calls require on its direct dep.
+    // MockCycleA3/B3/C3: 3-node cycle A→B→C→A for cycle detection.
+    //
+    // `From<KitError> for MockError` lets `?` convert require errors
+    // (matches the production pattern in design.md where DbNexusModule
+    // uses `kit.require::<OxcacheModule>()?` with `OxcacheError: From<KitError>`).
+
+    impl From<KitError> for MockError {
+        fn from(e: KitError) -> Self {
+            MockError::Failed(e.to_string())
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct Bcap {
+        n: i32,
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct Acap {
+        b_val: i32,
+    }
+
+    struct MockBModule;
+
+    impl ModuleMeta for MockBModule {
+        const NAME: &'static str = "mock-b";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
+    }
+
+    impl AsyncAutoBuilder for MockBModule {
+        type Capability = Arc<Bcap>;
+        type Error = MockError;
+
+        fn build<'a>(
+            kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+            let _ = kit;
+            Box::pin(async move { Ok(Arc::new(Bcap { n: 42 })) })
+        }
+    }
+
+    struct MockAModule;
+
+    impl ModuleMeta for MockAModule {
+        const NAME: &'static str = "mock-a";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            static DEPS: &[(&str, TypeId)] = &[("mock-b", TypeId::of::<MockBModule>())];
+            DEPS
+        }
+    }
+
+    impl AsyncAutoBuilder for MockAModule {
+        type Capability = Arc<Acap>;
+        type Error = MockError;
+
+        fn build<'a>(
+            kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+            Box::pin(async move {
+                // DI happens here: pull B's cap from the kit during A's build.
+                let b_cap: Arc<Bcap> = kit.require::<MockBModule>()?;
+                Ok(Arc::new(Acap { b_val: b_cap.n }))
+            })
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct Ccap {
+        v: i32,
+        build_order: usize,
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct ChainBcap {
+        c_val: i32,
+        build_order: usize,
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct ChainAcap {
+        b_val: i32,
+        build_order: usize,
+    }
+
+    struct MockCModule;
+
+    impl ModuleMeta for MockCModule {
+        const NAME: &'static str = "mock-c";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
+    }
+
+    impl AsyncAutoBuilder for MockCModule {
+        type Capability = Arc<Ccap>;
+        type Error = MockError;
+
+        fn build<'a>(
+            kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+            Box::pin(async move {
+                let counter = kit.config::<Arc<AtomicUsize>>()?;
+                let order = counter.fetch_add(1, Ordering::SeqCst);
+                Ok(Arc::new(Ccap {
+                    v: 100,
+                    build_order: order + 1,
+                }))
+            })
+        }
+    }
+
+    struct MockChainBModule;
+
+    impl ModuleMeta for MockChainBModule {
+        const NAME: &'static str = "mock-chain-b";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            static DEPS: &[(&str, TypeId)] = &[("mock-c", TypeId::of::<MockCModule>())];
+            DEPS
+        }
+    }
+
+    impl AsyncAutoBuilder for MockChainBModule {
+        type Capability = Arc<ChainBcap>;
+        type Error = MockError;
+
+        fn build<'a>(
+            kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+            Box::pin(async move {
+                // DI: pull C's cap during B's build.
+                let c_cap: Arc<Ccap> = kit.require::<MockCModule>()?;
+                let counter = kit.config::<Arc<AtomicUsize>>()?;
+                let order = counter.fetch_add(1, Ordering::SeqCst);
+                Ok(Arc::new(ChainBcap {
+                    c_val: c_cap.v,
+                    build_order: order + 1,
+                }))
+            })
+        }
+    }
+
+    struct MockChainAModule;
+
+    impl ModuleMeta for MockChainAModule {
+        const NAME: &'static str = "mock-chain-a";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            static DEPS: &[(&str, TypeId)] =
+                &[("mock-chain-b", TypeId::of::<MockChainBModule>())];
+            DEPS
+        }
+    }
+
+    impl AsyncAutoBuilder for MockChainAModule {
+        type Capability = Arc<ChainAcap>;
+        type Error = MockError;
+
+        fn build<'a>(
+            kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+            Box::pin(async move {
+                // DI: pull chain-B's cap during A's build (transitive).
+                let b_cap: Arc<ChainBcap> = kit.require::<MockChainBModule>()?;
+                let counter = kit.config::<Arc<AtomicUsize>>()?;
+                let order = counter.fetch_add(1, Ordering::SeqCst);
+                Ok(Arc::new(ChainAcap {
+                    b_val: b_cap.c_val,
+                    build_order: order + 1,
+                }))
+            })
+        }
+    }
+
+    // 3-node cycle: MockCycleA3 → MockCycleB3 → MockCycleC3 → MockCycleA3.
+    // Build callbacks are trivial because graph.validate() rejects the cycle
+    // before any build_fn is invoked.
+    struct MockCycleA3;
+
+    impl ModuleMeta for MockCycleA3 {
+        const NAME: &'static str = "mock-cycle-a3";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            static DEPS: &[(&str, TypeId)] = &[("mock-cycle-b3", TypeId::of::<MockCycleB3>())];
+            DEPS
+        }
+    }
+
+    impl AsyncAutoBuilder for MockCycleA3 {
+        type Capability = Arc<()>;
+        type Error = MockError;
+
+        fn build<'a>(
+            kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+            let _ = kit;
+            Box::pin(async move { Ok(Arc::new(())) })
+        }
+    }
+
+    struct MockCycleB3;
+
+    impl ModuleMeta for MockCycleB3 {
+        const NAME: &'static str = "mock-cycle-b3";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            static DEPS: &[(&str, TypeId)] = &[("mock-cycle-c3", TypeId::of::<MockCycleC3>())];
+            DEPS
+        }
+    }
+
+    impl AsyncAutoBuilder for MockCycleB3 {
+        type Capability = Arc<()>;
+        type Error = MockError;
+
+        fn build<'a>(
+            kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+            let _ = kit;
+            Box::pin(async move { Ok(Arc::new(())) })
+        }
+    }
+
+    struct MockCycleC3;
+
+    impl ModuleMeta for MockCycleC3 {
+        const NAME: &'static str = "mock-cycle-c3";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            static DEPS: &[(&str, TypeId)] = &[("mock-cycle-a3", TypeId::of::<MockCycleA3>())];
+            DEPS
+        }
+    }
+
+    impl AsyncAutoBuilder for MockCycleC3 {
+        type Capability = Arc<()>;
+        type Error = MockError;
+
+        fn build<'a>(
+            kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+            let _ = kit;
+            Box::pin(async move { Ok(Arc::new(())) })
+        }
+    }
+
+    // --- T012 tests: cross-module dependency injection (R-004) ---
+
+    /// R-004 #1: A declares dep on B; B is built before A (topo order).
+    /// A's cap embeds B's n=42, proving B was ready when A's build ran.
+    #[test]
+    fn async_kit_di_dependency_built_before_dependent() {
+        let mut kit = AsyncKit::new();
+        kit.register::<MockBModule>().expect("register B");
+        kit.register::<MockAModule>().expect("register A");
+        let built = block_on(kit.build()).expect("build should succeed");
+        let a_cap = built
+            .require::<MockAModule>()
+            .expect("A's cap should be built");
+        assert_eq!(
+            a_cap.b_val, 42,
+            "A's cap must contain B's n=42 — proves B built before A"
+        );
+    }
+
+    /// R-004 #2: A's build callback calls `kit.require::<MockBModule>()`
+    /// and receives B's capability. Both caps are retrievable post-build.
+    #[test]
+    fn async_kit_di_require_returns_dependency_capability() {
+        let mut kit = AsyncKit::new();
+        kit.register::<MockBModule>().expect("register B");
+        kit.register::<MockAModule>().expect("register A");
+        let built = block_on(kit.build()).expect("build should succeed");
+        let b_cap = built.require::<MockBModule>().expect("B's cap");
+        let a_cap = built.require::<MockAModule>().expect("A's cap");
+        assert_eq!(b_cap.n, 42);
+        assert_eq!(
+            a_cap.b_val, 42,
+            "A's cap must contain B's n=42 — require worked inside build callback"
+        );
+    }
+
+    /// R-004 #3: Missing dependency → `KitError::DependencyMissing`.
+    /// Register only `MockAModule` (declares dep on `MockBModule`); `MockBModule`
+    /// is intentionally unregistered. `graph.validate()` must reject before
+    /// any `build_fn` runs.
+    #[test]
+    fn async_kit_di_missing_dependency_returns_error() {
+        let mut kit = AsyncKit::new();
+        kit.register::<MockAModule>()
+            .expect("register A only (B missing)");
+        let err = block_on(kit.build())
+            .expect_err("build must fail when declared dep is unregistered");
+        assert!(
+            matches!(
+                err,
+                KitError::DependencyMissing {
+                    module: "mock-a",
+                    missing: "mock-b"
+                }
+            ),
+            "expected DependencyMissing {{ module: \"mock-a\", missing: \"mock-b\" }}, got {err:?}"
+        );
+    }
+
+    /// R-004 #4: 3-node cycle A→B→C→A → `KitError::CycleDetected`.
+    /// Distinct from the 2-node cycle test (T008) — exercises DFS cycle
+    /// extraction on a longer ring.
+    #[test]
+    fn async_kit_di_three_node_cycle_returns_error() {
+        let mut kit = AsyncKit::new();
+        kit.register::<MockCycleA3>().expect("register cycle A3");
+        kit.register::<MockCycleB3>().expect("register cycle B3");
+        kit.register::<MockCycleC3>().expect("register cycle C3");
+        let err = block_on(kit.build())
+            .expect_err("build must fail on 3-node cycle");
+        assert!(
+            matches!(err, KitError::CycleDetected { .. }),
+            "expected CycleDetected for 3-node cycle, got {err:?}"
+        );
+    }
+
+    /// R-004 #5: Transitive chain A→B→C. C built first (order=1), B second
+    /// (order=2), A third (order=3). A's `require::<MockChainBModule>()`
+    /// succeeds, B's `require::<MockCModule>()` succeeds. A's cap contains
+    /// C's v=100 transitively — proves DI propagates through the chain.
+    #[test]
+    fn async_kit_di_transitive_dependency_chain() {
+        let mut kit = AsyncKit::new();
+        kit.set_config(Arc::new(AtomicUsize::new(0)));
+        kit.register::<MockCModule>().expect("register C");
+        kit.register::<MockChainBModule>().expect("register chain-B");
+        kit.register::<MockChainAModule>().expect("register chain-A");
+        let built = block_on(kit.build()).expect("build should succeed");
+
+        let c_cap = built.require::<MockCModule>().expect("C's cap");
+        let b_cap = built.require::<MockChainBModule>().expect("chain-B's cap");
+        let a_cap = built.require::<MockChainAModule>().expect("chain-A's cap");
+
+        // Topological order: C=1, B=2, A=3.
+        assert_eq!(c_cap.build_order, 1, "C should be built first");
+        assert_eq!(b_cap.build_order, 2, "B should be built second");
+        assert_eq!(a_cap.build_order, 3, "A should be built third");
+
+        // DI propagation: A.b_val ← B.c_val ← C.v.
+        assert_eq!(c_cap.v, 100);
+        assert_eq!(
+            b_cap.c_val, 100,
+            "B's cap must contain C's v=100 — require::<MockCModule>() worked in B's build"
+        );
+        assert_eq!(
+            a_cap.b_val, 100,
+            "A's cap must transitively contain C's v=100 — transitive DI worked"
         );
     }
 }
