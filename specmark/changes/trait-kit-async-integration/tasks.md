@@ -54,16 +54,16 @@
 
 ## Phase 6: inklog InklogModule（依赖 dbnexus）
 
-- [ ] [T038] [P0] 删除 inklog/src/integrations/kit/ 整个目录（module.rs、keys.rs、mod.rs），从 inklog/Cargo.toml 移除 `trait-kit = "0.1.0"`
-- [ ] [T039] [P0] 更新 inklog/Cargo.toml：新增 `trait-kit = { version = "0.2.2", features = ["async"] }`，保留 `dbnexus = { version = "0.x", optional = true }`，新增 `kit = ["dep:trait-kit", "dep:dbnexus"]` feature
-- [ ] [T040] [P0] Red: 在 inklog/src/domain/db_provider.rs 编写失败测试，验证 LogDbProvider trait 的 execute_log/batch_insert 方法返回 `Pin<Box<dyn Future + Send>>`
-- [ ] [T041] [P0] Green: 在 inklog/src/domain/db_provider.rs 定义 LogDbProvider trait（execute_log/batch_insert async 方法），通过 T040，commit "feat(inklog): define LogDbProvider trait"
-- [ ] [T042] [P0] Red: 在 inklog/src/integrations/dbnexus_adapter.rs 编写失败测试，验证 DbNexusLogDbAdapter 实现 LogDbProvider 并正确代理 dbnexus DatabaseSession
-- [ ] [T043] [P0] Green: 在 inklog/src/integrations/dbnexus_adapter.rs 实现 DbNexusLogDbAdapter（包装 `Arc<dyn dbnexus::ConnectionPool>`，impl LogDbProvider 代理调用），替换旧 src/integrations/infra/database.rs 中 DbNexusAdapter，通过 T042，commit "feat(inklog): add DbNexusLogDbAdapter replacing old DbNexusAdapter"
-- [ ] [T044] [P0] Red: 在 inklog/src/integrations/kit/module.rs 编写失败测试，验证 InklogModule::build() 通过 kit.require::<DbNexusModule>() 获取数据库能力并包装为 DbNexusLogDbAdapter 注入 LoggerManager
-- [ ] [T045] [P0] Green: 实现 InklogModule（ModuleMeta NAME="inklog" dependencies=[("dbnexus", TypeId::of::<DbNexusModule>())]、AsyncAutoBuilder 在 build 中 require::<DbNexusModule>() + 包装 adapter + 构造 LoggerManager），创建 inklog/src/integrations/kit/mod.rs 和 inklog/src/integrations/mod.rs，通过 T044，commit "feat(inklog): add InklogModule with dbnexus dependency injection"
+- [x] [T038] [P0] 删除 inklog/src/integrations/kit/ 整个目录（module.rs、keys.rs、mod.rs），从 inklog/Cargo.toml 移除 `trait-kit = "0.1.0"`
+- [x] [T039] [P0] 更新 inklog/Cargo.toml：新增 `trait-kit = { version = "0.2.2", features = ["async"] }`，保留 `dbnexus = { version = "0.x", optional = true }`，新增 `kit = ["dep:trait-kit", "dep:dbnexus"]` feature
+- [x] [T040] [P0] Red: 在 inklog/src/domain/db_provider.rs 编写失败测试，验证 LogDbProvider trait 的 execute_log/batch_insert 方法返回 `Pin<Box<dyn Future + Send>>`
+- [x] [T041] [P0] Green: 在 inklog/src/domain/db_provider.rs 定义 LogDbProvider trait（execute_log/batch_insert async 方法），通过 T040，commit "feat(inklog): define LogDbProvider trait"
+- [x] [T042] [P0] Red: 在 inklog/src/integrations/dbnexus_adapter.rs 编写失败测试，验证 DbNexusLogDbAdapter 实现 LogDbProvider 并正确代理 dbnexus DatabaseSession
+- [x] [T043] [P0] Green: 在 inklog/src/integrations/dbnexus_adapter.rs 实现 DbNexusLogDbAdapter（包装 `Arc<dyn dbnexus::ConnectionPool>`，impl LogDbProvider 代理调用），替换旧 src/integrations/infra/database.rs 中 DbNexusAdapter，通过 T042，commit "feat(inklog): add DbNexusLogDbAdapter replacing old DbNexusAdapter"
+- [x] [T044] [P0] Red: 在 inklog/src/integrations/kit/module.rs 编写失败测试，验证 InklogModule::build() 通过 kit.require::<DbNexusModule>() 获取数据库能力并包装为 DbNexusLogDbAdapter 注入 LoggerManager
+- [x] [T045] [P0] Green: 实现 InklogModule（ModuleMeta NAME="inklog" dependencies=[("dbnexus", TypeId::of::<DbNexusModule>())]、AsyncAutoBuilder 在 build 中 require::<DbNexusModule>() + 包装 adapter + 构造 LoggerManager），创建 inklog/src/integrations/kit/mod.rs 和 inklog/src/integrations/mod.rs，通过 T044，commit "feat(inklog): add InklogModule with dbnexus dependency injection"
 
 ## Phase 7: 端到端验证
 
-- [ ] [T046] [P1] 在 trait-kit/tests/async_e2e.rs 编写集成测试：注册全部 5 个模块（OxcacheModule、LimiteronModule、DbNexusModule、SdforgeModule、InklogModule），build AsyncKit，验证 require::<EachModule>() 返回正确 Capability 类型
+- [x] [T046] [P1] 在 trait-kit/tests/async_e2e.rs 编写集成测试：注册全部 5 个模块（OxcacheModule、LimiteronModule、DbNexusModule、SdforgeModule、InklogModule），build AsyncKit，验证 require::<EachModule>() 返回正确 Capability 类型
 - [ ] [T047] [P1] 在 6 个 crate（trait-kit、oxcache、dbnexus、inklog、limiteron、sdforge）分别运行 `cargo test --all-features`，验证全部测试通过，commit "test: verify end-to-end async integration across all 6 crates"
