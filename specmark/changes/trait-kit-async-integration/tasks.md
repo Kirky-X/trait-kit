@@ -49,8 +49,8 @@
 - [x] [T033] [P1] Green: 在 sdforge/src/domain/rate_limiter.rs 定义 ForgeRateLimiter trait（check/record async 方法），通过 T032，commit "feat(sdforge): define ForgeRateLimiter trait"
 - [x] [T034] [P1] Red: 在 sdforge/src/integrations/limiteron_adapter.rs 编写失败测试，验证 LimiteronForgeAdapter 实现 ForgeRateLimiter 并正确代理 limiteron::Governor
 - [x] [T035] [P1] Green: 在 sdforge/src/integrations/limiteron_adapter.rs 实现 LimiteronForgeAdapter（包装 `Arc<limiteron::Governor>`，impl ForgeRateLimiter 代理调用），通过 T034，commit "feat(sdforge): add LimiteronForgeAdapter"
-- [ ] [T036] [P1] Red: 在 sdforge/src/integrations/kit/module.rs 编写失败测试，验证 SdforgeModule::build() 通过 kit.require::<LimiteronModule>() 获取限流器并包装为 LimiteronForgeAdapter 注入 ForgeApp
-- [ ] [T037] [P1] Green: 实现 SdforgeModule（ModuleMeta NAME="sdforge" dependencies=[("limiteron", TypeId::of::<LimiteronModule>())]、AsyncAutoBuilder 在 build 中 require::<LimiteronModule>() + 包装 adapter + 构造 ForgeApp），创建 sdforge/src/integrations/kit/mod.rs 和 sdforge/src/integrations/mod.rs，通过 T036，commit "feat(sdforge): add SdforgeModule with limiteron dependency injection"
+- [x] [T036] [P1] Red: 在 sdforge/src/integrations/kit/module.rs 编写失败测试，验证 SdforgeModule::build() 通过 kit.require::<LimiteronModule>() 获取限流器并包装为 LimiteronForgeAdapter 注入 ForgeApp
+- [x] [T037] [P1] Green: 实现 SdforgeModule（ModuleMeta NAME="sdforge" dependencies=[("limiteron", TypeId::of::<LimiteronModule>())]、AsyncAutoBuilder 在 build 中 require::<LimiteronModule>() + 包装 adapter + 构造 ForgeApp），创建 sdforge/src/integrations/kit/mod.rs 和 sdforge/src/integrations/mod.rs，通过 T036，commit "feat(sdforge): add SdforgeModule with limiteron dependency injection"
 
 ## Phase 6: inklog InklogModule（依赖 dbnexus）
 
