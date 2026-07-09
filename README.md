@@ -364,7 +364,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### 集成示例
 
-`examples/integration-app/` 演示完整的 AsyncKit 装配：组装全部 5 个模块（oxcache/dbnexus/inklog/limiteron/sdforge）并验证两条依赖注入链。基础用法参见 `examples/trait-kit-example/`。
+`examples/integration-app/` 演示完整的 `AsyncKit` 装配：组装全部 5 个模块（`oxcache`/`dbnexus`/`inklog`/`limiteron`/`sdforge`）并验证两条依赖注入链。基础用法参见 `examples/trait-kit-example/`。
 
 ---
 
@@ -385,7 +385,7 @@ trait-kit 通过四级 feature flag 集成 [`confers`](https://crates.io/crates/
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.2", features = ["encryption"] }
+trait-kit = { version = "0.2.3", features = ["encryption"] }
 ```
 
 ### 三层继承系统
