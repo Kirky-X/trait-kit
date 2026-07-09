@@ -1099,7 +1099,7 @@ dependencies = [
 
 [[package]]
 name = "dbnexus"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1107,7 +1107,7 @@ dependencies = [
  "dbnexus-macros",
  "futures",
  "once_cell",
- "oxcache 0.3.3",
+ "oxcache 0.3.4",
  "parking_lot",
  "regex",
  "sea-orm",
@@ -1125,7 +1125,7 @@ dependencies = [
 
 [[package]]
 name = "dbnexus-macros"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "proc-macro-error2",
  "proc-macro2",
@@ -1906,7 +1906,7 @@ dependencies = [
 
 [[package]]
 name = "inklog"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "aes-gcm 0.11.0",
  "anyhow",
@@ -1927,7 +1927,7 @@ dependencies = [
  "nix",
  "once_cell",
  "owo-colors",
- "oxcache 0.3.3",
+ "oxcache 0.3.4",
  "parking_lot",
  "parquet",
  "pbkdf2",
@@ -1985,6 +1985,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4250ce6452e92010fdf7268ccc5d14faa80bb12fc741938534c58f16804e03c7"
 dependencies = [
  "hybrid-array",
+]
+
+[[package]]
+name = "integration-app"
+version = "0.1.0"
+dependencies = [
+ "dbnexus",
+ "inklog",
+ "limiteron",
+ "oxcache 0.3.4",
+ "sdforge",
+ "tokio",
+ "trait-kit",
 ]
 
 [[package]]
@@ -2169,7 +2182,7 @@ dependencies = [
 
 [[package]]
 name = "limiteron"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2177,7 +2190,7 @@ dependencies = [
  "dashmap",
  "ipnet",
  "log",
- "oxcache 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oxcache 0.3.3",
  "parking_lot",
  "secrecy",
  "serde",
@@ -2532,6 +2545,38 @@ dependencies = [
 [[package]]
 name = "oxcache"
 version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b46f5551f3cd81219dc8b664068a07c48518c52c9fae4b2965ff867bdad9403f"
+dependencies = [
+ "arc-swap",
+ "async-trait",
+ "base64",
+ "chrono",
+ "dashmap",
+ "futures",
+ "lazy_static",
+ "moka",
+ "once_cell",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "rand 0.10.2",
+ "redis",
+ "regex",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "oxcache"
+version = "0.3.4"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -2565,40 +2610,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "oxcache"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b46f5551f3cd81219dc8b664068a07c48518c52c9fae4b2965ff867bdad9403f"
-dependencies = [
- "arc-swap",
- "async-trait",
- "base64",
- "chrono",
- "dashmap",
- "futures",
- "lazy_static",
- "moka",
- "once_cell",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "rand 0.10.2",
- "redis",
- "regex",
- "secrecy",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "oxcache_macros"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3213,7 +3226,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sdforge"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "limiteron",
  "log",
@@ -3228,7 +3241,7 @@ dependencies = [
 
 [[package]]
 name = "sdforge-macros"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4267,13 +4280,13 @@ dependencies = [
 
 [[package]]
 name = "trait-kit"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "confers",
  "dbnexus",
  "inklog",
  "limiteron",
- "oxcache 0.3.3",
+ "oxcache 0.3.4",
  "sdforge",
  "serde",
  "serde_json",

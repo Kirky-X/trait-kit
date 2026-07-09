@@ -229,7 +229,7 @@ fn main() {
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.2.2", features = ["async"] }
+trait-kit = { version = "0.2.3", features = ["async"] }
 ```
 
 > 运行时（如 `tokio`）由应用自行选择，trait-kit 不绑定。
@@ -361,6 +361,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | `kit.optional::<M>()`               | `AsyncKit<Ready>`   | 检索一个能力（缺失时返回 `None`）。                        |
 | `kit.contains::<M>()`               | `AsyncKit<Ready>`   | 检查某个能力是否已构建。                                   |
 | `kit.contains_config::<C>()`        | `AsyncKit<Ready>`   | 检查某个配置值是否存在。                                   |
+
+### 集成示例
+
+`examples/integration-app/` 演示完整的 AsyncKit 装配：组装全部 5 个模块（oxcache/dbnexus/inklog/limiteron/sdforge）并验证两条依赖注入链。基础用法参见 `examples/trait-kit-example/`。
 
 ---
 
