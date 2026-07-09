@@ -18,7 +18,7 @@ pub enum KitError {
         missing: &'static str,
     },
 
-    #[deprecated(note = "typestate pattern makes this unreachable; will be removed in 0.2.0")]
+    #[deprecated(note = "typestate pattern makes this unreachable; will be removed in 0.3.0")]
     #[error("kit is not ready; call build() first")]
     NotReady,
 
