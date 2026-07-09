@@ -59,15 +59,19 @@ pub struct Ready;
 )]
 pub(crate) type AsyncBuildFn = Box<
     dyn for<'a> FnOnce(
-        &'a AsyncKit,
-    ) -> Pin<
-        Box<
-            dyn Future<
-                    Output = Result<Box<dyn Any + Send + Sync>, Box<dyn std::error::Error + Send + 'static>>,
-                > + Send
-                + 'a,
-        >,
-    > + Send + Sync,
+            &'a AsyncKit,
+        ) -> Pin<
+            Box<
+                dyn Future<
+                        Output = Result<
+                            Box<dyn Any + Send + Sync>,
+                            Box<dyn std::error::Error + Send + 'static>,
+                        >,
+                    > + Send
+                    + 'a,
+            >,
+        > + Send
+        + Sync,
 >;
 
 /// The async capability and configuration management center.
@@ -129,15 +133,17 @@ impl AsyncKit {
 
         let build_fn: AsyncBuildFn = Box::new(|kit| {
             Box::pin(async move {
-                let cap = M::build(kit).await.map_err(|e| -> Box<dyn std::error::Error + Send + 'static> {
-                    Box::new(e)
-                })?;
+                let cap = M::build(kit)
+                    .await
+                    .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?;
                 Ok(Box::new(cap) as Box<dyn Any + Send + Sync>)
             })
         });
         self.builders
             .write()
-            .expect("AsyncKit builders lock poisoned: another thread panicked while holding the lock")
+            .expect(
+                "AsyncKit builders lock poisoned: another thread panicked while holding the lock",
+            )
             .insert(TypeId::of::<M>(), build_fn);
         Ok(())
     }
@@ -376,12 +382,12 @@ mod tests {
     use super::{AsyncKit, Ready};
     use crate::core::error::KitError;
     use crate::core::meta::{AsyncAutoBuilder, ModuleMeta};
+    use crate::test_helpers::{block_on, MockError};
     use std::any::TypeId;
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
-    use crate::test_helpers::{block_on, MockError};
 
     #[derive(Debug, Clone, PartialEq)]
     struct MockCap {
@@ -403,7 +409,8 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(MockCap { value: 42 })) })
         }
@@ -427,11 +434,10 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
-            Box::pin(async move {
-                Err(MockError::Failed("intentional build failure".to_string()))
-            })
+            Box::pin(async move { Err(MockError::Failed("intentional build failure".to_string())) })
         }
     }
 
@@ -452,7 +458,8 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             Box::pin(async move {
                 let counter = kit
                     .config::<Arc<AtomicUsize>>()
@@ -485,7 +492,8 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(())) })
         }
@@ -508,7 +516,8 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(())) })
         }
@@ -531,7 +540,8 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(())) })
         }
@@ -564,7 +574,12 @@ mod tests {
             .register::<MockModule>()
             .expect_err("duplicate register should error");
         assert!(
-            matches!(err, KitError::AlreadyRegistered { module: "mock-module" }),
+            matches!(
+                err,
+                KitError::AlreadyRegistered {
+                    module: "mock-module"
+                }
+            ),
             "expected AlreadyRegistered, got {err:?}"
         );
     }
@@ -587,7 +602,9 @@ mod tests {
     #[test]
     fn async_kit_config_missing_returns_error() {
         let kit = AsyncKit::new();
-        let err = kit.config::<u64>().expect_err("missing config should error");
+        let err = kit
+            .config::<u64>()
+            .expect_err("missing config should error");
         assert!(
             matches!(err, KitError::MissingConfig { .. }),
             "expected MissingConfig, got {err:?}"
@@ -650,8 +667,7 @@ mod tests {
     fn async_kit_build_multiple_modules_in_topo_order() {
         let mut kit = AsyncKit::new();
         kit.set_config(Arc::new(AtomicUsize::new(0)));
-        kit.register::<MockModule>()
-            .expect("register module A");
+        kit.register::<MockModule>().expect("register module A");
         kit.register::<MockCounterModule>()
             .expect("register module B");
         let built = block_on(kit.build()).expect("build should succeed");
@@ -667,8 +683,8 @@ mod tests {
         let mut kit = AsyncKit::new();
         kit.register::<MockMissingDepModule>()
             .expect("register should succeed (declares missing dep)");
-        let err = block_on(kit.build())
-            .expect_err("build should fail when a dependency is unregistered");
+        let err =
+            block_on(kit.build()).expect_err("build should fail when a dependency is unregistered");
         assert!(
             matches!(
                 err,
@@ -684,12 +700,9 @@ mod tests {
     #[test]
     fn async_kit_build_cycle_returns_error() {
         let mut kit = AsyncKit::new();
-        kit.register::<MockCycleA>()
-            .expect("register cycle A");
-        kit.register::<MockCycleB>()
-            .expect("register cycle B");
-        let err = block_on(kit.build())
-            .expect_err("build should fail on cyclic dependency graph");
+        kit.register::<MockCycleA>().expect("register cycle A");
+        kit.register::<MockCycleB>().expect("register cycle B");
+        let err = block_on(kit.build()).expect_err("build should fail on cyclic dependency graph");
         assert!(
             matches!(err, KitError::CycleDetected { .. }),
             "expected CycleDetected, got {err:?}"
@@ -716,8 +729,8 @@ mod tests {
         let mut kit = AsyncKit::new();
         kit.register::<MockErrModule>()
             .expect("register should succeed");
-        let err = block_on(kit.build())
-            .expect_err("build should fail when module build returns Err");
+        let err =
+            block_on(kit.build()).expect_err("build should fail when module build returns Err");
         assert!(
             matches!(
                 err,
@@ -870,7 +883,8 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(Bcap { n: 42 })) })
         }
@@ -892,7 +906,8 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             Box::pin(async move {
                 // DI happens here: pull B's cap from the kit during A's build.
                 let b_cap: Arc<Bcap> = kit.require::<MockBModule>()?;
@@ -934,7 +949,8 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             Box::pin(async move {
                 let counter = kit.config::<Arc<AtomicUsize>>()?;
                 let order = counter.fetch_add(1, Ordering::SeqCst);
@@ -962,7 +978,8 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             Box::pin(async move {
                 // DI: pull C's cap during B's build.
                 let c_cap: Arc<Ccap> = kit.require::<MockCModule>()?;
@@ -981,8 +998,7 @@ mod tests {
     impl ModuleMeta for MockChainAModule {
         const NAME: &'static str = "mock-chain-a";
         fn dependencies() -> &'static [(&'static str, TypeId)] {
-            static DEPS: &[(&str, TypeId)] =
-                &[("mock-chain-b", TypeId::of::<MockChainBModule>())];
+            static DEPS: &[(&str, TypeId)] = &[("mock-chain-b", TypeId::of::<MockChainBModule>())];
             DEPS
         }
     }
@@ -993,7 +1009,8 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             Box::pin(async move {
                 // DI: pull chain-B's cap during A's build (transitive).
                 let b_cap: Arc<ChainBcap> = kit.require::<MockChainBModule>()?;
@@ -1026,7 +1043,8 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(())) })
         }
@@ -1048,7 +1066,8 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(())) })
         }
@@ -1070,7 +1089,8 @@ mod tests {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(())) })
         }
@@ -1121,8 +1141,8 @@ mod tests {
         let mut kit = AsyncKit::new();
         kit.register::<MockAModule>()
             .expect("register A only (B missing)");
-        let err = block_on(kit.build())
-            .expect_err("build must fail when declared dep is unregistered");
+        let err =
+            block_on(kit.build()).expect_err("build must fail when declared dep is unregistered");
         assert!(
             matches!(
                 err,
@@ -1144,8 +1164,7 @@ mod tests {
         kit.register::<MockCycleA3>().expect("register cycle A3");
         kit.register::<MockCycleB3>().expect("register cycle B3");
         kit.register::<MockCycleC3>().expect("register cycle C3");
-        let err = block_on(kit.build())
-            .expect_err("build must fail on 3-node cycle");
+        let err = block_on(kit.build()).expect_err("build must fail on 3-node cycle");
         assert!(
             matches!(err, KitError::CycleDetected { .. }),
             "expected CycleDetected for 3-node cycle, got {err:?}"
@@ -1161,8 +1180,10 @@ mod tests {
         let mut kit = AsyncKit::new();
         kit.set_config(Arc::new(AtomicUsize::new(0)));
         kit.register::<MockCModule>().expect("register C");
-        kit.register::<MockChainBModule>().expect("register chain-B");
-        kit.register::<MockChainAModule>().expect("register chain-A");
+        kit.register::<MockChainBModule>()
+            .expect("register chain-B");
+        kit.register::<MockChainAModule>()
+            .expect("register chain-A");
         let built = block_on(kit.build()).expect("build should succeed");
 
         let c_cap = built.require::<MockCModule>().expect("C's cap");

@@ -84,17 +84,19 @@ pub trait AsyncAutoBuilder: ModuleMeta {
 /// Takes `&Kit<Unbuilt>` (same memory layout as `&Kit<Ready>`)
 /// because during the build phase we only have the unbuilt Kit.
 pub(crate) type BuildFn = Box<
-    dyn FnOnce(&crate::kit::Kit) -> Result<Box<dyn std::any::Any>, Box<dyn std::error::Error + Send + 'static>>,
+    dyn FnOnce(
+        &crate::kit::Kit,
+    ) -> Result<Box<dyn std::any::Any>, Box<dyn std::error::Error + Send + 'static>>,
 >;
 
 #[cfg(all(test, feature = "async"))]
 mod async_tests {
     use super::*;
     use crate::kit::async_kit::AsyncKit;
+    use crate::test_helpers::{block_on, MockError};
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::Arc;
-    use crate::test_helpers::{block_on, MockError};
 
     #[derive(Debug, Clone, PartialEq)]
     struct LoggerCapability {

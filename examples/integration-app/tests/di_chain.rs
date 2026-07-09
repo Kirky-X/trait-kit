@@ -21,7 +21,9 @@ use sdforge::integrations::kit::SdforgeModule;
 /// permissive token bucket). `FlowControlConfig::default()` has an empty
 /// rules vec which fails `validate()`.
 fn make_minimal_valid_flow_config() -> limiteron::config::FlowControlConfig {
-    use limiteron::config::{Action, ActionConfig, FlowControlConfig, LimiterConfig, Matcher, Rule};
+    use limiteron::config::{
+        Action, ActionConfig, FlowControlConfig, LimiterConfig, Matcher, Rule,
+    };
     let mut config = FlowControlConfig::default();
     config.rules.push(Rule {
         id: "default".to_string(),
@@ -64,9 +66,12 @@ async fn di_chain_oxcache_dbnexus_inklog() {
     let mut kit = AsyncKit::new();
     kit.set_config(OxcacheConfig::default());
     kit.set_config(make_memory_db_config());
-    kit.register::<OxcacheModule>().expect("register OxcacheModule");
-    kit.register::<DbNexusModule>().expect("register DbNexusModule");
-    kit.register::<InklogModule>().expect("register InklogModule");
+    kit.register::<OxcacheModule>()
+        .expect("register OxcacheModule");
+    kit.register::<DbNexusModule>()
+        .expect("register DbNexusModule");
+    kit.register::<InklogModule>()
+        .expect("register InklogModule");
 
     let kit = kit.build().await.expect("AsyncKit::build should succeed");
 
@@ -77,9 +82,8 @@ async fn di_chain_oxcache_dbnexus_inklog() {
     let _: Arc<dyn dbnexus::database::pool::ConnectionPool + Send + Sync> = kit
         .require::<DbNexusModule>()
         .expect("require DbNexusModule");
-    let provider: Arc<dyn inklog::LogDbProvider + Send + Sync> = kit
-        .require::<InklogModule>()
-        .expect("require InklogModule");
+    let provider: Arc<dyn inklog::LogDbProvider + Send + Sync> =
+        kit.require::<InklogModule>().expect("require InklogModule");
 
     // Execute a DDL statement through the LogDbProvider — proves the
     // ConnectionPool from DbNexusModule was successfully injected (which
@@ -100,8 +104,10 @@ async fn di_chain_oxcache_dbnexus_inklog() {
 async fn di_chain_limiteron_sdforge() {
     let mut kit = AsyncKit::new();
     kit.set_config(make_minimal_valid_flow_config());
-    kit.register::<LimiteronModule>().expect("register LimiteronModule");
-    kit.register::<SdforgeModule>().expect("register SdforgeModule");
+    kit.register::<LimiteronModule>()
+        .expect("register LimiteronModule");
+    kit.register::<SdforgeModule>()
+        .expect("register SdforgeModule");
 
     let kit = kit.build().await.expect("AsyncKit::build should succeed");
 
