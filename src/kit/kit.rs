@@ -102,10 +102,8 @@ impl Kit {
             .map_err(|name| KitError::AlreadyRegistered { module: name })?;
 
         let build_fn: BuildFn = Box::new(|kit| {
-            let capability =
-                M::build(kit).map_err(|e| -> Box<dyn std::error::Error + Send + 'static> {
-                    Box::new(e)
-                })?;
+            let capability = M::build(kit)
+                .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?;
             Ok(Box::new(capability) as Box<dyn Any>)
         });
 

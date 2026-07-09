@@ -33,7 +33,9 @@ use sdforge::integrations::kit::SdforgeModule;
 /// `sdforge/src/integrations/kit/module.rs::make_minimal_valid_config` so the
 /// `SdforgeModule` chain test's `limiter.check("1.2.3.4")` matches a rule.
 fn make_minimal_valid_flow_config() -> limiteron::config::FlowControlConfig {
-    use limiteron::config::{Action, ActionConfig, FlowControlConfig, LimiterConfig, Matcher, Rule};
+    use limiteron::config::{
+        Action, ActionConfig, FlowControlConfig, LimiterConfig, Matcher, Rule,
+    };
     let mut config = FlowControlConfig::default();
     config.rules.push(Rule {
         id: "default".to_string(),
@@ -79,11 +81,16 @@ async fn e2e_full_async_kit_with_all_5_modules() {
 
     // Register all 5 modules in arbitrary order — topological sort will
     // produce oxcache → dbnexus → inklog and limiteron → sdforge.
-    kit.register::<OxcacheModule>().expect("register OxcacheModule");
-    kit.register::<LimiteronModule>().expect("register LimiteronModule");
-    kit.register::<DbNexusModule>().expect("register DbNexusModule");
-    kit.register::<SdforgeModule>().expect("register SdforgeModule");
-    kit.register::<InklogModule>().expect("register InklogModule");
+    kit.register::<OxcacheModule>()
+        .expect("register OxcacheModule");
+    kit.register::<LimiteronModule>()
+        .expect("register LimiteronModule");
+    kit.register::<DbNexusModule>()
+        .expect("register DbNexusModule");
+    kit.register::<SdforgeModule>()
+        .expect("register SdforgeModule");
+    kit.register::<InklogModule>()
+        .expect("register InklogModule");
 
     let kit = kit.build().await.expect("AsyncKit::build should succeed");
 
@@ -101,13 +108,15 @@ async fn e2e_full_async_kit_with_all_5_modules() {
     let _: Arc<dyn sdforge::domain::rate_limiter::ForgeRateLimiter + Send + Sync> = kit
         .require::<SdforgeModule>()
         .expect("require SdforgeModule");
-    let _: Arc<dyn inklog::LogDbProvider + Send + Sync> = kit
-        .require::<InklogModule>()
-        .expect("require InklogModule");
+    let _: Arc<dyn inklog::LogDbProvider + Send + Sync> =
+        kit.require::<InklogModule>().expect("require InklogModule");
 
     // `contains::<M>()` must report `true` for every registered module.
     assert!(kit.contains::<OxcacheModule>(), "contains OxcacheModule");
-    assert!(kit.contains::<LimiteronModule>(), "contains LimiteronModule");
+    assert!(
+        kit.contains::<LimiteronModule>(),
+        "contains LimiteronModule"
+    );
     assert!(kit.contains::<DbNexusModule>(), "contains DbNexusModule");
     assert!(kit.contains::<SdforgeModule>(), "contains SdforgeModule");
     assert!(kit.contains::<InklogModule>(), "contains InklogModule");
@@ -130,15 +139,17 @@ async fn e2e_dependency_injection_chain_oxcache_dbnexus_inklog() {
     let mut kit = AsyncKit::new();
     kit.set_config(OxcacheConfig::default());
     kit.set_config(make_memory_db_config());
-    kit.register::<OxcacheModule>().expect("register OxcacheModule");
-    kit.register::<DbNexusModule>().expect("register DbNexusModule");
-    kit.register::<InklogModule>().expect("register InklogModule");
+    kit.register::<OxcacheModule>()
+        .expect("register OxcacheModule");
+    kit.register::<DbNexusModule>()
+        .expect("register DbNexusModule");
+    kit.register::<InklogModule>()
+        .expect("register InklogModule");
 
     let kit = kit.build().await.expect("AsyncKit::build should succeed");
 
-    let provider: Arc<dyn inklog::LogDbProvider + Send + Sync> = kit
-        .require::<InklogModule>()
-        .expect("require InklogModule");
+    let provider: Arc<dyn inklog::LogDbProvider + Send + Sync> =
+        kit.require::<InklogModule>().expect("require InklogModule");
 
     // Execute a DDL statement through the LogDbProvider — proves the
     // ConnectionPool from DbNexusModule was successfully injected.
@@ -157,8 +168,10 @@ async fn e2e_dependency_injection_chain_oxcache_dbnexus_inklog() {
 async fn e2e_dependency_injection_chain_limiteron_sdforge() {
     let mut kit = AsyncKit::new();
     kit.set_config(make_minimal_valid_flow_config());
-    kit.register::<LimiteronModule>().expect("register LimiteronModule");
-    kit.register::<SdforgeModule>().expect("register SdforgeModule");
+    kit.register::<LimiteronModule>()
+        .expect("register LimiteronModule");
+    kit.register::<SdforgeModule>()
+        .expect("register SdforgeModule");
 
     let kit = kit.build().await.expect("AsyncKit::build should succeed");
 
@@ -170,7 +183,10 @@ async fn e2e_dependency_injection_chain_limiteron_sdforge() {
         .check("1.2.3.4")
         .await
         .expect("check should succeed on injected Governor");
-    assert!(allowed, "first request must be allowed (TokenBucket 100 tokens)");
+    assert!(
+        allowed,
+        "first request must be allowed (TokenBucket 100 tokens)"
+    );
 }
 
 /// R-t046-004: Compile-time verification — all 5 module types satisfy the

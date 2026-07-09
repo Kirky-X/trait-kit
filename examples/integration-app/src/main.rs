@@ -35,7 +35,9 @@ use sdforge::integrations::kit::SdforgeModule;
 /// `sdforge/src/integrations/kit/module.rs::make_minimal_valid_config` so the
 /// `SdforgeModule` chain's `limiter.check("1.2.3.4")` matches a rule.
 fn make_minimal_valid_flow_config() -> limiteron::config::FlowControlConfig {
-    use limiteron::config::{Action, ActionConfig, FlowControlConfig, LimiterConfig, Matcher, Rule};
+    use limiteron::config::{
+        Action, ActionConfig, FlowControlConfig, LimiterConfig, Matcher, Rule,
+    };
     let mut config = FlowControlConfig::default();
     config.rules.push(Rule {
         id: "default".to_string(),
@@ -92,17 +94,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cache: Arc<dyn oxcache::backend::CacheBackend + Send + Sync> = kit
         .require::<OxcacheModule>()
         .expect("require OxcacheModule");
-    println!("[integration-app] OxcacheModule capability: CacheBackend@{:p}", Arc::as_ptr(&cache));
+    println!(
+        "[integration-app] OxcacheModule capability: CacheBackend@{:p}",
+        Arc::as_ptr(&cache)
+    );
 
     let pool: Arc<dyn dbnexus::database::pool::ConnectionPool + Send + Sync> = kit
         .require::<DbNexusModule>()
         .expect("require DbNexusModule");
-    println!("[integration-app] DbNexusModule capability: ConnectionPool@{:p}", Arc::as_ptr(&pool));
+    println!(
+        "[integration-app] DbNexusModule capability: ConnectionPool@{:p}",
+        Arc::as_ptr(&pool)
+    );
 
-    let provider: Arc<dyn inklog::LogDbProvider + Send + Sync> = kit
-        .require::<InklogModule>()
-        .expect("require InklogModule");
-    println!("[integration-app] InklogModule capability: LogDbProvider@{:p}", Arc::as_ptr(&provider));
+    let provider: Arc<dyn inklog::LogDbProvider + Send + Sync> =
+        kit.require::<InklogModule>().expect("require InklogModule");
+    println!(
+        "[integration-app] InklogModule capability: LogDbProvider@{:p}",
+        Arc::as_ptr(&provider)
+    );
 
     // Execute a DDL statement through LogDbProvider — proves ConnectionPool
     // from DbNexusModule was successfully injected (which itself depended on
@@ -117,27 +127,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let governor: Arc<limiteron::governor::Governor> = kit
         .require::<LimiteronModule>()
         .expect("require LimiteronModule");
-    println!("[integration-app] LimiteronModule capability: Governor@{:p}", Arc::as_ptr(&governor));
+    println!(
+        "[integration-app] LimiteronModule capability: Governor@{:p}",
+        Arc::as_ptr(&governor)
+    );
 
     let limiter: Arc<dyn sdforge::domain::rate_limiter::ForgeRateLimiter + Send + Sync> = kit
         .require::<SdforgeModule>()
         .expect("require SdforgeModule");
-    println!("[integration-app] SdforgeModule capability: ForgeRateLimiter@{:p}", Arc::as_ptr(&limiter));
+    println!(
+        "[integration-app] SdforgeModule capability: ForgeRateLimiter@{:p}",
+        Arc::as_ptr(&limiter)
+    );
 
     let allowed = limiter
         .check("1.2.3.4")
         .await
         .expect("check should succeed on injected Governor");
-    assert!(allowed, "first request must be allowed (TokenBucket 100 tokens)");
-    println!("[integration-app] DI chain 2 OK: limiteron → sdforge (check(\"1.2.3.4\") = {allowed})");
+    assert!(
+        allowed,
+        "first request must be allowed (TokenBucket 100 tokens)"
+    );
+    println!(
+        "[integration-app] DI chain 2 OK: limiteron → sdforge (check(\"1.2.3.4\") = {allowed})"
+    );
 
     // --- contains / contains_config probes --------------------------------
     assert!(kit.contains::<OxcacheModule>(), "contains OxcacheModule");
-    assert!(kit.contains::<LimiteronModule>(), "contains LimiteronModule");
+    assert!(
+        kit.contains::<LimiteronModule>(),
+        "contains LimiteronModule"
+    );
     assert!(kit.contains::<DbNexusModule>(), "contains DbNexusModule");
     assert!(kit.contains::<SdforgeModule>(), "contains SdforgeModule");
     assert!(kit.contains::<InklogModule>(), "contains InklogModule");
-    assert!(kit.contains_config::<OxcacheConfig>(), "contains_config OxcacheConfig");
+    assert!(
+        kit.contains_config::<OxcacheConfig>(),
+        "contains_config OxcacheConfig"
+    );
     println!("[integration-app] contains() / contains_config() probes OK");
 
     println!("[integration-app] ✅ all 5 modules assembled, both DI chains verified");

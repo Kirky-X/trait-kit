@@ -26,8 +26,8 @@ mod tests {
     //! against the expected concrete types (`async_kit::Ready` / `Unbuilt`), not
     //! the sync variants. This guards against a regression where lib.rs
     //! aliases the wrong `Ready`/`Unbuilt` markers.
-    use crate::prelude::*;
     use crate::kit::async_kit::{Ready as AsyncReadyMarker, Unbuilt as AsyncUnbuiltMarker};
+    use crate::prelude::*;
 
     #[test]
     fn prelude_async_kit_compiles() {

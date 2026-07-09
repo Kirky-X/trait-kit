@@ -933,7 +933,9 @@ mod reload_config_coverage {
 
     impl Configurable for FailingReloadConfig {
         fn load() -> Result<Self, Box<dyn Error + Send>> {
-            Err(Box::new(std::io::Error::other("reload intentional failure")))
+            Err(Box::new(std::io::Error::other(
+                "reload intentional failure",
+            )))
         }
     }
 
@@ -1024,7 +1026,9 @@ mod load_config_or_default_coverage {
     impl Configurable for WithDefault {
         fn load() -> Result<Self, Box<dyn Error + Send>> {
             // Simulate load failure — should fall back to default_value.
-            Err(Box::new(std::io::Error::other("load failed, using default")))
+            Err(Box::new(std::io::Error::other(
+                "load failed, using default",
+            )))
         }
     }
 
