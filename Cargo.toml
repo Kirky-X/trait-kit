@@ -1,6 +1,6 @@
 [package]
 name = "trait-kit"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 rust-version = "1.91"
 authors = ["Kirky.X"]
@@ -56,5 +56,5 @@ encryption = ["hot-reload", "confers/encryption", "dep:serde", "dep:serde_json"]
 
 [workspace]
 resolver = "2"
-members = [".", "examples/trait-kit-example"]
+members = [".", "examples/trait-kit-example", "examples/integration-app"]
 default-members = ["."]

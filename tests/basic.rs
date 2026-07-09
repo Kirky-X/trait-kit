@@ -269,7 +269,7 @@ mod confers_loader {
     }
 
     impl Configurable for StubConfig {
-        fn load() -> Result<Self, Box<dyn Error>> {
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
             Ok(Self { value: 42 })
         }
     }
@@ -290,8 +290,8 @@ mod confers_loader {
     struct FailingConfig;
 
     impl Configurable for FailingConfig {
-        fn load() -> Result<Self, Box<dyn Error>> {
-            Err("intentional load failure".into())
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
+            Err(Box::new(std::io::Error::other("intentional load failure")))
         }
     }
 
@@ -315,7 +315,7 @@ mod confers_loader {
     }
 
     impl Configurable for OverridableConfig {
-        fn load() -> Result<Self, Box<dyn Error>> {
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
             Ok(Self { value: "loaded" })
         }
     }
@@ -347,8 +347,11 @@ mod confers_derive_bridge {
     }
 
     impl Configurable for DerivedConfig {
-        fn load() -> Result<Self, Box<dyn Error>> {
-            Ok(DerivedConfig::load_sync()?)
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
+            match DerivedConfig::load_sync() {
+                Ok(c) => Ok(c),
+                Err(e) => Err(Box::new(std::io::Error::other(e.to_string()))),
+            }
         }
     }
 
@@ -428,7 +431,7 @@ mod hot_reload {
     }
 
     impl Configurable for ReloadableConfig {
-        fn load() -> Result<Self, Box<dyn Error>> {
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
             Ok(Self { value: 99 })
         }
     }
@@ -929,8 +932,8 @@ mod reload_config_coverage {
     struct FailingReloadConfig;
 
     impl Configurable for FailingReloadConfig {
-        fn load() -> Result<Self, Box<dyn Error>> {
-            Err("reload intentional failure".into())
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
+            Err(Box::new(std::io::Error::other("reload intentional failure")))
         }
     }
 
@@ -955,7 +958,7 @@ mod reload_config_coverage {
         #[derive(Clone, Debug, PartialEq, Eq)]
         struct MultiSubConfig;
         impl Configurable for MultiSubConfig {
-            fn load() -> Result<Self, Box<dyn Error>> {
+            fn load() -> Result<Self, Box<dyn Error + Send>> {
                 Ok(Self)
             }
         }
@@ -984,7 +987,7 @@ mod reload_config_coverage {
         #[derive(Clone, Debug, PartialEq, Eq)]
         struct NoSubConfig;
         impl Configurable for NoSubConfig {
-            fn load() -> Result<Self, Box<dyn Error>> {
+            fn load() -> Result<Self, Box<dyn Error + Send>> {
                 Ok(Self)
             }
         }
@@ -1019,9 +1022,9 @@ mod load_config_or_default_coverage {
     }
 
     impl Configurable for WithDefault {
-        fn load() -> Result<Self, Box<dyn Error>> {
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
             // Simulate load failure — should fall back to default_value.
-            Err("load failed, using default".into())
+            Err(Box::new(std::io::Error::other("load failed, using default")))
         }
     }
 
@@ -1048,7 +1051,7 @@ mod load_config_or_default_coverage {
     }
 
     impl Configurable for LoadOkConfig {
-        fn load() -> Result<Self, Box<dyn Error>> {
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
             Ok(Self { v: 42 })
         }
     }
