@@ -15,6 +15,9 @@
 pub mod core;
 pub mod kit;
 
+#[cfg(feature = "i18n")]
+pub mod i18n;
+
 pub mod prelude;
 
 #[cfg(feature = "async")]

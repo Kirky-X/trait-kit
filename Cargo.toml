@@ -16,6 +16,8 @@ confers = { version = "0.4.0", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 thiserror = { version = "2", default-features = false }
+icu = { version = "2.2", optional = true }
+writeable = { version = "0.6", optional = true }
 
 [dev-dependencies]
 serial_test = "3"
@@ -56,6 +58,8 @@ confers-macros = ["confers"]
 hot-reload = ["confers-macros", "confers/watch"]
 # Level 4: encrypted config storage (maps to confers `encryption` feature).
 encryption = ["hot-reload", "confers/encryption", "dep:serde", "dep:serde_json"]
+# ICU4X-backed internationalization: locale-aware number/date/plural/collation.
+i18n = ["dep:icu", "dep:writeable"]
 
 [workspace]
 resolver = "2"
