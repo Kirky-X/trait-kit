@@ -21,7 +21,7 @@ struct AppConfig {
 }
 
 impl Configurable for AppConfig {
-    fn load() -> Result<Self, Box<dyn Error>> {
+    fn load() -> Result<Self, Box<dyn Error + Send>> {
         Ok(Self { value: 42 })
     }
 }

@@ -56,14 +56,14 @@ jobs:
           fail_ci_if_error: false
 
   msrv:
-    name: MSRV 1.91
+    name: MSRV 1.94
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       # Pin toolchain via input (not action tag) — dependabot won't bump the MSRV anchor.
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.91.0"
+          toolchain: "1.94.0"
       - uses: swatinem/rust-cache@v2
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
@@ -105,19 +105,19 @@ jobs:
         include:
           # default_basic — no features
           - { example: default_basic,    toolchain: stable,   features: "" }
-          - { example: default_basic,    toolchain: "1.91.0", features: "" }
+          - { example: default_basic,    toolchain: "1.94.0", features: "" }
           # confers_loader — Level 1
           - { example: confers_loader,   toolchain: stable,   features: "confers" }
-          - { example: confers_loader,   toolchain: "1.91.0", features: "confers" }
+          - { example: confers_loader,   toolchain: "1.94.0", features: "confers" }
           # confers_macros — Level 2
           - { example: confers_macros,   toolchain: stable,   features: "confers-macros" }
-          - { example: confers_macros,   toolchain: "1.91.0", features: "confers-macros" }
+          - { example: confers_macros,   toolchain: "1.94.0", features: "confers-macros" }
           # hot_reload — Level 3
           - { example: hot_reload,       toolchain: stable,   features: "hot-reload" }
-          - { example: hot_reload,       toolchain: "1.91.0", features: "hot-reload" }
+          - { example: hot_reload,       toolchain: "1.94.0", features: "hot-reload" }
           # encryption — Level 4
           - { example: encryption,       toolchain: stable,   features: "encryption" }
-          - { example: encryption,       toolchain: "1.91.0", features: "encryption" }
+          - { example: encryption,       toolchain: "1.94.0", features: "encryption" }
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
