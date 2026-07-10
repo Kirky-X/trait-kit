@@ -23,20 +23,21 @@ static_assertions = "1"
 trybuild = "1"
 # E2E integration test deps for AsyncKit — Phase 7 (T046). These are
 # dev-only (circular dev-dependencies are allowed by Cargo).
-oxcache = { path = "../oxcache", default-features = false, features = ["kit", "memory"] }
-limiteron = { path = "../limiteron", default-features = false, features = ["kit"] }
+# path + version: local dev uses path, CI falls back to crates.io (Rule 8)
+oxcache = { path = "../oxcache", version = "0.3", default-features = false, features = ["kit", "memory", "serialization", "tracing"] }
+limiteron = { path = "../limiteron", version = "0.2", default-features = false, features = ["kit"] }
 # dbnexus `kit` does not transitively enable a database driver; the e2e test
 # uses `sqlite::memory:`, so we explicitly enable `default` (provides sqlite +
 # runtime-tokio-rustls + permission + sql-parser + macros + config-env +
 # with-time) alongside `kit`. Rule 6 still honored via default-features = false.
-dbnexus = { path = "../dbnexus", default-features = false, features = ["default", "kit"] }
-sdforge = { path = "../sdforge", default-features = false, features = ["kit"] }
+dbnexus = { path = "../dbnexus", version = "0.3", default-features = false, features = ["default", "kit"] }
+sdforge = { path = "../sdforge", version = "0.3", default-features = false, features = ["kit"] }
 # inklog gates `integrations::kit` behind `any(feature = "sqlite"/"postgres"/"mysql")`
 # (inklog/src/integrations/mod.rs:16). The e2e test pulls `InklogModule` from
 # there, so we enable `sqlite` (the lightest backend, mirrors the dbnexus
 # `sqlite::memory:` test URL). `default-features = false` per Rule 6 — we
 # explicitly opt into `kit` + `sqlite` only, not inklog's default `http`/`cli`.
-inklog = { path = "../inklog", default-features = false, features = ["kit", "sqlite"] }
+inklog = { path = "../inklog", version = "0.1", default-features = false, features = ["kit", "sqlite"] }
 tokio = { version = "~1.52", default-features = false, features = ["rt", "rt-multi-thread", "macros"] }
 
 [features]
@@ -58,3 +59,11 @@ encryption = ["hot-reload", "confers/encryption", "dep:serde", "dep:serde_json"]
 resolver = "2"
 members = [".", "examples/trait-kit-example", "examples/integration-app"]
 default-members = ["."]
+
+# Dev-deps (oxcache, limiteron, etc.) depend on trait-kit 0.2.3 from crates.io,
+# which creates a second copy of trait_kit in the dependency graph. Patch
+# redirects all crates.io trait-kit references to the local source so the
+# e2e tests see a single, unified trait-kit. Safe for CI: `.` is the repo
+# root, which always exists after checkout.
+[patch.crates-io]
+trait-kit = { path = "." }
