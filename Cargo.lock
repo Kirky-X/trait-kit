@@ -168,7 +168,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -179,7 +179,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1100,42 +1100,16 @@ dependencies = [
 [[package]]
 name = "dbnexus"
 version = "0.3.2"
-dependencies = [
- "anyhow",
- "async-trait",
- "dashmap",
- "dbnexus-macros 0.3.2",
- "futures",
- "once_cell",
- "oxcache 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "parking_lot",
- "regex",
- "sea-orm",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "sqlparser",
- "thiserror",
- "time",
- "tokio",
- "trait-kit",
- "unicode-normalization",
- "url",
-]
-
-[[package]]
-name = "dbnexus"
-version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fed346f3d00845bb97c085ad03a754b282ec4c9caaf1e7f963cde0ab82695c35"
 dependencies = [
  "anyhow",
  "async-trait",
  "dashmap",
- "dbnexus-macros 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dbnexus-macros",
  "futures",
  "once_cell",
- "oxcache 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oxcache",
  "parking_lot",
  "regex",
  "sea-orm",
@@ -1149,18 +1123,6 @@ dependencies = [
  "trait-kit",
  "unicode-normalization",
  "url",
-]
-
-[[package]]
-name = "dbnexus-macros"
-version = "0.3.2"
-dependencies = [
- "proc-macro-error2",
- "proc-macro2",
- "quote",
- "regex",
- "serde",
- "syn",
 ]
 
 [[package]]
@@ -1246,7 +1208,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1288,7 +1250,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1949,6 +1911,8 @@ dependencies = [
 [[package]]
 name = "inklog"
 version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4e93f4cdc68a2b0cbec46e3c65aa38db2f1805fba0b4c1af659b833194f08d2"
 dependencies = [
  "aes-gcm 0.11.0",
  "anyhow",
@@ -1959,7 +1923,7 @@ dependencies = [
  "bytes",
  "chrono",
  "crossbeam-channel",
- "dbnexus 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dbnexus",
  "dirs",
  "flate2",
  "futures",
@@ -1969,7 +1933,7 @@ dependencies = [
  "nix",
  "once_cell",
  "owo-colors",
- "oxcache 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oxcache",
  "parking_lot",
  "parquet",
  "pbkdf2",
@@ -2030,19 +1994,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "integration-app"
-version = "0.1.0"
-dependencies = [
- "dbnexus 0.3.2",
- "inklog",
- "limiteron 0.2.2",
- "oxcache 0.3.4",
- "sdforge",
- "tokio",
- "trait-kit",
-]
-
-[[package]]
 name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2056,7 +2007,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2225,32 +2176,6 @@ dependencies = [
 [[package]]
 name = "limiteron"
 version = "0.2.2"
-dependencies = [
- "ahash",
- "async-trait",
- "chrono",
- "dashmap",
- "ipnet",
- "log",
- "oxcache 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "parking_lot",
- "secrecy",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror",
- "tokio",
- "tokio-util",
- "toml",
- "tracing",
- "trait-kit",
- "uuid",
- "validator",
-]
-
-[[package]]
-name = "limiteron"
-version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e657362ef663efeb2e4b52c5227f092dfe1c7307890e7e0cfa98d4c312d94e8"
 dependencies = [
@@ -2260,7 +2185,7 @@ dependencies = [
  "dashmap",
  "ipnet",
  "log",
- "oxcache 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oxcache",
  "parking_lot",
  "secrecy",
  "serde",
@@ -2443,7 +2368,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2610,28 +2535,6 @@ checksum = "d211803b9b6b570f68772237e415a029d5a50c65d382910b879fb19d3271f94d"
 dependencies = [
  "supports-color 2.1.0",
  "supports-color 3.0.2",
-]
-
-[[package]]
-name = "oxcache"
-version = "0.3.4"
-dependencies = [
- "arc-swap",
- "async-trait",
- "base64",
- "dashmap",
- "lazy_static",
- "moka",
- "once_cell",
- "rand 0.10.2",
- "secrecy",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "trait-kit",
- "uuid",
 ]
 
 [[package]]
@@ -3224,7 +3127,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3291,8 +3194,10 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "sdforge"
 version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6f05decc0565d5330e817226f9269bbf3e4a29188f272c109359dc2610eee41"
 dependencies = [
- "limiteron 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "limiteron",
  "log",
  "sdforge-macros",
  "serde",
@@ -3306,6 +3211,8 @@ dependencies = [
 [[package]]
 name = "sdforge-macros"
 version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4df7ef901c10853a0a6466942fed1cc20a765047257105074256ce5ca01d592d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3666,7 +3573,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3884,7 +3791,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3994,7 +3901,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4347,10 +4254,10 @@ name = "trait-kit"
 version = "0.2.3"
 dependencies = [
  "confers",
- "dbnexus 0.3.2",
+ "dbnexus",
  "inklog",
- "limiteron 0.2.2",
- "oxcache 0.3.4",
+ "limiteron",
+ "oxcache",
  "sdforge",
  "serde",
  "serde_json",
@@ -4667,7 +4574,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
