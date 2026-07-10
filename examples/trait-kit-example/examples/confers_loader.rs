@@ -26,7 +26,12 @@ struct AppConfig {
 
 impl Configurable for AppConfig {
     fn load() -> Result<Self, Box<dyn Error + Send>> {
-        Ok(AppConfig::load_sync()?)
+        // ConfigError from confers is not Send, so we can't use `?` directly
+        // with Box<dyn Error + Send>. Bridge via io::Error which is Send.
+        AppConfig::load_sync()
+            .map_err(|e| -> Box<dyn Error + Send> {
+                Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            })
     }
 }
 
