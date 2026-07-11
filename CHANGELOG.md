@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### ⚠️ BREAKING CHANGES
+
+- `KitError` 重命名为 `TraitKitError`，遵循 `ProjectNameError` 命名约定
+- 新增 `TraitKitResult<T>` 类型别名
+- `error` 模块从 `src/core/error.rs` 迁移到 `src/error.rs`，导入路径 `crate::core::error::KitError` → `crate::error::TraitKitError`
+
 ## [0.2.4] - 2026-07-11
 
 ### 变更
