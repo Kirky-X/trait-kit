@@ -1,13 +1,6 @@
 <div align="center">
 
-[![CI][ci-badge]][ci-url]
-[![crates.io][crates-badge]][crates-url]
-[![docs.rs][docs-badge]][docs-url]
-[![downloads][downloads-badge]][downloads-url]
-[![MIT licensed][license-badge]][license-url]
-[![Rust 1.85+][rust-badge]][rust-url]
-
-[English](README_EN.md) | 简体中文
+[![CI][ci-badge]][ci-url] [![crates.io][crates-badge]][crates-url] [![docs.rs][docs-badge]][docs-url] [![downloads][downloads-badge]][downloads-url] [![MIT licensed][license-badge]][license-url] [![Rust 1.85+][rust-badge]][rust-url]
 
 </div>
 
@@ -139,7 +132,6 @@ src/
 ## 📚 文档
 
 - [API 文档 (docs.rs)][docs-url]
-- [English README](README_EN.md)
 - [更新日志](CHANGELOG.md)
 - [贡献指南](CONTRIBUTING.md)
 
