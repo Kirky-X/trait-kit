@@ -10,6 +10,7 @@
 #![doc = include_str!("../README.md")]
 
 pub mod core;
+pub mod error;
 pub mod kit;
 
 #[cfg(feature = "i18n")]

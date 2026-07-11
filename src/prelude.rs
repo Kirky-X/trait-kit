@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 //! Re-exports of the most commonly used types and traits.
 
-pub use crate::core::error::KitError;
+pub use crate::error::TraitKitError;
 pub use crate::core::meta::{AutoBuilder, ModuleMeta};
 pub use crate::kit::{Kit, Ready, Unbuilt};
 

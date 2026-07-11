@@ -13,7 +13,7 @@ src/
 ├── core/
 │   ├── mod.rs          # 模块声明
 │   ├── meta.rs         # ModuleMeta + AutoBuilder + AsyncAutoBuilder trait
-│   └── error.rs        # KitError 错误类型
+│   └── error.rs        # TraitKitError 错误类型
 ├── kit/
 │   ├── mod.rs          # Kit 模块声明
 │   ├── kit.rs          # Kit<Unbuilt> → Kit<Ready> typestate 实现

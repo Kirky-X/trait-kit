@@ -10,7 +10,7 @@ use std::collections::HashMap;
 #[cfg(feature = "hot-reload")]
 use std::rc::Rc;
 
-use crate::core::error::KitError;
+use crate::error::TraitKitError;
 use crate::core::meta::{AutoBuilder, BuildFn};
 
 #[cfg(feature = "encryption")]
@@ -23,15 +23,15 @@ use super::typemap::TypeMap;
 #[cfg(feature = "encryption")]
 const KEY_DERIVATION_VERSION: &str = "v1";
 
-/// Derive a per-field encryption key, mapping HKDF failures to `KitError`.
+/// Derive a per-field encryption key, mapping HKDF failures to `TraitKitError`.
 #[cfg(feature = "encryption")]
 fn derive_kit_field_key(
     master_key: &[u8],
     path: &'static str,
     context: &'static str,
-) -> Result<[u8; 32], KitError> {
+) -> Result<[u8; 32], TraitKitError> {
     super::config::derive_field_key(master_key, path, KEY_DERIVATION_VERSION).map_err(|e| {
-        KitError::BuildFailed {
+        TraitKitError::BuildFailed {
             context,
             source: Box::new(e),
         }
@@ -86,8 +86,8 @@ impl Kit {
     ///
     /// # Errors
     ///
-    /// Returns `KitError::AlreadyRegistered` if a module with the same `TypeId` was already registered.
-    pub fn register<M: AutoBuilder>(&mut self) -> Result<(), KitError> {
+    /// Returns `TraitKitError::AlreadyRegistered` if a module with the same `TypeId` was already registered.
+    pub fn register<M: AutoBuilder>(&mut self) -> Result<(), TraitKitError> {
         let entry = ModuleEntry {
             type_id: TypeId::of::<M>(),
             name: M::NAME,
@@ -96,7 +96,7 @@ impl Kit {
 
         self.graph
             .add(entry)
-            .map_err(|name| KitError::AlreadyRegistered { module: name })?;
+            .map_err(|name| TraitKitError::AlreadyRegistered { module: name })?;
 
         let build_fn: BuildFn = Box::new(|kit| {
             let capability = M::build(kit)
@@ -123,10 +123,10 @@ impl Kit {
     ///
     /// # Errors
     ///
-    /// Returns `KitError::BuildFailed` if `Configurable::load` fails.
+    /// Returns `TraitKitError::BuildFailed` if `Configurable::load` fails.
     #[cfg(feature = "confers")]
-    pub fn load_config<C: super::config::Configurable>(&self) -> Result<(), KitError> {
-        let config = C::load().map_err(|e| KitError::BuildFailed {
+    pub fn load_config<C: super::config::Configurable>(&self) -> Result<(), TraitKitError> {
+        let config = C::load().map_err(|e| TraitKitError::BuildFailed {
             context: "load_config",
             source: e,
         })?;
@@ -140,18 +140,18 @@ impl Kit {
     ///
     /// # Errors
     ///
-    /// Returns `KitError::DependencyMissing` if a registered module depends on an unregistered module.
-    /// Returns `KitError::CycleDetected` if a dependency cycle is found.
-    /// Returns `KitError::MissingCapability` if a build function is missing for a sorted module.
-    /// Returns `KitError::BuildFailed` if a module's `build` callback returns an error.
-    pub fn build(self) -> Result<Kit<Ready>, KitError> {
+    /// Returns `TraitKitError::DependencyMissing` if a registered module depends on an unregistered module.
+    /// Returns `TraitKitError::CycleDetected` if a dependency cycle is found.
+    /// Returns `TraitKitError::MissingCapability` if a build function is missing for a sorted module.
+    /// Returns `TraitKitError::BuildFailed` if a module's `build` callback returns an error.
+    pub fn build(self) -> Result<Kit<Ready>, TraitKitError> {
         let sorted = match self.graph.validate() {
             Ok(sorted) => sorted,
             Err(GraphError::DependencyMissing { module, missing }) => {
-                return Err(KitError::DependencyMissing { module, missing });
+                return Err(TraitKitError::DependencyMissing { module, missing });
             }
             Err(GraphError::CycleDetected { cycle }) => {
-                return Err(KitError::CycleDetected { cycle });
+                return Err(TraitKitError::CycleDetected { cycle });
             }
         };
 
@@ -160,7 +160,7 @@ impl Kit {
 
             for type_id in &sorted {
                 let build_fn = kit_ref.builders.borrow_mut().remove(type_id).ok_or(
-                    KitError::MissingCapability {
+                    TraitKitError::MissingCapability {
                         key: kit_ref.module_name(*type_id),
                     },
                 )?;
@@ -173,7 +173,7 @@ impl Kit {
                         kit_ref.capabilities.insert_boxed(*type_id, boxed);
                     }
                     Err(e) => {
-                        return Err(KitError::BuildFailed {
+                        return Err(TraitKitError::BuildFailed {
                             context: module_name,
                             source: e,
                         });
@@ -208,23 +208,23 @@ impl<S> Kit<S> {
     ///
     /// # Errors
     ///
-    /// Returns `KitError::MissingCapability` if the module has not been built yet.
-    pub fn require<M: AutoBuilder>(&self) -> Result<M::Capability, KitError> {
+    /// Returns `TraitKitError::MissingCapability` if the module has not been built yet.
+    pub fn require<M: AutoBuilder>(&self) -> Result<M::Capability, TraitKitError> {
         let type_id = TypeId::of::<M>();
         self.capabilities
             .get_cloned_by_type_id::<M::Capability>(type_id)
-            .ok_or(KitError::MissingCapability { key: M::NAME })
+            .ok_or(TraitKitError::MissingCapability { key: M::NAME })
     }
 
     /// Get a configuration value.
     ///
     /// # Errors
     ///
-    /// Returns `KitError::MissingConfig` if no value of type `C` was set.
-    pub fn config<C: Clone + 'static>(&self) -> Result<C, KitError> {
+    /// Returns `TraitKitError::MissingConfig` if no value of type `C` was set.
+    pub fn config<C: Clone + 'static>(&self) -> Result<C, TraitKitError> {
         self.configs
             .get_cloned::<C>()
-            .ok_or(KitError::MissingConfig {
+            .ok_or(TraitKitError::MissingConfig {
                 key: std::any::type_name::<C>(),
             })
     }
@@ -252,7 +252,7 @@ impl<S> Kit<S> {
     ///
     /// Requires the `hot-reload` feature. Calls `C::load()`, stores
     /// the result via `set_config`, then invokes every `subscribe::<C>`
-    /// callback. Errors from `load()` are mapped to `KitError::BuildFailed`.
+    /// callback. Errors from `load()` are mapped to `TraitKitError::BuildFailed`.
     ///
     /// # Panics
     ///
@@ -264,10 +264,10 @@ impl<S> Kit<S> {
     ///
     /// # Errors
     ///
-    /// Returns `KitError::BuildFailed` if `Configurable::load` fails.
+    /// Returns `TraitKitError::BuildFailed` if `Configurable::load` fails.
     #[cfg(feature = "hot-reload")]
-    pub fn reload_config<C: super::config::Configurable>(&self) -> Result<(), KitError> {
-        let config = C::load().map_err(|e| KitError::BuildFailed {
+    pub fn reload_config<C: super::config::Configurable>(&self) -> Result<(), TraitKitError> {
+        let config = C::load().map_err(|e| TraitKitError::BuildFailed {
             context: "reload_config",
             source: e,
         })?;
@@ -301,16 +301,16 @@ impl Kit {
     ///
     /// # Errors
     ///
-    /// Returns `KitError::BuildFailed` if serialization, key derivation, or
+    /// Returns `TraitKitError::BuildFailed` if serialization, key derivation, or
     /// encryption fails.
     #[cfg(feature = "encryption")]
-    pub fn set_encrypted<C>(&self, value: &C, master_key: &[u8]) -> Result<(), KitError>
+    pub fn set_encrypted<C>(&self, value: &C, master_key: &[u8]) -> Result<(), TraitKitError>
     where
         C: super::config::ModuleConfig + serde::Serialize,
     {
         use super::config::XChaCha20Crypto;
 
-        let plaintext = serde_json::to_vec(value).map_err(|e| KitError::BuildFailed {
+        let plaintext = serde_json::to_vec(value).map_err(|e| TraitKitError::BuildFailed {
             context: "set_encrypted",
             source: Box::new(e),
         })?;
@@ -319,7 +319,7 @@ impl Kit {
 
         let (nonce, ciphertext) = XChaCha20Crypto::new()
             .encrypt(&plaintext, &field_key)
-            .map_err(|e| KitError::BuildFailed {
+            .map_err(|e| TraitKitError::BuildFailed {
                 context: "set_encrypted",
                 source: Box::new(e),
             })?;
@@ -350,7 +350,7 @@ impl Kit {
     /// module's declared default. Inspect the stored value via `config::<C>()`
     /// if you need to distinguish "loaded" from "defaulted".
     #[cfg(feature = "confers-macros")]
-    pub fn load_config_or_default<C>(&self) -> Result<(), KitError>
+    pub fn load_config_or_default<C>(&self) -> Result<(), TraitKitError>
     where
         C: super::config::Configurable + super::config::ModuleConfig,
     {
@@ -390,11 +390,11 @@ impl Kit<Ready> {
     ///
     /// # Errors
     ///
-    /// Returns `KitError::MissingConfig` if no encrypted blob for `C` exists.
-    /// Returns `KitError::BuildFailed` if key derivation, decryption, or
+    /// Returns `TraitKitError::MissingConfig` if no encrypted blob for `C` exists.
+    /// Returns `TraitKitError::BuildFailed` if key derivation, decryption, or
     /// deserialization fails (e.g. wrong master key, tampered ciphertext).
     #[cfg(feature = "encryption")]
-    pub fn get_encrypted<C>(&self, master_key: &[u8]) -> Result<C, KitError>
+    pub fn get_encrypted<C>(&self, master_key: &[u8]) -> Result<C, TraitKitError>
     where
         C: super::config::ModuleConfig + serde::de::DeserializeOwned,
     {
@@ -405,7 +405,7 @@ impl Kit<Ready> {
             .borrow()
             .get(&TypeId::of::<C>())
             .cloned()
-            .ok_or(KitError::MissingConfig {
+            .ok_or(TraitKitError::MissingConfig {
                 key: std::any::type_name::<C>(),
             })?;
 
@@ -413,12 +413,12 @@ impl Kit<Ready> {
 
         let plaintext = XChaCha20Crypto::new()
             .decrypt(&blob.nonce, &blob.ciphertext, &field_key)
-            .map_err(|e| KitError::BuildFailed {
+            .map_err(|e| TraitKitError::BuildFailed {
                 context: "get_encrypted",
                 source: Box::new(e),
             })?;
 
-        serde_json::from_slice(&plaintext).map_err(|e| KitError::BuildFailed {
+        serde_json::from_slice(&plaintext).map_err(|e| TraitKitError::BuildFailed {
             context: "get_encrypted",
             source: Box::new(e),
         })

@@ -17,7 +17,7 @@
 - **类型安全的能力检索** — 能力按模块类型存储和检索（`kit.require::<LoggerModule>()`），而非字符串键。无需 downcast，无需运行时查找。
 - **配置中心** — `kit.set_config(value)` / `kit.config::<C>()` 通过 `TypeMap`（以 `TypeId` 为键）存储和检索类型化配置，无需 `ConfigKey` 或 `ConfigHandle` 样板代码。
 - **可选 confers 集成** — 四级 feature flag 集成 [`confers`](https://crates.io/crates/confers)，支持 derive 宏配置加载、热重载订阅和 XChaCha20-Poly1305 加密配置存储。
-- **AsyncKit 异步支持** — `async` feature 提供 `AsyncKit`，支持 `Send + Sync` 的异步能力管理，适用于数据库连接池、HTTP 客户端等异步初始化场景。
+- **`AsyncKit` 异步支持** — `async` feature 提供 `AsyncKit`，支持 `Send + Sync` 的异步能力管理，适用于数据库连接池、HTTP 客户端等异步初始化场景。
 - **ICU4X 国际化** — `i18n` feature 集成 ICU4X，提供区域感知的数字、日期、复数和排序能力。
 - **最小依赖** — 仅 `thiserror` 为必需依赖。`confers`、`serde`、`serde_json`、`icu` 均为可选，仅在启用对应 feature 时引入。
 - **`#![deny(unsafe_code)]`** — 整个 crate 无任何 `unsafe` 代码。
@@ -58,7 +58,7 @@ impl ModuleMeta for LoggerModule {
 }
 impl AutoBuilder for LoggerModule {
     type Capability = Arc<StdoutLogger>;
-    type Error = KitError;
+    type Error = TraitKitError;
     fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
         Ok(Arc::new(StdoutLogger))
     }
@@ -108,7 +108,7 @@ src/
 ├── core/
 │   ├── mod.rs      # 模块声明
 │   ├── meta.rs     # ModuleMeta + AutoBuilder + AsyncAutoBuilder trait
-│   └── error.rs    # KitError 错误类型
+│   └── error.rs    # TraitKitError 错误类型
 ├── kit/
 │   ├── mod.rs      # Kit 模块声明
 │   ├── kit.rs      # Kit<Unbuilt> → Kit<Ready> typestate 实现

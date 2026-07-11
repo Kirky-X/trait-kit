@@ -19,7 +19,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
-use crate::core::error::KitError;
+use crate::error::TraitKitError;
 use crate::core::meta::AsyncAutoBuilder;
 
 use super::async_typemap::AsyncTypeMap;
@@ -45,7 +45,7 @@ pub struct Ready;
 /// guarantees both.
 ///
 /// The error variant is `Box<dyn Error + Send + 'static>` to match
-/// `KitError::BuildFailed::source` (which is `Send` so that `KitError: Send`
+/// `TraitKitError::BuildFailed::source` (which is `Send` so that `TraitKitError: Send`
 /// and `tokio::spawn(async move { kit.build().await })` compiles on a
 /// multi-threaded runtime). The future is `Send` because both
 /// `Box<dyn Any + Send + Sync>` and `Box<dyn Error + Send + 'static>` are
@@ -109,7 +109,7 @@ impl AsyncKit {
     ///
     /// # Errors
     ///
-    /// Returns [`KitError::AlreadyRegistered`] if a module with the same
+    /// Returns [`TraitKitError::AlreadyRegistered`] if a module with the same
     /// `TypeId` was already registered.
     ///
     /// # Panics
@@ -117,7 +117,7 @@ impl AsyncKit {
     /// Panics if the `builders` [`RwLock`] is poisoned (a worker thread
     /// panicked while holding the write lock). Lock poisoning indicates a
     /// logic bug in the async build pipeline and should fail loudly.
-    pub fn register<M: AsyncAutoBuilder>(&mut self) -> Result<(), KitError> {
+    pub fn register<M: AsyncAutoBuilder>(&mut self) -> Result<(), TraitKitError> {
         let entry = ModuleEntry {
             type_id: TypeId::of::<M>(),
             name: M::NAME,
@@ -126,7 +126,7 @@ impl AsyncKit {
 
         self.graph
             .add(entry)
-            .map_err(|name| KitError::AlreadyRegistered { module: name })?;
+            .map_err(|name| TraitKitError::AlreadyRegistered { module: name })?;
 
         let build_fn: AsyncBuildFn = Box::new(|kit| {
             Box::pin(async move {
@@ -191,27 +191,27 @@ impl AsyncKit {
     ///
     /// # Errors
     ///
-    /// - [`KitError::DependencyMissing`] if a registered module declares a
+    /// - [`TraitKitError::DependencyMissing`] if a registered module declares a
     ///   dependency that was never registered.
-    /// - [`KitError::CycleDetected`] if the dependency graph contains a cycle.
-    /// - [`KitError::MissingCapability`] if a topologically-sorted module has
+    /// - [`TraitKitError::CycleDetected`] if the dependency graph contains a cycle.
+    /// - [`TraitKitError::MissingCapability`] if a topologically-sorted module has
     ///   no stored build function (internal invariant violation).
-    /// - [`KitError::BuildFailed`] if a module's `build` callback returns `Err`.
+    /// - [`TraitKitError::BuildFailed`] if a module's `build` callback returns `Err`.
     ///
     /// # Panics
     ///
     /// Panics if the `builders` [`RwLock`] is poisoned (a worker thread
     /// panicked while holding the write lock). Lock poisoning indicates a
     /// logic bug in the async build pipeline and should fail loudly.
-    pub async fn build(self) -> Result<AsyncKit<Ready>, KitError> {
+    pub async fn build(self) -> Result<AsyncKit<Ready>, TraitKitError> {
         // 1. Validate the dependency graph: missing-dep check + Kahn topo sort.
         let sorted = match self.graph.validate() {
             Ok(sorted) => sorted,
             Err(GraphError::DependencyMissing { module, missing }) => {
-                return Err(KitError::DependencyMissing { module, missing });
+                return Err(TraitKitError::DependencyMissing { module, missing });
             }
             Err(GraphError::CycleDetected { cycle }) => {
-                return Err(KitError::CycleDetected { cycle });
+                return Err(TraitKitError::CycleDetected { cycle });
             }
         };
 
@@ -228,7 +228,7 @@ impl AsyncKit {
                 .write()
                 .expect("AsyncKit builders lock poisoned: another thread panicked while holding the lock")
                 .remove(type_id)
-                .ok_or_else(|| KitError::MissingCapability {
+                .ok_or_else(|| TraitKitError::MissingCapability {
                     key: self.module_name(*type_id),
                 })?;
             // Write guard dropped here (end of statement).
@@ -242,7 +242,7 @@ impl AsyncKit {
             match fut.await {
                 Ok(boxed) => self.capabilities.insert_boxed(*type_id, boxed),
                 Err(e) => {
-                    return Err(KitError::BuildFailed {
+                    return Err(TraitKitError::BuildFailed {
                         context: module_name,
                         source: e,
                     });
@@ -274,16 +274,16 @@ impl<S> AsyncKit<S> {
     ///
     /// # Errors
     ///
-    /// Returns [`KitError::MissingConfig`] if no value of type `C` was set.
+    /// Returns [`TraitKitError::MissingConfig`] if no value of type `C` was set.
     ///
     /// # Panics
     ///
     /// Panics if the `configs` [`RwLock`] is poisoned. See
     /// [`register`](Self::register) for context on lock poisoning.
-    pub fn config<C: Clone + Send + Sync + 'static>(&self) -> Result<C, KitError> {
+    pub fn config<C: Clone + Send + Sync + 'static>(&self) -> Result<C, TraitKitError> {
         self.configs
             .get_cloned::<C>()
-            .ok_or(KitError::MissingConfig {
+            .ok_or(TraitKitError::MissingConfig {
                 key: std::any::type_name::<C>(),
             })
     }
@@ -296,18 +296,18 @@ impl<S> AsyncKit<S> {
     ///
     /// # Errors
     ///
-    /// Returns [`KitError::MissingCapability`] if the module has not been
+    /// Returns [`TraitKitError::MissingCapability`] if the module has not been
     /// built yet (its `TypeId` is absent from the capabilities map).
     ///
     /// # Panics
     ///
     /// Panics if the `capabilities` [`RwLock`] is poisoned. See
     /// [`register`](Self::register) for context on lock poisoning.
-    pub fn require<M: AsyncAutoBuilder>(&self) -> Result<M::Capability, KitError> {
+    pub fn require<M: AsyncAutoBuilder>(&self) -> Result<M::Capability, TraitKitError> {
         let type_id = TypeId::of::<M>();
         self.capabilities
             .get_cloned_by_type_id::<M::Capability>(type_id)
-            .ok_or(KitError::MissingCapability { key: M::NAME })
+            .ok_or(TraitKitError::MissingCapability { key: M::NAME })
     }
 }
 
@@ -377,7 +377,7 @@ impl std::fmt::Debug for AsyncKit<Ready> {
 #[cfg(all(test, feature = "async"))]
 mod tests {
     use super::{AsyncKit, Ready};
-    use crate::core::error::KitError;
+    use crate::error::TraitKitError;
     use crate::core::meta::{AsyncAutoBuilder, ModuleMeta};
     use crate::test_helpers::{block_on, MockError};
     use std::any::TypeId;
@@ -415,7 +415,7 @@ mod tests {
 
     // --- T008 mock modules for build() tests ---
 
-    /// Build callback returns `Err`, exercising `KitError::BuildFailed`.
+    /// Build callback returns `Err`, exercising `TraitKitError::BuildFailed`.
     struct MockErrModule;
 
     impl ModuleMeta for MockErrModule {
@@ -468,11 +468,11 @@ mod tests {
     }
 
     /// Phantom module that is never registered; used as a declared-but-missing
-    /// dependency to trigger `KitError::DependencyMissing`.
+    /// dependency to trigger `TraitKitError::DependencyMissing`.
     struct MissingDep;
 
     /// Declares a dependency on `MissingDep` (unregistered) to trigger
-    /// `KitError::DependencyMissing` during `graph.validate()`.
+    /// `TraitKitError::DependencyMissing` during `graph.validate()`.
     struct MockMissingDepModule;
 
     impl ModuleMeta for MockMissingDepModule {
@@ -573,7 +573,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                KitError::AlreadyRegistered {
+                TraitKitError::AlreadyRegistered {
                     module: "mock-module"
                 }
             ),
@@ -603,7 +603,7 @@ mod tests {
             .config::<u64>()
             .expect_err("missing config should error");
         assert!(
-            matches!(err, KitError::MissingConfig { .. }),
+            matches!(err, TraitKitError::MissingConfig { .. }),
             "expected MissingConfig, got {err:?}"
         );
     }
@@ -614,16 +614,16 @@ mod tests {
         assert_send_sync::<AsyncKit>();
     }
 
-    // --- MED-002: Send-ness assertions for KitError and build() result ---
+    // --- MED-002: Send-ness assertions for TraitKitError and build() result ---
 
-    /// Verifies HIGH-001: `KitError` is `Send` (so it can cross
-    /// `tokio::spawn` boundaries). Before HIGH-001, `KitError::BuildFailed::source`
+    /// Verifies HIGH-001: `TraitKitError` is `Send` (so it can cross
+    /// `tokio::spawn` boundaries). Before HIGH-001, `TraitKitError::BuildFailed::source`
     /// was `Box<dyn Error>` (without `+ Send`), which made the entire enum
     /// `!Send` and blocked `tokio::spawn(async move { kit.build().await })`.
     #[test]
     fn kit_error_is_send() {
         fn assert_send<T: Send>() {}
-        assert_send::<KitError>();
+        assert_send::<TraitKitError>();
     }
 
     /// Verifies HIGH-001: `AsyncKit::build()`'s return type is `Send`, so the
@@ -632,7 +632,7 @@ mod tests {
     #[test]
     fn async_kit_build_result_is_send() {
         fn assert_send<T: Send>() {}
-        assert_send::<Result<AsyncKit<Ready>, KitError>>();
+        assert_send::<Result<AsyncKit<Ready>, TraitKitError>>();
     }
 
     // --- T008 tests for AsyncKit::build() ---
@@ -685,7 +685,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                KitError::DependencyMissing {
+                TraitKitError::DependencyMissing {
                     module: "mock-missing-dep-module",
                     missing: "missing-dep"
                 }
@@ -701,7 +701,7 @@ mod tests {
         kit.register::<MockCycleB>().expect("register cycle B");
         let err = block_on(kit.build()).expect_err("build should fail on cyclic dependency graph");
         assert!(
-            matches!(err, KitError::CycleDetected { .. }),
+            matches!(err, TraitKitError::CycleDetected { .. }),
             "expected CycleDetected, got {err:?}"
         );
     }
@@ -731,7 +731,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                KitError::BuildFailed {
+                TraitKitError::BuildFailed {
                     context: "mock-err-module",
                     ..
                 }
@@ -764,7 +764,7 @@ mod tests {
             .require::<MockModule>()
             .expect_err("require on unbuilt module should error");
         assert!(
-            matches!(err, KitError::MissingCapability { key: "mock-module" }),
+            matches!(err, TraitKitError::MissingCapability { key: "mock-module" }),
             "expected MissingCapability for mock-module, got {err:?}"
         );
     }
@@ -845,12 +845,12 @@ mod tests {
     //   A→B→C chain; each build callback calls require on its direct dep.
     // MockCycleA3/B3/C3: 3-node cycle A→B→C→A for cycle detection.
     //
-    // `From<KitError> for MockError` lets `?` convert require errors
+    // `From<TraitKitError> for MockError` lets `?` convert require errors
     // (matches the production pattern in design.md where DbNexusModule
-    // uses `kit.require::<OxcacheModule>()?` with `OxcacheError: From<KitError>`).
+    // uses `kit.require::<OxcacheModule>()?` with `OxcacheError: From<TraitKitError>`).
 
-    impl From<KitError> for MockError {
-        fn from(e: KitError) -> Self {
+    impl From<TraitKitError> for MockError {
+        fn from(e: TraitKitError) -> Self {
             MockError::Failed(e.to_string())
         }
     }
@@ -1129,7 +1129,7 @@ mod tests {
         );
     }
 
-    /// R-004 #3: Missing dependency → `KitError::DependencyMissing`.
+    /// R-004 #3: Missing dependency → `TraitKitError::DependencyMissing`.
     /// Register only `MockAModule` (declares dep on `MockBModule`); `MockBModule`
     /// is intentionally unregistered. `graph.validate()` must reject before
     /// any `build_fn` runs.
@@ -1143,7 +1143,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                KitError::DependencyMissing {
+                TraitKitError::DependencyMissing {
                     module: "mock-a",
                     missing: "mock-b"
                 }
@@ -1152,7 +1152,7 @@ mod tests {
         );
     }
 
-    /// R-004 #4: 3-node cycle A→B→C→A → `KitError::CycleDetected`.
+    /// R-004 #4: 3-node cycle A→B→C→A → `TraitKitError::CycleDetected`.
     /// Distinct from the 2-node cycle test (T008) — exercises DFS cycle
     /// extraction on a longer ring.
     #[test]
@@ -1163,7 +1163,7 @@ mod tests {
         kit.register::<MockCycleC3>().expect("register cycle C3");
         let err = block_on(kit.build()).expect_err("build must fail on 3-node cycle");
         assert!(
-            matches!(err, KitError::CycleDetected { .. }),
+            matches!(err, TraitKitError::CycleDetected { .. }),
             "expected CycleDetected for 3-node cycle, got {err:?}"
         );
     }
