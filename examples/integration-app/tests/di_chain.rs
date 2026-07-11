@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X
+// SPDX-License-Identifier: MIT
 //! Integration tests for the `integration-app` — verifies both
 //! dependency-injection chains end-to-end through trait-kit's `AsyncKit`.
 //!
