@@ -17,7 +17,7 @@ use icu::locale::Locale;
 use icu::plurals::{PluralCategory, PluralRules, PluralRulesOptions};
 use writeable::Writeable;
 
-use super::i18n_types::{I18nError, I18nFormatter};
+use super::{I18nError, I18nFormatter};
 
 impl I18nFormatter {
     /// Create a new formatter for the given BCP-47 locale tag.
