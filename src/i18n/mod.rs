@@ -11,144 +11,18 @@
 //! trait-kit = { version = "...", features = ["i18n"] }
 //! ```
 
-use std::cmp::Ordering;
-use std::str::FromStr;
+mod i18n_impl;
+mod i18n_types;
 
-use icu::collator::options::CollatorOptions;
-use icu::collator::{Collator, CollatorBorrowed};
-use icu::datetime::fieldsets::YMD;
-use icu::datetime::input::{Date, DateTime, Time};
-use icu::datetime::DateTimeFormatter;
-use icu::decimal::input::Decimal;
-use icu::decimal::options::DecimalFormatterOptions;
-use icu::decimal::DecimalFormatter;
-use icu::locale::Locale;
-use icu::plurals::{PluralCategory, PluralRules, PluralRulesOptions};
-use thiserror::Error;
-use writeable::Writeable;
-
-/// Errors returned by [`I18nFormatter`] operations.
-#[derive(Debug, Error)]
-pub enum I18nError {
-    /// BCP-47 locale string could not be parsed.
-    #[error("invalid locale '{input}': {reason}")]
-    InvalidLocale { input: String, reason: String },
-    /// Number value could not be formatted (e.g. NaN, Infinity, or parse failure).
-    #[error("invalid number '{input}': {reason}")]
-    InvalidNumber { input: String, reason: String },
-    /// Date component out of range or otherwise invalid.
-    #[error("date error: {0}")]
-    DateError(String),
-    /// Underlying ICU4X data or formatting failure.
-    #[error("formatting error: {0}")]
-    FormatError(String),
-}
-
-/// Locale-aware formatter backed by ICU4X compiled data.
-///
-/// Construct with [`I18nFormatter::new`] using a BCP-47 locale tag
-/// (e.g. `"en-US"`, `"zh-CN"`). All formatters are created eagerly so
-/// that repeated formatting calls are allocation-light.
-pub struct I18nFormatter {
-    locale: Locale,
-    decimal_formatter: DecimalFormatter,
-    plural_rules: PluralRules,
-    collator: CollatorBorrowed<'static>,
-}
-
-impl I18nFormatter {
-    /// Create a new formatter for the given BCP-47 locale tag.
-    ///
-    /// # Errors
-    /// Returns [`I18nError::InvalidLocale`] if the tag cannot be parsed,
-    /// or [`I18nError::FormatError`] if ICU4X lacks compiled data for it.
-    pub fn new(locale: &str) -> Result<Self, I18nError> {
-        let parsed = Locale::from_str(locale).map_err(|e| I18nError::InvalidLocale {
-            input: locale.to_string(),
-            reason: e.to_string(),
-        })?;
-
-        let decimal_formatter =
-            DecimalFormatter::try_new(parsed.clone().into(), DecimalFormatterOptions::default())
-                .map_err(|e| I18nError::FormatError(e.to_string()))?;
-
-        let plural_rules =
-            PluralRules::try_new(parsed.clone().into(), PluralRulesOptions::default())
-                .map_err(|e| I18nError::FormatError(e.to_string()))?;
-
-        let collator = Collator::try_new(parsed.clone().into(), CollatorOptions::default())
-            .map_err(|e| I18nError::FormatError(e.to_string()))?;
-
-        Ok(Self {
-            locale: parsed,
-            decimal_formatter,
-            plural_rules,
-            collator,
-        })
-    }
-
-    /// Format a floating-point number with locale-sensitive grouping
-    /// and decimal separators.
-    ///
-    /// # Errors
-    /// Returns [`I18nError::InvalidNumber`] for non-finite values or
-    /// if the value cannot be parsed into a fixed decimal.
-    pub fn format_number(&self, value: f64) -> Result<String, I18nError> {
-        if !value.is_finite() {
-            return Err(I18nError::InvalidNumber {
-                input: value.to_string(),
-                reason: "value is not finite (NaN or Infinity)".into(),
-            });
-        }
-        let repr = format!("{value}");
-        let decimal = Decimal::from_str(&repr).map_err(|e| I18nError::InvalidNumber {
-            input: repr,
-            reason: e.to_string(),
-        })?;
-        let formatted = self.decimal_formatter.format(&decimal);
-        Ok(formatted.write_to_string().into_owned())
-    }
-
-    /// Format an ISO calendar date (year / month / day) using a medium
-    /// length locale-specific pattern.
-    ///
-    /// # Errors
-    /// Returns [`I18nError::DateError`] if any component is out of range,
-    /// or [`I18nError::FormatError`] if the formatter cannot be constructed.
-    pub fn format_date(&self, year: i32, month: u8, day: u8) -> Result<String, I18nError> {
-        let date =
-            Date::try_new_iso(year, month, day).map_err(|e| I18nError::DateError(e.to_string()))?;
-        let time = Time::try_new(0, 0, 0, 0).map_err(|e| I18nError::DateError(e.to_string()))?;
-        let datetime = DateTime { date, time };
-
-        let dtf = DateTimeFormatter::try_new(self.locale.clone().into(), YMD::medium())
-            .map_err(|e| I18nError::FormatError(e.to_string()))?;
-        let formatted = dtf.format(&datetime);
-        Ok(formatted.write_to_string().into_owned())
-    }
-
-    /// Return the plural category for `count` in the formatter's locale.
-    ///
-    /// # Errors
-    /// This method does not currently fail, but returns `Result` for API
-    /// consistency with the other formatting methods.
-    pub fn plural_category(&self, count: u64) -> Result<PluralCategory, I18nError> {
-        Ok(self.plural_rules.category_for(count))
-    }
-
-    /// Compare two strings using locale-sensitive collation rules.
-    ///
-    /// # Errors
-    /// This method does not currently fail, but returns `Result` for API
-    /// consistency with the other formatting methods.
-    pub fn compare(&self, a: &str, b: &str) -> Result<Ordering, I18nError> {
-        Ok(self.collator.compare(a, b))
-    }
-}
+pub use i18n_types::{I18nError, I18nFormatter};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::cmp::Ordering;
+
+    use icu::plurals::PluralCategory;
 
     #[test]
     fn test_locale_parsing_en() {
