@@ -358,7 +358,7 @@ mod confers_derive_bridge {
     #[test]
     #[serial]
     fn load_config_bridges_to_confers_derive_load_sync() {
-        std::env::remove_var("TRAIT_KIT_T026_FIELD");
+        unsafe { std::env::remove_var("TRAIT_KIT_T026_FIELD") };
 
         let kit = Kit::new();
         kit.load_config::<DerivedConfig>()
@@ -369,10 +369,10 @@ mod confers_derive_bridge {
         assert_eq!(config.field, "fallback_value");
         drop(kit);
 
-        std::env::set_var("TRAIT_KIT_T026_FIELD", "from_env");
+        unsafe { std::env::set_var("TRAIT_KIT_T026_FIELD", "from_env") };
         let kit = Kit::new();
         let result = kit.load_config::<DerivedConfig>();
-        std::env::remove_var("TRAIT_KIT_T026_FIELD");
+        unsafe { std::env::remove_var("TRAIT_KIT_T026_FIELD") };
 
         let kit = match result {
             Ok(()) => kit.build().expect("build should succeed"),

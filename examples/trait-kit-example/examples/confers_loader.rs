@@ -38,7 +38,7 @@ impl Configurable for AppConfig {
 }
 
 fn main() {
-    std::env::remove_var("TRAIT_KIT_EXAMPLE_HOST");
+    unsafe { std::env::remove_var("TRAIT_KIT_EXAMPLE_HOST") };
 
     // 1. No env override — load_sync() falls back to #[config(default)].
     let kit = Kit::new();
@@ -56,7 +56,7 @@ fn main() {
     // 2. Env override — confers' load_sync() picks up APP_HOST from the environment.
     //    (Numeric fields aren't auto-parsed from env strings; only String fields
     //    demonstrate env override in this example.)
-    std::env::set_var("TRAIT_KIT_EXAMPLE_HOST", "10.0.0.1");
+    unsafe { std::env::set_var("TRAIT_KIT_EXAMPLE_HOST", "10.0.0.1") };
     let kit2 = Kit::new();
     kit2.load_config::<AppConfig>()
         .expect("load_config should pick up env override");
@@ -69,6 +69,6 @@ fn main() {
     assert_eq!(config2.host, "10.0.0.1");
     assert_eq!(config2.port, 8080);
 
-    std::env::remove_var("TRAIT_KIT_EXAMPLE_HOST");
+    unsafe { std::env::remove_var("TRAIT_KIT_EXAMPLE_HOST") };
     println!("confers_loader: OK");
 }
