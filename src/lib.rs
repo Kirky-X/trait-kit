@@ -10,13 +10,15 @@
 #![doc = include_str!("../README.md")]
 
 pub mod core;
-pub mod error;
+mod error;
 pub mod kit;
 
 #[cfg(feature = "i18n")]
 pub mod i18n;
 
 pub mod prelude;
+
+pub use error::TraitKitError;
 
 #[cfg(feature = "async")]
 pub use core::meta::AsyncAutoBuilder;
