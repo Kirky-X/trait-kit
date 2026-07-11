@@ -69,7 +69,7 @@ impl ModuleMeta for LoggerModule {
 }
 impl AutoBuilder for LoggerModule {
     type Capability = Arc<StdoutLogger>;
-    type Error = KitError;
+    type Error = TraitKitError;
     fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
         Ok(Arc::new(StdoutLogger))
     }
@@ -118,7 +118,7 @@ impl ModuleMeta for DbPoolModule {
 }
 impl AutoBuilder for DbPoolModule {
     type Capability = Arc<DbPool>;
-    type Error = KitError;
+    type Error = TraitKitError;
     fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
         let config: DbConfig = kit.config()?;
         Ok(Arc::new(DbPool { config }))
@@ -159,7 +159,7 @@ impl ModuleMeta for LoggerModule {
 }
 impl AutoBuilder for LoggerModule {
     type Capability = Arc<Logger>;
-    type Error = KitError;
+    type Error = TraitKitError;
     fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
         Ok(Arc::new(Logger))
     }
@@ -180,7 +180,7 @@ impl ModuleMeta for StorageModule {
 }
 impl AutoBuilder for StorageModule {
     type Capability = Arc<Storage>;
-    type Error = KitError;
+    type Error = TraitKitError;
     fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
         let logger = kit.require::<LoggerModule>()?;
         Ok(Arc::new(Storage { _logger: logger }))

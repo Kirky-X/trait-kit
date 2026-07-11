@@ -26,7 +26,7 @@ impl ModuleMeta for LoggerModule {
 }
 impl AutoBuilder for LoggerModule {
     type Capability = Arc<StdoutLogger>;
-    type Error = KitError;
+    type Error = TraitKitError;
 
     fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
         Ok(Arc::new(StdoutLogger))
@@ -56,7 +56,7 @@ impl ModuleMeta for DbPoolModule {
 }
 impl AutoBuilder for DbPoolModule {
     type Capability = Arc<DbPool>;
-    type Error = KitError;
+    type Error = TraitKitError;
 
     fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
         let logger = kit.require::<LoggerModule>()?;
@@ -103,7 +103,7 @@ fn test_missing_config_error() {
 
     assert!(result.is_err());
     match result.unwrap_err() {
-        KitError::BuildFailed { context, .. } => assert_eq!(context, "db_pool"),
+        TraitKitError::BuildFailed { context, .. } => assert_eq!(context, "db_pool"),
         other => panic!("expected BuildFailed, got: {other}"),
     }
 }
@@ -116,7 +116,7 @@ fn test_missing_dependency_error() {
 
     assert!(result.is_err());
     match result.unwrap_err() {
-        KitError::DependencyMissing { module, missing } => {
+        TraitKitError::DependencyMissing { module, missing } => {
             assert_eq!(module, "db_pool");
             assert_eq!(missing, "logger");
         }
@@ -132,7 +132,7 @@ fn test_duplicate_registration_error() {
 
     assert!(result.is_err());
     match result.unwrap_err() {
-        KitError::AlreadyRegistered { module } => assert_eq!(module, "logger"),
+        TraitKitError::AlreadyRegistered { module } => assert_eq!(module, "logger"),
         other => panic!("expected AlreadyRegistered, got: {other}"),
     }
 }
@@ -205,20 +205,20 @@ fn kit_error_display_and_source_behavior() {
 
     // Display: NotReady (deprecated — typestate pattern makes it unreachable)
     #[allow(deprecated)]
-    let not_ready = KitError::NotReady;
+    let not_ready = TraitKitError::NotReady;
     assert_eq!(
         not_ready.to_string(),
         "kit is not ready; call build() first"
     );
 
     // Display: CycleDetected
-    let cycle = KitError::CycleDetected {
+    let cycle = TraitKitError::CycleDetected {
         cycle: vec!["a", "b", "a"],
     };
     assert_eq!(cycle.to_string(), "dependency cycle detected: a → b → a");
 
     // Display: DependencyMissing
-    let dep = KitError::DependencyMissing {
+    let dep = TraitKitError::DependencyMissing {
         module: "db",
         missing: "logger",
     };
@@ -228,20 +228,20 @@ fn kit_error_display_and_source_behavior() {
     );
 
     // Display: AlreadyRegistered
-    let dup = KitError::AlreadyRegistered { module: "logger" };
+    let dup = TraitKitError::AlreadyRegistered { module: "logger" };
     assert_eq!(dup.to_string(), "module `logger` is already registered");
 
     // Display: MissingCapability
-    let cap = KitError::MissingCapability { key: "logger" };
+    let cap = TraitKitError::MissingCapability { key: "logger" };
     assert_eq!(cap.to_string(), "missing capability `logger`");
 
     // Display: MissingConfig
-    let cfg = KitError::MissingConfig { key: "db_url" };
+    let cfg = TraitKitError::MissingConfig { key: "db_url" };
     assert_eq!(cfg.to_string(), "missing config `db_url`");
 
     // Display: BuildFailed (contains source message)
     let source: Box<dyn Error + Send + Sync> = "inner failure".into();
-    let build = KitError::BuildFailed {
+    let build = TraitKitError::BuildFailed {
         context: "db",
         source,
     };
@@ -254,7 +254,7 @@ fn kit_error_display_and_source_behavior() {
     // Error::source() for other variants returns None
     #[allow(deprecated)]
     {
-        assert!(KitError::NotReady.source().is_none());
+        assert!(TraitKitError::NotReady.source().is_none());
     }
     assert!(cycle.source().is_none());
     assert!(dep.source().is_none());
@@ -303,7 +303,7 @@ mod confers_loader {
         let result = kit.load_config::<FailingConfig>();
 
         match result {
-            Err(KitError::BuildFailed { context, source }) => {
+            Err(TraitKitError::BuildFailed { context, source }) => {
                 assert_eq!(context, "load_config");
                 assert!(source.to_string().contains("intentional load failure"));
             }
@@ -540,7 +540,7 @@ mod encryption {
         let result: Result<SecretConfig, _> = kit.get_encrypted(&MASTER_KEY);
         assert!(result.is_err());
         match result.unwrap_err() {
-            KitError::MissingConfig { key } => {
+            TraitKitError::MissingConfig { key } => {
                 assert!(key.contains("SecretConfig"));
             }
             other => panic!("expected MissingConfig, got: {other:?}"),
@@ -640,7 +640,7 @@ mod encryption {
         let kit = Kit::new();
         let result = kit.set_encrypted(&Unserializable, &MASTER_KEY);
         match result {
-            Err(KitError::BuildFailed { context, source }) => {
+            Err(TraitKitError::BuildFailed { context, source }) => {
                 assert_eq!(context, "set_encrypted");
                 assert!(source.to_string().contains("intentional serialize failure"));
             }
@@ -836,7 +836,7 @@ mod kit_build_coverage {
     }
     impl AutoBuilder for CycleA {
         type Capability = Arc<()>;
-        type Error = KitError;
+        type Error = TraitKitError;
         fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
             Ok(Arc::new(()))
         }
@@ -853,7 +853,7 @@ mod kit_build_coverage {
     }
     impl AutoBuilder for CycleB {
         type Capability = Arc<()>;
-        type Error = KitError;
+        type Error = TraitKitError;
         fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
             Ok(Arc::new(()))
         }
@@ -865,7 +865,7 @@ mod kit_build_coverage {
         kit.register::<CycleA>().unwrap();
         kit.register::<CycleB>().unwrap();
         match kit.build() {
-            Err(KitError::CycleDetected { cycle }) => {
+            Err(TraitKitError::CycleDetected { cycle }) => {
                 assert!(cycle.contains(&"cycle_a"));
                 assert!(cycle.contains(&"cycle_b"));
             }
@@ -900,7 +900,7 @@ mod kit_build_coverage {
         }
         impl AutoBuilder for Solo {
             type Capability = Arc<()>;
-            type Error = KitError;
+            type Error = TraitKitError;
             fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
                 Ok(Arc::new(()))
             }
@@ -946,7 +946,7 @@ mod reload_config_coverage {
         let kit = Kit::new();
         let result = kit.reload_config::<FailingReloadConfig>();
         match result {
-            Err(KitError::BuildFailed { context, source }) => {
+            Err(TraitKitError::BuildFailed { context, source }) => {
                 assert_eq!(context, "reload_config");
                 assert!(source.to_string().contains("reload intentional failure"));
             }

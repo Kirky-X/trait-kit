@@ -4,8 +4,11 @@
 
 use thiserror::Error;
 
+/// Unified trait-kit error type.
+///
+/// Follows the `ProjectNameError` naming convention used across the base workspace.
 #[derive(Debug, Error)]
-pub enum KitError {
+pub enum TraitKitError {
     #[error("dependency cycle detected: {}", cycle.join(" → "))]
     CycleDetected { cycle: Vec<&'static str> },
 
@@ -35,3 +38,6 @@ pub enum KitError {
     #[error("missing config `{key}`")]
     MissingConfig { key: &'static str },
 }
+
+/// Convenience `Result` alias for trait-kit operations.
+pub type TraitKitResult<T> = std::result::Result<T, TraitKitError>;

@@ -48,7 +48,7 @@ impl ModuleMeta for DbPoolModule {
 
 impl AutoBuilder for DbPoolModule {
     type Capability = Arc<DbPool>;
-    type Error = KitError;
+    type Error = TraitKitError;
     fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
         let config: DbConfig = kit.config()?;
         Ok(Arc::new(DbPool { config }))

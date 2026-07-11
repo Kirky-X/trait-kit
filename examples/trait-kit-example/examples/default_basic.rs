@@ -25,7 +25,7 @@ impl ModuleMeta for LoggerModule {
 
 impl AutoBuilder for LoggerModule {
     type Capability = Arc<StdoutLogger>;
-    type Error = KitError;
+    type Error = TraitKitError;
     fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
         Ok(Arc::new(StdoutLogger))
     }
