@@ -7,7 +7,13 @@
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-07-11
+
 ### 变更
+
+- 无代码变更，版本号对齐 workspace 同步升级
+
+### 变更（Phase 6 前置）
 
 - 升级至 Rust edition 2024
 - 最低支持 Rust 版本 (MSRV) 设为 1.85
@@ -41,6 +47,7 @@
 - `TypeMap` 类型安全存储（以 `TypeId` 为键）
 - 依赖图验证：环检测 + 拓扑排序构建
 
-[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/Kirky-X/trait-kit/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Kirky-X/trait-kit/releases/tag/v0.2.3
 [0.2.2]: https://github.com/Kirky-X/trait-kit/releases/tag/v0.2.2
