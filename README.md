@@ -108,7 +108,7 @@ trait-kit = { version = "0.2", features = ["encryption"] }
 
 ## 🏗️ 架构
 
-```
+```text
 src/
 ├── lib.rs          # crate 入口，#![deny(unsafe_code)]
 ├── prelude.rs      # 常用类型再导出
