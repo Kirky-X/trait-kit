@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X
+// SPDX-License-Identifier: MIT
 //! Integration app — demonstrates trait-kit `AsyncKit` assembling all 5
 //! component modules (`oxcache` / `dbnexus` / `inklog` / `limiteron` /
 //! `sdforge`) with the full dependency-injection chain.

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X
+// SPDX-License-Identifier: MIT
 //! End-to-end integration test for trait-kit 0.2.2 `AsyncKit`.
 //!
 //! Phase 7 (T046) — registers all 5 component modules (`OxcacheModule`,

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X
+// SPDX-License-Identifier: MIT
 use std::sync::Arc;
 
 use static_assertions::assert_not_impl_any;

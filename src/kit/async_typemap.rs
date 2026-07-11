@@ -1,8 +1,5 @@
 // Copyright (c) 2026 Kirky.X
-//
-// Licensed under the MIT License
-// See LICENSE file in the project root for full license information.
-
+// SPDX-License-Identifier: MIT
 //! Send + Sync type-keyed map backed by `Arc<RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>`.
 //!
 //! Multi-threaded counterpart to [`super::typemap::TypeMap`]. Safe to share
