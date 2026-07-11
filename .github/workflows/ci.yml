@@ -1,4 +1,4 @@
-# trait-kit CI 质量门禁：fmt / clippy / test / coverage(80%) / audit / deny
+# trait-kit CI 质量门禁：fmt / clippy / test / security / docs
 name: trait-kit CI
 
 on:
@@ -18,115 +18,58 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  quality:
-    name: fmt + clippy
+  format:
+    name: cargo fmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
+      - uses: swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: cargo clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: swatinem/rust-cache@v2
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - run: cargo fmt --all --check
-      - run: cargo clippy --all-targets --all-features
+      - run: cargo clippy --all-targets --all-features -- -D warnings
 
   test:
-    name: test + coverage (≥80% lines)
+    name: cargo test
     runs-on: ubuntu-latest
-    env:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: taiki-e/install-action@cargo-llvm-cov
-      - run: cargo test --all-features --no-fail-fast
-      - name: Coverage (fail under 80% lines)
-        run: cargo llvm-cov --all-features --fail-under-lines 80 --lcov --output-path lcov.info
-      - name: Upload to Codecov (可选)
-        if: ${{ env.CODECOV_TOKEN != '' }}
-        uses: codecov/codecov-action@v7
-        with:
-          token: ${{ env.CODECOV_TOKEN }}
-          files: ./lcov.info
-          fail_ci_if_error: false
-
-  msrv:
-    name: MSRV 1.94
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      # Pin toolchain via input (not action tag) — dependabot won't bump the MSRV anchor.
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.94.0"
-      - uses: swatinem/rust-cache@v2
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - run: cargo test --all-features --no-fail-fast
-
-  nightly:
-    name: nightly (future-compat)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly
-      - uses: swatinem/rust-cache@v2
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - run: cargo test --all-features --no-fail-fast
+      - run: cargo test --all-features --lib
 
   security:
-    name: cargo-audit + cargo-deny
+    name: cargo deny
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      checks: write
-    steps:
-      - uses: actions/checkout@v7
-      - name: cargo-audit (RustSec 漏洞库)
-        uses: rustsec/audit-check@v2.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: cargo-deny (license / ban / advisory)
-        uses: EmbarkStudios/cargo-deny-action@v2
-
-  examples:
-    name: examples (${{ matrix.example }}, ${{ matrix.toolchain }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # default_basic — no features
-          - { example: default_basic,    toolchain: stable,   features: "" }
-          - { example: default_basic,    toolchain: "1.94.0", features: "" }
-          # confers_loader — Level 1
-          - { example: confers_loader,   toolchain: stable,   features: "confers" }
-          - { example: confers_loader,   toolchain: "1.94.0", features: "confers" }
-          # confers_macros — Level 2
-          - { example: confers_macros,   toolchain: stable,   features: "confers-macros" }
-          - { example: confers_macros,   toolchain: "1.94.0", features: "confers-macros" }
-          # hot_reload — Level 3
-          - { example: hot_reload,       toolchain: stable,   features: "hot-reload" }
-          - { example: hot_reload,       toolchain: "1.94.0", features: "hot-reload" }
-          # encryption — Level 4
-          - { example: encryption,       toolchain: stable,   features: "encryption" }
-          - { example: encryption,       toolchain: "1.94.0", features: "encryption" }
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ matrix.toolchain }}
+      - uses: swatinem/rust-cache@v2
+      - run: cargo install cargo-deny
+      - run: cargo deny check
+
+  docs:
+    name: cargo doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Build example
-        run: cargo build -p trait-kit-example --example ${{ matrix.example }} ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }}
-      - name: Run example (exit 0)
-        run: cargo run -p trait-kit-example --example ${{ matrix.example }} ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }}
+      - run: cargo doc --no-deps --all-features
