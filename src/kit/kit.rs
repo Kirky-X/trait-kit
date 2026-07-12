@@ -74,6 +74,12 @@ pub struct Kit<S = Unbuilt> {
     /// Lazy slots (Ready state): build_fn + OnceLock cache. Populated by
     /// `build()` from `lazy_builders`. Consumed by `require()` on first access.
     lazy_slots: RefCell<HashMap<TypeId, LazySlot>>,
+    /// Multi-binding builders (Unbuilt state): modules registered via
+    /// `register_multi`. Keyed by `TypeId::of::<M::Capability>()` (not the
+    /// module type) so multiple module types with the same capability type
+    /// aggregate into one Vec. Built into `multi_capabilities` during
+    /// `build()` by T011.
+    multi_builders: RefCell<HashMap<TypeId, Vec<BuildFn>>>,
     graph: DependencyGraph,
     configs: TypeMap,
     capabilities: TypeMap,
@@ -93,6 +99,7 @@ impl Kit {
             overrides: RefCell::new(HashMap::new()),
             lazy_builders: RefCell::new(HashMap::new()),
             lazy_slots: RefCell::new(HashMap::new()),
+            multi_builders: RefCell::new(HashMap::new()),
             graph: DependencyGraph::new(),
             configs: TypeMap::new(),
             capabilities: TypeMap::new(),
@@ -171,6 +178,58 @@ impl Kit {
         self.lazy_builders
             .borrow_mut()
             .insert(TypeId::of::<M>(), build_fn);
+        Ok(())
+    }
+
+    /// Register a module for multi-binding construction.
+    ///
+    /// Multiple module types that share the same `M::Capability` type can be
+    /// registered via `register_multi`; their build_fns are appended to a
+    /// `Vec` keyed by `TypeId::of::<M::Capability>()` (the capability type,
+    /// not the module type). The Vec preserves registration order.
+    ///
+    /// The module is also added to the dependency graph for validation, so
+    /// `M` must be distinct from any previously registered module (via
+    /// `register`, `register_lazy`, or `register_multi`). Two registrations
+    /// of the same module type `M` will return `AlreadyRegistered`.
+    ///
+    /// During `build()`, all multi-binding builders are invoked and the
+    /// results are stored in `multi_capabilities` (T011). Use `require_all`
+    /// to retrieve the ordered Vec of capabilities.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::AlreadyRegistered` if `M` was already registered
+    /// (via any `register*` method). Dependency validation is deferred to
+    /// `build()` (via `graph.validate()`).
+    pub fn register_multi<M: AutoBuilder>(&mut self) -> Result<(), TraitKitError>
+    where
+        M::Capability: Clone + 'static,
+    {
+        let entry = ModuleEntry {
+            type_id: TypeId::of::<M>(),
+            name: M::NAME,
+            dependencies: M::dependencies().iter().map(|(n, id)| (*n, *id)).collect(),
+        };
+
+        self.graph
+            .add(entry)
+            .map_err(|name| TraitKitError::AlreadyRegistered { module: name })?;
+
+        let build_fn: BuildFn = Box::new(|kit| {
+            let capability = M::build(kit)
+                .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?;
+            Ok(Box::new(capability) as Box<dyn Any>)
+        });
+
+        // Aggregate by capability type so require_all::<M>() returns all
+        // implementations of the same capability type.
+        let cap_id = TypeId::of::<M::Capability>();
+        self.multi_builders
+            .borrow_mut()
+            .entry(cap_id)
+            .or_default()
+            .push(build_fn);
         Ok(())
     }
 
@@ -348,6 +407,7 @@ impl Kit {
             overrides: self.overrides,
             lazy_builders: self.lazy_builders,
             lazy_slots: self.lazy_slots,
+            multi_builders: self.multi_builders,
             graph: self.graph,
             configs: self.configs,
             capabilities: self.capabilities,
@@ -1066,5 +1126,141 @@ mod tests {
         // First require triggers lazy build, which calls require::<MockCapability>()
         let cap = built.require::<LazyDependentModule>().unwrap();
         assert_eq!(cap.load(Ordering::SeqCst), 142, "lazy build accessed eager dep (42 + 100)");
+    }
+
+    // === T010 tests ===
+
+    /// Multi-binding module A (capability = Arc<AtomicUsize>).
+    struct MultiModuleA;
+    impl ModuleMeta for MultiModuleA {
+        const NAME: &'static str = "multi-a";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            &[]
+        }
+    }
+    impl AutoBuilder for MultiModuleA {
+        type Capability = Arc<AtomicUsize>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(AtomicUsize::new(10)))
+        }
+    }
+
+    /// Multi-binding module B (same capability type as MultiModuleA).
+    struct MultiModuleB;
+    impl ModuleMeta for MultiModuleB {
+        const NAME: &'static str = "multi-b";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            &[]
+        }
+    }
+    impl AutoBuilder for MultiModuleB {
+        type Capability = Arc<AtomicUsize>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(AtomicUsize::new(20)))
+        }
+    }
+
+    /// Multi-binding module C (same capability type as MultiModuleA).
+    struct MultiModuleC;
+    impl ModuleMeta for MultiModuleC {
+        const NAME: &'static str = "multi-c";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            &[]
+        }
+    }
+    impl AutoBuilder for MultiModuleC {
+        type Capability = Arc<AtomicUsize>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(AtomicUsize::new(30)))
+        }
+    }
+
+    #[test]
+    fn multi_builders_empty_on_new_kit() {
+        let kit = Kit::new();
+        assert_eq!(kit.multi_builders.borrow().len(), 0);
+    }
+
+    #[test]
+    fn register_multi_adds_to_multi_builders() {
+        let mut kit = Kit::new();
+        assert_eq!(kit.multi_builders.borrow().len(), 0);
+
+        kit.register_multi::<MultiModuleA>().unwrap();
+
+        // Keyed by TypeId::of::<M::Capability>() = TypeId::of::<Arc<AtomicUsize>>()
+        let cap_id = TypeId::of::<Arc<AtomicUsize>>();
+        assert_eq!(kit.multi_builders.borrow().len(), 1);
+        assert!(kit.multi_builders.borrow().contains_key(&cap_id));
+        assert_eq!(
+            kit.multi_builders.borrow().get(&cap_id).unwrap().len(),
+            1,
+            "first register_multi should produce Vec of length 1"
+        );
+    }
+
+    #[test]
+    fn register_multi_three_times_appends_to_vec() {
+        let mut kit = Kit::new();
+        kit.register_multi::<MultiModuleA>().unwrap();
+        kit.register_multi::<MultiModuleB>().unwrap();
+        kit.register_multi::<MultiModuleC>().unwrap();
+
+        let cap_id = TypeId::of::<Arc<AtomicUsize>>();
+        let builders = kit.multi_builders.borrow();
+        let vec = builders.get(&cap_id).expect("cap_id exists");
+        assert_eq!(vec.len(), 3, "three register_multi calls should produce Vec of length 3");
+    }
+
+    #[test]
+    fn register_multi_adds_module_to_dependency_graph() {
+        let mut kit = Kit::new();
+        kit.register_multi::<MultiModuleA>().unwrap();
+
+        // The module type_id (not cap_id) should be in the graph
+        assert!(kit.graph.name_of(TypeId::of::<MultiModuleA>()).is_some());
+    }
+
+    #[test]
+    fn register_multi_returns_already_registered_for_duplicate_module() {
+        let mut kit = Kit::new();
+        kit.register_multi::<MultiModuleA>().unwrap();
+
+        let result = kit.register_multi::<MultiModuleA>();
+        assert!(matches!(
+            result,
+            Err(TraitKitError::AlreadyRegistered { module: "multi-a" })
+        ));
+    }
+
+    #[test]
+    fn register_multi_returns_already_registered_if_already_registered_via_register() {
+        let mut kit = Kit::new();
+        kit.register::<MockCapability>().unwrap();
+
+        let result = kit.register_multi::<MockCapability>();
+        assert!(matches!(
+            result,
+            Err(TraitKitError::AlreadyRegistered { module: "mock" })
+        ));
+    }
+
+    #[test]
+    fn register_multi_coexists_with_register_for_different_modules() {
+        let mut kit = Kit::new();
+        kit.register::<MockCapability>().unwrap();
+        kit.register_multi::<MultiModuleA>().unwrap();
+        kit.register_multi::<MultiModuleB>().unwrap();
+
+        // MockCapability in builders, MultiModuleA/B in multi_builders
+        assert!(kit.builders.borrow().contains_key(&TypeId::of::<MockCapability>()));
+        let cap_id = TypeId::of::<Arc<AtomicUsize>>();
+        assert_eq!(
+            kit.multi_builders.borrow().get(&cap_id).unwrap().len(),
+            2
+        );
     }
 }
