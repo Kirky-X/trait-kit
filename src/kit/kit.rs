@@ -7,6 +7,7 @@
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 #[cfg(feature = "hot-reload")]
 use std::rc::Rc;
 
@@ -52,16 +53,26 @@ type SubscriberMap = RefCell<HashMap<TypeId, Vec<Rc<dyn Fn()>>>>;
 #[cfg(feature = "encryption")]
 type EncryptedConfigMap = RefCell<HashMap<TypeId, EncryptedBlob>>;
 
+/// A lazy construction slot: holds a build_fn and a OnceLock cache cell.
+/// The builder is invoked on first access; the result is cached in the
+/// OnceLock for subsequent accesses.
+struct LazySlot {
+    builder: BuildFn,
+    cell: OnceLock<Box<dyn Any>>,
+}
+
 /// The capability and configuration management center.
 pub struct Kit<S = Unbuilt> {
     builders: RefCell<HashMap<TypeId, BuildFn>>,
     /// Override map for test injection: `TypeId` of module → pre-built capability.
     /// Populated by `override_module` / `override_module_strict`; consumed by `build()`.
     overrides: RefCell<HashMap<TypeId, Box<dyn Any>>>,
-    /// Lazy builders: modules registered via `register_lazy`. Not built during
-    /// `build()`; instead transferred to `Kit<Ready>.lazy_slots` for first-access
-    /// construction. Keyed by `TypeId::of::<M>()`.
+    /// Lazy builders (Unbuilt state): modules registered via `register_lazy`.
+    /// Transferred to `lazy_slots` during `build()`.
     lazy_builders: RefCell<HashMap<TypeId, BuildFn>>,
+    /// Lazy slots (Ready state): build_fn + OnceLock cache. Populated by
+    /// `build()` from `lazy_builders`. Consumed by `require()` on first access.
+    lazy_slots: RefCell<HashMap<TypeId, LazySlot>>,
     graph: DependencyGraph,
     configs: TypeMap,
     capabilities: TypeMap,
@@ -80,6 +91,7 @@ impl Kit {
             builders: RefCell::new(HashMap::new()),
             overrides: RefCell::new(HashMap::new()),
             lazy_builders: RefCell::new(HashMap::new()),
+            lazy_slots: RefCell::new(HashMap::new()),
             graph: DependencyGraph::new(),
             configs: TypeMap::new(),
             capabilities: TypeMap::new(),
@@ -313,10 +325,27 @@ impl Kit {
             }
         }
 
+        // [Lazy] Transfer lazy_builders to lazy_slots for first-access
+        // construction in Kit<Ready>. Each LazySlot wraps the build_fn with
+        // an empty OnceLock cache cell.
+        {
+            let lazy: Vec<(TypeId, BuildFn)> = self.lazy_builders.borrow_mut().drain().collect();
+            for (type_id, builder) in lazy {
+                self.lazy_slots.borrow_mut().insert(
+                    type_id,
+                    LazySlot {
+                        builder,
+                        cell: OnceLock::new(),
+                    },
+                );
+            }
+        }
+
         Ok(Kit {
             builders: self.builders,
             overrides: self.overrides,
             lazy_builders: self.lazy_builders,
+            lazy_slots: self.lazy_slots,
             graph: self.graph,
             configs: self.configs,
             capabilities: self.capabilities,
@@ -822,5 +851,66 @@ mod tests {
             result,
             Err(TraitKitError::AlreadyRegistered { module: "counting" })
         ));
+    }
+
+    // === T008 tests ===
+
+    #[test]
+    fn lazy_slots_empty_on_new_kit() {
+        let kit = Kit::new();
+        assert_eq!(kit.lazy_slots.borrow().len(), 0);
+    }
+
+    #[test]
+    fn build_transfers_lazy_builders_to_lazy_slots() {
+        let mut kit = Kit::new();
+        kit.register_lazy::<CountingModule>().unwrap();
+        assert_eq!(kit.lazy_builders.borrow().len(), 1);
+        assert_eq!(kit.lazy_slots.borrow().len(), 0);
+
+        let built = kit.build().unwrap();
+
+        // After build(): lazy_builders drained, lazy_slots populated
+        assert_eq!(built.lazy_builders.borrow().len(), 0);
+        assert_eq!(built.lazy_slots.borrow().len(), 1);
+        assert!(built
+            .lazy_slots
+            .borrow()
+            .contains_key(&TypeId::of::<CountingModule>()));
+    }
+
+    #[test]
+    fn lazy_slots_cells_empty_after_build() {
+        let mut kit = Kit::new();
+        kit.register_lazy::<CountingModule>().unwrap();
+        let built = kit.build().unwrap();
+
+        // The OnceLock cell should be empty (not yet constructed) — first
+        // access via require() (T009) will populate it.
+        let slots = built.lazy_slots.borrow();
+        let slot = slots.get(&TypeId::of::<CountingModule>()).expect("slot exists");
+        assert!(slot.cell.get().is_none());
+    }
+
+    #[test]
+    fn build_transfers_multiple_lazy_builders_to_lazy_slots() {
+        let mut kit = Kit::new();
+        kit.register::<MockCapability>().unwrap();
+        kit.register_lazy::<DependentModule>().unwrap();
+        kit.register_lazy::<CountingModule>().unwrap();
+        assert_eq!(kit.lazy_builders.borrow().len(), 2);
+
+        let built = kit.build().unwrap();
+
+        assert_eq!(built.lazy_builders.borrow().len(), 0);
+        assert_eq!(built.lazy_slots.borrow().len(), 2);
+        assert!(built
+            .lazy_slots
+            .borrow()
+            .contains_key(&TypeId::of::<DependentModule>()));
+        assert!(built
+            .lazy_slots
+            .borrow()
+            .contains_key(&TypeId::of::<CountingModule>()));
     }
 }
