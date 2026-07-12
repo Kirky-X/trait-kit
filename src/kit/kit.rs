@@ -80,6 +80,10 @@ pub struct Kit<S = Unbuilt> {
     /// aggregate into one Vec. Built into `multi_capabilities` during
     /// `build()` by T011.
     multi_builders: RefCell<HashMap<TypeId, Vec<BuildFn>>>,
+    /// Multi-binding capabilities (Ready state): built results from
+    /// `multi_builders`. Keyed by `TypeId::of::<M::Capability>()`.
+    /// Populated by `build()`; consumed by `require_all()`.
+    multi_capabilities: RefCell<HashMap<TypeId, Vec<Box<dyn Any>>>>,
     graph: DependencyGraph,
     configs: TypeMap,
     capabilities: TypeMap,
@@ -100,6 +104,7 @@ impl Kit {
             lazy_builders: RefCell::new(HashMap::new()),
             lazy_slots: RefCell::new(HashMap::new()),
             multi_builders: RefCell::new(HashMap::new()),
+            multi_capabilities: RefCell::new(HashMap::new()),
             graph: DependencyGraph::new(),
             configs: TypeMap::new(),
             capabilities: TypeMap::new(),
@@ -353,11 +358,13 @@ impl Kit {
                 }
 
                 // [Build] Priority 2: invoke the registered build_fn.
-                let build_fn = kit_ref.builders.borrow_mut().remove(type_id).ok_or(
-                    TraitKitError::MissingCapability {
-                        key: module_name,
-                    },
-                )?;
+                // If not in builders, the module was registered via
+                // `register_multi` — skip here; built in the multi_builders
+                // loop below (T011).
+                let build_fn = match kit_ref.builders.borrow_mut().remove(type_id) {
+                    Some(fn_) => fn_,
+                    None => continue,
+                };
 
                 let result = (build_fn)(kit_ref);
                 match result {
@@ -402,12 +409,34 @@ impl Kit {
             }
         }
 
+        // [Multi] Build all multi-binding modules and store in
+        // multi_capabilities. Keyed by TypeId::of::<M::Capability>() so
+        // require_all::<M>() retrieves all implementations of the same
+        // capability type. Runs after the topo-sorted loop so eager
+        // dependencies are available via `self.capabilities`.
+        {
+            let multi: Vec<(TypeId, Vec<BuildFn>)> =
+                self.multi_builders.borrow_mut().drain().collect();
+            for (cap_id, build_fns) in multi {
+                let mut vec = Vec::with_capacity(build_fns.len());
+                for build_fn in build_fns {
+                    let boxed = (build_fn)(&self).map_err(|e| TraitKitError::BuildFailed {
+                        context: "<multi-binding>",
+                        source: e,
+                    })?;
+                    vec.push(boxed);
+                }
+                self.multi_capabilities.borrow_mut().insert(cap_id, vec);
+            }
+        }
+
         Ok(Kit {
             builders: self.builders,
             overrides: self.overrides,
             lazy_builders: self.lazy_builders,
             lazy_slots: self.lazy_slots,
             multi_builders: self.multi_builders,
+            multi_capabilities: self.multi_capabilities,
             graph: self.graph,
             configs: self.configs,
             capabilities: self.capabilities,
@@ -504,6 +533,38 @@ impl<S> Kit<S> {
 
         // 4. Not found
         Err(TraitKitError::MissingCapability { key: M::NAME })
+    }
+
+    /// Retrieve all capabilities registered via `register_multi` for the
+    /// given module type, in registration order.
+    ///
+    /// Available on both `Kit<Unbuilt>` and `Kit<Ready>`, but
+    /// `multi_capabilities` is only populated after `build()`. Calling
+    /// `require_all` before `build()` returns `MissingCapability`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::MissingCapability` if no multi-binding
+    /// capabilities were registered for `M::Capability`.
+    pub fn require_all<M: AutoBuilder>(&self) -> Result<Vec<M::Capability>, TraitKitError>
+    where
+        M::Capability: Clone + 'static,
+    {
+        let cap_id = TypeId::of::<M::Capability>();
+        let multi = self.multi_capabilities.borrow();
+        let vec = multi
+            .get(&cap_id)
+            .ok_or(TraitKitError::MissingCapability { key: M::NAME })?;
+
+        let mut result = Vec::with_capacity(vec.len());
+        for boxed in vec.iter() {
+            let cap = boxed
+                .downcast_ref::<M::Capability>()
+                .cloned()
+                .ok_or(TraitKitError::MissingCapability { key: M::NAME })?;
+            result.push(cap);
+        }
+        Ok(result)
     }
 
     /// Get a configuration value.
@@ -1262,5 +1323,106 @@ mod tests {
             kit.multi_builders.borrow().get(&cap_id).unwrap().len(),
             2
         );
+    }
+
+    // === T011 tests ===
+
+    #[test]
+    fn require_all_returns_empty_for_unregistered_capability() {
+        let mut kit = Kit::new();
+        // Register MockCapability (eager, not multi)
+        kit.register::<MockCapability>().unwrap();
+        let built = kit.build().unwrap();
+
+        // require_all for a capability with no multi-binding registrations
+        let result = built.require_all::<MultiModuleA>();
+        assert!(matches!(
+            result,
+            Err(TraitKitError::MissingCapability { key: "multi-a" })
+        ));
+    }
+
+    #[test]
+    fn require_all_returns_vec_of_three_after_three_register_multi() {
+        let mut kit = Kit::new();
+        kit.register_multi::<MultiModuleA>().unwrap();
+        kit.register_multi::<MultiModuleB>().unwrap();
+        kit.register_multi::<MultiModuleC>().unwrap();
+        let built = kit.build().unwrap();
+
+        let caps = built.require_all::<MultiModuleA>().unwrap();
+        assert_eq!(caps.len(), 3, "three register_multi calls should return Vec of length 3");
+    }
+
+    #[test]
+    fn require_all_preserves_registration_order() {
+        let mut kit = Kit::new();
+        kit.register_multi::<MultiModuleA>().unwrap(); // builds value 10
+        kit.register_multi::<MultiModuleB>().unwrap(); // builds value 20
+        kit.register_multi::<MultiModuleC>().unwrap(); // builds value 30
+        let built = kit.build().unwrap();
+
+        let caps = built.require_all::<MultiModuleA>().unwrap();
+        assert_eq!(caps.len(), 3);
+        // Verify order matches registration: 10, 20, 30
+        assert_eq!(caps[0].load(Ordering::SeqCst), 10, "first cap should be 10 (MultiModuleA)");
+        assert_eq!(caps[1].load(Ordering::SeqCst), 20, "second cap should be 20 (MultiModuleB)");
+        assert_eq!(caps[2].load(Ordering::SeqCst), 30, "third cap should be 30 (MultiModuleC)");
+    }
+
+    #[test]
+    fn require_all_returns_missing_capability_before_build() {
+        let mut kit = Kit::new();
+        kit.register_multi::<MultiModuleA>().unwrap();
+        // Don't call build() — multi_capabilities is empty
+
+        let result = kit.require_all::<MultiModuleA>();
+        assert!(matches!(
+            result,
+            Err(TraitKitError::MissingCapability { key: "multi-a" })
+        ));
+    }
+
+    #[test]
+    fn build_drains_multi_builders_into_multi_capabilities() {
+        let mut kit = Kit::new();
+        kit.register_multi::<MultiModuleA>().unwrap();
+        kit.register_multi::<MultiModuleB>().unwrap();
+
+        // Before build: multi_builders has entries, multi_capabilities is empty
+        assert_eq!(kit.multi_builders.borrow().len(), 1); // one cap_id key
+        assert_eq!(kit.multi_capabilities.borrow().len(), 0);
+
+        let built = kit.build().unwrap();
+
+        // After build: multi_builders is drained, multi_capabilities is populated
+        assert_eq!(built.multi_builders.borrow().len(), 0);
+        assert_eq!(built.multi_capabilities.borrow().len(), 1);
+        let cap_id = TypeId::of::<Arc<AtomicUsize>>();
+        assert_eq!(
+            built.multi_capabilities.borrow().get(&cap_id).unwrap().len(),
+            2
+        );
+    }
+
+    #[test]
+    fn require_all_coexists_with_require_for_single_binding() {
+        let mut kit = Kit::new();
+        // Single binding: MockCapability (eager)
+        kit.register::<MockCapability>().unwrap();
+        // Multi-binding: MultiModuleA, MultiModuleB
+        kit.register_multi::<MultiModuleA>().unwrap();
+        kit.register_multi::<MultiModuleB>().unwrap();
+        let built = kit.build().unwrap();
+
+        // require gets the single binding
+        let single = built.require::<MockCapability>().unwrap();
+        assert_eq!(single.load(Ordering::SeqCst), 0);
+
+        // require_all gets the multi-binding (returns MultiModuleA's cap type)
+        let multi = built.require_all::<MultiModuleA>().unwrap();
+        assert_eq!(multi.len(), 2);
+        assert_eq!(multi[0].load(Ordering::SeqCst), 10);
+        assert_eq!(multi[1].load(Ordering::SeqCst), 20);
     }
 }
