@@ -4,4 +4,7 @@
 
 pub mod meta;
 
+#[cfg(feature = "async")]
+pub use meta::AsyncAutoBuilder;
+pub(crate) use meta::BuildFn;
 pub use meta::{AutoBuilder, ModuleMeta};

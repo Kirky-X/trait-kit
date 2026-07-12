@@ -2,20 +2,20 @@
 // SPDX-License-Identifier: MIT
 //! Re-exports of the most commonly used types and traits.
 
+pub use crate::core::{AutoBuilder, ModuleMeta};
 pub use crate::error::TraitKitError;
-pub use crate::core::meta::{AutoBuilder, ModuleMeta};
 pub use crate::kit::{Kit, Ready, Unbuilt};
 
 #[cfg(feature = "async")]
-pub use crate::core::meta::AsyncAutoBuilder;
+pub use crate::core::AsyncAutoBuilder;
 #[cfg(feature = "async")]
 pub use crate::{AsyncKit, AsyncReady, AsyncUnbuilt};
 
 #[cfg(feature = "confers")]
-pub use crate::kit::config::Configurable;
+pub use crate::kit::Configurable;
 
 #[cfg(feature = "confers-macros")]
-pub use crate::kit::config::ModuleConfig;
+pub use crate::kit::ModuleConfig;
 
 #[cfg(all(test, feature = "async"))]
 mod tests {

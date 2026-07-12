@@ -40,4 +40,8 @@ pub enum TraitKitError {
 }
 
 /// Convenience `Result` alias for trait-kit operations.
+#[allow(
+    dead_code,
+    reason = "public API alias reserved for future re-export; not yet used internally"
+)]
 pub type TraitKitResult<T> = std::result::Result<T, TraitKitError>;

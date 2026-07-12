@@ -15,7 +15,9 @@ pub mod async_typemap;
 #[cfg(feature = "confers")]
 pub mod config;
 
+pub use graph::{DependencyGraph, GraphError, ModuleEntry};
 pub use kit::{Kit, Ready, Unbuilt};
+pub(crate) use typemap::TypeMap;
 
 #[cfg(feature = "async")]
 pub use async_kit::{AsyncKit, Ready as AsyncReady, Unbuilt as AsyncUnbuilt};
@@ -24,6 +26,12 @@ pub use async_typemap::AsyncTypeMap;
 
 #[cfg(feature = "confers-macros")]
 pub use config::Config;
+#[cfg(feature = "confers")]
+pub use config::Configurable;
+#[cfg(feature = "confers-macros")]
+pub use config::ModuleConfig;
 
 #[cfg(feature = "encryption")]
 pub use config::EncryptedBlob;
+#[cfg(feature = "encryption")]
+pub(crate) use config::XChaCha20Crypto;

@@ -19,11 +19,11 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
+use crate::core::AsyncAutoBuilder;
 use crate::error::TraitKitError;
-use crate::core::meta::AsyncAutoBuilder;
 
-use super::async_typemap::AsyncTypeMap;
-use super::graph::{DependencyGraph, GraphError, ModuleEntry};
+use super::AsyncTypeMap;
+use super::{DependencyGraph, GraphError, ModuleEntry};
 
 /// Marker type for the unbuilt state.
 pub struct Unbuilt;
@@ -377,14 +377,14 @@ impl std::fmt::Debug for AsyncKit<Ready> {
 #[cfg(all(test, feature = "async"))]
 mod tests {
     use super::{AsyncKit, Ready};
+    use crate::core::{AsyncAutoBuilder, ModuleMeta};
     use crate::error::TraitKitError;
-    use crate::core::meta::{AsyncAutoBuilder, ModuleMeta};
-    use crate::test_helpers::{block_on, MockError};
+    use crate::test_helpers::{MockError, block_on};
     use std::any::TypeId;
     use std::future::Future;
     use std::pin::Pin;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[derive(Debug, Clone, PartialEq)]
     struct MockCap {
