@@ -176,8 +176,8 @@ fn test_cycle_detection() {
     // This test needs two modules that depend on each other.
     // We can't easily create a cycle with ModuleMeta since dependencies
     // are static. Instead, test that the graph validator catches cycles.
-    use trait_kit::kit::graph::DependencyGraph;
-    use trait_kit::kit::graph::ModuleEntry;
+    use trait_kit::kit::DependencyGraph;
+    use trait_kit::kit::ModuleEntry;
 
     let mut graph = DependencyGraph::new();
     graph
@@ -387,8 +387,8 @@ mod confers_derive_bridge {
 
 #[cfg(feature = "confers-macros")]
 mod module_config_trait {
-    use trait_kit::kit::config::ModuleConfig;
     use trait_kit::kit::Config;
+    use trait_kit::kit::ModuleConfig;
 
     #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, Config)]
     struct ModuleStub {
@@ -471,7 +471,7 @@ mod hot_reload {
 
 #[cfg(feature = "encryption")]
 mod encryption {
-    use trait_kit::kit::config::ModuleConfig;
+    use trait_kit::kit::ModuleConfig;
     use trait_kit::prelude::*;
 
     #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -618,7 +618,7 @@ mod encryption {
 
     #[test]
     fn set_encrypted_propagates_serialization_error() {
-        use trait_kit::kit::config::ModuleConfig;
+        use trait_kit::kit::ModuleConfig;
 
         #[derive(Clone)]
         struct Unserializable;
@@ -652,7 +652,7 @@ mod encryption {
 #[cfg(test)]
 mod graph_coverage {
     use std::any::TypeId;
-    use trait_kit::kit::graph::{DependencyGraph, GraphError, ModuleEntry};
+    use trait_kit::kit::{DependencyGraph, GraphError, ModuleEntry};
 
     fn entry(name: &'static str, deps: Vec<(&'static str, TypeId)>) -> ModuleEntry {
         ModuleEntry {
@@ -1007,7 +1007,7 @@ mod reload_config_coverage {
 #[cfg(feature = "confers-macros")]
 mod load_config_or_default_coverage {
     use std::error::Error;
-    use trait_kit::kit::config::ModuleConfig;
+    use trait_kit::kit::ModuleConfig;
     use trait_kit::prelude::*;
 
     #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, trait_kit::kit::Config)]
