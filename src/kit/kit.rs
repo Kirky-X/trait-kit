@@ -58,6 +58,10 @@ pub struct Kit<S = Unbuilt> {
     /// Override map for test injection: `TypeId` of module → pre-built capability.
     /// Populated by `override_module` / `override_module_strict`; consumed by `build()`.
     overrides: RefCell<HashMap<TypeId, Box<dyn Any>>>,
+    /// Lazy builders: modules registered via `register_lazy`. Not built during
+    /// `build()`; instead transferred to `Kit<Ready>.lazy_slots` for first-access
+    /// construction. Keyed by `TypeId::of::<M>()`.
+    lazy_builders: RefCell<HashMap<TypeId, BuildFn>>,
     graph: DependencyGraph,
     configs: TypeMap,
     capabilities: TypeMap,
@@ -75,6 +79,7 @@ impl Kit {
         Kit {
             builders: RefCell::new(HashMap::new()),
             overrides: RefCell::new(HashMap::new()),
+            lazy_builders: RefCell::new(HashMap::new()),
             graph: DependencyGraph::new(),
             configs: TypeMap::new(),
             capabilities: TypeMap::new(),
@@ -109,6 +114,48 @@ impl Kit {
         });
 
         self.builders
+            .borrow_mut()
+            .insert(TypeId::of::<M>(), build_fn);
+        Ok(())
+    }
+
+    /// Register a module for lazy construction.
+    ///
+    /// The module is added to the dependency graph (for validation) but its
+    /// `build_fn` is **not** invoked during `build()`. Instead, the build_fn
+    /// is stored in `lazy_builders` and transferred to `Kit<Ready>.lazy_slots`
+    /// during `build()`. The capability is constructed on first `require()`
+    /// call and cached via `OnceLock` for subsequent accesses.
+    ///
+    /// This is useful for modules that are expensive to build or may never
+    /// be needed in a particular run.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::AlreadyRegistered` if the module was already
+    /// registered (via `register` or `register_lazy`).
+    /// Returns `TraitKitError::DependencyMissing` if a dependency is not registered.
+    pub fn register_lazy<M: AutoBuilder>(&mut self) -> Result<(), TraitKitError>
+    where
+        M::Capability: Clone + 'static,
+    {
+        let entry = ModuleEntry {
+            type_id: TypeId::of::<M>(),
+            name: M::NAME,
+            dependencies: M::dependencies().iter().map(|(n, id)| (*n, *id)).collect(),
+        };
+
+        self.graph
+            .add(entry)
+            .map_err(|name| TraitKitError::AlreadyRegistered { module: name })?;
+
+        let build_fn: BuildFn = Box::new(|kit| {
+            let capability = M::build(kit)
+                .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?;
+            Ok(Box::new(capability) as Box<dyn Any>)
+        });
+
+        self.lazy_builders
             .borrow_mut()
             .insert(TypeId::of::<M>(), build_fn);
         Ok(())
@@ -226,6 +273,13 @@ impl Kit {
                     continue;
                 }
 
+                // [Lazy] Skip lazy-registered modules — they are not built
+                // during build(). Their build_fn stays in lazy_builders and
+                // will be transferred to Kit<Ready>.lazy_slots (T008).
+                if kit_ref.lazy_builders.borrow().contains_key(type_id) {
+                    continue;
+                }
+
                 // [Build] Priority 2: invoke the registered build_fn.
                 let build_fn = kit_ref.builders.borrow_mut().remove(type_id).ok_or(
                     TraitKitError::MissingCapability {
@@ -262,6 +316,7 @@ impl Kit {
         Ok(Kit {
             builders: self.builders,
             overrides: self.overrides,
+            lazy_builders: self.lazy_builders,
             graph: self.graph,
             configs: self.configs,
             capabilities: self.capabilities,
@@ -729,6 +784,43 @@ mod tests {
         assert!(matches!(
             result,
             Err(TraitKitError::MissingCapability { key: "counting" })
+        ));
+    }
+
+    // === T007 tests ===
+
+    #[test]
+    fn register_lazy_does_not_build_during_build() {
+        let mut kit = Kit::new();
+        kit.register_lazy::<CountingModule>().unwrap();
+        // build() should succeed without triggering CountingModule's build_fn
+        let built = kit.build().unwrap();
+        // The capability should NOT be available (lazy not yet triggered)
+        assert!(!built.contains::<CountingModule>());
+    }
+
+    #[test]
+    fn register_lazy_adds_to_dependency_graph() {
+        let mut kit = Kit::new();
+        // Register dependency first
+        kit.register::<MockCapability>().unwrap();
+        // Register lazy module that depends on MockCapability
+        kit.register_lazy::<DependentModule>().unwrap();
+        // build() should succeed (graph validation passes)
+        let built = kit.build().unwrap();
+        // MockCapability should be built (eager), DependentModule should NOT (lazy)
+        assert!(built.contains::<MockCapability>());
+        assert!(!built.contains::<DependentModule>());
+    }
+
+    #[test]
+    fn register_lazy_returns_already_registered_for_duplicate() {
+        let mut kit = Kit::new();
+        kit.register_lazy::<CountingModule>().unwrap();
+        let result = kit.register_lazy::<CountingModule>();
+        assert!(matches!(
+            result,
+            Err(TraitKitError::AlreadyRegistered { module: "counting" })
         ));
     }
 }
