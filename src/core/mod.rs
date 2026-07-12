@@ -8,3 +8,5 @@ pub mod meta;
 pub use meta::AsyncAutoBuilder;
 pub(crate) use meta::BuildFn;
 pub use meta::{AutoBuilder, ModuleMeta};
+#[cfg(feature = "interface")]
+pub use meta::{Interface, InterfaceBuilder};
