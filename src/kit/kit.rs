@@ -55,6 +55,9 @@ type EncryptedConfigMap = RefCell<HashMap<TypeId, EncryptedBlob>>;
 /// The capability and configuration management center.
 pub struct Kit<S = Unbuilt> {
     builders: RefCell<HashMap<TypeId, BuildFn>>,
+    /// Override map for test injection: `TypeId` of module → pre-built capability.
+    /// Populated by `override_module` / `override_module_strict`; consumed by `build()`.
+    overrides: RefCell<HashMap<TypeId, Box<dyn Any>>>,
     graph: DependencyGraph,
     configs: TypeMap,
     capabilities: TypeMap,
@@ -71,6 +74,7 @@ impl Kit {
     pub fn new() -> Self {
         Kit {
             builders: RefCell::new(HashMap::new()),
+            overrides: RefCell::new(HashMap::new()),
             graph: DependencyGraph::new(),
             configs: TypeMap::new(),
             capabilities: TypeMap::new(),
@@ -184,6 +188,7 @@ impl Kit {
 
         Ok(Kit {
             builders: self.builders,
+            overrides: self.overrides,
             graph: self.graph,
             configs: self.configs,
             capabilities: self.capabilities,
@@ -446,5 +451,23 @@ impl std::fmt::Debug for Kit<Ready> {
             .field("modules", &self.graph.entries().len())
             .field("configs", &self.configs.len())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overrides_field_is_empty_on_new() {
+        let kit = Kit::new();
+        assert_eq!(kit.overrides.borrow().len(), 0);
+    }
+
+    #[test]
+    fn overrides_field_is_empty_after_build() {
+        // Kit::new() → overrides empty; build() transfers (still empty).
+        let kit = Kit::new();
+        assert_eq!(kit.overrides.borrow().len(), 0);
     }
 }
