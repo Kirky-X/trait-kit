@@ -449,6 +449,33 @@ impl Kit<Ready> {
             .get_cloned_by_type_id::<M::Capability>(type_id)
     }
 
+    /// Retrieve a capability by reference, avoiding `Clone`.
+    ///
+    /// Unlike `require()`, this returns a `Ref` borrowing the stored value
+    /// directly, with no clone overhead. The `Ref` holds a read lock on the
+    /// interior `RefCell` — while it is alive, calling `reload_config` or
+    /// any mutating method will panic (`borrow_mut` conflict). Keep the
+    /// `Ref` lifetime short.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::MissingCapability` if the module has not been built.
+    pub fn require_ref<M: AutoBuilder>(&self) -> Result<std::cell::Ref<'_, M::Capability>, TraitKitError>
+    where
+        M::Capability: 'static,
+    {
+        use std::cell::Ref;
+
+        let type_id = TypeId::of::<M>();
+        if !self.capabilities.contains_by_type_id(type_id) {
+            return Err(TraitKitError::MissingCapability { key: M::NAME });
+        }
+        Ref::filter_map(self.capabilities.inner_ref(), |map| {
+            map.get(&type_id).and_then(|b| b.downcast_ref::<M::Capability>())
+        })
+        .map_err(|_| TraitKitError::MissingCapability { key: M::NAME })
+    }
+
     /// Check if a capability has been built.
     pub fn contains<M: AutoBuilder>(&self) -> bool {
         self.capabilities.contains_by_type_id(TypeId::of::<M>())
@@ -670,5 +697,38 @@ mod tests {
         let built = kit.build().unwrap();
         let cap = built.require::<MockCapability>().unwrap();
         assert_eq!(cap.load(Ordering::SeqCst), 77);
+    }
+
+    // === T005 tests ===
+
+    #[test]
+    fn require_ref_returns_reference_to_built_capability() {
+        let mut kit = Kit::new();
+        kit.register::<CountingModule>().unwrap();
+        let built = kit.build().unwrap();
+        let r = built.require_ref::<CountingModule>().unwrap();
+        // build_fn returns Arc<AtomicUsize::new(0)>
+        assert_eq!((*r).load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn require_ref_returns_override_value() {
+        let mut kit = Kit::new();
+        kit.register::<CountingModule>().unwrap();
+        kit.override_module::<CountingModule>(Arc::new(AtomicUsize::new(55)));
+        let built = kit.build().unwrap();
+        let r = built.require_ref::<CountingModule>().unwrap();
+        assert_eq!((*r).load(Ordering::SeqCst), 55);
+    }
+
+    #[test]
+    fn require_ref_returns_missing_capability_for_unbuilt() {
+        let kit = Kit::new();
+        let built = kit.build().unwrap();
+        let result = built.require_ref::<CountingModule>();
+        assert!(matches!(
+            result,
+            Err(TraitKitError::MissingCapability { key: "counting" })
+        ));
     }
 }
