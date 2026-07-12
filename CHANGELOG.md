@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-07-12
+
 ### ⚠️ BREAKING CHANGES
 
 - `KitError` 重命名为 `TraitKitError`，遵循 `ProjectNameError` 命名约定
@@ -53,7 +55,8 @@
 - `TypeMap` 类型安全存储（以 `TypeId` 为键）
 - 依赖图验证：环检测 + 拓扑排序构建
 
-[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/Kirky-X/trait-kit/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/Kirky-X/trait-kit/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Kirky-X/trait-kit/releases/tag/v0.2.3
 [0.2.2]: https://github.com/Kirky-X/trait-kit/releases/tag/v0.2.2
