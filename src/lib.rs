@@ -21,7 +21,7 @@ pub mod prelude;
 pub use error::TraitKitError;
 
 #[cfg(feature = "async")]
-pub use core::meta::AsyncAutoBuilder;
+pub use core::AsyncAutoBuilder;
 #[cfg(feature = "async")]
 pub use kit::{AsyncKit, AsyncReady, AsyncUnbuilt};
 

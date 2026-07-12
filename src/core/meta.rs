@@ -89,8 +89,8 @@ pub(crate) type BuildFn = Box<
 #[cfg(all(test, feature = "async"))]
 mod async_tests {
     use super::*;
-    use crate::kit::async_kit::AsyncKit;
-    use crate::test_helpers::{block_on, MockError};
+    use crate::kit::AsyncKit;
+    use crate::test_helpers::{MockError, block_on};
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::Arc;

@@ -10,13 +10,13 @@ use std::collections::HashMap;
 #[cfg(feature = "hot-reload")]
 use std::rc::Rc;
 
+use crate::core::{AutoBuilder, BuildFn};
 use crate::error::TraitKitError;
-use crate::core::meta::{AutoBuilder, BuildFn};
 
 #[cfg(feature = "encryption")]
-use super::config::EncryptedBlob;
-use super::graph::{DependencyGraph, GraphError, ModuleEntry};
-use super::typemap::TypeMap;
+use super::EncryptedBlob;
+use super::TypeMap;
+use super::{DependencyGraph, GraphError, ModuleEntry};
 
 /// HKDF key-derivation version label bound into every per-field key.
 /// Bumping this rotates all encrypted configs without changing master keys.
@@ -125,7 +125,7 @@ impl Kit {
     ///
     /// Returns `TraitKitError::BuildFailed` if `Configurable::load` fails.
     #[cfg(feature = "confers")]
-    pub fn load_config<C: super::config::Configurable>(&self) -> Result<(), TraitKitError> {
+    pub fn load_config<C: super::Configurable>(&self) -> Result<(), TraitKitError> {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
             context: "load_config",
             source: e,
@@ -266,7 +266,7 @@ impl<S> Kit<S> {
     ///
     /// Returns `TraitKitError::BuildFailed` if `Configurable::load` fails.
     #[cfg(feature = "hot-reload")]
-    pub fn reload_config<C: super::config::Configurable>(&self) -> Result<(), TraitKitError> {
+    pub fn reload_config<C: super::Configurable>(&self) -> Result<(), TraitKitError> {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
             context: "reload_config",
             source: e,
@@ -306,9 +306,9 @@ impl Kit {
     #[cfg(feature = "encryption")]
     pub fn set_encrypted<C>(&self, value: &C, master_key: &[u8]) -> Result<(), TraitKitError>
     where
-        C: super::config::ModuleConfig + serde::Serialize,
+        C: super::ModuleConfig + serde::Serialize,
     {
-        use super::config::XChaCha20Crypto;
+        use super::XChaCha20Crypto;
 
         let plaintext = serde_json::to_vec(value).map_err(|e| TraitKitError::BuildFailed {
             context: "set_encrypted",
@@ -332,7 +332,7 @@ impl Kit {
 
     /// Check if an encrypted config of type `C` is registered.
     #[cfg(feature = "encryption")]
-    pub fn contains_encrypted<C: super::config::ModuleConfig>(&self) -> bool {
+    pub fn contains_encrypted<C: super::ModuleConfig>(&self) -> bool {
         self.encrypted_configs
             .borrow()
             .contains_key(&TypeId::of::<C>())
@@ -352,7 +352,7 @@ impl Kit {
     #[cfg(feature = "confers-macros")]
     pub fn load_config_or_default<C>(&self) -> Result<(), TraitKitError>
     where
-        C: super::config::Configurable + super::config::ModuleConfig,
+        C: super::Configurable + super::ModuleConfig,
     {
         let config = match C::load() {
             Ok(value) => value,
@@ -396,9 +396,9 @@ impl Kit<Ready> {
     #[cfg(feature = "encryption")]
     pub fn get_encrypted<C>(&self, master_key: &[u8]) -> Result<C, TraitKitError>
     where
-        C: super::config::ModuleConfig + serde::de::DeserializeOwned,
+        C: super::ModuleConfig + serde::de::DeserializeOwned,
     {
-        use super::config::XChaCha20Crypto;
+        use super::XChaCha20Crypto;
 
         let blob = self
             .encrypted_configs
