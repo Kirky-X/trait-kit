@@ -34,6 +34,18 @@ pub trait AutoBuilder: ModuleMeta {
     fn build(kit: &crate::kit::Kit) -> Result<Self::Capability, Self::Error>;
 }
 
+/// Marker trait for interface/implementation separation.
+///
+/// Automatically implemented for all `'static` types (including `?Sized`
+/// trait objects like `dyn MyTrait`). Used by the `interface` feature to
+/// enable `register_as<M, I>()` and `resolve<I>()` for type-erased
+/// dependency injection behind a `dyn Trait` interface.
+#[cfg(feature = "interface")]
+pub trait Interface: 'static {}
+
+#[cfg(feature = "interface")]
+impl<T: ?Sized + 'static> Interface for T {}
+
 /// Async builder trait for module construction in async context.
 ///
 /// Async counterpart of [`AutoBuilder`]. Implement this for modules requiring
@@ -147,5 +159,41 @@ mod async_tests {
     fn async_auto_builder_error_is_send_static() {
         fn assert_send_static<T: Send + 'static>() {}
         assert_send_static::<MockError>();
+    }
+}
+
+#[cfg(all(test, feature = "interface"))]
+mod interface_tests {
+    use super::*;
+
+    #[test]
+    fn interface_auto_implemented_for_primitive_types() {
+        fn assert_interface<T: Interface>() {}
+        assert_interface::<i32>();
+        assert_interface::<u64>();
+        assert_interface::<String>();
+        assert_interface::<Vec<u8>>();
+        assert_interface::<bool>();
+    }
+
+    #[test]
+    fn interface_auto_implemented_for_custom_types() {
+        struct MyType;
+        #[allow(dead_code)]
+        enum MyEnum {
+            A,
+            B,
+        }
+
+        fn assert_interface<T: Interface>() {}
+        assert_interface::<MyType>();
+        assert_interface::<MyEnum>();
+    }
+
+    #[test]
+    fn interface_auto_implemented_for_reference_types() {
+        trait MyTrait {}
+        fn assert_interface<T: Interface + ?Sized>() {}
+        assert_interface::<dyn MyTrait>();
     }
 }
