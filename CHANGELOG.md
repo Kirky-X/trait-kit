@@ -37,6 +37,7 @@
 - `build()` 方法优先检查 overrides map，跳过 build_fn
 - `build()` 新增 lazy_slots / multi_capabilities / interface_builders 构建循环
 - `build()` 中 topo-sorted 循环对 multi-binding 和 interface 模块 `continue`（与单绑定模式一致）
+- 移除 trait-kit 对下游 crate（oxcache/dbnexus/limiteron/sdforge/inklog）的 dev-dependencies 循环依赖；e2e 测试由 `examples/integration-app` 承担
 
 ## [0.2.5] - 2026-07-12
 
