@@ -114,6 +114,60 @@ impl Kit {
         Ok(())
     }
 
+    /// Override a module's capability with a pre-built value, skipping `build_fn`.
+    ///
+    /// Used for test injection: inject a mock capability without running the
+    /// module's build function. Completely skips dependency checking (pure
+    /// unit testing). The module does **not** need to be registered via
+    /// `register()` first — the override is keyed by `TypeId::of::<M>()`.
+    ///
+    /// If `build()` is called later, the override is consumed and the
+    /// original `build_fn` (if any) is never invoked for this module.
+    pub fn override_module<M: AutoBuilder>(&self, capability: M::Capability)
+    where
+        M::Capability: 'static,
+    {
+        self.overrides
+            .borrow_mut()
+            .insert(TypeId::of::<M>(), Box::new(capability));
+    }
+
+    /// Override a module's capability with a pre-built value, but still
+    /// verify that the module's declared dependencies are registered in the
+    /// dependency graph.
+    ///
+    /// Unlike `override_module`, this method requires `&mut self` (exclusive
+    /// access) and checks `M::dependencies()` against the graph. If any
+    /// dependency is not registered, returns `TraitKitError::DependencyMissing`.
+    ///
+    /// The module does **not** need to be registered via `register()` first.
+    /// Only the dependencies must be present.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::DependencyMissing` if any of `M::dependencies()`
+    /// is not registered in the graph.
+    pub fn override_module_strict<M: AutoBuilder>(
+        &mut self,
+        capability: M::Capability,
+    ) -> Result<(), TraitKitError>
+    where
+        M::Capability: 'static,
+    {
+        for (dep_name, dep_id) in M::dependencies() {
+            if self.graph.name_of(*dep_id).is_none() {
+                return Err(TraitKitError::DependencyMissing {
+                    module: M::NAME,
+                    missing: *dep_name,
+                });
+            }
+        }
+        self.overrides
+            .borrow_mut()
+            .insert(TypeId::of::<M>(), Box::new(capability));
+        Ok(())
+    }
+
     /// Set a configuration value.
     pub fn set_config<C: Clone + 'static>(&self, config: C) {
         self.configs.insert(config);
@@ -457,6 +511,45 @@ impl std::fmt::Debug for Kit<Ready> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::Arc;
+
+    // === Test fixtures ===
+
+    struct MockCapability;
+    impl ModuleMeta for MockCapability {
+        const NAME: &'static str = "mock";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            &[]
+        }
+    }
+    impl AutoBuilder for MockCapability {
+        type Capability = Arc<AtomicUsize>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(AtomicUsize::new(0)))
+        }
+    }
+
+    struct DependentModule;
+    impl ModuleMeta for DependentModule {
+        const NAME: &'static str = "dependent";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            static DEPS: &[(&str, std::any::TypeId)] =
+                &[("mock", std::any::TypeId::of::<MockCapability>())];
+            DEPS
+        }
+    }
+    impl AutoBuilder for DependentModule {
+        type Capability = Arc<AtomicUsize>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(AtomicUsize::new(0)))
+        }
+    }
+
+    // === T002 tests ===
 
     #[test]
     fn overrides_field_is_empty_on_new() {
@@ -466,8 +559,41 @@ mod tests {
 
     #[test]
     fn overrides_field_is_empty_after_build() {
-        // Kit::new() → overrides empty; build() transfers (still empty).
         let kit = Kit::new();
+        assert_eq!(kit.overrides.borrow().len(), 0);
+    }
+
+    // === T003 tests ===
+
+    #[test]
+    fn override_module_inserts_into_overrides_map() {
+        let kit = Kit::new();
+        assert_eq!(kit.overrides.borrow().len(), 0);
+        kit.override_module::<MockCapability>(Arc::new(AtomicUsize::new(42)));
+        assert_eq!(kit.overrides.borrow().len(), 1);
+    }
+
+    #[test]
+    fn override_module_strict_succeeds_when_deps_registered() {
+        let mut kit = Kit::new();
+        // Register the dependency first
+        kit.register::<MockCapability>().unwrap();
+        // Now strict override of the dependent module should succeed
+        let result = kit.override_module_strict::<DependentModule>(Arc::new(AtomicUsize::new(99)));
+        assert!(result.is_ok());
+        assert_eq!(kit.overrides.borrow().len(), 1);
+    }
+
+    #[test]
+    fn override_module_strict_fails_when_deps_missing() {
+        let mut kit = Kit::new();
+        // Do NOT register MockCapability first
+        let result = kit.override_module_strict::<DependentModule>(Arc::new(AtomicUsize::new(99)));
+        assert!(matches!(
+            result,
+            Err(TraitKitError::DependencyMissing { module: "dependent", missing: "mock" })
+        ));
+        // Override should not have been inserted
         assert_eq!(kit.overrides.borrow().len(), 0);
     }
 }
