@@ -13,9 +13,9 @@
 [msrv-badge]: https://img.shields.io/badge/MSRV-1.91-orange?style=flat-square
 [msrv-url]: https://github.com/Kirky-X/trait-kit
 
-**trait-kit** is a lightweight Rust library that provides a standardized module interface and a centralized capability & configuration management center (`Kit`). It uses a typestate pattern (`Kit<Unbuilt>` → `Kit<Ready>`) for build-time validation, with `RefCell`-based interior mutability for single-threaded, `!Sync` by design.
+[中文](./README.md)
 
-English | [中文](README.md)
+**trait-kit** is a lightweight Rust library that provides a standardized module interface and a centralized capability & configuration management center (`Kit`). It uses a typestate pattern (`Kit<Unbuilt>` → `Kit<Ready>`) for build-time validation, with `RefCell`-based interior mutability for single-threaded, `!Sync` by design.
 
 ---
 
