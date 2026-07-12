@@ -60,6 +60,8 @@ hot-reload = ["confers-macros", "confers/watch"]
 encryption = ["hot-reload", "confers/encryption", "dep:serde", "dep:serde_json"]
 # ICU4X-backed internationalization: locale-aware number/date/plural/collation.
 i18n = ["dep:icu", "dep:writeable"]
+# Interface/implementation separation: register_as / resolve behind a feature gate.
+interface = []
 
 [workspace]
 resolver = "2"
