@@ -55,9 +55,10 @@ type EncryptedConfigMap = RefCell<HashMap<TypeId, EncryptedBlob>>;
 
 /// A lazy construction slot: holds a build_fn and a OnceLock cache cell.
 /// The builder is invoked on first access; the result is cached in the
-/// OnceLock for subsequent accesses.
+/// OnceLock for subsequent accesses. After construction, `builder` is
+/// `None` (consumed) and `cell` holds the built capability.
 struct LazySlot {
-    builder: BuildFn,
+    builder: Option<BuildFn>,
     cell: OnceLock<Box<dyn Any>>,
 }
 
@@ -327,14 +328,15 @@ impl Kit {
 
         // [Lazy] Transfer lazy_builders to lazy_slots for first-access
         // construction in Kit<Ready>. Each LazySlot wraps the build_fn with
-        // an empty OnceLock cache cell.
+        // an empty OnceLock cache cell. The builder is Option::Some until
+        // consumed by the first require() call (T009).
         {
             let lazy: Vec<(TypeId, BuildFn)> = self.lazy_builders.borrow_mut().drain().collect();
             for (type_id, builder) in lazy {
                 self.lazy_slots.borrow_mut().insert(
                     type_id,
                     LazySlot {
-                        builder,
+                        builder: Some(builder),
                         cell: OnceLock::new(),
                     },
                 );
@@ -368,14 +370,80 @@ impl<S> Kit<S> {
     /// Available on both `Kit<Unbuilt>` (inside `AutoBuilder::build` callbacks)
     /// and `Kit<Ready>` (after `build()` completes).
     ///
+    /// On `Kit<Ready>`, if the module was registered via `register_lazy`,
+    /// the first `require()` call triggers lazy construction: the stored
+    /// `build_fn` is invoked, the result is cached in a `OnceLock` cell,
+    /// and subsequent calls return a clone from the cache without re-running
+    /// the builder.
+    ///
     /// # Errors
     ///
-    /// Returns `TraitKitError::MissingCapability` if the module has not been built yet.
+    /// Returns `TraitKitError::MissingCapability` if the module has not been built.
+    /// Returns `TraitKitError::BuildFailed` if a lazy module's `build_fn` fails.
     pub fn require<M: AutoBuilder>(&self) -> Result<M::Capability, TraitKitError> {
         let type_id = TypeId::of::<M>();
-        self.capabilities
+
+        // 1. Eager capabilities (already-built modules + overrides + previously-built lazy)
+        if let Some(cap) = self
+            .capabilities
             .get_cloned_by_type_id::<M::Capability>(type_id)
-            .ok_or(TraitKitError::MissingCapability { key: M::NAME })
+        {
+            return Ok(cap);
+        }
+
+        // 2. Lazy slots — check OnceLock cache first (previously-built lazy modules)
+        if let Some(boxed) = self
+            .lazy_slots
+            .borrow()
+            .get(&type_id)
+            .and_then(|slot| slot.cell.get())
+        {
+            return boxed
+                .downcast_ref::<M::Capability>()
+                .cloned()
+                .ok_or(TraitKitError::MissingCapability { key: M::NAME });
+        }
+
+        // 3. Lazy slots — first-access construction (cell empty, builder exists)
+        // Take the builder out to release the RefCell borrow before calling it,
+        // allowing the builder to re-enter require() for its own dependencies.
+        let builder = self
+            .lazy_slots
+            .borrow_mut()
+            .get_mut(&type_id)
+            .and_then(|slot| slot.builder.take());
+
+        if let Some(builder) = builder {
+            // SAFETY: `Kit<S>` has the same memory layout as `Kit<Unbuilt>`
+            // because `S` only appears in `PhantomData<S>` (zero-sized, same
+            // representation as `()`). `BuildFn` expects `&Kit<Unbuilt>`; we
+            // hold `&Kit<S>`. The cast is sound for any `S` since the field
+            // layout is identical. In practice, this code path is only reached
+            // on `Kit<Ready>` (lazy_slots is only populated after `build()`),
+            // but the cast is valid regardless.
+            #[allow(unsafe_code)]
+            let kit_ref: &Kit = unsafe {
+                &*(std::ptr::from_ref(self) as *const Kit)
+            };
+            let boxed = (builder)(kit_ref).map_err(|e| TraitKitError::BuildFailed {
+                context: M::NAME,
+                source: e,
+            })?;
+            // Cache in OnceLock for future require() / require_ref() calls
+            if let Some(slot) = self.lazy_slots.borrow().get(&type_id) {
+                let _ = slot.cell.set(boxed);
+            }
+            return self
+                .lazy_slots
+                .borrow()
+                .get(&type_id)
+                .and_then(|slot| slot.cell.get())
+                .and_then(|b| b.downcast_ref::<M::Capability>().cloned())
+                .ok_or(TraitKitError::MissingCapability { key: M::NAME });
+        }
+
+        // 4. Not found
+        Err(TraitKitError::MissingCapability { key: M::NAME })
     }
 
     /// Get a configuration value.
@@ -912,5 +980,91 @@ mod tests {
             .lazy_slots
             .borrow()
             .contains_key(&TypeId::of::<CountingModule>()));
+    }
+
+    // === T009 tests ===
+
+    #[test]
+    fn require_triggers_lazy_construction_on_first_access() {
+        let mut kit = Kit::new();
+        kit.register_lazy::<CountingModule>().unwrap();
+        let built = kit.build().unwrap();
+
+        // Before require: capability not in capabilities map
+        assert!(!built.contains::<CountingModule>());
+
+        // First require should trigger lazy construction
+        let cap = built.require::<CountingModule>().unwrap();
+        assert_eq!(cap.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn require_does_not_rebuild_lazy_on_second_call() {
+        // Local static counter — each test function has its own COUNT
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+
+        struct CountedModule;
+        impl ModuleMeta for CountedModule {
+            const NAME: &'static str = "test-counted";
+            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                &[]
+            }
+        }
+        impl AutoBuilder for CountedModule {
+            type Capability = Arc<AtomicUsize>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+                let n = COUNT.fetch_add(1, Ordering::SeqCst);
+                Ok(Arc::new(AtomicUsize::new(n)))
+            }
+        }
+
+        COUNT.store(0, Ordering::SeqCst);
+        let mut kit = Kit::new();
+        kit.register_lazy::<CountedModule>().unwrap();
+        let built = kit.build().unwrap();
+
+        let cap1 = built.require::<CountedModule>().unwrap();
+        let cap2 = built.require::<CountedModule>().unwrap();
+
+        // Both calls should return the same value (builder called once)
+        assert_eq!(cap1.load(Ordering::SeqCst), 0, "first require returns count 0");
+        assert_eq!(cap2.load(Ordering::SeqCst), 0, "second require returns same count");
+        assert_eq!(COUNT.load(Ordering::SeqCst), 1, "builder invoked exactly once");
+    }
+
+    #[test]
+    fn require_lazy_with_registered_dependency_succeeds() {
+        // A lazy module that calls kit.require() for its dependency in build()
+        struct LazyDependentModule;
+        impl ModuleMeta for LazyDependentModule {
+            const NAME: &'static str = "lazy-dependent";
+            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                static DEPS: &[(&str, std::any::TypeId)] =
+                    &[("mock", std::any::TypeId::of::<MockCapability>())];
+                DEPS
+            }
+        }
+        impl AutoBuilder for LazyDependentModule {
+            type Capability = Arc<AtomicUsize>;
+            type Error = TraitKitError;
+            fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
+                // Verify the eager dependency is accessible during lazy build
+                let mock = kit.require::<MockCapability>()?;
+                Ok(Arc::new(AtomicUsize::new(mock.load(Ordering::SeqCst) + 100)))
+            }
+        }
+
+        let mut kit = Kit::new();
+        // Register MockCapability (adds to dependency graph) then override
+        // with value 42 to verify it's accessible during lazy build
+        kit.register::<MockCapability>().unwrap();
+        kit.override_module::<MockCapability>(Arc::new(AtomicUsize::new(42)));
+        kit.register_lazy::<LazyDependentModule>().unwrap();
+        let built = kit.build().unwrap();
+
+        // First require triggers lazy build, which calls require::<MockCapability>()
+        let cap = built.require::<LazyDependentModule>().unwrap();
+        assert_eq!(cap.load(Ordering::SeqCst), 142, "lazy build accessed eager dep (42 + 100)");
     }
 }
