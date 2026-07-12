@@ -2,9 +2,9 @@
 
 [![CI][ci-badge]][ci-url] [![crates.io][crates-badge]][crates-url] [![docs.rs][docs-badge]][docs-url] [![downloads][downloads-badge]][downloads-url] [![MIT licensed][license-badge]][license-url] [![Rust 1.85+][rust-badge]][rust-url]
 
-</div>
-
 [English](./README_EN.md)
+
+</div>
 
 # trait-kit
 

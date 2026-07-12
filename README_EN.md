@@ -1,8 +1,14 @@
+<div align="center">
+
 <p align="center">
   <img src="assets/trait-kit.svg" width="200" alt="trait-kit logo">
 </p>
 
 [![Crates.io][crates-badge]][crates-url][![Docs.rs][docs-badge]][docs-url][![MIT licensed][license-badge]][license-url][![MSRV][msrv-badge]][msrv-url]
+
+[中文](./README.md)
+
+</div>
 
 [crates-badge]: https://img.shields.io/crates/v/trait-kit?style=flat-square
 [crates-url]: https://crates.io/crates/trait-kit
@@ -12,8 +18,6 @@
 [license-url]: https://github.com/Kirky-X/trait-kit/blob/main/LICENSE
 [msrv-badge]: https://img.shields.io/badge/MSRV-1.91-orange?style=flat-square
 [msrv-url]: https://github.com/Kirky-X/trait-kit
-
-[中文](./README.md)
 
 **trait-kit** is a lightweight Rust library that provides a standardized module interface and a centralized capability & configuration management center (`Kit`). It uses a typestate pattern (`Kit<Unbuilt>` → `Kit<Ready>`) for build-time validation, with `RefCell`-based interior mutability for single-threaded, `!Sync` by design.
 
