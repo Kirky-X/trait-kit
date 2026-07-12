@@ -69,15 +69,3 @@ resolver = "2"
 members = [".", "examples/trait-kit-example"]
 default-members = ["."]
 
-# Dev-deps use version-only (crates.io). This patch redirects trait-kit to
-# the local source so e2e tests see a single, unified trait-kit (avoids
-# duplicate trait_kit in the dependency graph). Safe for CI: `.` is the
-# repo root, which always exists after checkout.
-# For local dev with sibling crate changes, uncomment the relevant lines:
-[patch.crates-io]
-trait-kit = { path = "." }
-# oxcache = { path = "../oxcache" }
-# limiteron = { path = "../limiteron" }
-# dbnexus = { path = "../dbnexus" }
-# sdforge = { path = "../sdforge" }
-# inklog = { path = "../inklog" }
