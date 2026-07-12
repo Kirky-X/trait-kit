@@ -217,13 +217,21 @@ impl Kit {
             let kit_ref: &Self = &self;
 
             for type_id in &sorted {
+                let module_name = kit_ref.module_name(*type_id);
+
+                // [Override] Priority 1: check overrides map first.
+                // If an override exists, use it and skip build_fn entirely.
+                if let Some(boxed) = kit_ref.overrides.borrow_mut().remove(type_id) {
+                    kit_ref.capabilities.insert_boxed(*type_id, boxed);
+                    continue;
+                }
+
+                // [Build] Priority 2: invoke the registered build_fn.
                 let build_fn = kit_ref.builders.borrow_mut().remove(type_id).ok_or(
                     TraitKitError::MissingCapability {
-                        key: kit_ref.module_name(*type_id),
+                        key: module_name,
                     },
                 )?;
-
-                let module_name = kit_ref.module_name(*type_id);
 
                 let result = (build_fn)(kit_ref);
                 match result {
@@ -237,6 +245,17 @@ impl Kit {
                         });
                     }
                 }
+            }
+        }
+
+        // [Override] Handle modules that were overridden but NOT registered
+        // (override_module allows injecting unregistered modules). These are
+        // not in the sorted list, so we insert them after the topo loop.
+        {
+            let remaining: Vec<(TypeId, Box<dyn Any>)> =
+                self.overrides.borrow_mut().drain().collect();
+            for (type_id, boxed) in remaining {
+                self.capabilities.insert_boxed(type_id, boxed);
             }
         }
 
@@ -512,7 +531,7 @@ impl std::fmt::Debug for Kit<Ready> {
 mod tests {
     use super::*;
     use crate::core::{AutoBuilder, ModuleMeta};
-    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
     // === Test fixtures ===
@@ -595,5 +614,61 @@ mod tests {
         ));
         // Override should not have been inserted
         assert_eq!(kit.overrides.borrow().len(), 0);
+    }
+
+    // === T004 tests ===
+
+    /// Module whose build_fn increments a counter, to verify override skips it.
+    struct CountingModule;
+    impl ModuleMeta for CountingModule {
+        const NAME: &'static str = "counting";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            &[]
+        }
+    }
+    impl AutoBuilder for CountingModule {
+        type Capability = Arc<AtomicUsize>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            // Return a counter that starts at 0; the test checks the counter
+            // value to distinguish "build_fn ran" from "override used".
+            Ok(Arc::new(AtomicUsize::new(0)))
+        }
+    }
+
+    #[test]
+    fn build_uses_override_and_skips_build_fn() {
+        let kit = Kit::new();
+        // Register the module (so it's in the graph and gets sorted)
+        let mut kit = kit;
+        kit.register::<CountingModule>().unwrap();
+        // Override with a capability value of 42
+        kit.override_module::<CountingModule>(Arc::new(AtomicUsize::new(42)));
+        // Build
+        let built = kit.build().unwrap();
+        // require() should return the override value (42), not the build_fn value (0)
+        let cap = built.require::<CountingModule>().unwrap();
+        assert_eq!(cap.load(Ordering::SeqCst), 42);
+    }
+
+    #[test]
+    fn build_uses_build_fn_when_no_override() {
+        let mut kit = Kit::new();
+        kit.register::<CountingModule>().unwrap();
+        // No override — build_fn should run and produce value 0
+        let built = kit.build().unwrap();
+        let cap = built.require::<CountingModule>().unwrap();
+        assert_eq!(cap.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn build_inserts_unregistered_override_after_topo_loop() {
+        // override_module allows injecting a module that was NOT registered.
+        // build() should still make it available via require().
+        let kit = Kit::new();
+        kit.override_module::<MockCapability>(Arc::new(AtomicUsize::new(77)));
+        let built = kit.build().unwrap();
+        let cap = built.require::<MockCapability>().unwrap();
+        assert_eq!(cap.load(Ordering::SeqCst), 77);
     }
 }
