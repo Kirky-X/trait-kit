@@ -1139,7 +1139,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
- "trait-kit",
+ "trait-kit 0.2.5",
  "unicode-normalization",
  "url",
 ]
@@ -2297,7 +2297,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
- "trait-kit",
+ "trait-kit 0.2.5",
  "zeroize",
  "zstd",
 ]
@@ -2549,7 +2549,7 @@ dependencies = [
  "tokio-util",
  "toml",
  "tracing",
- "trait-kit",
+ "trait-kit 0.2.5",
  "uuid",
  "validator",
 ]
@@ -2934,7 +2934,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
- "trait-kit",
+ "trait-kit 0.2.5",
  "uuid",
 ]
 
@@ -3571,7 +3571,7 @@ dependencies = [
  "thiserror",
  "tonic-build",
  "tonic-prost-build",
- "trait-kit",
+ "trait-kit 0.2.5",
 ]
 
 [[package]]
@@ -4619,6 +4619,15 @@ dependencies = [
 [[package]]
 name = "trait-kit"
 version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfbe525a99afbc88eed5975b75cec837b3d9678645bf78644959fd1c9393d555"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "trait-kit"
+version = "0.3.0"
 dependencies = [
  "confers",
  "dbnexus",
@@ -4643,7 +4652,7 @@ version = "0.1.0"
 dependencies = [
  "confers",
  "serde",
- "trait-kit",
+ "trait-kit 0.3.0",
 ]
 
 [[package]]

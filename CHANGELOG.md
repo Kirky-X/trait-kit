@@ -7,6 +7,37 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-12
+
+### 新增
+
+#### Phase 1: Override + require_ref
+- `Kit::override_module<M>()` — 用预构建值覆盖模块能力，跳过 build_fn（测试注入）
+- `Kit::override_module_strict<M>()` — 覆盖但验证依赖存在性
+- `Kit::require_ref<M>()` — 零拷贝能力检索，返回 `Ref<'_, M::Capability>`
+- `TypeMap::inner_ref()` — 暴露内部 HashMap 借用
+
+#### Phase 2: Lazy + 多绑定
+- `Kit::register_lazy<M>()` — 延迟构造，首次 `require()` 时触发构建并缓存
+- `Kit::register_multi<M>()` — 多绑定注册，相同能力类型聚合为 Vec
+- `Kit::require_all<M>()` — 按注册顺序返回所有多绑定能力
+
+#### Phase 3: 接口分离（feature = "interface"）
+- `Interface` marker trait — 支持 `dyn Trait` 类型擦除（`?Sized` blanket impl）
+- `InterfaceBuilder` 扩展 trait — 关联 `Capability` 与 `Interface`，通过 `into_interface` 执行类型擦除
+- `Kit::register_as<M>()` — 按接口类型注册，`M::Interface` 作为 key
+- `Kit::resolve<I>()` — 按接口类型检索 `Arc<I>`
+
+#### Phase 4: 宏扩展
+- `impl_module_meta!` 宏 — 生成 `ModuleMeta` impl（无依赖 / 有依赖两种语法）
+- `impl_async_auto_builder!` 宏（feature = "async"）— 生成 `AsyncAutoBuilder` impl
+
+### 变更
+
+- `build()` 方法优先检查 overrides map，跳过 build_fn
+- `build()` 新增 lazy_slots / multi_capabilities / interface_builders 构建循环
+- `build()` 中 topo-sorted 循环对 multi-binding 和 interface 模块 `continue`（与单绑定模式一致）
+
 ## [0.2.5] - 2026-07-12
 
 ### ⚠️ BREAKING CHANGES
