@@ -84,6 +84,12 @@ pub struct Kit<S = Unbuilt> {
     /// `multi_builders`. Keyed by `TypeId::of::<M::Capability>()`.
     /// Populated by `build()`; consumed by `require_all()`.
     multi_capabilities: RefCell<HashMap<TypeId, Vec<Box<dyn Any>>>>,
+    /// Interface builders (Unbuilt state): modules registered via
+    /// `register_as`. Keyed by `TypeId::of::<M::Interface>()` (not the
+    /// module type) so `resolve::<I>()` retrieves by interface type.
+    /// Built into `capabilities` during `build()` (T015).
+    #[cfg(feature = "interface")]
+    interface_builders: RefCell<HashMap<TypeId, BuildFn>>,
     graph: DependencyGraph,
     configs: TypeMap,
     capabilities: TypeMap,
@@ -105,6 +111,8 @@ impl Kit {
             lazy_slots: RefCell::new(HashMap::new()),
             multi_builders: RefCell::new(HashMap::new()),
             multi_capabilities: RefCell::new(HashMap::new()),
+            #[cfg(feature = "interface")]
+            interface_builders: RefCell::new(HashMap::new()),
             graph: DependencyGraph::new(),
             configs: TypeMap::new(),
             capabilities: TypeMap::new(),
@@ -235,6 +243,58 @@ impl Kit {
             .entry(cap_id)
             .or_default()
             .push(build_fn);
+        Ok(())
+    }
+
+    /// Register a module for interface-based construction.
+    ///
+    /// Unlike `register`, this method stores the build_fn keyed by
+    /// `TypeId::of::<M::Interface>()` (the interface type, not the module
+    /// type). The module's `into_interface` method converts the concrete
+    /// capability into `Arc<M::Interface>` during `build()`, enabling
+    /// type-erased retrieval via `resolve::<I>()`.
+    ///
+    /// Only one implementation per interface type is allowed. For multiple
+    /// implementations of the same capability type, use `register_multi`
+    /// instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::AlreadyRegistered` if the interface type was
+    /// already registered via `register_as`, or if the module type `M` was
+    /// already registered via any `register*` method.
+    #[cfg(feature = "interface")]
+    pub fn register_as<M>(&mut self) -> Result<(), TraitKitError>
+    where
+        M: crate::core::InterfaceBuilder,
+    {
+        let interface_id = TypeId::of::<M::Interface>();
+
+        // One implementation per interface type.
+        if self.interface_builders.borrow().contains_key(&interface_id) {
+            return Err(TraitKitError::AlreadyRegistered { module: M::NAME });
+        }
+
+        let entry = ModuleEntry {
+            type_id: TypeId::of::<M>(),
+            name: M::NAME,
+            dependencies: M::dependencies().iter().map(|(n, id)| (*n, *id)).collect(),
+        };
+
+        self.graph
+            .add(entry)
+            .map_err(|name| TraitKitError::AlreadyRegistered { module: name })?;
+
+        let build_fn: BuildFn = Box::new(|kit| {
+            let cap = M::build(kit)
+                .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?;
+            let iface: std::sync::Arc<M::Interface> = M::into_interface(cap);
+            Ok(Box::new(iface) as Box<dyn Any>)
+        });
+
+        self.interface_builders
+            .borrow_mut()
+            .insert(interface_id, build_fn);
         Ok(())
     }
 
@@ -430,6 +490,23 @@ impl Kit {
             }
         }
 
+        // [Interface] Build all interface-registered modules and store in
+        // capabilities. Keyed by TypeId::of::<M::Interface>() so
+        // resolve::<I>() retrieves by interface type. Runs after the
+        // topo-sorted loop so eager dependencies are available (T015).
+        #[cfg(feature = "interface")]
+        {
+            let interfaces: Vec<(TypeId, BuildFn)> =
+                self.interface_builders.borrow_mut().drain().collect();
+            for (interface_id, build_fn) in interfaces {
+                let boxed = (build_fn)(&self).map_err(|e| TraitKitError::BuildFailed {
+                    context: "<interface>",
+                    source: e,
+                })?;
+                self.capabilities.insert_boxed(interface_id, boxed);
+            }
+        }
+
         Ok(Kit {
             builders: self.builders,
             overrides: self.overrides,
@@ -437,6 +514,8 @@ impl Kit {
             lazy_slots: self.lazy_slots,
             multi_builders: self.multi_builders,
             multi_capabilities: self.multi_capabilities,
+            #[cfg(feature = "interface")]
+            interface_builders: self.interface_builders,
             graph: self.graph,
             configs: self.configs,
             capabilities: self.capabilities,
@@ -635,6 +714,30 @@ impl<S> Kit<S> {
             cb();
         }
         Ok(())
+    }
+
+    /// Resolve a capability by its interface type.
+    ///
+    /// Retrieves an `Arc<I>` previously stored via `register_as<M>()`.
+    /// The interface type `I` must be `?Sized + 'static` (e.g.,
+    /// `dyn Logger`).
+    ///
+    /// Available on both `Kit<Unbuilt>` (inside `InterfaceBuilder::build`
+    /// callbacks) and `Kit<Ready>` (after `build()` completes).
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::MissingCapability` if the interface has not
+    /// been registered or built.
+    #[cfg(feature = "interface")]
+    pub fn resolve<I>(&self) -> Result<std::sync::Arc<I>, TraitKitError>
+    where
+        I: ?Sized + 'static,
+    {
+        let interface_id = TypeId::of::<I>();
+        self.capabilities
+            .get_cloned_by_type_id::<std::sync::Arc<I>>(interface_id)
+            .ok_or(TraitKitError::MissingCapability { key: "interface" })
     }
 }
 
@@ -1424,5 +1527,208 @@ mod tests {
         assert_eq!(multi.len(), 2);
         assert_eq!(multi[0].load(Ordering::SeqCst), 10);
         assert_eq!(multi[1].load(Ordering::SeqCst), 20);
+    }
+}
+
+#[cfg(all(test, feature = "interface"))]
+mod interface_tests {
+    use super::*;
+    use crate::core::{InterfaceBuilder, ModuleMeta};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    // === Test fixtures ===
+
+    /// Test interface trait.
+    trait Logger: 'static {
+        fn log(&self, msg: &str) -> String;
+    }
+
+    /// First Logger implementation.
+    struct ConsoleLogger;
+
+    impl Logger for ConsoleLogger {
+        fn log(&self, msg: &str) -> String {
+            format!("[console] {msg}")
+        }
+    }
+
+    /// Second Logger implementation (for duplicate interface test).
+    struct FileLogger;
+
+    impl Logger for FileLogger {
+        fn log(&self, msg: &str) -> String {
+            format!("[file] {msg}")
+        }
+    }
+
+    /// Test error type.
+    #[derive(Debug)]
+    struct InterfaceTestError;
+
+    impl std::fmt::Display for InterfaceTestError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "interface test error")
+        }
+    }
+
+    impl std::error::Error for InterfaceTestError {}
+
+    /// Module providing ConsoleLogger behind dyn Logger.
+    struct ConsoleLoggerModule;
+
+    impl ModuleMeta for ConsoleLoggerModule {
+        const NAME: &'static str = "console-logger-iface";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            &[]
+        }
+    }
+
+    impl InterfaceBuilder for ConsoleLoggerModule {
+        type Interface = dyn Logger;
+        type Capability = Arc<ConsoleLogger>;
+        type Error = InterfaceTestError;
+
+        fn build(_kit: &Kit) -> Result<Arc<ConsoleLogger>, InterfaceTestError> {
+            Ok(Arc::new(ConsoleLogger))
+        }
+
+        fn into_interface(cap: Arc<ConsoleLogger>) -> Arc<dyn Logger> {
+            cap
+        }
+    }
+
+    /// Module providing FileLogger behind dyn Logger (same interface).
+    struct FileLoggerModule;
+
+    impl ModuleMeta for FileLoggerModule {
+        const NAME: &'static str = "file-logger";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            &[]
+        }
+    }
+
+    impl InterfaceBuilder for FileLoggerModule {
+        type Interface = dyn Logger;
+        type Capability = Arc<FileLogger>;
+        type Error = InterfaceTestError;
+
+        fn build(_kit: &Kit) -> Result<Arc<FileLogger>, InterfaceTestError> {
+            Ok(Arc::new(FileLogger))
+        }
+
+        fn into_interface(cap: Arc<FileLogger>) -> Arc<dyn Logger> {
+            cap
+        }
+    }
+
+    // === Tests ===
+
+    #[test]
+    fn register_as_then_resolve_returns_arc_dyn_trait() {
+        let mut kit = Kit::new();
+        kit.register_as::<ConsoleLoggerModule>()
+            .expect("register_as succeeds");
+        let built = kit.build().expect("build succeeds");
+
+        let logger: Arc<dyn Logger> = built.resolve::<dyn Logger>().expect("resolve succeeds");
+        assert_eq!(logger.log("hello"), "[console] hello");
+    }
+
+    #[test]
+    fn register_as_twice_same_interface_returns_already_registered() {
+        let mut kit = Kit::new();
+        kit.register_as::<ConsoleLoggerModule>()
+            .expect("first register_as succeeds");
+        let err = kit.register_as::<FileLoggerModule>().unwrap_err();
+        assert!(
+            matches!(err, TraitKitError::AlreadyRegistered { .. }),
+            "expected AlreadyRegistered, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn resolve_before_build_returns_missing_capability() {
+        let mut kit = Kit::new();
+        kit.register_as::<ConsoleLoggerModule>()
+            .expect("register_as succeeds");
+        // resolve on unbuilt kit — capabilities is empty
+        assert!(kit.resolve::<dyn Logger>().is_err());
+    }
+
+    #[test]
+    fn resolve_unregistered_interface_returns_missing_capability() {
+        let kit = Kit::new();
+        let built = kit.build().expect("build succeeds");
+        assert!(built.resolve::<dyn Logger>().is_err());
+    }
+
+    #[test]
+    fn register_as_builds_during_build() {
+        let mut kit = Kit::new();
+        kit.register_as::<ConsoleLoggerModule>()
+            .expect("register_as succeeds");
+        let built = kit.build().expect("build succeeds");
+        // After build, resolve should return the built capability
+        let logger = built.resolve::<dyn Logger>().expect("resolve succeeds");
+        assert_eq!(logger.log("test"), "[console] test");
+    }
+
+    #[test]
+    fn resolve_returns_callable_trait_object() {
+        let mut kit = Kit::new();
+        kit.register_as::<ConsoleLoggerModule>()
+            .expect("register_as succeeds");
+        let built = kit.build().expect("build succeeds");
+
+        let logger: Arc<dyn Logger> = built.resolve().expect("resolve succeeds");
+        let result = logger.log("world");
+        assert_eq!(result, "[console] world");
+    }
+
+    #[test]
+    fn register_as_coexists_with_register() {
+        // register (AutoBuilder) + register_as (InterfaceBuilder) for
+        // different modules should coexist.
+        struct RegularModule;
+        impl ModuleMeta for RegularModule {
+            const NAME: &'static str = "regular";
+            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                &[]
+            }
+        }
+        impl AutoBuilder for RegularModule {
+            type Capability = Arc<AtomicUsize>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Arc<AtomicUsize>, TraitKitError> {
+                Ok(Arc::new(AtomicUsize::new(42)))
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.register::<RegularModule>().expect("register succeeds");
+        kit.register_as::<ConsoleLoggerModule>()
+            .expect("register_as succeeds");
+        let built = kit.build().expect("build succeeds");
+
+        // Both retrieve correctly
+        let cap = built.require::<RegularModule>().expect("require succeeds");
+        assert_eq!(cap.load(Ordering::SeqCst), 42);
+
+        let logger = built.resolve::<dyn Logger>().expect("resolve succeeds");
+        assert_eq!(logger.log("coexist"), "[console] coexist");
+    }
+
+    #[test]
+    fn register_as_same_module_twice_returns_already_registered() {
+        let mut kit = Kit::new();
+        kit.register_as::<ConsoleLoggerModule>()
+            .expect("first register_as succeeds");
+        // Same module type — graph.add() rejects duplicate
+        let err = kit.register_as::<ConsoleLoggerModule>().unwrap_err();
+        assert!(
+            matches!(err, TraitKitError::AlreadyRegistered { .. }),
+            "expected AlreadyRegistered, got {err:?}"
+        );
     }
 }
