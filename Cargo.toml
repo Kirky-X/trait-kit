@@ -23,26 +23,6 @@ writeable = { version = "0.6", optional = true }
 serial_test = "3"
 static_assertions = "1"
 trybuild = "1"
-# E2E integration test deps for AsyncKit — Phase 7 (T046). These are
-# dev-only (circular dev-dependencies are allowed by Cargo).
-# Version-only: cargo fetches from crates.io. [patch.crates-io] below
-# redirects trait-kit to local so the e2e tests see a single, unified
-# trait-kit (avoids duplicate trait_kit in the dependency graph).
-oxcache = { version = "0.3", default-features = false, features = ["kit", "memory", "serialization", "tracing"] }
-limiteron = { version = "0.2", default-features = false, features = ["kit"] }
-# dbnexus `kit` does not transitively enable a database driver; the e2e test
-# uses `sqlite::memory:`, so we explicitly enable `default` (provides sqlite +
-# runtime-tokio-rustls + permission + sql-parser + macros + config-env +
-# with-time) alongside `kit`. Rule 6 still honored via default-features = false.
-dbnexus = { version = "0.3", default-features = false, features = ["default", "kit"] }
-sdforge = { version = "0.3", default-features = false, features = ["kit"] }
-# inklog gates `integrations::kit` behind `any(feature = "sqlite"/"postgres"/"mysql")`
-# (inklog/src/integrations/mod.rs:16). The e2e test pulls `InklogModule` from
-# there, so we enable `sqlite` (the lightest backend, mirrors the dbnexus
-# `sqlite::memory:` test URL). `default-features = false` per Rule 6 — we
-# explicitly opt into `kit` + `sqlite` only, not inklog's default `http`/`cli`.
-inklog = { version = "0.1", default-features = false, features = ["kit", "sqlite"] }
-tokio = { version = "~1.52", default-features = false, features = ["rt", "rt-multi-thread", "macros"] }
 
 [features]
 default = []
@@ -70,17 +50,4 @@ resolver = "2"
 # Build it standalone: cd examples/integration-app && cargo build
 members = [".", "examples/trait-kit-example"]
 default-members = ["."]
-
-# Dev-deps use version-only (crates.io). This patch redirects trait-kit to
-# the local source so e2e tests see a single, unified trait-kit (avoids
-# duplicate trait_kit in the dependency graph). Safe for CI: `.` is the
-# repo root, which always exists after checkout.
-# For local dev with sibling crate changes, uncomment the relevant lines:
-[patch.crates-io]
-trait-kit = { path = "." }
-# oxcache = { path = "../oxcache" }
-# limiteron = { path = "../limiteron" }
-# dbnexus = { path = "../dbnexus" }
-# sdforge = { path = "../sdforge" }
-# inklog = { path = "../inklog" }
 
