@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use static_assertions::assert_not_impl_any;
+use trait_kit::impl_module_meta;
 use trait_kit::prelude::*;
 
 // Compile-time guarantee: Kit is !Sync by design (uses RefCell for interior
@@ -18,12 +19,7 @@ impl StdoutLogger {
 }
 
 struct LoggerModule;
-impl ModuleMeta for LoggerModule {
-    const NAME: &'static str = "logger";
-    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-        &[]
-    }
-}
+impl_module_meta!(LoggerModule, "logger");
 impl AutoBuilder for LoggerModule {
     type Capability = Arc<StdoutLogger>;
     type Error = TraitKitError;
@@ -46,14 +42,7 @@ struct DbPool {
 }
 
 struct DbPoolModule;
-impl ModuleMeta for DbPoolModule {
-    const NAME: &'static str = "db_pool";
-    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-        static DEPS: &[(&str, std::any::TypeId)] =
-            &[("logger", std::any::TypeId::of::<LoggerModule>())];
-        DEPS
-    }
-}
+impl_module_meta!(DbPoolModule, "db_pool", deps = [LoggerModule]);
 impl AutoBuilder for DbPoolModule {
     type Capability = Arc<DbPool>;
     type Error = TraitKitError;
@@ -118,7 +107,10 @@ fn test_missing_dependency_error() {
     match result.unwrap_err() {
         TraitKitError::DependencyMissing { module, missing } => {
             assert_eq!(module, "db_pool");
-            assert_eq!(missing, "logger");
+            // impl_module_meta! generates dependency names via stringify!,
+            // producing the type name ("LoggerModule") rather than the
+            // module's NAME constant ("logger"). TypeId matching is unaffected.
+            assert_eq!(missing, "LoggerModule");
         }
         other => panic!("expected DependencyMissing, got: {other}"),
     }
@@ -823,17 +815,11 @@ mod graph_coverage {
 
 mod kit_build_coverage {
     use std::sync::Arc;
+    use trait_kit::impl_module_meta;
     use trait_kit::prelude::*;
 
     struct CycleA;
-    impl ModuleMeta for CycleA {
-        const NAME: &'static str = "cycle_a";
-        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-            static DEPS: &[(&str, std::any::TypeId)] =
-                &[("cycle_b", std::any::TypeId::of::<CycleB>())];
-            DEPS
-        }
-    }
+    impl_module_meta!(CycleA, "cycle_a", deps = [CycleB]);
     impl AutoBuilder for CycleA {
         type Capability = Arc<()>;
         type Error = TraitKitError;
@@ -843,14 +829,7 @@ mod kit_build_coverage {
     }
 
     struct CycleB;
-    impl ModuleMeta for CycleB {
-        const NAME: &'static str = "cycle_b";
-        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-            static DEPS: &[(&str, std::any::TypeId)] =
-                &[("cycle_a", std::any::TypeId::of::<CycleA>())];
-            DEPS
-        }
-    }
+    impl_module_meta!(CycleB, "cycle_b", deps = [CycleA]);
     impl AutoBuilder for CycleB {
         type Capability = Arc<()>;
         type Error = TraitKitError;
@@ -892,12 +871,7 @@ mod kit_build_coverage {
     fn kit_ready_debug_shows_counts() {
         // Use a non-cyclic module so build() succeeds.
         struct Solo;
-        impl ModuleMeta for Solo {
-            const NAME: &'static str = "solo";
-            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-                &[]
-            }
-        }
+        impl_module_meta!(Solo, "solo");
         impl AutoBuilder for Solo {
             type Capability = Arc<()>;
             type Error = TraitKitError;
