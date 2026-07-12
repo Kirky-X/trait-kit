@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 //! Core traits and types for module declaration.
 
+pub mod macros;
 pub mod meta;
 
 #[cfg(feature = "async")]
