@@ -5,7 +5,7 @@
 //! Single-threaded by design (Kit is `!Sync`).
 
 use std::any::{Any, TypeId};
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
 
 /// A type-keyed map for storing capabilities and configs.
@@ -68,6 +68,15 @@ impl TypeMap {
             .get(&type_id)
             .and_then(|boxed| boxed.downcast_ref::<T>())
             .cloned()
+    }
+
+    /// Borrow the inner HashMap by reference.
+    ///
+    /// Returns a `Ref` that holds a read lock on the interior `RefCell`.
+    /// While the `Ref` is alive, calling any mutating method (insert, etc.)
+    /// will panic due to `borrow_mut` conflict. Keep the `Ref` lifetime short.
+    pub fn inner_ref(&self) -> Ref<'_, HashMap<TypeId, Box<dyn Any>>> {
+        self.inner.borrow()
     }
 }
 
@@ -165,5 +174,31 @@ mod tests {
         assert_eq!(map.get_cloned_by_type_id::<u64>(u64_id), None);
         // Even right TypeId but wrong downcast type returns None
         assert_eq!(map.get_cloned_by_type_id::<u64>(i32_id), None);
+    }
+
+    #[test]
+    fn inner_ref_returns_reference_to_inserted_value() {
+        let map = TypeMap::new();
+        map.insert(42i32);
+        let r: Ref<'_, HashMap<TypeId, Box<dyn Any>>> = map.inner_ref();
+        let i32_id = TypeId::of::<i32>();
+        let value = r.get(&i32_id).and_then(|b| b.downcast_ref::<i32>());
+        assert_eq!(value, Some(&42));
+    }
+
+    #[test]
+    fn inner_ref_is_empty_for_new_map() {
+        let map = TypeMap::new();
+        let r = map.inner_ref();
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "already mutably borrowed")]
+    fn inner_ref_panics_if_mutably_borrowed() {
+        let map = TypeMap::new();
+        let _guard = map.inner.borrow_mut();
+        // This should panic because inner is already mutably borrowed
+        let _ = map.inner_ref();
     }
 }
