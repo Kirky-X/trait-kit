@@ -101,11 +101,14 @@ macro_rules! impl_async_auto_builder {
 
             fn build<'a>(
                 $kit: &'a $crate::kit::AsyncKit,
-            ) -> ::std::pin::Pin<::std::boxed::Box<
-                dyn ::std::future::Future<
-                    Output = ::std::result::Result<Self::Capability, Self::Error>,
-                > + Send + 'a,
-            >> {
+            ) -> ::std::pin::Pin<
+                ::std::boxed::Box<
+                    dyn ::std::future::Future<
+                            Output = ::std::result::Result<Self::Capability, Self::Error>,
+                        > + Send
+                        + 'a,
+                >,
+            > {
                 $body
             }
         }
@@ -233,15 +236,12 @@ mod async_macro_tests {
     // Macro-generated impl
     struct MacroAsyncModule;
     impl_module_meta!(MacroAsyncModule, "macro-async");
-    impl_async_auto_builder!(
-        MacroAsyncModule,
-        Arc<AsyncCap>,
-        MockErr,
-        |kit| Box::pin(async move {
+    impl_async_auto_builder!(MacroAsyncModule, Arc<AsyncCap>, MockErr, |kit| Box::pin(
+        async move {
             let _ = kit;
             Ok(Arc::new(AsyncCap { value: 42 }))
-        })
-    );
+        }
+    ));
 
     // Hand-written impl for comparison
     struct HandAsyncModule;
@@ -256,7 +256,8 @@ mod async_macro_tests {
         type Error = MockErr;
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(AsyncCap { value: 42 })) })
         }
@@ -265,15 +266,12 @@ mod async_macro_tests {
     // Error-propagation fixture
     struct ErrAsyncModule;
     impl_module_meta!(ErrAsyncModule, "err-async");
-    impl_async_auto_builder!(
-        ErrAsyncModule,
-        Arc<AsyncCap>,
-        MockErr,
-        |kit| Box::pin(async move {
+    impl_async_auto_builder!(ErrAsyncModule, Arc<AsyncCap>, MockErr, |kit| Box::pin(
+        async move {
             let _ = kit;
             Err(MockErr::Failed("intentional".to_string()))
-        })
-    );
+        }
+    ));
 
     // === Tests ===
 

@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### 变更
+
+- MSRV 从 1.85 提升至 1.91（代码已在 const context 使用 `TypeId::of`，stable since 1.91.0）
+
+### 修复
+
+- 修复 `cargo fmt --check` 失败：rustfmt 格式化多处代码
+- 修复 `cargo clippy -D warnings` 失败：doc_markdown / too_many_lines / manual_let_else / ptr_as_ptr / explicit_iter_loop / explicit_auto_deref / incompatible_msrv
+
 ## [0.3.0] - 2026-07-12
 
 ### 新增

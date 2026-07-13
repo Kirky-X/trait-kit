@@ -1,6 +1,6 @@
 <div align="center">
 
-[![CI][ci-badge]][ci-url] [![crates.io][crates-badge]][crates-url] [![docs.rs][docs-badge]][docs-url] [![downloads][downloads-badge]][downloads-url] [![MIT licensed][license-badge]][license-url] [![Rust 1.85+][rust-badge]][rust-url]
+[![CI][ci-badge]][ci-url] [![crates.io][crates-badge]][crates-url] [![docs.rs][docs-badge]][docs-url] [![downloads][downloads-badge]][downloads-url] [![MIT licensed][license-badge]][license-url] [![Rust 1.91+][rust-badge]][rust-url]
 
 [English](./README_EN.md)
 
@@ -167,5 +167,5 @@ MIT License, Copyright (c) 2026 Kirky.X
 [downloads-url]: https://crates.io/crates/trait-kit
 [license-badge]: https://img.shields.io/badge/license-MIT-blue?style=flat-square
 [license-url]: https://github.com/Kirky-X/trait-kit/blob/main/LICENSE
-[rust-badge]: https://img.shields.io/badge/rust-1.85+-orange?style=flat-square
+[rust-badge]: https://img.shields.io/badge/rust-1.91+-orange?style=flat-square
 [rust-url]: https://www.rust-lang.org

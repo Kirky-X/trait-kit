@@ -70,7 +70,7 @@ impl TypeMap {
             .cloned()
     }
 
-    /// Borrow the inner HashMap by reference.
+    /// Borrow the inner `HashMap` by reference.
     ///
     /// Returns a `Ref` that holds a read lock on the interior `RefCell`.
     /// While the `Ref` is alive, calling any mutating method (insert, etc.)
