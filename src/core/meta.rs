@@ -240,8 +240,8 @@ mod interface_tests {
 mod interface_builder_tests {
     use super::*;
     use crate::kit::Kit;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Test interface: a simple Logger trait.
     trait Logger: 'static {
@@ -260,7 +260,7 @@ mod interface_builder_tests {
         }
     }
 
-    /// Test error type (test_helpers::MockError is gated on `async` feature).
+    /// Test error type (`test_helpers::MockError` is gated on `async` feature).
     #[derive(Debug)]
     struct InterfaceTestError;
 
@@ -272,7 +272,7 @@ mod interface_builder_tests {
 
     impl std::error::Error for InterfaceTestError {}
 
-    /// Module that provides a ConsoleLogger behind the dyn Logger interface.
+    /// Module that provides a `ConsoleLogger` behind the dyn Logger interface.
     struct ConsoleLoggerModule;
 
     impl ModuleMeta for ConsoleLoggerModule {

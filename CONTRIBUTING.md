@@ -2,7 +2,7 @@
 
 ## 开发环境
 
-- Rust 1.85+ (edition 2024)
+- Rust 1.91+ (edition 2024)
 - cargo, rustfmt, clippy
 - pre-commit (pip install pre-commit && pre-commit install)
 

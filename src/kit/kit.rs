@@ -7,9 +7,9 @@
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::OnceLock;
 #[cfg(feature = "hot-reload")]
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 use crate::core::{AutoBuilder, BuildFn};
 use crate::error::TraitKitError;
@@ -53,9 +53,9 @@ type SubscriberMap = RefCell<HashMap<TypeId, Vec<Rc<dyn Fn()>>>>;
 #[cfg(feature = "encryption")]
 type EncryptedConfigMap = RefCell<HashMap<TypeId, EncryptedBlob>>;
 
-/// A lazy construction slot: holds a build_fn and a OnceLock cache cell.
+/// A lazy construction slot: holds a `build_fn` and a `OnceLock` cache cell.
 /// The builder is invoked on first access; the result is cached in the
-/// OnceLock for subsequent accesses. After construction, `builder` is
+/// `OnceLock` for subsequent accesses. After construction, `builder` is
 /// `None` (consumed) and `cell` holds the built capability.
 struct LazySlot {
     builder: Option<BuildFn>,
@@ -71,7 +71,7 @@ pub struct Kit<S = Unbuilt> {
     /// Lazy builders (Unbuilt state): modules registered via `register_lazy`.
     /// Transferred to `lazy_slots` during `build()`.
     lazy_builders: RefCell<HashMap<TypeId, BuildFn>>,
-    /// Lazy slots (Ready state): build_fn + OnceLock cache. Populated by
+    /// Lazy slots (Ready state): `build_fn` + `OnceLock` cache. Populated by
     /// `build()` from `lazy_builders`. Consumed by `require()` on first access.
     lazy_slots: RefCell<HashMap<TypeId, LazySlot>>,
     /// Multi-binding builders (Unbuilt state): modules registered via
@@ -155,7 +155,7 @@ impl Kit {
     /// Register a module for lazy construction.
     ///
     /// The module is added to the dependency graph (for validation) but its
-    /// `build_fn` is **not** invoked during `build()`. Instead, the build_fn
+    /// `build_fn` is **not** invoked during `build()`. Instead, the `build_fn`
     /// is stored in `lazy_builders` and transferred to `Kit<Ready>.lazy_slots`
     /// during `build()`. The capability is constructed on first `require()`
     /// call and cached via `OnceLock` for subsequent accesses.
@@ -197,7 +197,7 @@ impl Kit {
     /// Register a module for multi-binding construction.
     ///
     /// Multiple module types that share the same `M::Capability` type can be
-    /// registered via `register_multi`; their build_fns are appended to a
+    /// registered via `register_multi`; their `build_fns` are appended to a
     /// `Vec` keyed by `TypeId::of::<M::Capability>()` (the capability type,
     /// not the module type). The Vec preserves registration order.
     ///
@@ -248,7 +248,7 @@ impl Kit {
 
     /// Register a module for interface-based construction.
     ///
-    /// Unlike `register`, this method stores the build_fn keyed by
+    /// Unlike `register`, this method stores the `build_fn` keyed by
     /// `TypeId::of::<M::Interface>()` (the interface type, not the module
     /// type). The module's `into_interface` method converts the concrete
     /// capability into `Arc<M::Interface>` during `build()`, enabling
@@ -342,7 +342,7 @@ impl Kit {
             if self.graph.name_of(*dep_id).is_none() {
                 return Err(TraitKitError::DependencyMissing {
                     module: M::NAME,
-                    missing: *dep_name,
+                    missing: dep_name,
                 });
             }
         }
@@ -421,13 +421,11 @@ impl Kit {
                 // If not in builders, the module was registered via
                 // `register_multi` — skip here; built in the multi_builders
                 // loop below (T011).
-                let build_fn = match kit_ref.builders.borrow_mut().remove(type_id) {
-                    Some(fn_) => fn_,
-                    None => continue,
+                let Some(build_fn) = kit_ref.builders.borrow_mut().remove(type_id) else {
+                    continue;
                 };
 
-                let result = (build_fn)(kit_ref);
-                match result {
+                match (build_fn)(kit_ref) {
                     Ok(boxed) => {
                         kit_ref.capabilities.insert_boxed(*type_id, boxed);
                     }
@@ -590,9 +588,7 @@ impl<S> Kit<S> {
             // on `Kit<Ready>` (lazy_slots is only populated after `build()`),
             // but the cast is valid regardless.
             #[allow(unsafe_code)]
-            let kit_ref: &Kit = unsafe {
-                &*(std::ptr::from_ref(self) as *const Kit)
-            };
+            let kit_ref: &Kit = unsafe { &*std::ptr::from_ref(self).cast::<Kit>() };
             let boxed = (builder)(kit_ref).map_err(|e| TraitKitError::BuildFailed {
                 context: M::NAME,
                 source: e,
@@ -636,7 +632,7 @@ impl<S> Kit<S> {
             .ok_or(TraitKitError::MissingCapability { key: M::NAME })?;
 
         let mut result = Vec::with_capacity(vec.len());
-        for boxed in vec.iter() {
+        for boxed in vec {
             let cap = boxed
                 .downcast_ref::<M::Capability>()
                 .cloned()
@@ -836,7 +832,9 @@ impl Kit<Ready> {
     /// # Errors
     ///
     /// Returns `TraitKitError::MissingCapability` if the module has not been built.
-    pub fn require_ref<M: AutoBuilder>(&self) -> Result<std::cell::Ref<'_, M::Capability>, TraitKitError>
+    pub fn require_ref<M: AutoBuilder>(
+        &self,
+    ) -> Result<std::cell::Ref<'_, M::Capability>, TraitKitError>
     where
         M::Capability: 'static,
     {
@@ -847,7 +845,8 @@ impl Kit<Ready> {
             return Err(TraitKitError::MissingCapability { key: M::NAME });
         }
         Ref::filter_map(self.capabilities.inner_ref(), |map| {
-            map.get(&type_id).and_then(|b| b.downcast_ref::<M::Capability>())
+            map.get(&type_id)
+                .and_then(|b| b.downcast_ref::<M::Capability>())
         })
         .map_err(|_| TraitKitError::MissingCapability { key: M::NAME })
     }
@@ -934,8 +933,8 @@ impl std::fmt::Debug for Kit<Ready> {
 mod tests {
     use super::*;
     use crate::core::{AutoBuilder, ModuleMeta};
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     // === Test fixtures ===
 
@@ -1013,7 +1012,10 @@ mod tests {
         let result = kit.override_module_strict::<DependentModule>(Arc::new(AtomicUsize::new(99)));
         assert!(matches!(
             result,
-            Err(TraitKitError::DependencyMissing { module: "dependent", missing: "mock" })
+            Err(TraitKitError::DependencyMissing {
+                module: "dependent",
+                missing: "mock"
+            })
         ));
         // Override should not have been inserted
         assert_eq!(kit.overrides.borrow().len(), 0);
@@ -1021,7 +1023,7 @@ mod tests {
 
     // === T004 tests ===
 
-    /// Module whose build_fn increments a counter, to verify override skips it.
+    /// Module whose `build_fn` increments a counter, to verify override skips it.
     struct CountingModule;
     impl ModuleMeta for CountingModule {
         const NAME: &'static str = "counting";
@@ -1165,10 +1167,12 @@ mod tests {
         // After build(): lazy_builders drained, lazy_slots populated
         assert_eq!(built.lazy_builders.borrow().len(), 0);
         assert_eq!(built.lazy_slots.borrow().len(), 1);
-        assert!(built
-            .lazy_slots
-            .borrow()
-            .contains_key(&TypeId::of::<CountingModule>()));
+        assert!(
+            built
+                .lazy_slots
+                .borrow()
+                .contains_key(&TypeId::of::<CountingModule>())
+        );
     }
 
     #[test]
@@ -1180,7 +1184,9 @@ mod tests {
         // The OnceLock cell should be empty (not yet constructed) — first
         // access via require() (T009) will populate it.
         let slots = built.lazy_slots.borrow();
-        let slot = slots.get(&TypeId::of::<CountingModule>()).expect("slot exists");
+        let slot = slots
+            .get(&TypeId::of::<CountingModule>())
+            .expect("slot exists");
         assert!(slot.cell.get().is_none());
     }
 
@@ -1196,14 +1202,18 @@ mod tests {
 
         assert_eq!(built.lazy_builders.borrow().len(), 0);
         assert_eq!(built.lazy_slots.borrow().len(), 2);
-        assert!(built
-            .lazy_slots
-            .borrow()
-            .contains_key(&TypeId::of::<DependentModule>()));
-        assert!(built
-            .lazy_slots
-            .borrow()
-            .contains_key(&TypeId::of::<CountingModule>()));
+        assert!(
+            built
+                .lazy_slots
+                .borrow()
+                .contains_key(&TypeId::of::<DependentModule>())
+        );
+        assert!(
+            built
+                .lazy_slots
+                .borrow()
+                .contains_key(&TypeId::of::<CountingModule>())
+        );
     }
 
     // === T009 tests ===
@@ -1252,9 +1262,21 @@ mod tests {
         let cap2 = built.require::<CountedModule>().unwrap();
 
         // Both calls should return the same value (builder called once)
-        assert_eq!(cap1.load(Ordering::SeqCst), 0, "first require returns count 0");
-        assert_eq!(cap2.load(Ordering::SeqCst), 0, "second require returns same count");
-        assert_eq!(COUNT.load(Ordering::SeqCst), 1, "builder invoked exactly once");
+        assert_eq!(
+            cap1.load(Ordering::SeqCst),
+            0,
+            "first require returns count 0"
+        );
+        assert_eq!(
+            cap2.load(Ordering::SeqCst),
+            0,
+            "second require returns same count"
+        );
+        assert_eq!(
+            COUNT.load(Ordering::SeqCst),
+            1,
+            "builder invoked exactly once"
+        );
     }
 
     #[test]
@@ -1275,7 +1297,9 @@ mod tests {
             fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
                 // Verify the eager dependency is accessible during lazy build
                 let mock = kit.require::<MockCapability>()?;
-                Ok(Arc::new(AtomicUsize::new(mock.load(Ordering::SeqCst) + 100)))
+                Ok(Arc::new(AtomicUsize::new(
+                    mock.load(Ordering::SeqCst) + 100,
+                )))
             }
         }
 
@@ -1289,7 +1313,11 @@ mod tests {
 
         // First require triggers lazy build, which calls require::<MockCapability>()
         let cap = built.require::<LazyDependentModule>().unwrap();
-        assert_eq!(cap.load(Ordering::SeqCst), 142, "lazy build accessed eager dep (42 + 100)");
+        assert_eq!(
+            cap.load(Ordering::SeqCst),
+            142,
+            "lazy build accessed eager dep (42 + 100)"
+        );
     }
 
     // === T010 tests ===
@@ -1310,7 +1338,7 @@ mod tests {
         }
     }
 
-    /// Multi-binding module B (same capability type as MultiModuleA).
+    /// Multi-binding module B (same capability type as `MultiModuleA`).
     struct MultiModuleB;
     impl ModuleMeta for MultiModuleB {
         const NAME: &'static str = "multi-b";
@@ -1326,7 +1354,7 @@ mod tests {
         }
     }
 
-    /// Multi-binding module C (same capability type as MultiModuleA).
+    /// Multi-binding module C (same capability type as `MultiModuleA`).
     struct MultiModuleC;
     impl ModuleMeta for MultiModuleC {
         const NAME: &'static str = "multi-c";
@@ -1376,7 +1404,11 @@ mod tests {
         let cap_id = TypeId::of::<Arc<AtomicUsize>>();
         let builders = kit.multi_builders.borrow();
         let vec = builders.get(&cap_id).expect("cap_id exists");
-        assert_eq!(vec.len(), 3, "three register_multi calls should produce Vec of length 3");
+        assert_eq!(
+            vec.len(),
+            3,
+            "three register_multi calls should produce Vec of length 3"
+        );
     }
 
     #[test]
@@ -1420,12 +1452,13 @@ mod tests {
         kit.register_multi::<MultiModuleB>().unwrap();
 
         // MockCapability in builders, MultiModuleA/B in multi_builders
-        assert!(kit.builders.borrow().contains_key(&TypeId::of::<MockCapability>()));
-        let cap_id = TypeId::of::<Arc<AtomicUsize>>();
-        assert_eq!(
-            kit.multi_builders.borrow().get(&cap_id).unwrap().len(),
-            2
+        assert!(
+            kit.builders
+                .borrow()
+                .contains_key(&TypeId::of::<MockCapability>())
         );
+        let cap_id = TypeId::of::<Arc<AtomicUsize>>();
+        assert_eq!(kit.multi_builders.borrow().get(&cap_id).unwrap().len(), 2);
     }
 
     // === T011 tests ===
@@ -1454,7 +1487,11 @@ mod tests {
         let built = kit.build().unwrap();
 
         let caps = built.require_all::<MultiModuleA>().unwrap();
-        assert_eq!(caps.len(), 3, "three register_multi calls should return Vec of length 3");
+        assert_eq!(
+            caps.len(),
+            3,
+            "three register_multi calls should return Vec of length 3"
+        );
     }
 
     #[test]
@@ -1468,9 +1505,21 @@ mod tests {
         let caps = built.require_all::<MultiModuleA>().unwrap();
         assert_eq!(caps.len(), 3);
         // Verify order matches registration: 10, 20, 30
-        assert_eq!(caps[0].load(Ordering::SeqCst), 10, "first cap should be 10 (MultiModuleA)");
-        assert_eq!(caps[1].load(Ordering::SeqCst), 20, "second cap should be 20 (MultiModuleB)");
-        assert_eq!(caps[2].load(Ordering::SeqCst), 30, "third cap should be 30 (MultiModuleC)");
+        assert_eq!(
+            caps[0].load(Ordering::SeqCst),
+            10,
+            "first cap should be 10 (MultiModuleA)"
+        );
+        assert_eq!(
+            caps[1].load(Ordering::SeqCst),
+            20,
+            "second cap should be 20 (MultiModuleB)"
+        );
+        assert_eq!(
+            caps[2].load(Ordering::SeqCst),
+            30,
+            "third cap should be 30 (MultiModuleC)"
+        );
     }
 
     #[test]
@@ -1503,7 +1552,12 @@ mod tests {
         assert_eq!(built.multi_capabilities.borrow().len(), 1);
         let cap_id = TypeId::of::<Arc<AtomicUsize>>();
         assert_eq!(
-            built.multi_capabilities.borrow().get(&cap_id).unwrap().len(),
+            built
+                .multi_capabilities
+                .borrow()
+                .get(&cap_id)
+                .unwrap()
+                .len(),
             2
         );
     }
@@ -1534,8 +1588,8 @@ mod tests {
 mod interface_tests {
     use super::*;
     use crate::core::{InterfaceBuilder, ModuleMeta};
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     // === Test fixtures ===
 
@@ -1574,7 +1628,7 @@ mod interface_tests {
 
     impl std::error::Error for InterfaceTestError {}
 
-    /// Module providing ConsoleLogger behind dyn Logger.
+    /// Module providing `ConsoleLogger` behind dyn Logger.
     struct ConsoleLoggerModule;
 
     impl ModuleMeta for ConsoleLoggerModule {
@@ -1598,7 +1652,7 @@ mod interface_tests {
         }
     }
 
-    /// Module providing FileLogger behind dyn Logger (same interface).
+    /// Module providing `FileLogger` behind dyn Logger (same interface).
     struct FileLoggerModule;
 
     impl ModuleMeta for FileLoggerModule {
