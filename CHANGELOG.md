@@ -7,16 +7,9 @@
 
 ## [Unreleased]
 
-### 变更
+_暂无未发布变更。_
 
-- MSRV 从 1.85 提升至 1.91（代码已在 const context 使用 `TypeId::of`，stable since 1.91.0）
-
-### 修复
-
-- 修复 `cargo fmt --check` 失败：rustfmt 格式化多处代码
-- 修复 `cargo clippy -D warnings` 失败：doc_markdown / too_many_lines / manual_let_else / ptr_as_ptr / explicit_iter_loop / explicit_auto_deref / incompatible_msrv
-
-## [0.3.0] - 2026-07-12
+## [0.3.0] - 2026-07-13
 
 ### 新增
 
@@ -41,8 +34,16 @@
 - `impl_module_meta!` 宏 — 生成 `ModuleMeta` impl（无依赖 / 有依赖两种语法）
 - `impl_async_auto_builder!` 宏（feature = "async"）— 生成 `AsyncAutoBuilder` impl
 
+#### 跨平台与集成
+- 跨平台 CI 矩阵（ubuntu/macos/windows）验证 apple/windows/linux 平台兼容性
+- `examples/integration-app`：dbnexus default=[] 后显式启用 default-no-db + sqlite + kit
+- `examples/integration-app`：新增 [patch.crates-io] 解决 trait-kit 版本冲突
+- `examples/integration-app`：governor 改为 re-export `limiteron::Governor`（修复私有模块访问）
+
 ### 变更
 
+- MSRV 从 1.85 提升至 1.91
+- clippy/fmt 修复
 - `build()` 方法优先检查 overrides map，跳过 build_fn
 - `build()` 新增 lazy_slots / multi_capabilities / interface_builders 构建循环
 - `build()` 中 topo-sorted 循环对 multi-binding 和 interface 模块 `continue`（与单绑定模式一致）
@@ -96,7 +97,8 @@
 - `TypeMap` 类型安全存储（以 `TypeId` 为键）
 - 依赖图验证：环检测 + 拓扑排序构建
 
-[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Kirky-X/trait-kit/compare/v0.2.5...v0.3.0
 [0.2.5]: https://github.com/Kirky-X/trait-kit/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/Kirky-X/trait-kit/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Kirky-X/trait-kit/releases/tag/v0.2.3

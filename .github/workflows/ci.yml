@@ -53,6 +53,34 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - run: cargo test --all-features --lib
 
+  # 跨平台构建验证 — 确保 apple/windows/linux 平台都能编译
+  cross-platform:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: cross-${{ runner.os }}
+      - name: Install protoc (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+      - name: Install protoc (Windows)
+        if: runner.os == 'Windows'
+        run: choco install protoc -y
+      - name: Build (all features)
+        run: cargo build --all-features --lib
+      - name: Build (no default features)
+        run: cargo build --no-default-features --lib
+
   security:
     name: cargo deny
     runs-on: ubuntu-latest
