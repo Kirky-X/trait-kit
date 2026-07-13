@@ -26,6 +26,12 @@
 
 ---
 
+## 🌍 跨平台支持
+
+trait-kit 在 Linux、macOS (apple)、Windows 三大平台上经过 CI 验证，确保跨平台兼容性。
+
+---
+
 ## 📦 快速开始
 
 ### 安装
@@ -91,12 +97,13 @@ fn main() {
 | `hot-reload` | `confers-macros`, `confers/watch` | `subscribe` / `reload_config` 热重载 API。 |
 | `encryption` | `hot-reload`, `confers/encryption`, `dep:serde_json` | `set_encrypted` / `get_encrypted` 加密配置存储。 |
 | `i18n` | `dep:icu`, `dep:writeable` | ICU4X 国际化：区域感知的数字/日期/复数/排序。 |
+| `interface` | — | 接口/实现分离：`register_as` / `resolve` 支持 `dyn Trait` 类型擦除注册与检索。 |
 
 在 `Cargo.toml` 中启用所需级别：
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.2", features = ["encryption"] }
+trait-kit = { version = "0.3", features = ["encryption"] }
 ```
 
 ---

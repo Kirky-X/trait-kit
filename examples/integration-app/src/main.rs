@@ -126,7 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("[integration-app] DI chain 1 OK: oxcache → dbnexus → inklog (CREATE TABLE logs)");
 
     // --- DI chain 2: limiteron → sdforge ----------------------------------
-    let governor: Arc<limiteron::governor::Governor> = kit
+    let governor: Arc<limiteron::Governor> = kit
         .require::<LimiteronModule>()
         .expect("require LimiteronModule");
     println!(
