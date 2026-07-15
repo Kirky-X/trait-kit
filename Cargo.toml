@@ -45,9 +45,6 @@ interface = []
 
 [workspace]
 resolver = "2"
-# integration-app is excluded from workspace members — it has path deps on
-# sibling repos (../../oxcache etc.) that only exist in local dev, not CI.
-# Build it standalone: cd examples/integration-app && cargo build
 members = [".", "examples/trait-kit-example"]
 default-members = ["."]
 
