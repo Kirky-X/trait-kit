@@ -9,6 +9,20 @@
 
 _暂无未发布变更。_
 
+## [0.3.1] - 2026-07-17
+
+### 修复
+
+- `kit.rs` 重构：裸指针转型改为 `.cast::<Kit>()`（更安全），`require_all` 消费所有权避免迭代器复用错误
+
+### CI / 依赖
+
+- 新增跨平台 CI 矩阵（ubuntu/macos/windows）
+- 修复 `cargo fmt` + `clippy` 在 main 的失败
+- 解决 `integration-app` 与 dbnexus `default=[]` 的兼容性
+- 移除 `examples/integration-app`（仅本地依赖 sibling path crate，不发布）
+- 依赖 bump：github/codeql-action 3→4、actions/checkout 4.2.2→7.0.0、trybuild 1.0.117→1.0.118
+
 ## [0.3.0] - 2026-07-13
 
 ### 新增
