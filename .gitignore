@@ -30,6 +30,7 @@ specmark/
 
 # ── Temp ─────────────────────────────────────────────
 temp/
+logs/
 
 # ── AI / Agent Tools (not for version control) ───────
 AGENTS.md
