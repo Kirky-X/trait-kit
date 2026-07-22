@@ -241,7 +241,10 @@ mod core_scenarios {
         kit.register::<AlphaModule>().expect("register");
         let built = kit.build().expect("build");
         let opt = built.optional::<AlphaModule>();
-        assert!(opt.is_some(), "optional should return Some for built module");
+        assert!(
+            opt.is_some(),
+            "optional should return Some for built module"
+        );
         assert_eq!(*opt.unwrap(), 1);
     }
 
@@ -264,7 +267,10 @@ mod core_scenarios {
         let kit = Kit::new();
         kit.set_config(7u64);
         let built = kit.build().expect("build");
-        assert!(built.contains_config::<u64>(), "u64 config should be present");
+        assert!(
+            built.contains_config::<u64>(),
+            "u64 config should be present"
+        );
         assert!(
             !built.contains_config::<i32>(),
             "i32 config was never set, should be absent"
@@ -557,9 +563,18 @@ mod core_scenarios {
         match kit.build() {
             Err(TraitKitError::CycleDetected { cycle }) => {
                 // Cycle should mention all 3 nodes.
-                assert!(cycle.contains(&"cycle-a"), "cycle should mention cycle-a: {cycle:?}");
-                assert!(cycle.contains(&"cycle-b"), "cycle should mention cycle-b: {cycle:?}");
-                assert!(cycle.contains(&"cycle-c"), "cycle should mention cycle-c: {cycle:?}");
+                assert!(
+                    cycle.contains(&"cycle-a"),
+                    "cycle should mention cycle-a: {cycle:?}"
+                );
+                assert!(
+                    cycle.contains(&"cycle-b"),
+                    "cycle should mention cycle-b: {cycle:?}"
+                );
+                assert!(
+                    cycle.contains(&"cycle-c"),
+                    "cycle should mention cycle-c: {cycle:?}"
+                );
             }
             other => panic!("expected CycleDetected, got: {other:?}"),
         }
@@ -614,8 +629,11 @@ mod core_scenarios {
     #[test]
     fn e11_lazy_build_fails_on_first_require() {
         let mut kit = Kit::new();
-        kit.register_lazy::<FailingLazyModule>().expect("register_lazy");
-        let built = kit.build().expect("build should succeed (lazy not yet built)");
+        kit.register_lazy::<FailingLazyModule>()
+            .expect("register_lazy");
+        let built = kit
+            .build()
+            .expect("build should succeed (lazy not yet built)");
         match built.require::<FailingLazyModule>() {
             Err(TraitKitError::BuildFailed { context, source }) => {
                 assert_eq!(context, "failing-lazy");
@@ -701,7 +719,9 @@ mod core_scenarios {
             )+
         };
     }
-    define_deep_chain!(Deep0, Deep1, Deep2, Deep3, Deep4, Deep5, Deep6, Deep7, Deep8, Deep9, Deep10);
+    define_deep_chain!(
+        Deep0, Deep1, Deep2, Deep3, Deep4, Deep5, Deep6, Deep7, Deep8, Deep9, Deep10
+    );
 
     impl_module_meta!(Deep0, "deep-0");
     impl AutoBuilder for Deep0 {
@@ -872,7 +892,11 @@ mod core_scenarios {
     }
 
     struct DiamondBottom;
-    impl_module_meta!(DiamondBottom, "diamond-bottom", deps = [DiamondLeft, DiamondRight]);
+    impl_module_meta!(
+        DiamondBottom,
+        "diamond-bottom",
+        deps = [DiamondLeft, DiamondRight]
+    );
     impl AutoBuilder for DiamondBottom {
         type Capability = Arc<u32>;
         type Error = TraitKitError;
@@ -946,16 +970,18 @@ mod core_scenarios {
             };
         }
         register_all!(
-            Large00, Large01, Large02, Large03, Large04, Large05, Large06, Large07, Large08, Large09,
-            Large10, Large11, Large12, Large13, Large14, Large15, Large16, Large17, Large18, Large19,
-            Large20, Large21, Large22, Large23, Large24, Large25, Large26, Large27, Large28, Large29,
-            Large30, Large31, Large32, Large33, Large34, Large35, Large36, Large37, Large38, Large39,
-            Large40, Large41, Large42, Large43, Large44, Large45, Large46, Large47, Large48, Large49,
-            Large50, Large51, Large52, Large53, Large54, Large55, Large56, Large57, Large58, Large59,
-            Large60, Large61, Large62, Large63, Large64, Large65, Large66, Large67, Large68, Large69,
-            Large70, Large71, Large72, Large73, Large74, Large75, Large76, Large77, Large78, Large79,
-            Large80, Large81, Large82, Large83, Large84, Large85, Large86, Large87, Large88, Large89,
-            Large90, Large91, Large92, Large93, Large94, Large95, Large96, Large97, Large98, Large99,
+            Large00, Large01, Large02, Large03, Large04, Large05, Large06, Large07, Large08,
+            Large09, Large10, Large11, Large12, Large13, Large14, Large15, Large16, Large17,
+            Large18, Large19, Large20, Large21, Large22, Large23, Large24, Large25, Large26,
+            Large27, Large28, Large29, Large30, Large31, Large32, Large33, Large34, Large35,
+            Large36, Large37, Large38, Large39, Large40, Large41, Large42, Large43, Large44,
+            Large45, Large46, Large47, Large48, Large49, Large50, Large51, Large52, Large53,
+            Large54, Large55, Large56, Large57, Large58, Large59, Large60, Large61, Large62,
+            Large63, Large64, Large65, Large66, Large67, Large68, Large69, Large70, Large71,
+            Large72, Large73, Large74, Large75, Large76, Large77, Large78, Large79, Large80,
+            Large81, Large82, Large83, Large84, Large85, Large86, Large87, Large88, Large89,
+            Large90, Large91, Large92, Large93, Large94, Large95, Large96, Large97, Large98,
+            Large99,
         );
         let built = kit.build().expect("100-module build should succeed");
         // Spot-check: first and last modules should be retrievable.
@@ -977,8 +1003,8 @@ mod core_scenarios {
     }
 
     define_config_types!(
-        Cfg00, Cfg01, Cfg02, Cfg03, Cfg04, Cfg05, Cfg06, Cfg07, Cfg08, Cfg09,
-        Cfg10, Cfg11, Cfg12, Cfg13, Cfg14, Cfg15, Cfg16, Cfg17, Cfg18, Cfg19,
+        Cfg00, Cfg01, Cfg02, Cfg03, Cfg04, Cfg05, Cfg06, Cfg07, Cfg08, Cfg09, Cfg10, Cfg11, Cfg12,
+        Cfg13, Cfg14, Cfg15, Cfg16, Cfg17, Cfg18, Cfg19,
     );
 
     #[test]
@@ -993,8 +1019,8 @@ mod core_scenarios {
             };
         }
         set_all!(
-            Cfg00, Cfg01, Cfg02, Cfg03, Cfg04, Cfg05, Cfg06, Cfg07, Cfg08, Cfg09,
-            Cfg10, Cfg11, Cfg12, Cfg13, Cfg14, Cfg15, Cfg16, Cfg17, Cfg18, Cfg19,
+            Cfg00, Cfg01, Cfg02, Cfg03, Cfg04, Cfg05, Cfg06, Cfg07, Cfg08, Cfg09, Cfg10, Cfg11,
+            Cfg12, Cfg13, Cfg14, Cfg15, Cfg16, Cfg17, Cfg18, Cfg19,
         );
         // Overwrite with distinct values to verify TypeId-based isolation.
         kit.set_config(Cfg00(100));
@@ -1055,8 +1081,11 @@ mod core_scenarios {
     fn c10_same_name_different_typeid_both_register() {
         let mut kit = Kit::new();
         kit.register::<SameNameA>().expect("register SameNameA");
-        kit.register::<SameNameB>().expect("register SameNameB (same NAME, different TypeId)");
-        let built = kit.build().expect("build should succeed (TypeId distinguishes)");
+        kit.register::<SameNameB>()
+            .expect("register SameNameB (same NAME, different TypeId)");
+        let built = kit
+            .build()
+            .expect("build should succeed (TypeId distinguishes)");
         let a = built.require::<SameNameA>().expect("require SameNameA");
         let b = built.require::<SameNameB>().expect("require SameNameB");
         assert_eq!(*a, 1);
@@ -1165,7 +1194,8 @@ mod core_scenarios {
         // register (eager)
         kit.register::<AlphaModule>().expect("register Alpha");
         // register_lazy
-        kit.register_lazy::<BetaModule>().expect("register_lazy Beta");
+        kit.register_lazy::<BetaModule>()
+            .expect("register_lazy Beta");
         // register_multi
         kit.register_multi::<MultiA>().expect("register_multi A");
         kit.register_multi::<MultiB>().expect("register_multi B");
@@ -1246,7 +1276,8 @@ mod async_scenarios {
         type Error = AsyncErr;
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(AsyncCap { value: 42 })) })
         }
@@ -1267,7 +1298,8 @@ mod async_scenarios {
         type Error = AsyncErr;
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             Box::pin(async move {
                 let base = kit
                     .require::<AsyncBase>()
@@ -1294,7 +1326,8 @@ mod async_scenarios {
         type Error = AsyncErr;
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             Box::pin(async move {
                 let dep = kit
                     .require::<AsyncDep>()
@@ -1319,11 +1352,10 @@ mod async_scenarios {
         type Error = AsyncErr;
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             Box::pin(async move {
-                let v = kit
-                    .config::<u32>()
-                    .map_err(|e| AsyncErr(e.to_string()))?;
+                let v = kit.config::<u32>().map_err(|e| AsyncErr(e.to_string()))?;
                 Ok(Arc::new(v))
             })
         }
@@ -1342,7 +1374,8 @@ mod async_scenarios {
         type Error = AsyncErr;
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Err(AsyncErr("intentional async failure".to_string())) })
         }
@@ -1361,7 +1394,8 @@ mod async_scenarios {
         type Error = AsyncErr;
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(())) })
         }
@@ -1370,8 +1404,10 @@ mod async_scenarios {
     impl ModuleMeta for AsyncMissingDep {
         const NAME: &'static str = "async-missing-dep";
         fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-            static DEPS: &[(&str, std::any::TypeId)] =
-                &[("async-unregistered", std::any::TypeId::of::<AsyncUnregistered>())];
+            static DEPS: &[(&str, std::any::TypeId)] = &[(
+                "async-unregistered",
+                std::any::TypeId::of::<AsyncUnregistered>(),
+            )];
             DEPS
         }
     }
@@ -1380,7 +1416,8 @@ mod async_scenarios {
         type Error = AsyncErr;
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(())) })
         }
@@ -1401,7 +1438,8 @@ mod async_scenarios {
         type Error = AsyncErr;
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(())) })
         }
@@ -1421,7 +1459,8 @@ mod async_scenarios {
         type Error = AsyncErr;
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             let _ = kit;
             Box::pin(async move { Ok(Arc::new(())) })
         }
@@ -1441,7 +1480,8 @@ mod async_scenarios {
         type Error = AsyncErr;
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
             Box::pin(async move {
                 // AsyncUnregistered is not registered → require returns MissingCapability,
                 // which we map to our own error type.
@@ -1481,7 +1521,8 @@ mod async_scenarios {
         let mut kit = AsyncKit::new();
         kit.register::<AsyncBase>().expect("register base");
         kit.register::<AsyncDep>().expect("register dep");
-        kit.register::<AsyncGrandchild>().expect("register grandchild");
+        kit.register::<AsyncGrandchild>()
+            .expect("register grandchild");
         let built = block_on(kit.build()).expect("build");
         let cap = built
             .require::<AsyncGrandchild>()
@@ -1504,15 +1545,12 @@ mod async_scenarios {
     // === A26: impl_async_auto_builder! macro ===
     struct MacroAsyncModule;
     impl_module_meta!(MacroAsyncModule, "macro-async");
-    impl_async_auto_builder!(
-        MacroAsyncModule,
-        Arc<AsyncCap>,
-        AsyncErr,
-        |kit| Box::pin(async move {
+    impl_async_auto_builder!(MacroAsyncModule, Arc<AsyncCap>, AsyncErr, |kit| Box::pin(
+        async move {
             let _ = kit;
             Ok(Arc::new(AsyncCap { value: 26 }))
-        })
-    );
+        }
+    ));
 
     #[test]
     fn a26_impl_async_auto_builder_macro() {
@@ -1754,9 +1792,9 @@ mod interface_scenarios {
 
 #[cfg(feature = "i18n")]
 mod i18n_scenarios {
+    use icu::plurals::PluralCategory;
     use std::cmp::Ordering;
     use trait_kit::i18n::{I18nError, I18nFormatter};
-    use icu::plurals::PluralCategory;
 
     // === I01: valid locale creation ===
     #[test]
@@ -1926,7 +1964,9 @@ mod i18n_scenarios {
     fn i12_leap_year_date_succeeds() {
         let fmt = I18nFormatter::new("en-US").expect("en-US");
         // 2024 is a leap year, so Feb 29 is valid.
-        let result = fmt.format_date(2024, 2, 29).expect("leap year date should be valid");
+        let result = fmt
+            .format_date(2024, 2, 29)
+            .expect("leap year date should be valid");
         assert!(
             result.contains("2024"),
             "leap year date should contain year: got '{result}'"
@@ -2092,10 +2132,7 @@ mod i18n_scenarios {
     fn c20_empty_string_sorting() {
         let fmt = I18nFormatter::new("en").expect("en");
         // Empty vs empty.
-        assert_eq!(
-            fmt.compare("", "").expect("compare"),
-            Ordering::Equal
-        );
+        assert_eq!(fmt.compare("", "").expect("compare"), Ordering::Equal);
         // Empty vs non-empty.
         assert_eq!(
             fmt.compare("", "anything").expect("compare"),
@@ -2122,8 +2159,14 @@ mod i18n_scenarios {
         let apple_idx = words.iter().position(|s| *s == "apple").unwrap();
         let cafe_idx = words.iter().position(|s| *s == "cafe").unwrap();
         let cafè_idx = words.iter().position(|s| *s == "café").unwrap();
-        assert!(apple_idx < cafe_idx, "apple should sort before cafe: {words:?}");
-        assert!(apple_idx < cafè_idx, "apple should sort before café: {words:?}");
+        assert!(
+            apple_idx < cafe_idx,
+            "apple should sort before cafe: {words:?}"
+        );
+        assert!(
+            apple_idx < cafè_idx,
+            "apple should sort before café: {words:?}"
+        );
     }
 }
 
