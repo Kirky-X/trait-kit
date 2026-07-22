@@ -7,11 +7,9 @@
 
 ## [Unreleased]
 
-### 测试
+_暂无未发布变更。_
 
-- 新增 `tests/e2e_advanced.rs`（78 个测试）：覆盖 B01/B03/B04/B06/B07/B09/B11/B12/B13、A01-A08/A25、E03/E05/E06/E08/E11/E19/E26、C01-C04/C06-C08/C10/C11/C13/C22/C23、A09-A12/A26/E23-E25/C19、A19/A20/E07/E27、I01-I19/E20-E22/C20/C21、C14/C15/E15/E17 等场景，补全现有测试套件的覆盖盲区
-
-## [0.3.1] - 2026-07-17
+## [0.3.1] - 2026-07-22
 
 ### 修复
 
@@ -24,6 +22,10 @@
 - 解决 `integration-app` 与 dbnexus `default=[]` 的兼容性
 - 移除 `examples/integration-app`（仅本地依赖 sibling path crate，不发布）
 - 依赖 bump：github/codeql-action 3→4、actions/checkout 4.2.2→7.0.0、trybuild 1.0.117→1.0.118
+
+### 测试
+
+- 新增 `tests/e2e_advanced.rs`（78 个测试）：覆盖 B01/B03/B04/B06/B07/B09/B11/B12/B13、A01-A08/A25、E03/E05/E06/E08/E11/E19/E26、C01-C04/C06-C08/C10/C11/C13/C22/C23、A09-A12/A26/E23-E25/C19、A19/A20/E07/E27、I01-I19/E20-E22/C20/C21、C14/C15/E15/E17 等场景，补全现有测试套件的覆盖盲区
 
 ## [0.3.0] - 2026-07-13
 
@@ -113,7 +115,8 @@
 - `TypeMap` 类型安全存储（以 `TypeId` 为键）
 - 依赖图验证：环检测 + 拓扑排序构建
 
-[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Kirky-X/trait-kit/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Kirky-X/trait-kit/compare/v0.2.5...v0.3.0
 [0.2.5]: https://github.com/Kirky-X/trait-kit/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/Kirky-X/trait-kit/compare/v0.2.3...v0.2.4
