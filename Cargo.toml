@@ -20,7 +20,7 @@ icu = { version = "2.2", optional = true }
 writeable = { version = "0.6", optional = true }
 
 [dev-dependencies]
-serial_test = "3"
+serial_test = "4"
 static_assertions = "1"
 trybuild = "1"
 
