@@ -195,6 +195,63 @@ impl DependencyGraph {
     pub fn name_of(&self, type_id: TypeId) -> Option<&'static str> {
         self.index.get(&type_id).map(|&idx| self.entries[idx].name)
     }
+
+    /// Export the dependency graph as a Graphviz DOT format string.
+    ///
+    /// Nodes are module names; directed edges represent dependencies
+    /// (dependency → dependent).
+    #[must_use]
+    pub fn to_dot(&self) -> String {
+        use std::fmt::Write as _;
+        if self.entries.is_empty() {
+            return "digraph {}".to_string();
+        }
+        let mut out = String::from("digraph {\n");
+        // Nodes
+        for entry in &self.entries {
+            let _ = writeln!(out, "    \"{}\";", entry.name);
+        }
+        // Edges: dependency → dependent
+        for entry in &self.entries {
+            for (dep_name, _) in &entry.dependencies {
+                let _ = writeln!(out, "    \"{}\" -> \"{}\";", dep_name, entry.name);
+            }
+        }
+        out.push('}');
+        out
+    }
+
+    /// Export the dependency graph as a Mermaid flowchart format string.
+    ///
+    /// Uses `graph TD` (top-down) layout. Edges: dependency --> dependent.
+    #[must_use]
+    pub fn to_mermaid(&self) -> String {
+        use std::fmt::Write as _;
+        if self.entries.is_empty() {
+            return "graph TD".to_string();
+        }
+        let mut out = String::from("graph TD\n");
+        for entry in &self.entries {
+            for (dep_name, _) in &entry.dependencies {
+                // Mermaid node IDs: replace hyphens with underscores
+                let from_id = dep_name.replace('-', "_");
+                let to_id = entry.name.replace('-', "_");
+                let _ = writeln!(
+                    out,
+                    "    {}[\"{}\"] --> {}[\"{}\"]",
+                    from_id, dep_name, to_id, entry.name
+                );
+            }
+        }
+        // Ensure nodes with no dependencies still appear
+        for entry in &self.entries {
+            if entry.dependencies.is_empty() {
+                let id = entry.name.replace('-', "_");
+                let _ = writeln!(out, "    {}[\"{}\"]", id, entry.name);
+            }
+        }
+        out
+    }
 }
 
 impl Default for DependencyGraph {

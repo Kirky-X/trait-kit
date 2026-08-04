@@ -24,6 +24,15 @@ impl TypeMap {
         }
     }
 
+    /// Remove all entries from the map, dropping all stored values.
+    #[allow(
+        dead_code,
+        reason = "used by feature-gated Scope Drop impl"
+    )]
+    pub fn clear(&self) {
+        self.inner.borrow_mut().clear();
+    }
+
     /// Insert a value for the given type key. Overwrites any existing entry.
     pub fn insert<T: 'static>(&self, value: T) {
         let key = TypeId::of::<T>();
@@ -77,6 +86,40 @@ impl TypeMap {
     /// will panic due to `borrow_mut` conflict. Keep the `Ref` lifetime short.
     pub fn inner_ref(&self) -> Ref<'_, HashMap<TypeId, Box<dyn Any>>> {
         self.inner.borrow()
+    }
+
+    /// Get a reference to a stored value by raw `TypeId`.
+    ///
+    /// Returns a `Ref` guard that keeps the `RefCell` read-borrowed.
+    /// The downcast reference is valid as long as the guard is alive.
+    #[allow(
+        clippy::type_complexity,
+        reason = "return type bundles the RefCell guard with the downcast reference"
+    )]
+    #[allow(
+        dead_code,
+        reason = "public API used by feature-gated health/observer modules"
+    )]
+    pub fn get_ref_by_type_id<T: 'static>(
+        &self,
+        type_id: TypeId,
+    ) -> Option<(Ref<'_, HashMap<TypeId, Box<dyn Any>>>, &T)> {
+        let guard = self.inner.borrow();
+        if guard.get(&type_id)?.downcast_ref::<T>().is_some() {
+            // SAFETY: we just verified the downcast succeeds; re-access
+            // through the same guard is sound.
+            #[allow(unsafe_code, clippy::transmute_ptr_to_ptr)]
+            Some(unsafe {
+                let ptr: *const T = guard
+                    .get(&type_id)
+                    .unwrap()
+                    .downcast_ref::<T>()
+                    .unwrap();
+                (guard, &*ptr)
+            })
+        } else {
+            None
+        }
     }
 }
 
