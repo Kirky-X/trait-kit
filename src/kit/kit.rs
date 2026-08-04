@@ -19,6 +19,17 @@ use super::EncryptedBlob;
 use super::TypeMap;
 use super::{DependencyGraph, GraphError, ModuleEntry};
 
+#[cfg(feature = "lifecycle")]
+type ShutdownCallback = Box<dyn Fn(&TypeMap)>;
+#[cfg(feature = "lifecycle")]
+type ReadyCallback = Box<dyn Fn(&Kit<Ready>) -> Result<(), TraitKitError>>;
+#[cfg(feature = "health")]
+type HealthCheckerFn = Box<dyn Fn(&TypeMap) -> crate::core::health::HealthStatus>;
+#[cfg(feature = "observability")]
+type ObserverRef = std::sync::Arc<dyn crate::core::observer::BuildObserver>;
+#[cfg(feature = "decorator")]
+type DecoratorFn = Box<dyn Fn(Box<dyn Any>) -> Box<dyn Any>>;
+
 /// HKDF key-derivation version label bound into every per-field key.
 /// Bumping this rotates all encrypted configs without changing master keys.
 #[cfg(feature = "encryption")]
@@ -97,6 +108,17 @@ pub struct Kit<S = Unbuilt> {
     subscribers: SubscriberMap,
     #[cfg(feature = "encryption")]
     encrypted_configs: EncryptedConfigMap,
+    #[cfg(feature = "lifecycle")]
+    shutdown_callbacks: RefCell<Vec<(TypeId, ShutdownCallback)>>,
+    #[cfg(feature = "lifecycle")]
+    ready_callbacks: RefCell<Vec<(TypeId, ReadyCallback)>>,
+    #[cfg(feature = "health")]
+    health_checkers:
+        RefCell<HashMap<TypeId, (/* module_name */ &'static str, HealthCheckerFn)>>,
+    #[cfg(feature = "observability")]
+    observers: RefCell<Vec<ObserverRef>>,
+    #[cfg(feature = "decorator")]
+    decorators: RefCell<HashMap<TypeId, Vec<DecoratorFn>>>,
     _state: std::marker::PhantomData<S>,
 }
 
@@ -120,6 +142,16 @@ impl Kit {
             subscribers: RefCell::new(HashMap::new()),
             #[cfg(feature = "encryption")]
             encrypted_configs: RefCell::new(HashMap::new()),
+            #[cfg(feature = "lifecycle")]
+            shutdown_callbacks: RefCell::new(Vec::new()),
+            #[cfg(feature = "lifecycle")]
+            ready_callbacks: RefCell::new(Vec::new()),
+            #[cfg(feature = "health")]
+            health_checkers: RefCell::new(HashMap::new()),
+            #[cfg(feature = "observability")]
+            observers: RefCell::new(Vec::new()),
+            #[cfg(feature = "decorator")]
+            decorators: RefCell::new(HashMap::new()),
             _state: std::marker::PhantomData,
         }
     }
@@ -410,7 +442,17 @@ impl Kit {
         #[cfg(feature = "interface")]
         self.build_interface_modules()?;
 
-        Ok(Kit {
+        // Extract ready_callbacks before moving self
+        #[cfg(feature = "lifecycle")]
+        let ready_callbacks: Vec<(TypeId, ReadyCallback)> = {
+            self.ready_callbacks.borrow_mut().drain(..).collect()
+        };
+        #[cfg(feature = "lifecycle")]
+        let shutdown_callbacks: Vec<(TypeId, ShutdownCallback)> = {
+            self.shutdown_callbacks.borrow_mut().drain(..).collect()
+        };
+
+        let kit = Kit {
             builders: self.builders,
             overrides: self.overrides,
             lazy_builders: self.lazy_builders,
@@ -426,8 +468,28 @@ impl Kit {
             subscribers: self.subscribers,
             #[cfg(feature = "encryption")]
             encrypted_configs: self.encrypted_configs,
+            #[cfg(feature = "lifecycle")]
+            shutdown_callbacks: RefCell::new(shutdown_callbacks),
+            #[cfg(feature = "lifecycle")]
+            ready_callbacks: RefCell::new(Vec::new()),
+            #[cfg(feature = "health")]
+            health_checkers: self.health_checkers,
+            #[cfg(feature = "observability")]
+            observers: self.observers,
+            #[cfg(feature = "decorator")]
+            decorators: self.decorators,
             _state: std::marker::PhantomData,
-        })
+        };
+
+        // Call lifecycle on_ready callbacks in topological order
+        #[cfg(feature = "lifecycle")]
+        {
+            for (_type_id, callback) in &ready_callbacks {
+                callback(&kit)?;
+            }
+        }
+
+        Ok(kit)
     }
 
     /// Phase 1: Build eager modules in topological order.
@@ -457,13 +519,45 @@ impl Kit {
                 continue;
             };
 
-            match (build_fn)(self) {
-                Ok(boxed) => self.capabilities.insert_boxed(*type_id, boxed),
-                Err(e) => {
-                    return Err(TraitKitError::BuildFailed {
-                        context: module_name,
-                        source: e,
-                    });
+            // Observer: notify build start
+            #[cfg(feature = "observability")]
+            {
+                let start_instant = std::time::Instant::now();
+                for obs in self.observers.borrow().iter() {
+                    obs.on_module_start(module_name);
+                }
+
+                match (build_fn)(self) {
+                    Ok(boxed) => {
+                        let elapsed = start_instant.elapsed();
+                        self.capabilities.insert_boxed(*type_id, boxed);
+                        for obs in self.observers.borrow().iter() {
+                            obs.on_module_built(module_name, elapsed);
+                        }
+                    }
+                    Err(e) => {
+                        let err = TraitKitError::BuildFailed {
+                            context: module_name,
+                            source: e,
+                        };
+                        for obs in self.observers.borrow().iter() {
+                            obs.on_build_error(module_name, &err);
+                        }
+                        return Err(err);
+                    }
+                }
+            }
+
+            #[cfg(not(feature = "observability"))]
+            {
+                match (build_fn)(self) {
+                    Ok(boxed) => self.capabilities.insert_boxed(*type_id, boxed),
+                    Err(e) => {
+                        return Err(TraitKitError::BuildFailed {
+                            context: module_name,
+                            source: e,
+                        });
+                    }
                 }
             }
         }
@@ -526,6 +620,145 @@ impl Kit {
 
     fn module_name(&self, type_id: TypeId) -> &'static str {
         self.graph.name_of(type_id).unwrap_or("<unknown>")
+    }
+
+    // ─── Lifecycle ─────────────────────────────────────────────────────
+
+    /// Register lifecycle hooks for a previously registered module.
+    ///
+    /// The module must have been registered via `register::<M>()` first.
+    /// This stores `on_ready` and `on_shutdown` callbacks that are invoked
+    /// during `build()` and `shutdown()` respectively.
+    ///
+    /// Requires the `lifecycle` feature.
+    #[cfg(feature = "lifecycle")]
+    pub fn register_lifecycle<M>(&mut self)
+    where
+        M: crate::core::lifecycle::Lifecycle + 'static,
+        M::Capability: 'static,
+    {
+        // Store shutdown callback
+        let shutdown_cb: ShutdownCallback = Box::new(|caps: &TypeMap| {
+            let type_id = TypeId::of::<M>();
+            if let Some((_guard, cap_ref)) = caps.get_ref_by_type_id::<M::Capability>(type_id) {
+                M::on_shutdown(cap_ref);
+            }
+        });
+        self.shutdown_callbacks
+            .borrow_mut()
+            .push((TypeId::of::<M>(), shutdown_cb));
+
+        // Store ready callback
+        let ready_cb: ReadyCallback =
+            Box::new(|kit: &Kit<Ready>| M::on_ready(kit).map_err(|e| {
+                TraitKitError::LifecycleFailed {
+                    context: M::NAME,
+                    source: Box::new(e),
+                }
+            }));
+        self.ready_callbacks
+            .borrow_mut()
+            .push((TypeId::of::<M>(), ready_cb));
+    }
+
+    // ─── Health Check ──────────────────────────────────────────────────
+
+    /// Register a health checker for a previously registered module.
+    ///
+    /// The module must have been registered via `register::<M>()` first.
+    /// Use `health_check::<M>()` or `health_report()` on `Kit<Ready>` to query.
+    ///
+    /// Requires the `health` feature.
+    #[cfg(feature = "health")]
+    pub fn register_health_check<M>(&mut self)
+    where
+        M: crate::core::health::HealthCheck + 'static,
+        M::Capability: 'static,
+    {
+        let checker: HealthCheckerFn = Box::new(|caps: &TypeMap| {
+            let type_id = TypeId::of::<M>();
+            match caps.get_ref_by_type_id::<M::Capability>(type_id) {
+                Some((_guard, cap_ref)) => M::check(cap_ref),
+                None => crate::core::health::HealthStatus::Unhealthy {
+                    detail: "capability not found".to_string(),
+                },
+            }
+        });
+        self.health_checkers
+            .borrow_mut()
+            .insert(TypeId::of::<M>(), (M::NAME, checker));
+    }
+
+    // ─── Conditional Registration ───────────────────────────────────────
+
+    /// Conditionally register a module based on a runtime predicate.
+    ///
+    /// The predicate receives the current `Kit` (for inspecting configs
+    /// or other state). Returns `true` if the module was actually registered.
+    ///
+    /// Requires the `conditional` feature.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::AlreadyRegistered` if the predicate returns
+    /// `true` but the module was already registered.
+    #[cfg(feature = "conditional")]
+    pub fn register_if<M: AutoBuilder>(
+        &mut self,
+        predicate: impl FnOnce(&Kit) -> bool,
+    ) -> Result<bool, TraitKitError> {
+        if predicate(self) {
+            self.register::<M>()?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    // ─── Observability ─────────────────────────────────────────────────
+
+    /// Register a build observer that receives callbacks during `build()`.
+    ///
+    /// Requires the `observability` feature.
+    #[cfg(feature = "observability")]
+    pub fn with_observer(&mut self, observer: std::sync::Arc<dyn crate::core::observer::BuildObserver>) {
+        self.observers.borrow_mut().push(observer);
+    }
+
+    // ─── Decorator ─────────────────────────────────────────────────────
+
+    /// Register a decorator for a module's capability.
+    ///
+    /// The decorator is applied after the module's capability is built,
+    /// wrapping or enhancing the original value. Multiple decorators can
+    /// be registered for the same module; they are applied in registration
+    /// order.
+    ///
+    /// Requires the `decorator` feature.
+    ///
+    /// # Panics
+    ///
+    /// Panics at runtime if the internal `downcast` fails due to a type
+    /// mismatch (should never happen when used correctly).
+    #[cfg(feature = "decorator")]
+    pub fn decorate<M: AutoBuilder>(
+        &self,
+        decorator: impl Fn(M::Capability) -> M::Capability + 'static,
+    ) where
+        M::Capability: 'static,
+    {
+        let wrapper: DecoratorFn = Box::new(move |boxed_cap| {
+            let cap = boxed_cap
+                .downcast::<M::Capability>()
+                .expect("decorator type mismatch");
+            let decorated = decorator(*cap);
+            Box::new(decorated) as Box<dyn Any>
+        });
+        self.decorators
+            .borrow_mut()
+            .entry(TypeId::of::<M>())
+            .or_default()
+            .push(wrapper);
     }
 }
 
@@ -867,6 +1100,113 @@ impl Kit<Ready> {
     /// Check if a config is registered.
     pub fn contains_config<C: Clone + 'static>(&self) -> bool {
         self.configs.contains::<C>()
+    }
+    
+    // ─── Lifecycle: shutdown ───────────────────────────────────────────
+    
+    /// Shut down all lifecycle modules in reverse topological order.
+    ///
+    /// Calls `on_shutdown` for each module registered via `register_lifecycle`.
+    /// A failed shutdown does not prevent other modules from shutting down.
+    ///
+    /// Requires the `lifecycle` feature.
+    #[cfg(feature = "lifecycle")]
+    pub fn shutdown(&self) {
+        let callbacks: Vec<(TypeId, ShutdownCallback)> =
+            self.shutdown_callbacks.borrow_mut().drain(..).collect();
+        // Reverse order: last built → first shut down
+        for (_type_id, callback) in callbacks.iter().rev() {
+            callback(&self.capabilities);
+        }
+    }
+    
+    // ─── Health Check ──────────────────────────────────────────────────
+    
+    /// Check the health of a specific module.
+    ///
+    /// Requires the `health` feature and the module to have been registered
+    /// via `register_health_check::<M>()`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::MissingConfig` if no health checker is
+    /// registered for `M`.
+    #[cfg(feature = "health")]
+    pub fn health_check<M: crate::core::health::HealthCheck>(
+        &self,
+    ) -> Result<crate::core::health::HealthStatus, TraitKitError> {
+        let type_id = TypeId::of::<M>();
+        let checkers = self.health_checkers.borrow();
+        let (_name, checker) = checkers.get(&type_id).ok_or(TraitKitError::MissingConfig {
+            key: M::NAME,
+        })?;
+        Ok(checker(&self.capabilities))
+    }
+    
+    /// Generate a health report for all registered health checkers.
+    ///
+    /// Returns a list of `(module_name, HealthStatus)` pairs.
+    ///
+    /// Requires the `health` feature.
+    #[cfg(feature = "health")]
+    pub fn health_report(
+        &self,
+    ) -> Vec<(&'static str, crate::core::health::HealthStatus)> {
+        let checkers = self.health_checkers.borrow();
+        checkers
+            .values()
+            .map(|(name, checker)| (*name, checker(&self.capabilities)))
+            .collect()
+    }
+    
+    // ─── Factory Pattern ───────────────────────────────────────────────
+    
+    /// Create a factory closure that produces new instances on each call.
+    ///
+    /// Unlike `require()` which returns the singleton built during `build()`,
+    /// the factory invokes `M::build()` on every call, producing a fresh
+    /// instance each time.
+    ///
+    /// Requires the `factory` feature.
+    #[cfg(feature = "factory")]
+    pub fn factory<M: AutoBuilder>(
+        &self,
+    ) -> impl Fn() -> Result<M::Capability, TraitKitError> + '_ {
+        move || {
+            // SAFETY: Kit<Ready> and Kit<Unbuilt> have identical memory layout
+            // (S only appears in PhantomData<S>). BuildFn expects &Kit<Unbuilt>.
+            #[allow(unsafe_code)]
+            let kit_ref: &Kit = unsafe { &*std::ptr::from_ref::<Kit<Ready>>(self).cast::<Kit>() };
+            M::build(kit_ref).map_err(|e| TraitKitError::BuildFailed {
+                context: M::NAME,
+                source: Box::new(e),
+            })
+        }
+    }
+    
+    // ─── Scope ─────────────────────────────────────────────────────────
+    
+    /// Create a new empty scope for per-request instance isolation.
+    ///
+    /// Requires the `scope` feature.
+    #[cfg(feature = "scope")]
+    #[must_use]
+    pub fn create_scope(&self) -> super::scope::Scope {
+        super::scope::Scope::new()
+    }
+    
+    // ─── Graph Visualization ───────────────────────────────────────────
+    
+    /// Export the dependency graph as a Graphviz DOT string.
+    #[must_use]
+    pub fn graph_dot(&self) -> String {
+        self.graph.to_dot()
+    }
+    
+    /// Export the dependency graph as a Mermaid flowchart string.
+    #[must_use]
+    pub fn graph_mermaid(&self) -> String {
+        self.graph.to_mermaid()
     }
 
     /// Retrieve and decrypt a configuration value.
