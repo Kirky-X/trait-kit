@@ -9,8 +9,8 @@ publish = false
 trait-kit = { path = "../..", default-features = false }
 # serde + confers are direct deps because #[derive(Config)] expands to code that
 # references confers::* / serde::* paths from the *caller's* crate.
-serde = { version = "1", features = ["derive"], optional = true }
-confers = { version = "0.4", default-features = false, optional = true }
+serde = { workspace = true, optional = true }
+confers = { workspace = true, optional = true }
 
 [features]
 default = []
