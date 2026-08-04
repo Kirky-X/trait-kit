@@ -362,6 +362,6 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE).
 
 © 2026 Kirky.X

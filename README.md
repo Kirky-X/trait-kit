@@ -180,7 +180,7 @@ graph LR
 
 MIT License, Copyright (c) 2026 Kirky.X
 
-详见 [LICENSE](LICENSE)。
+详见 [LICENSE](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE)。
 
 [ci-badge]: https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml/badge.svg
 [ci-url]: https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml
