@@ -1,6 +1,6 @@
 [package]
 name = "trait-kit"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.91"
 authors = ["Kirky.X"]
@@ -42,6 +42,20 @@ encryption = ["hot-reload", "confers/encryption", "dep:serde", "dep:serde_json"]
 i18n = ["dep:icu", "dep:writeable"]
 # Interface/implementation separation: register_as / resolve behind a feature gate.
 interface = []
+# Lifecycle hooks: on_ready (post-build) + on_shutdown (cleanup).
+lifecycle = []
+# Health check: per-module health status reporting.
+health = []
+# Scoped dependencies: per-request instance isolation.
+scope = []
+# Conditional registration: runtime predicate-gated module registration.
+conditional = []
+# Build observability: observer callbacks during module construction.
+observability = []
+# Factory pattern: per-call instance creation (non-singleton).
+factory = []
+# Module decorators: post-build capability wrapping/enhancement.
+decorator = []
 
 [workspace]
 resolver = "2"
