@@ -4,9 +4,9 @@
   <img src="assets/trait-kit.svg" width="200" alt="trait-kit logo">
 </p>
 
-[![Crates.io][crates-badge]][crates-url][![Docs.rs][docs-badge]][docs-url][![MIT licensed][license-badge]][license-url][![MSRV][msrv-badge]][msrv-url]
+[![Crates.io][crates-badge]][crates-url] [![Docs.rs][docs-badge]][docs-url] [![MIT licensed][license-badge]][license-url] [![MSRV][msrv-badge]][msrv-url]
 
-[中文](./README.md)
+[中文](./README.md) | English
 
 </div>
 
@@ -25,12 +25,14 @@
 
 ## Features
 
-- **Standardized Module Interface** — The `ModuleMeta` + `AutoBuilder` traits define a uniform contract: every module declares its name, dependencies, capability type, and build logic. Consistent initialization everywhere.
+- **Standardized Module Interface** — The `ModuleMeta` + `AutoBuilder` traits define a uniform contract, with `impl_module_meta!` / `impl_auto_builder!` macros for one-line module declarations.
 - **Typestate Build Validation** — `Kit<Unbuilt>` registers modules and configs; `kit.build()` validates the dependency graph (cycle detection, missing deps) and returns `Kit<Ready>`. Build errors surface before your app starts.
 - **Type-Safe Capability Retrieval** — Capabilities are stored and retrieved by module type (`kit.require::<LoggerModule>()`), not string keys. No downcasting, no runtime lookups.
 - **Configuration Center** — `kit.set_config(value)` / `kit.config::<C>()` store and retrieve typed configs via a `TypeMap` keyed by `TypeId`. No `ConfigKey` or `ConfigHandle` boilerplate.
 - **Optional confers Integration** — Four-level feature flags integrate [`confers`](https://crates.io/crates/confers) for derive-macro config loading, hot-reload subscriptions, and XChaCha20-Poly1305 encrypted config storage.
-- **Minimal Dependencies** — Only `thiserror` is required. `confers`, `serde`, and `serde_json` are optional, pulled in only when you enable the corresponding feature.
+- **`AsyncKit` Async Support** — The `async` feature provides `AsyncKit` with `Send + Sync` async capability management for database pools, HTTP clients, and other async initialization scenarios.
+- **ICU4X Internationalization** — The `i18n` feature integrates ICU4X for locale-aware number, date, plural, and collation support.
+- **Minimal Dependencies** — Only `thiserror` is required. `confers`, `serde`, `serde_json`, and `icu` are optional, pulled in only when you enable the corresponding feature.
 - **`#![deny(unsafe_code)]`** — No `unsafe` anywhere in the crate.
 
 ---
@@ -53,6 +55,7 @@ Define a logger module, register it, build the Kit, and retrieve the capability:
 
 ```rust
 use std::sync::Arc;
+use trait_kit::impl_module_meta;
 use trait_kit::prelude::*;
 
 // 1. Define a capability (any Clone type)
@@ -63,14 +66,9 @@ impl StdoutLogger {
     }
 }
 
-// 2. Define a module (ModuleMeta + AutoBuilder)
+// 2. Define a module (macro for ModuleMeta)
 struct LoggerModule;
-impl ModuleMeta for LoggerModule {
-    const NAME: &'static str = "logger";
-    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-        &[]
-    }
-}
+impl_module_meta!(LoggerModule, "logger");
 impl AutoBuilder for LoggerModule {
     type Capability = Arc<StdoutLogger>;
     type Error = TraitKitError;
@@ -101,6 +99,7 @@ Configs are typed values stored in the Kit's `TypeMap`. Modules retrieve them vi
 
 ```rust
 use std::sync::Arc;
+use trait_kit::impl_module_meta;
 use trait_kit::prelude::*;
 
 #[derive(Clone, Debug)]
@@ -114,12 +113,7 @@ struct DbPool {
 }
 
 struct DbPoolModule;
-impl ModuleMeta for DbPoolModule {
-    const NAME: &'static str = "db_pool";
-    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-        &[]
-    }
-}
+impl_module_meta!(DbPoolModule, "db-pool");
 impl AutoBuilder for DbPoolModule {
     type Capability = Arc<DbPool>;
     type Error = TraitKitError;
@@ -145,10 +139,11 @@ fn main() {
 
 ### Module with Dependencies
 
-Modules declare dependencies via `ModuleMeta::dependencies()`. The Kit validates the dependency graph at build time and constructs modules in topological order:
+Modules declare dependencies via `impl_module_meta!` macro. The Kit validates the dependency graph at build time and constructs modules in topological order:
 
 ```rust
 use std::sync::Arc;
+use trait_kit::impl_module_meta;
 use trait_kit::prelude::*;
 
 struct Logger;
@@ -157,10 +152,7 @@ impl Logger {
 }
 
 struct LoggerModule;
-impl ModuleMeta for LoggerModule {
-    const NAME: &'static str = "logger";
-    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] { &[] }
-}
+impl_module_meta!(LoggerModule, "logger");
 impl AutoBuilder for LoggerModule {
     type Capability = Arc<Logger>;
     type Error = TraitKitError;
@@ -174,14 +166,7 @@ struct Storage {
 }
 
 struct StorageModule;
-impl ModuleMeta for StorageModule {
-    const NAME: &'static str = "storage";
-    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-        static DEPS: &[(&str, std::any::TypeId)] =
-            &[("logger", std::any::TypeId::of::<LoggerModule>())];
-        DEPS
-    }
-}
+impl_module_meta!(StorageModule, "storage", deps = [LoggerModule]);
 impl AutoBuilder for StorageModule {
     type Capability = Arc<Storage>;
     type Error = TraitKitError;
@@ -235,7 +220,7 @@ Enable the desired level in `Cargo.toml`:
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.2", features = ["encryption"] }
+trait-kit = { version = "0.3", features = ["encryption"] }
 ```
 
 ### Three-Tier Inheritance System
