@@ -88,6 +88,11 @@ impl TypeMap {
     ///
     /// Returns a `Ref` guard that keeps the `RefCell` read-borrowed.
     /// The downcast reference is valid as long as the guard is alive.
+    ///
+    /// Note: this method performs a second `HashMap` lookup internally to
+    /// satisfy the borrow checker (the `Ref` guard must outlive the
+    /// downcast reference). For the clone-based variant see
+    /// [`get_cloned_by_type_id`](Self::get_cloned_by_type_id).
     #[allow(
         clippy::type_complexity,
         reason = "return type bundles the RefCell guard with the downcast reference"

@@ -28,6 +28,7 @@ pub trait Lifecycle: crate::core::AutoBuilder {
     ///
     /// Returns `Self::Error` if initialization fails. The error is wrapped
     /// in `TraitKitError::LifecycleFailed` and propagated from `build()`.
+    #[must_use = "on_ready returns Result<(), Error>; ignoring it may hide initialization failures"]
     fn on_ready(
         _kit: &crate::kit::Kit<crate::kit::Ready>,
     ) -> Result<(), Self::Error> {
@@ -161,19 +162,51 @@ mod tests {
 
         impl Lifecycle for DefaultModule {}
 
-        // Default on_ready should return Ok(())
-        let result = DefaultModule::on_ready;
-        let _ = result; // Just verify it compiles
+        // Actually call the default on_ready through kit integration
+        let mut kit = Kit::new();
+        kit.register::<DefaultModule>().unwrap();
+        kit.register_lifecycle::<DefaultModule>();
+        let built = kit.build().unwrap();
+        // on_ready was called during build() and returned Ok(())
+        drop(built);
     }
 
     #[test]
     fn lifecycle_trait_has_default_on_shutdown() {
-        // Default on_shutdown is a no-op
-        let cap = Arc::new(TestCap {
-            name: "test".to_string(),
-        });
-        TestModule::on_shutdown(&cap);
-        // Should not panic
+        // Default on_shutdown is a no-op — call through a module that
+        // does NOT override on_shutdown to exercise the default impl.
+        struct DefaultShutdownModule;
+
+        impl ModuleMeta for DefaultShutdownModule {
+            const NAME: &'static str = "default-shutdown";
+            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                &[]
+            }
+        }
+
+        impl AutoBuilder for DefaultShutdownModule {
+            type Capability = Arc<TestCap>;
+            type Error = TestError;
+
+            fn build(_kit: &Kit) -> Result<Arc<TestCap>, TestError> {
+                Ok(Arc::new(TestCap {
+                    name: "default-shutdown".to_string(),
+                }))
+            }
+        }
+
+        impl Lifecycle for DefaultShutdownModule {
+            // Only override on_ready; on_shutdown uses the default no-op
+            fn on_ready(_kit: &Kit<crate::kit::Ready>) -> Result<(), TestError> {
+                Ok(())
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.register::<DefaultShutdownModule>().unwrap();
+        kit.register_lifecycle::<DefaultShutdownModule>();
+        let built = kit.build().unwrap();
+        built.shutdown(); // exercises default on_shutdown
     }
 
     #[test]
@@ -185,6 +218,21 @@ mod tests {
         TestModule::on_shutdown(&cap);
         let after = SHUTDOWN_COUNTER.load(Ordering::SeqCst);
         assert_eq!(after, before + 1, "shutdown counter should increment");
+    }
+
+    #[test]
+    fn lifecycle_test_module_full_kit_integration() {
+        let mut kit = Kit::new();
+        kit.register::<TestModule>().unwrap();
+        kit.register_lifecycle::<TestModule>();
+        let built = kit.build().unwrap();
+        built.shutdown();
+    }
+
+    #[test]
+    fn lifecycle_test_error_display() {
+        let e = TestError;
+        assert_eq!(format!("{e}"), "test error");
     }
 }
 
@@ -254,5 +302,20 @@ mod async_tests {
     fn async_lifecycle_is_send_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<AsyncTestCap>();
+    }
+
+    #[test]
+    fn async_lifecycle_test_module_full_kit_integration() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncTestModule>().unwrap();
+        kit.register_lifecycle::<AsyncTestModule>();
+        let built = block_on(kit.build()).unwrap();
+        built.shutdown();
+    }
+
+    #[test]
+    fn async_lifecycle_test_error_display() {
+        let e = AsyncTestError;
+        assert_eq!(format!("{e}"), "async test error");
     }
 }

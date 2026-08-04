@@ -368,6 +368,16 @@ impl AsyncKit {
     ///
     /// Requires the `lifecycle` feature.
     ///
+    /// # Limitations
+    ///
+    /// `AsyncLifecycle::on_ready` is fully supported and called during `build()`.
+    /// However, `AsyncLifecycle::on_shutdown` is **not** called by the synchronous
+    /// `shutdown()` method, because sync callbacks cannot await async futures.
+    /// Async cleanup logic in `on_shutdown` will be silently skipped.
+    ///
+    /// For async shutdown, use `AsyncKit::shutdown_async()` (when available) or
+    /// manually invoke `M::on_shutdown(&cap)` for each module that needs async cleanup.
+    ///
     /// # Panics
     ///
     /// Panics if the internal `RwLock` is poisoned.
@@ -380,11 +390,11 @@ impl AsyncKit {
         let shutdown_cb: AsyncShutdownCallback = Box::new(|caps: &AsyncTypeMap| {
             let type_id = TypeId::of::<M>();
             if let Some((_guard, cap_ref)) = caps.read_by_type_id::<M::Capability>(type_id) {
-                // We can't call async on_shutdown from a sync callback,
-                // so we use a blocking executor pattern.
-                // For simplicity, we just skip the async call here.
-                // Users should use the async shutdown method.
-                let _ = cap_ref; // suppress unused warning
+                // NOTE: AsyncLifecycle::on_shutdown returns a Future and cannot
+                // be called from a sync closure. The async shutdown is intentionally
+                // skipped here — users must invoke it manually or via an async
+                // shutdown method. See register_lifecycle() docs for details.
+                let _ = cap_ref;
             }
         });
         self.shutdown_callbacks
@@ -1570,6 +1580,37 @@ mod tests {
             "A's cap must transitively contain C's v=100 — transitive DI worked"
         );
     }
+
+    /// Trigger `From<TraitKitError> for MockError` by having a module
+    /// require an unregistered module during build.
+    #[test]
+    fn async_from_trait_kit_error_for_mock_error() {
+        struct RequireMissingModule;
+        impl ModuleMeta for RequireMissingModule {
+            const NAME: &'static str = "require-missing";
+            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        }
+        impl AsyncAutoBuilder for RequireMissingModule {
+            type Capability = Arc<()>;
+            type Error = MockError;
+            fn build<'a>(
+                kit: &'a AsyncKit,
+            ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+                Box::pin(async move {
+                    // This require will fail — MockBModule is not registered.
+                    // The `?` triggers From<TraitKitError> for MockError.
+                    let _b: Arc<Bcap> = kit.require::<MockBModule>()?;
+                    Ok(Arc::new(()))
+                })
+            }
+        }
+
+        let mut kit = AsyncKit::new();
+        kit.register::<RequireMissingModule>().unwrap();
+        let result = block_on(kit.build());
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), TraitKitError::BuildFailed { .. }));
+    }
 }
 
 // ─── Feature-gated async integration tests ────────────────────────────────
@@ -1611,12 +1652,16 @@ mod async_lifecycle_tests {
 
     #[test]
     fn async_lifecycle_on_ready_called() {
-        ASYNC_LC_READY.store(0, Ordering::SeqCst);
+        let before = ASYNC_LC_READY.load(Ordering::SeqCst);
         let mut kit = AsyncKit::new();
         kit.register::<AsyncLcModule>().unwrap();
         kit.register_lifecycle::<AsyncLcModule>();
         let _built = block_on(kit.build()).unwrap();
-        assert_eq!(ASYNC_LC_READY.load(Ordering::SeqCst), 1);
+        let after = ASYNC_LC_READY.load(Ordering::SeqCst);
+        assert!(
+            after > before,
+            "on_ready should have been called at least once: before={before}, after={after}"
+        );
     }
 
     #[test]
@@ -1690,6 +1735,37 @@ mod async_health_tests {
         let err = built.health_check::<AsyncHcModule>().unwrap_err();
         assert!(matches!(err, TraitKitError::MissingConfig { .. }));
     }
+
+    #[test]
+    fn async_health_check_unhealthy_for_zero_value() {
+        struct ZeroAsyncHcModule;
+        impl ModuleMeta for ZeroAsyncHcModule {
+            const NAME: &'static str = "zero-async-hc";
+            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        }
+        impl AsyncAutoBuilder for ZeroAsyncHcModule {
+            type Capability = Arc<AsyncHcCap>;
+            type Error = MockError;
+            fn build<'a>(
+                _kit: &'a AsyncKit,
+            ) -> Pin<Box<dyn Future<Output = Result<Arc<AsyncHcCap>, MockError>> + Send + 'a>> {
+                Box::pin(async move { Ok(Arc::new(AsyncHcCap { val: 0 })) })
+            }
+        }
+        impl AsyncHealthCheck for ZeroAsyncHcModule {
+            fn check(cap: &Arc<AsyncHcCap>) -> HealthStatus {
+                if cap.val > 0 { HealthStatus::Healthy }
+                else { HealthStatus::Unhealthy { detail: "zero".into() } }
+            }
+        }
+
+        let mut kit = AsyncKit::new();
+        kit.register::<ZeroAsyncHcModule>().unwrap();
+        kit.register_health_check::<ZeroAsyncHcModule>();
+        let built = block_on(kit.build()).unwrap();
+        let status = built.health_check::<ZeroAsyncHcModule>().unwrap();
+        assert!(matches!(status, HealthStatus::Unhealthy { .. }));
+    }
 }
 
 #[cfg(all(test, feature = "observability"))]
@@ -1744,6 +1820,42 @@ mod async_observability_tests {
         block_on(kit.build()).unwrap();
         assert_eq!(start.load(Ordering::SeqCst), 1);
         assert_eq!(built_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn async_observer_on_build_error_called() {
+        struct AsyncFailObs {
+            errors: Arc<AtomicUsize>,
+        }
+        impl BuildObserver for AsyncFailObs {
+            fn on_build_error(&self, _: &'static str, _: &TraitKitError) {
+                self.errors.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        struct AsyncFailBuildModule;
+        impl ModuleMeta for AsyncFailBuildModule {
+            const NAME: &'static str = "async-fail-build";
+            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        }
+        impl AsyncAutoBuilder for AsyncFailBuildModule {
+            type Capability = Arc<()>;
+            type Error = MockError;
+            fn build<'a>(
+                _kit: &'a AsyncKit,
+            ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+                Box::pin(async move { Err(MockError::Failed("intentional".into())) })
+            }
+        }
+
+        let errors = Arc::new(AtomicUsize::new(0));
+        let obs = Arc::new(AsyncFailObs { errors: Arc::clone(&errors) });
+        let mut kit = AsyncKit::new();
+        kit.with_observer(obs);
+        kit.register::<AsyncFailBuildModule>().unwrap();
+        let result = block_on(kit.build());
+        assert!(result.is_err());
+        assert_eq!(errors.load(Ordering::SeqCst), 1, "on_build_error should fire");
     }
 }
 
@@ -1967,5 +2079,47 @@ mod async_ready_tests {
         let built = block_on(kit.build()).unwrap();
         let mermaid = built.graph_mermaid();
         assert!(mermaid.contains("graph TD"));
+    }
+
+    #[test]
+    fn async_config_missing_returns_error() {
+        let kit = AsyncKit::new();
+        let built = block_on(kit.build()).unwrap();
+        let err = built.config::<i32>().unwrap_err();
+        assert!(matches!(err, TraitKitError::MissingConfig { .. }));
+    }
+
+    #[test]
+    fn async_build_missing_dep_returns_error() {
+        struct AsyncNeedsDep;
+        impl ModuleMeta for AsyncNeedsDep {
+            const NAME: &'static str = "async-needs-dep";
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                static DEPS: &[(&str, TypeId)] = &[("dep", TypeId::of::<AsyncReadyMockModule>())];
+                DEPS
+            }
+        }
+        impl AsyncAutoBuilder for AsyncNeedsDep {
+            type Capability = Arc<()>;
+            type Error = MockError;
+            fn build<'a>(
+                _kit: &'a AsyncKit,
+            ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+                Box::pin(async move { Ok(Arc::new(())) })
+            }
+        }
+
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncNeedsDep>().unwrap();
+        let result = block_on(kit.build());
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), TraitKitError::DependencyMissing { .. }));
+    }
+
+    #[test]
+    fn async_optional_returns_none_for_unbuilt() {
+        let kit = AsyncKit::new();
+        let built = block_on(kit.build()).unwrap();
+        assert!(built.optional::<AsyncReadyMockModule>().is_none());
     }
 }

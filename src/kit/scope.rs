@@ -221,6 +221,52 @@ mod async_scope {
             Ok(())
         }
 
+        /// Insert a pre-built capability into this scope.
+        ///
+        /// Use this to populate the scope with capabilities built externally
+        /// (e.g. from an `AsyncKit` or a manual async build). The `require()`
+        /// method retrieves these pre-built values.
+        ///
+        /// # Example
+        ///
+        /// ```ignore
+        /// let cap = MyModule::build(&kit).await?;
+        /// scope.insert::<MyModule>(cap);
+        /// let retrieved = scope.require::<MyModule>()?;
+        /// ```
+        pub fn insert<M: AsyncAutoBuilder>(&self, capability: M::Capability)
+        where
+            M::Capability: Send + Sync + 'static,
+        {
+            self.capabilities
+                .insert_boxed(TypeId::of::<M>(), Box::new(capability));
+        }
+
+        /// Retrieve a module's capability from this scope.
+        ///
+        /// The capability must have been previously inserted via `insert()`.
+        /// Async modules cannot be lazily built inside a scope because
+        /// `AsyncAutoBuilder::build` requires an `AsyncKit` reference and
+        /// returns a future whose lifetime is bound to that reference.
+        ///
+        /// # Errors
+        ///
+        /// Returns `TraitKitError::MissingCapability` if the capability was
+        /// not inserted into this scope.
+        ///
+        /// # Panics
+        ///
+        /// Panics if the internal `RwLock` is poisoned.
+        pub fn require<M: AsyncAutoBuilder>(&self) -> Result<M::Capability, TraitKitError>
+        where
+            M::Capability: Clone + Send + Sync + 'static,
+        {
+            let type_id = TypeId::of::<M>();
+            self.capabilities
+                .get_cloned_by_type_id::<M::Capability>(type_id)
+                .ok_or(TraitKitError::MissingCapability { key: M::NAME })
+        }
+
         /// Check if a module type is registered in this scope.
         ///
         /// # Panics
@@ -364,6 +410,12 @@ mod tests {
         drop(scope);
         // After drop, the scope is gone — no panic
     }
+
+    #[test]
+    fn scope_test_error_display() {
+        let e = ScopeTestError;
+        assert_eq!(format!("{e}"), "scope error");
+    }
 }
 
 #[cfg(all(test, feature = "scope", feature = "async"))]
@@ -441,5 +493,35 @@ mod async_tests {
     fn async_scope_default_is_empty() {
         let scope = AsyncScope::default();
         assert!(!scope.contains::<AsyncScopeModule>());
+    }
+
+    #[test]
+    fn async_scope_module_build_and_require() {
+        let mut scope = AsyncScope::new();
+        scope.register::<AsyncScopeModule>().expect("register");
+        assert!(scope.contains::<AsyncScopeModule>());
+        // Insert a pre-built capability and retrieve it via require()
+        let cap = Arc::new(AsyncScopeCap { value: 42 });
+        scope.insert::<AsyncScopeModule>(cap.clone());
+        let retrieved = scope.require::<AsyncScopeModule>().expect("require should succeed");
+        assert_eq!(retrieved.value, 42);
+    }
+
+    #[test]
+    fn async_scope_require_missing_returns_error() {
+        let scope = AsyncScope::new();
+        let err = scope.require::<AsyncScopeModule>().unwrap_err();
+        assert!(matches!(
+            err,
+            TraitKitError::MissingCapability {
+                key: "async-scope-module"
+            }
+        ));
+    }
+
+    #[test]
+    fn async_scope_error_display() {
+        let e = AsyncScopeError;
+        assert_eq!(format!("{e}"), "async scope error");
     }
 }

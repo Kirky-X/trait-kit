@@ -4,6 +4,7 @@
 
 pub use crate::core::{AutoBuilder, ModuleMeta};
 pub use crate::error::TraitKitError;
+pub use crate::i18n::{I18nError, I18nFormatter, I18nManager, tr};
 pub use crate::kit::{Kit, Ready, Unbuilt};
 
 #[cfg(feature = "async")]
