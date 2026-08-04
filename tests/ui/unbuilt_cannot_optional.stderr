@@ -1,0 +1,47 @@
+error: cannot find macro `impl_module_meta` in this scope
+ --> tests/ui/unbuilt_cannot_optional.rs:6:1
+  |
+6 | impl_module_meta!(MyModule, "my-module");
+  | ^^^^^^^^^^^^^^^^
+
+error[E0277]: the trait bound `MyModule: ModuleMeta` is not satisfied
+  --> tests/ui/unbuilt_cannot_optional.rs:10:5
+   |
+10 |     fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `ModuleMeta` is not implemented for `MyModule`
+  --> tests/ui/unbuilt_cannot_optional.rs:5:1
+   |
+ 5 | struct MyModule;
+   | ^^^^^^^^^^^^^^^
+note: required by a bound in `trait_kit::core::AutoBuilder`
+  --> src/core/meta.rs
+   |
+   | pub trait AutoBuilder: ModuleMeta {
+   |                        ^^^^^^^^^^ required by this bound in `AutoBuilder`
+
+error[E0277]: the trait bound `MyModule: ModuleMeta` is not satisfied
+ --> tests/ui/unbuilt_cannot_optional.rs:7:22
+  |
+7 | impl AutoBuilder for MyModule {
+  |                      ^^^^^^^^ unsatisfied trait bound
+  |
+help: the trait `ModuleMeta` is not implemented for `MyModule`
+ --> tests/ui/unbuilt_cannot_optional.rs:5:1
+  |
+5 | struct MyModule;
+  | ^^^^^^^^^^^^^^^
+note: required by a bound in `trait_kit::core::AutoBuilder`
+ --> src/core/meta.rs
+  |
+  | pub trait AutoBuilder: ModuleMeta {
+  |                        ^^^^^^^^^^ required by this bound in `AutoBuilder`
+
+error[E0599]: no method named `optional` found for struct `trait_kit::kit::Kit` in the current scope
+  --> tests/ui/unbuilt_cannot_optional.rs:18:38
+   |
+18 |     let _val: Option<Arc<u32>> = kit.optional::<MyModule>();
+   |                                      ^^^^^^^^ method not found in `trait_kit::kit::Kit`
+   |
+   = note: the method was found for `trait_kit::kit::Kit<trait_kit::kit::Ready>`
