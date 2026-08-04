@@ -25,8 +25,8 @@ pub trait BuildObserver: Send + Sync + 'static {
 #[cfg(all(test, feature = "observability"))]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct CountingObserver {
         start_count: Arc<AtomicUsize>,
@@ -36,15 +36,15 @@ mod tests {
 
     impl BuildObserver for CountingObserver {
         fn on_module_start(&self, _module_name: &'static str) {
-            self.start_count.fetch_add(1, Ordering::SeqCst);
+            self.start_count.fetch_add(1, Ordering::Relaxed);
         }
 
         fn on_module_built(&self, _module_name: &'static str, _elapsed: Duration) {
-            self.built_count.fetch_add(1, Ordering::SeqCst);
+            self.built_count.fetch_add(1, Ordering::Relaxed);
         }
 
         fn on_build_error(&self, _module_name: &'static str, _error: &crate::error::TraitKitError) {
-            self.error_count.fetch_add(1, Ordering::SeqCst);
+            self.error_count.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -61,12 +61,12 @@ mod tests {
         });
 
         observer.on_module_start("test");
-        assert_eq!(start.load(Ordering::SeqCst), 1);
+        assert_eq!(start.load(Ordering::Relaxed), 1);
 
         observer.on_module_built("test", Duration::from_millis(10));
-        assert_eq!(built.load(Ordering::SeqCst), 1);
+        assert_eq!(built.load(Ordering::Relaxed), 1);
 
-        assert_eq!(error.load(Ordering::SeqCst), 0);
+        assert_eq!(error.load(Ordering::Relaxed), 0);
     }
 
     #[test]
@@ -120,6 +120,6 @@ mod tests {
             source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "test")),
         };
         obs.on_build_error("test-module", &err);
-        assert_eq!(error.load(Ordering::SeqCst), 1);
+        assert_eq!(error.load(Ordering::Relaxed), 1);
     }
 }

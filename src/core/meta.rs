@@ -85,8 +85,8 @@ pub trait InterfaceBuilder: ModuleMeta {
 
     /// Convert the concrete capability into a type-erased interface object.
     ///
-    /// Typically implemented as `Ok(cap)` relying on `Arc<T> → Arc<dyn Trait>`
-    /// unsized coercion, where `T: Self::Interface`.
+    /// Implemented via `Arc<T> → Arc<dyn Trait>` unsized coercion, where
+    /// `T: Self::Interface`. No runtime cost is incurred.
     fn into_interface(cap: Self::Capability) -> Arc<Self::Interface>;
 }
 
@@ -203,6 +203,12 @@ mod async_tests {
     fn async_auto_builder_error_is_send_static() {
         fn assert_send_static<T: Send + 'static>() {}
         assert_send_static::<MockError>();
+    }
+
+    #[test]
+    fn mock_logger_module_dependencies_empty() {
+        let deps = MockLoggerModule::dependencies();
+        assert!(deps.is_empty());
     }
 }
 
@@ -346,6 +352,18 @@ mod interface_builder_tests {
         // via trait bound assertion).
         fn requires_interface_builder<T: InterfaceBuilder>() {}
         requires_interface_builder::<ConsoleLoggerModule>();
+    }
+
+    #[test]
+    fn interface_test_error_display() {
+        let e = InterfaceTestError;
+        assert_eq!(format!("{e}"), "interface test error");
+    }
+
+    #[test]
+    fn console_logger_module_dependencies_empty() {
+        let deps = ConsoleLoggerModule::dependencies();
+        assert!(deps.is_empty());
     }
 }
 
