@@ -6,7 +6,7 @@
 
 [![CI][ci-badge]][ci-url] [![crates.io][crates-badge]][crates-url] [![docs.rs][docs-badge]][docs-url] [![downloads][downloads-badge]][downloads-url] [![MIT licensed][license-badge]][license-url] [![MSRV][msrv-badge]][msrv-url]
 
-[中文](./README.md) | [English](./README_EN.md)
+中文 | [English](./README_EN.md)
 
 </div>
 

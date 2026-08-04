@@ -283,12 +283,11 @@ mod tests {
     use super::*;
     use std::any::TypeId;
 
-    /// Each module needs a unique TypeId, so we use distinct zero-sized types.
+    /// Each module needs a unique `TypeId`, so we use distinct zero-sized types.
     mod types {
         pub struct A;
         pub struct B;
         pub struct C;
-        pub struct D;
     }
 
     fn typed_entry<T: 'static>(

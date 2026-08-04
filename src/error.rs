@@ -195,7 +195,7 @@ mod tests {
     fn build_failed_display_contains_context_and_source() {
         let err = TraitKitError::BuildFailed {
             context: "build",
-            source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "oops")),
+            source: Box::new(std::io::Error::other("oops")),
         };
         let msg = format!("{err}");
         assert!(msg.contains("build"), "should contain context: got '{msg}'");
@@ -227,7 +227,7 @@ mod tests {
     fn lifecycle_failed_display_contains_context_and_source() {
         let err = TraitKitError::LifecycleFailed {
             context: "on_ready",
-            source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "fail")),
+            source: Box::new(std::io::Error::other("fail")),
         };
         let msg = format!("{err}");
         assert!(
@@ -241,7 +241,7 @@ mod tests {
     fn error_source_returns_inner_for_build_failed() {
         let err = TraitKitError::BuildFailed {
             context: "build",
-            source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "oops")),
+            source: Box::new(std::io::Error::other("oops")),
         };
         assert!(std::error::Error::source(&err).is_some());
     }
@@ -257,7 +257,7 @@ mod tests {
     fn error_source_returns_inner_for_lifecycle_failed() {
         let err = TraitKitError::LifecycleFailed {
             context: "on_ready",
-            source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "fail")),
+            source: Box::new(std::io::Error::other("fail")),
         };
         assert!(std::error::Error::source(&err).is_some());
     }

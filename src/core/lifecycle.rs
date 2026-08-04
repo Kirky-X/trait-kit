@@ -88,9 +88,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[derive(Debug, Clone)]
-    struct TestCap {
-        name: String,
-    }
+    struct TestCap;
 
     #[derive(Debug)]
     struct TestError;
@@ -117,9 +115,7 @@ mod tests {
         type Error = TestError;
 
         fn build(_kit: &Kit) -> Result<Arc<TestCap>, TestError> {
-            Ok(Arc::new(TestCap {
-                name: "test".to_string(),
-            }))
+            Ok(Arc::new(TestCap))
         }
     }
 
@@ -152,9 +148,7 @@ mod tests {
             type Error = TestError;
 
             fn build(_kit: &Kit) -> Result<Arc<TestCap>, TestError> {
-                Ok(Arc::new(TestCap {
-                    name: "default".to_string(),
-                }))
+                Ok(Arc::new(TestCap))
             }
         }
 
@@ -187,9 +181,7 @@ mod tests {
             type Error = TestError;
 
             fn build(_kit: &Kit) -> Result<Arc<TestCap>, TestError> {
-                Ok(Arc::new(TestCap {
-                    name: "default-shutdown".to_string(),
-                }))
+                Ok(Arc::new(TestCap))
             }
         }
 
@@ -210,9 +202,7 @@ mod tests {
     #[test]
     fn lifecycle_shutdown_counter_increments() {
         let before = SHUTDOWN_COUNTER.load(Ordering::Relaxed);
-        let cap = Arc::new(TestCap {
-            name: "test".to_string(),
-        });
+        let cap = Arc::new(TestCap);
         TestModule::on_shutdown(&cap);
         let after = SHUTDOWN_COUNTER.load(Ordering::Relaxed);
         assert_eq!(after, before + 1, "shutdown counter should increment");
@@ -243,9 +233,7 @@ mod async_tests {
     use std::sync::Arc;
 
     #[derive(Debug, Clone)]
-    struct AsyncTestCap {
-        value: i32,
-    }
+    struct AsyncTestCap;
 
     #[derive(Debug)]
     struct AsyncTestError;
@@ -275,7 +263,7 @@ mod async_tests {
             _kit: &'a AsyncKit,
         ) -> Pin<Box<dyn Future<Output = Result<Arc<AsyncTestCap>, AsyncTestError>> + Send + 'a>>
         {
-            Box::pin(async move { Ok(Arc::new(AsyncTestCap { value: 42 })) })
+            Box::pin(async move { Ok(Arc::new(AsyncTestCap)) })
         }
     }
 
@@ -291,7 +279,7 @@ mod async_tests {
 
     #[test]
     fn async_lifecycle_default_on_shutdown_completes() {
-        let cap = Arc::new(AsyncTestCap { value: 42 });
+        let cap = Arc::new(AsyncTestCap);
         block_on(AsyncTestModule::on_shutdown(&cap));
         // Should not panic
     }
