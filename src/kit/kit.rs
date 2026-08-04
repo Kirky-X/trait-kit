@@ -121,6 +121,11 @@ pub struct Kit<S = Unbuilt> {
     observers: RefCell<Vec<ObserverRef>>,
     #[cfg(feature = "decorator")]
     decorators: RefCell<HashMap<TypeId, Vec<DecoratorFn>>>,
+    /// Maps module `TypeId` → capability `TypeId` for decorator lookup in
+    /// `build_eager_modules()` (where only module `TypeId`s from the
+    /// dependency graph are available).
+    #[cfg(feature = "decorator")]
+    decorator_module_to_cap: RefCell<HashMap<TypeId, TypeId>>,
     _state: std::marker::PhantomData<S>,
 }
 
@@ -154,6 +159,8 @@ impl Kit {
             observers: RefCell::new(Vec::new()),
             #[cfg(feature = "decorator")]
             decorators: RefCell::new(HashMap::new()),
+            #[cfg(feature = "decorator")]
+            decorator_module_to_cap: RefCell::new(HashMap::new()),
             _state: std::marker::PhantomData,
         }
     }
@@ -480,6 +487,8 @@ impl Kit {
             observers: self.observers,
             #[cfg(feature = "decorator")]
             decorators: self.decorators,
+            #[cfg(feature = "decorator")]
+            decorator_module_to_cap: self.decorator_module_to_cap,
             _state: std::marker::PhantomData,
         };
 
@@ -532,6 +541,16 @@ impl Kit {
                 match (build_fn)(self) {
                     Ok(boxed) => {
                         let elapsed = start_instant.elapsed();
+                        #[cfg(feature = "decorator")]
+                        let boxed = {
+                            let cap_type_id = self
+                                .decorator_module_to_cap
+                                .borrow()
+                                .get(type_id)
+                                .copied()
+                                .unwrap_or(*type_id);
+                            self.apply_decorators(cap_type_id, boxed)
+                        };
                         self.capabilities.insert_boxed(*type_id, boxed);
                         for obs in self.observers.borrow().iter() {
                             obs.on_module_built(module_name, elapsed);
@@ -553,7 +572,19 @@ impl Kit {
             #[cfg(not(feature = "observability"))]
             {
                 match (build_fn)(self) {
-                    Ok(boxed) => self.capabilities.insert_boxed(*type_id, boxed),
+                    Ok(boxed) => {
+                        #[cfg(feature = "decorator")]
+                        let boxed = {
+                            let cap_type_id = self
+                                .decorator_module_to_cap
+                                .borrow()
+                                .get(type_id)
+                                .copied()
+                                .unwrap_or(*type_id);
+                            self.apply_decorators(cap_type_id, boxed)
+                        };
+                        self.capabilities.insert_boxed(*type_id, boxed);
+                    }
                     Err(e) => {
                         return Err(TraitKitError::BuildFailed {
                             context: module_name,
@@ -598,6 +629,8 @@ impl Kit {
                     context: "<multi-binding>",
                     source: e,
                 })?;
+                #[cfg(feature = "decorator")]
+                let boxed = self.apply_decorators(cap_id, boxed);
                 vec.push(boxed);
             }
             self.multi_capabilities.borrow_mut().insert(cap_id, vec);
@@ -615,6 +648,8 @@ impl Kit {
                 context: "<interface>",
                 source: e,
             })?;
+            #[cfg(feature = "decorator")]
+            let boxed = self.apply_decorators(interface_id, boxed);
             self.capabilities.insert_boxed(interface_id, boxed);
         }
         Ok(())
@@ -758,13 +793,32 @@ impl Kit {
         });
         self.decorators
             .borrow_mut()
-            .entry(TypeId::of::<M>())
+            .entry(TypeId::of::<M::Capability>())
             .or_default()
             .push(wrapper);
+        // Record module TypeId → capability TypeId mapping so
+        // `build_eager_modules()` can look up decorators by module TypeId.
+        self.decorator_module_to_cap
+            .borrow_mut()
+            .insert(TypeId::of::<M>(), TypeId::of::<M::Capability>());
     }
 }
 
 impl<S> Kit<S> {
+    /// Apply registered decorators for a capability (keyed by capability `TypeId`).
+    #[cfg(feature = "decorator")]
+    fn apply_decorators(&self, cap_type_id: TypeId, boxed: Box<dyn Any>) -> Box<dyn Any> {
+        let decorators = self.decorators.borrow();
+        let Some(dec_list) = decorators.get(&cap_type_id) else {
+            return boxed;
+        };
+        let mut current = boxed;
+        for dec in dec_list {
+            current = dec(current);
+        }
+        current
+    }
+
     /// Retrieve a capability by its module type.
     ///
     /// Available on both `Kit<Unbuilt>` (inside `AutoBuilder::build` callbacks)
@@ -827,6 +881,9 @@ impl<S> Kit<S> {
                 context: M::NAME,
                 source: e,
             })?;
+            // Apply decorators (keyed by capability TypeId)
+            #[cfg(feature = "decorator")]
+            let boxed = self.apply_decorators(TypeId::of::<M::Capability>(), boxed);
             // Cache in OnceLock for future require() / require_ref() calls
             if let Some(slot) = self.lazy_slots.borrow().get(&type_id) {
                 let _ = slot.cell.set(boxed);
@@ -993,6 +1050,21 @@ impl Kit {
         C: super::ModuleConfig + serde::Serialize,
     {
         use super::XChaCha20Crypto;
+
+        // XChaCha20-Poly1305 requires a 256-bit (32-byte) key; HKDF needs
+        // a reasonably sized input key material. Reject short keys early.
+        if master_key.len() < 16 {
+            return Err(TraitKitError::BuildFailed {
+                context: "set_encrypted",
+                source: Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "master_key must be at least 16 bytes, got {}",
+                        master_key.len()
+                    ),
+                )),
+            });
+        }
 
         let plaintext = serde_json::to_vec(value).map_err(|e| TraitKitError::BuildFailed {
             context: "set_encrypted",
@@ -1229,6 +1301,19 @@ impl Kit<Ready> {
         C: super::ModuleConfig + serde::de::DeserializeOwned,
     {
         use super::XChaCha20Crypto;
+
+        if master_key.len() < 16 {
+            return Err(TraitKitError::BuildFailed {
+                context: "get_encrypted",
+                source: Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "master_key must be at least 16 bytes, got {}",
+                        master_key.len()
+                    ),
+                )),
+            });
+        }
 
         let blob = self
             .encrypted_configs
@@ -1932,6 +2017,31 @@ mod tests {
         assert_eq!(multi[0].load(Ordering::SeqCst), 10);
         assert_eq!(multi[1].load(Ordering::SeqCst), 20);
     }
+
+    #[test]
+    fn multi_binding_build_error_returns_build_failed() {
+        struct FailMultiModule;
+        impl ModuleMeta for FailMultiModule {
+            const NAME: &'static str = "fail-multi";
+            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        }
+        impl AutoBuilder for FailMultiModule {
+            type Capability = Arc<AtomicUsize>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Arc<AtomicUsize>, TraitKitError> {
+                Err(TraitKitError::BuildFailed {
+                    context: "fail-multi",
+                    source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "multi fail")),
+                })
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.register_multi::<FailMultiModule>().unwrap();
+        let result = kit.build();
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), TraitKitError::BuildFailed { .. }));
+    }
 }
 
 #[cfg(all(test, feature = "interface"))]
@@ -2135,6 +2245,48 @@ mod interface_tests {
             "expected AlreadyRegistered, got {err:?}"
         );
     }
+
+    #[test]
+    fn file_logger_interface_build_and_resolve() {
+        let mut kit = Kit::new();
+        kit.register_as::<FileLoggerModule>()
+            .expect("register_as succeeds");
+        let built = kit.build().expect("build succeeds");
+        let logger: Arc<dyn Logger> = built.resolve::<dyn Logger>().expect("resolve succeeds");
+        assert_eq!(logger.log("hello"), "[file] hello");
+    }
+
+    #[test]
+    fn interface_test_error_display() {
+        let e = InterfaceTestError;
+        assert_eq!(format!("{e}"), "interface test error");
+    }
+
+    #[test]
+    fn interface_build_error_returns_build_failed() {
+        struct FailIfaceModule;
+        impl ModuleMeta for FailIfaceModule {
+            const NAME: &'static str = "fail-iface";
+            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        }
+        impl InterfaceBuilder for FailIfaceModule {
+            type Interface = dyn Logger;
+            type Capability = Arc<()>;
+            type Error = InterfaceTestError;
+            fn build(_kit: &Kit) -> Result<Arc<()>, InterfaceTestError> {
+                Err(InterfaceTestError)
+            }
+            fn into_interface(_cap: Arc<()>) -> Arc<dyn Logger> {
+                unreachable!()
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.register_as::<FailIfaceModule>().unwrap();
+        let result = kit.build();
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), TraitKitError::BuildFailed { .. }));
+    }
 }
 
 // ─── Feature-gated integration tests ─────────────────────────────────────
@@ -2191,6 +2343,36 @@ mod lifecycle_tests {
         let built = kit.build().unwrap();
         built.shutdown();
         assert_eq!(LC_SHUTDOWN.load(Ordering::SeqCst), 1, "on_shutdown should be called once");
+    }
+
+    #[test]
+    fn lifecycle_on_ready_failure_propagates() {
+        struct FailReadyModule;
+        impl ModuleMeta for FailReadyModule {
+            const NAME: &'static str = "fail-ready";
+            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        }
+        impl AutoBuilder for FailReadyModule {
+            type Capability = Arc<()>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+        }
+        impl Lifecycle for FailReadyModule {
+            fn on_ready(_kit: &Kit<Ready>) -> Result<(), TraitKitError> {
+                Err(TraitKitError::BuildFailed {
+                    context: "on_ready",
+                    source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "intentional failure")),
+                })
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.register::<FailReadyModule>().unwrap();
+        kit.register_lifecycle::<FailReadyModule>();
+        let result = kit.build();
+        assert!(result.is_err(), "build should fail when on_ready fails");
+        let err = result.unwrap_err();
+        assert!(matches!(err, TraitKitError::LifecycleFailed { .. }));
     }
 }
 
@@ -2253,6 +2435,35 @@ mod health_tests {
         let err = built.health_check::<HcModule>().unwrap_err();
         assert!(matches!(err, TraitKitError::MissingConfig { .. }));
     }
+
+    #[test]
+    fn health_check_unhealthy_for_zero_value() {
+        struct ZeroHcModule;
+        impl ModuleMeta for ZeroHcModule {
+            const NAME: &'static str = "zero-hc";
+            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        }
+        impl AutoBuilder for ZeroHcModule {
+            type Capability = Arc<HcCap>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Arc<HcCap>, TraitKitError> {
+                Ok(Arc::new(HcCap { val: 0 }))
+            }
+        }
+        impl HealthCheck for ZeroHcModule {
+            fn check(cap: &Arc<HcCap>) -> HealthStatus {
+                if cap.val > 0 { HealthStatus::Healthy }
+                else { HealthStatus::Unhealthy { detail: "zero".into() } }
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.register::<ZeroHcModule>().unwrap();
+        kit.register_health_check::<ZeroHcModule>();
+        let built = kit.build().unwrap();
+        let status = built.health_check::<ZeroHcModule>().unwrap();
+        assert!(matches!(status, HealthStatus::Unhealthy { .. }));
+    }
 }
 
 #[cfg(all(test, feature = "observability"))]
@@ -2304,6 +2515,43 @@ mod observability_tests {
         kit.build().unwrap();
         assert_eq!(start.load(Ordering::SeqCst), 1, "on_module_start should fire");
         assert_eq!(built.load(Ordering::SeqCst), 1, "on_module_built should fire");
+    }
+
+    #[test]
+    fn observer_on_build_error_called_on_failure() {
+        struct FailObs {
+            errors: Arc<AtomicUsize>,
+        }
+        impl BuildObserver for FailObs {
+            fn on_build_error(&self, _: &'static str, _: &TraitKitError) {
+                self.errors.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        struct FailBuildModule;
+        impl ModuleMeta for FailBuildModule {
+            const NAME: &'static str = "fail-build";
+            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        }
+        impl AutoBuilder for FailBuildModule {
+            type Capability = Arc<()>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
+                Err(TraitKitError::BuildFailed {
+                    context: "intentional",
+                    source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "test failure")),
+                })
+            }
+        }
+
+        let errors = Arc::new(AtomicUsize::new(0));
+        let obs = Arc::new(FailObs { errors: Arc::clone(&errors) });
+        let mut kit = Kit::new();
+        kit.with_observer(obs);
+        kit.register::<FailBuildModule>().unwrap();
+        let result = kit.build();
+        assert!(result.is_err(), "build should fail");
+        assert_eq!(errors.load(Ordering::SeqCst), 1, "on_build_error should fire once");
     }
 }
 
@@ -2436,15 +2684,14 @@ mod decorator_tests {
     #[test]
     fn decorate_registers_decorator() {
         let mut kit = Kit::new();
-        kit.register::<DecModule>().unwrap();
+        kit.register_lazy::<DecModule>().unwrap();
         kit.decorate::<DecModule>(|cap| {
             Arc::new(DecCap { val: format!("{}+decorated", cap.val) })
         });
-        // Decorator is registered but applied during build
+        // Decorator is applied during lazy require()
         let built = kit.build().unwrap();
         let cap = built.require::<DecModule>().unwrap();
-        // Verify the capability is accessible
-        assert!(!cap.val.is_empty());
+        assert_eq!(cap.val, "original+decorated");
     }
 }
 
@@ -2491,6 +2738,25 @@ mod encryption_tests {
         let master_key = [0x42u8; 32];
         let err = built.get_encrypted::<SecretConfig>(&master_key).unwrap_err();
         assert!(matches!(err, TraitKitError::MissingConfig { .. }));
+    }
+
+    #[test]
+    fn secret_config_default_value() {
+        let default = SecretConfig::default_value();
+        assert_eq!(default.api_key, "default");
+    }
+
+    #[test]
+    fn get_encrypted_wrong_key_returns_error() {
+        let kit = Kit::new();
+        let master_key = [0x42u8; 32];
+        let config = SecretConfig { api_key: "secret".into() };
+        kit.set_encrypted(&config, &master_key).unwrap();
+        let built = kit.build().unwrap();
+        // Use a different key to trigger decryption failure
+        let wrong_key = [0xFFu8; 32];
+        let err = built.get_encrypted::<SecretConfig>(&wrong_key).unwrap_err();
+        assert!(matches!(err, TraitKitError::BuildFailed { .. }));
     }
 }
 
@@ -2599,5 +2865,119 @@ mod ready_tests {
         let built = kit.build().unwrap();
         let mermaid = built.graph_mermaid();
         assert!(mermaid.contains("graph TD"));
+    }
+
+    #[test]
+    fn config_missing_returns_error() {
+        let kit = Kit::new();
+        let built = kit.build().unwrap();
+        let err = built.config::<i32>().unwrap_err();
+        assert!(matches!(err, TraitKitError::MissingConfig { .. }));
+    }
+
+    #[test]
+    fn require_ref_returns_missing_for_unbuilt() {
+        let kit = Kit::new();
+        let built = kit.build().unwrap();
+        let err = built.require_ref::<ReadyMockModule>().unwrap_err();
+        assert!(matches!(err, TraitKitError::MissingCapability { .. }));
+    }
+
+    #[test]
+    fn build_missing_dependency_returns_error() {
+        struct DepModule;
+        impl ModuleMeta for DepModule {
+            const NAME: &'static str = "dep";
+            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        }
+        impl AutoBuilder for DepModule {
+            type Capability = Arc<()>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+        }
+
+        struct NeedsDepModule;
+        impl ModuleMeta for NeedsDepModule {
+            const NAME: &'static str = "needs-dep";
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                static DEPS: &[(&str, TypeId)] = &[("dep", TypeId::of::<DepModule>())];
+                DEPS
+            }
+        }
+        impl AutoBuilder for NeedsDepModule {
+            type Capability = Arc<()>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+        }
+
+        let mut kit = Kit::new();
+        kit.register::<NeedsDepModule>().unwrap();
+        // Don't register DepModule — should fail
+        let result = kit.build();
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), TraitKitError::DependencyMissing { .. }));
+    }
+
+    #[test]
+    fn build_cycle_detected_returns_error() {
+        struct CycleA;
+        impl ModuleMeta for CycleA {
+            const NAME: &'static str = "cycle-a";
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                static DEPS: &[(&str, TypeId)] = &[("cycle-b", TypeId::of::<CycleB>())];
+                DEPS
+            }
+        }
+        impl AutoBuilder for CycleA {
+            type Capability = Arc<()>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+        }
+
+        struct CycleB;
+        impl ModuleMeta for CycleB {
+            const NAME: &'static str = "cycle-b";
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                static DEPS: &[(&str, TypeId)] = &[("cycle-a", TypeId::of::<CycleA>())];
+                DEPS
+            }
+        }
+        impl AutoBuilder for CycleB {
+            type Capability = Arc<()>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+        }
+
+        let mut kit = Kit::new();
+        kit.register::<CycleA>().unwrap();
+        kit.register::<CycleB>().unwrap();
+        let result = kit.build();
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), TraitKitError::CycleDetected { .. }));
+    }
+
+    #[test]
+    fn lazy_require_build_error() {
+        struct LazyFailModule;
+        impl ModuleMeta for LazyFailModule {
+            const NAME: &'static str = "lazy-fail";
+            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        }
+        impl AutoBuilder for LazyFailModule {
+            type Capability = Arc<()>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
+                Err(TraitKitError::BuildFailed {
+                    context: "lazy-fail",
+                    source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "lazy fail")),
+                })
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.register_lazy::<LazyFailModule>().unwrap();
+        let built = kit.build().unwrap();
+        let err = built.require::<LazyFailModule>().unwrap_err();
+        assert!(matches!(err, TraitKitError::BuildFailed { .. }));
     }
 }

@@ -375,6 +375,11 @@ mod async_macro_tests {
     fn macro_async_name_equals_hand_written_name() {
         assert_eq!(MacroAsyncModule::NAME, HandAsyncModule::NAME);
     }
+
+    #[test]
+    fn hand_written_async_module_dependencies_empty() {
+        assert!(HandAsyncModule::dependencies().is_empty());
+    }
 }
 
 #[cfg(test)]
@@ -481,5 +486,10 @@ mod sync_auto_builder_tests {
     #[test]
     fn macro_sync_name_equals_hand_written_name() {
         assert_eq!(MacroSyncModule::NAME, HandSyncModule::NAME);
+    }
+
+    #[test]
+    fn hand_written_sync_module_dependencies_empty() {
+        assert!(HandSyncModule::dependencies().is_empty());
     }
 }

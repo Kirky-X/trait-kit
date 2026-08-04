@@ -170,6 +170,22 @@ mod tests {
         assert_ne!(healthy, unhealthy);
         assert_ne!(degraded, unhealthy);
     }
+
+    #[test]
+    fn health_test_module_build_and_check() {
+        let mut kit = Kit::new();
+        kit.register::<TestModule>().unwrap();
+        kit.register_health_check::<TestModule>();
+        let built = kit.build().unwrap();
+        let status = built.health_check::<TestModule>().unwrap();
+        assert_eq!(status, HealthStatus::Healthy);
+    }
+
+    #[test]
+    fn health_test_error_display() {
+        let e = TestError;
+        assert_eq!(format!("{e}"), "test error");
+    }
 }
 
 #[cfg(all(test, feature = "health", feature = "async"))]
@@ -177,6 +193,7 @@ mod async_tests {
     use super::*;
     use crate::core::{AsyncAutoBuilder, ModuleMeta};
     use crate::kit::AsyncKit;
+    use crate::test_helpers::block_on;
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::Arc;
@@ -242,5 +259,21 @@ mod async_tests {
         let cap = Arc::new(AsyncHealthCap { value: 0 });
         let status = AsyncHealthModule::check(&cap);
         assert!(matches!(status, HealthStatus::Unhealthy { .. }));
+    }
+
+    #[test]
+    fn async_health_test_module_build_and_check() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncHealthModule>().unwrap();
+        kit.register_health_check::<AsyncHealthModule>();
+        let built = block_on(kit.build()).unwrap();
+        let status = built.health_check::<AsyncHealthModule>().unwrap();
+        assert_eq!(status, HealthStatus::Healthy);
+    }
+
+    #[test]
+    fn async_health_test_error_display() {
+        let e = AsyncHealthError;
+        assert_eq!(format!("{e}"), "async health error");
     }
 }

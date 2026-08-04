@@ -124,10 +124,14 @@ impl DependencyGraph {
                 if let Some(&dep_idx) = index.get(dep_id) {
                     if visited[dep_idx] == 1 {
                         // Found cycle — extract it
-                        let start = stack
-                            .iter()
-                            .position(|&x| x == dep_idx)
-                            .expect("invariant: dep_idx must be in stack (visited[dep_idx] == 1)");
+                        let Some(start) = stack.iter().position(|&x| x == dep_idx) else {
+                            // Invariant violation: dep_idx should be in the
+                            // stack when visited[dep_idx] == 1. Fall back to
+                            // a generic cycle report instead of panicking.
+                            cycle_names.push(entries[dep_idx].name);
+                            cycle_names.push(entries[node].name);
+                            return true;
+                        };
                         for &idx in &stack[start..] {
                             cycle_names.push(entries[idx].name);
                         }

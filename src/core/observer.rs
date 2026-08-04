@@ -106,4 +106,20 @@ mod tests {
         let err = crate::error::TraitKitError::MissingConfig { key: "x" };
         obs.on_build_error("m1", &err);
     }
+
+    #[test]
+    fn observer_counting_on_build_error() {
+        let error = Arc::new(AtomicUsize::new(0));
+        let obs = CountingObserver {
+            start_count: Arc::new(AtomicUsize::new(0)),
+            built_count: Arc::new(AtomicUsize::new(0)),
+            error_count: Arc::clone(&error),
+        };
+        let err = crate::error::TraitKitError::BuildFailed {
+            context: "test",
+            source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "test")),
+        };
+        obs.on_build_error("test-module", &err);
+        assert_eq!(error.load(Ordering::SeqCst), 1);
+    }
 }

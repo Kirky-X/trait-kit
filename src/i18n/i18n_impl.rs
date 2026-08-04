@@ -63,9 +63,15 @@ impl I18nFormatter {
                 reason: "value is not finite (NaN or Infinity)".into(),
             });
         }
-        let repr = format!("{value}");
-        let decimal = Decimal::from_str(&repr).map_err(|e| I18nError::InvalidNumber {
-            input: repr,
+        // Use fixed-point notation to avoid scientific notation (e.g. "1e-10")
+        // which Decimal::from_str cannot parse. 20 decimal places cover the
+        // full precision of f64.
+        let repr = format!("{value:.20}");
+        // Trim trailing zeros after decimal point, but keep at least one digit
+        let repr = repr.trim_end_matches('0');
+        let repr = repr.trim_end_matches('.');
+        let decimal = Decimal::from_str(repr).map_err(|e| I18nError::InvalidNumber {
+            input: repr.to_string(),
             reason: e.to_string(),
         })?;
         let formatted = self.decimal_formatter.format(&decimal);

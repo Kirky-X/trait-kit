@@ -156,19 +156,24 @@ impl AsyncTypeMap {
             .inner
             .read()
             .expect("AsyncTypeMap poisoned: another thread panicked while holding the lock");
-        if guard.get(&type_id)?.downcast_ref::<T>().is_some() {
-            #[allow(unsafe_code, clippy::transmute_ptr_to_ptr)]
-            Some(unsafe {
-                let ptr: *const T = guard
-                    .get(&type_id)
-                    .unwrap()
-                    .downcast_ref::<T>()
-                    .unwrap();
-                (guard, &*ptr)
-            })
-        } else {
-            None
-        }
+        // We need to return the RwLockReadGuard alongside a &T reference
+        // borrowed from it. This requires unsafe because the borrow checker
+        // cannot express that the guard keeps the data alive.
+        //
+        // SAFETY: We verify the downcast succeeds, then re-access through
+        // the same guard. The guard is moved into the return tuple, keeping
+        // the read lock held for the lifetime of the returned &T. The data
+        // cannot be mutated while the read guard is active.
+        guard.get(&type_id)?.downcast_ref::<T>()?;
+        #[allow(unsafe_code)]
+        Some(unsafe {
+            let ptr: *const T = guard
+                .get(&type_id)
+                .unwrap()
+                .downcast_ref::<T>()
+                .unwrap();
+            (guard, &*ptr)
+        })
     }
 }
 
