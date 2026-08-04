@@ -6,6 +6,7 @@ use std::any::TypeId;
 use std::collections::{HashMap, VecDeque};
 
 /// A node in the dependency graph.
+#[derive(Debug, Clone)]
 pub struct ModuleEntry {
     /// The module's `TypeId`.
     pub type_id: TypeId,
@@ -16,6 +17,7 @@ pub struct ModuleEntry {
 }
 
 /// Dependency graph for topological sort and cycle detection.
+#[derive(Debug)]
 pub struct DependencyGraph {
     entries: Vec<ModuleEntry>,
     index: HashMap<TypeId, usize>,
@@ -81,7 +83,7 @@ impl DependencyGraph {
         }
 
         let mut queue: VecDeque<usize> = VecDeque::new();
-        for (i, deg) in in_degree.iter().enumerate().take(n) {
+        for (i, deg) in in_degree.iter().enumerate() {
             if *deg == 0 {
                 queue.push_back(i);
             }
@@ -265,7 +267,7 @@ impl Default for DependencyGraph {
 }
 
 /// Errors from graph validation.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GraphError {
     /// A module depends on an unregistered module.
     DependencyMissing {
@@ -280,14 +282,6 @@ pub enum GraphError {
 mod tests {
     use super::*;
     use std::any::TypeId;
-
-    fn entry(name: &'static str, deps: Vec<(&'static str, TypeId)>) -> ModuleEntry {
-        ModuleEntry {
-            type_id: TypeId::of::<u8>(), // dummy — we use unique names instead
-            name,
-            dependencies: deps,
-        }
-    }
 
     /// Each module needs a unique TypeId, so we use distinct zero-sized types.
     mod types {
@@ -414,8 +408,14 @@ mod tests {
         ))
         .unwrap();
         let sorted = g.validate().unwrap();
-        let a_idx = sorted.iter().position(|t| *t == TypeId::of::<types::A>()).unwrap();
-        let b_idx = sorted.iter().position(|t| *t == TypeId::of::<types::B>()).unwrap();
+        let a_idx = sorted
+            .iter()
+            .position(|t| *t == TypeId::of::<types::A>())
+            .unwrap();
+        let b_idx = sorted
+            .iter()
+            .position(|t| *t == TypeId::of::<types::B>())
+            .unwrap();
         assert!(a_idx < b_idx, "a should be sorted before b");
     }
 

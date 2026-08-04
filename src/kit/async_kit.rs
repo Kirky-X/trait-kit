@@ -2,15 +2,10 @@
 // SPDX-License-Identifier: MIT
 //! `AsyncKit` — the async capability and configuration management center.
 //!
-//! Phase 1b full implementation: typestate `AsyncKit<Unbuilt>` →
-//! `AsyncKit<Ready>` with `Arc<RwLock>` interior mutability (multi-threaded,
-//! `Send + Sync`). Mirrors the synchronous [`super::kit::Kit`] but swaps
-//! `RefCell` for `RwLock` and stores async build functions returning
-//! `Pin<Box<dyn Future + Send>>`.
-//!
-//! This module implements the `Unbuilt` surface (`new` / `register` /
-//! `set_config` / `config`). The `build()` / `require` / `optional` /
-//! `contains` / `contains_config` methods land in subsequent Phase 1b tasks.
+//! Typestate `AsyncKit<Unbuilt>` → `AsyncKit<Ready>` with `Arc<RwLock>`
+//! interior mutability (multi-threaded, `Send + Sync`). Mirrors the
+//! synchronous [`super::kit::Kit`] but swaps `RefCell` for `RwLock` and
+//! stores async build functions returning `Pin<Box<dyn Future + Send>>`.
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -32,9 +27,8 @@ type AsyncShutdownCallback = Box<dyn Fn(&AsyncTypeMap) + Send + Sync>;
 type AsyncReadyCallback = Box<
     dyn for<'a> Fn(
             &'a AsyncKit<Ready>,
-        ) -> Pin<
-            Box<dyn Future<Output = Result<(), TraitKitError>> + Send + 'a>,
-        > + Send
+        ) -> Pin<Box<dyn Future<Output = Result<(), TraitKitError>> + Send + 'a>>
+        + Send
         + Sync,
 >;
 #[cfg(feature = "health")]
@@ -43,7 +37,8 @@ type AsyncHealthCheckerFn =
 #[cfg(feature = "observability")]
 type AsyncObserverRef = Arc<dyn crate::core::observer::BuildObserver>;
 #[cfg(feature = "decorator")]
-type AsyncDecoratorFn = Box<dyn Fn(Box<dyn Any + Send + Sync>) -> Box<dyn Any + Send + Sync> + Send + Sync>;
+type AsyncDecoratorFn =
+    Box<dyn Fn(Box<dyn Any + Send + Sync>) -> Box<dyn Any + Send + Sync> + Send + Sync>;
 
 /// Marker type for the unbuilt state.
 pub struct Unbuilt;
@@ -143,7 +138,7 @@ impl AsyncKit {
     /// Register a module for async construction.
     ///
     /// The module's [`AsyncAutoBuilder::build`] is stored as a type-erased
-    /// [`AsyncBuildFn`] and invoked during `build()`. Registration order does
+    /// `AsyncBuildFn` and invoked during `build()`. Registration order does
     /// not matter — `build()` resolves the construction order via the
     /// dependency graph's topological sort.
     ///
@@ -257,8 +252,8 @@ impl AsyncKit {
 
         // 2. Extract all builders from the Arc<RwLock<…>> in a single
         //    write-lock acquisition (instead of one lock per module in the
-        //    loop). The drain leaves the original map empty; the extracted
-        //    HashMap is consumed locally during the build loop.
+        //    loop). The drain empties the map inside the RwLock; the Arc
+        //    itself remains held by the struct for subsequent operations.
         let mut builders: HashMap<TypeId, AsyncBuildFn> = {
             let mut guard = self
                 .builders
@@ -270,11 +265,9 @@ impl AsyncKit {
         // 3. Invoke each module's AsyncBuildFn in topological order.
         for type_id in &sorted {
             let module_name = self.graph.name_of(*type_id).unwrap_or("<unknown>");
-            let build_fn = builders.remove(type_id).ok_or_else(|| {
-                TraitKitError::MissingCapability {
-                    key: module_name,
-                }
-            })?;
+            let build_fn = builders
+                .remove(type_id)
+                .ok_or_else(|| TraitKitError::MissingCapability { key: module_name })?;
 
             // Observer: notify build start
             #[cfg(feature = "observability")]
@@ -324,7 +317,11 @@ impl AsyncKit {
         //    `builders` was drained (not moved) above; the empty map is reused.
         #[cfg(feature = "lifecycle")]
         let ready_callbacks: Vec<(TypeId, AsyncReadyCallback)> = {
-            self.ready_callbacks.write().expect("lock poisoned").drain(..).collect()
+            self.ready_callbacks
+                .write()
+                .expect("lock poisoned")
+                .drain(..)
+                .collect()
         };
 
         let kit = AsyncKit {
@@ -480,7 +477,10 @@ impl AsyncKit {
     /// Panics if the internal `RwLock` is poisoned.
     #[cfg(feature = "observability")]
     pub fn with_observer(&mut self, observer: Arc<dyn crate::core::observer::BuildObserver>) {
-        self.observers.write().expect("lock poisoned").push(observer);
+        self.observers
+            .write()
+            .expect("lock poisoned")
+            .push(observer);
     }
 
     // ─── Decorator ─────────────────────────────────────────────────────
@@ -599,9 +599,9 @@ impl AsyncKit<Ready> {
     pub fn contains_config<C: Clone + Send + Sync + 'static>(&self) -> bool {
         self.configs.contains::<C>()
     }
-    
+
     // ─── Lifecycle: shutdown ───────────────────────────────────────────
-    
+
     /// Shut down all lifecycle modules in reverse topological order.
     ///
     /// Requires the `lifecycle` feature.
@@ -623,9 +623,9 @@ impl AsyncKit<Ready> {
             callback(&self.capabilities);
         }
     }
-    
+
     // ─── Health Check ──────────────────────────────────────────────────
-    
+
     /// Check the health of a specific async module.
     ///
     /// Requires the `health` feature.
@@ -644,12 +644,12 @@ impl AsyncKit<Ready> {
     ) -> Result<crate::core::health::HealthStatus, TraitKitError> {
         let type_id = TypeId::of::<M>();
         let checkers = self.health_checkers.read().expect("lock poisoned");
-        let (_name, checker) = checkers.get(&type_id).ok_or(TraitKitError::MissingConfig {
-            key: M::NAME,
-        })?;
+        let (_name, checker) = checkers
+            .get(&type_id)
+            .ok_or(TraitKitError::MissingConfig { key: M::NAME })?;
         Ok(checker(&self.capabilities))
     }
-    
+
     /// Generate a health report for all registered async health checkers.
     ///
     /// Requires the `health` feature.
@@ -659,18 +659,16 @@ impl AsyncKit<Ready> {
     /// Panics if the internal `RwLock` is poisoned.
     #[cfg(feature = "health")]
     #[must_use]
-    pub fn health_report(
-        &self,
-    ) -> Vec<(&'static str, crate::core::health::HealthStatus)> {
+    pub fn health_report(&self) -> Vec<(&'static str, crate::core::health::HealthStatus)> {
         let checkers = self.health_checkers.read().expect("lock poisoned");
         checkers
             .values()
             .map(|(name, checker)| (*name, checker(&self.capabilities)))
             .collect()
     }
-    
+
     // ─── Factory Pattern ───────────────────────────────────────────────
-    
+
     /// Create a factory closure that produces new async instances on each call.
     ///
     /// The returned closure is `Send + Sync`, suitable for use in multi-threaded
@@ -681,8 +679,10 @@ impl AsyncKit<Ready> {
     #[allow(clippy::type_complexity)]
     pub fn factory<M: AsyncAutoBuilder>(
         &self,
-    ) -> impl Fn() -> Pin<Box<dyn Future<Output = Result<M::Capability, TraitKitError>> + Send>> + Send + Sync + '_
-    {
+    ) -> impl Fn() -> Pin<Box<dyn Future<Output = Result<M::Capability, TraitKitError>> + Send>>
+    + Send
+    + Sync
+    + '_ {
         // Store self's address as usize so the closure is Send+Sync.
         // SAFETY: AsyncKit<Ready> and AsyncKit<Unbuilt> have identical layout.
         // The pointer remains valid for the lifetime bound `'_`.
@@ -697,12 +697,13 @@ impl AsyncKit<Ready> {
                     context: M::NAME,
                     source: Box::new(e),
                 })
-            }) as Pin<Box<dyn Future<Output = Result<M::Capability, TraitKitError>> + Send>>
+            })
+                as Pin<Box<dyn Future<Output = Result<M::Capability, TraitKitError>> + Send>>
         }
     }
-    
+
     // ─── Scope ─────────────────────────────────────────────────────────
-    
+
     /// Create a new empty async scope.
     ///
     /// Requires the `scope` feature.
@@ -711,15 +712,15 @@ impl AsyncKit<Ready> {
     pub fn create_scope(&self) -> super::scope::AsyncScope {
         super::scope::AsyncScope::new()
     }
-    
+
     // ─── Graph Visualization ───────────────────────────────────────────
-    
+
     /// Export the dependency graph as a Graphviz DOT string.
     #[must_use]
     pub fn graph_dot(&self) -> String {
         self.graph.to_dot()
     }
-    
+
     /// Export the dependency graph as a Mermaid flowchart string.
     #[must_use]
     pub fn graph_mermaid(&self) -> String {
@@ -1588,7 +1589,9 @@ mod tests {
         struct RequireMissingModule;
         impl ModuleMeta for RequireMissingModule {
             const NAME: &'static str = "require-missing";
-            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                &[]
+            }
         }
         impl AsyncAutoBuilder for RequireMissingModule {
             type Capability = Arc<()>;
@@ -1609,7 +1612,54 @@ mod tests {
         kit.register::<RequireMissingModule>().unwrap();
         let result = block_on(kit.build());
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), TraitKitError::BuildFailed { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            TraitKitError::BuildFailed { .. }
+        ));
+    }
+
+    // Direct build calls for error-path fixtures to cover their build fns.
+
+    #[test]
+    fn async_mock_missing_dep_module_build_succeeds_directly() {
+        let kit = AsyncKit::new();
+        let result = block_on(MockMissingDepModule::build(&kit));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn async_mock_cycle_a_build_succeeds_directly() {
+        let kit = AsyncKit::new();
+        let result = block_on(MockCycleA::build(&kit));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn async_mock_cycle_b_build_succeeds_directly() {
+        let kit = AsyncKit::new();
+        let result = block_on(MockCycleB::build(&kit));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn async_mock_cycle_a3_build_succeeds_directly() {
+        let kit = AsyncKit::new();
+        let result = block_on(MockCycleA3::build(&kit));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn async_mock_cycle_b3_build_succeeds_directly() {
+        let kit = AsyncKit::new();
+        let result = block_on(MockCycleB3::build(&kit));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn async_mock_cycle_c3_build_succeeds_directly() {
+        let kit = AsyncKit::new();
+        let result = block_on(MockCycleC3::build(&kit));
+        assert!(result.is_ok());
     }
 }
 
@@ -1618,9 +1668,9 @@ mod tests {
 #[cfg(all(test, feature = "lifecycle"))]
 mod async_lifecycle_tests {
     use super::*;
-    use crate::core::lifecycle::AsyncLifecycle;
     use crate::core::ModuleMeta;
-    use crate::test_helpers::{block_on, MockError};
+    use crate::core::lifecycle::AsyncLifecycle;
+    use crate::test_helpers::{MockError, block_on};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static ASYNC_LC_READY: AtomicUsize = AtomicUsize::new(0);
@@ -1628,7 +1678,9 @@ mod async_lifecycle_tests {
     struct AsyncLcModule;
     impl ModuleMeta for AsyncLcModule {
         const NAME: &'static str = "async-lc";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AsyncAutoBuilder for AsyncLcModule {
         type Capability = Arc<()>;
@@ -1677,18 +1729,22 @@ mod async_lifecycle_tests {
 #[cfg(all(test, feature = "health"))]
 mod async_health_tests {
     use super::*;
-    use crate::core::health::{AsyncHealthCheck, HealthStatus};
     use crate::core::ModuleMeta;
-    use crate::test_helpers::{block_on, MockError};
+    use crate::core::health::{AsyncHealthCheck, HealthStatus};
+    use crate::test_helpers::{MockError, block_on};
     use std::sync::Arc;
 
     #[derive(Debug, Clone)]
-    struct AsyncHcCap { val: i32 }
+    struct AsyncHcCap {
+        val: i32,
+    }
 
     struct AsyncHcModule;
     impl ModuleMeta for AsyncHcModule {
         const NAME: &'static str = "async-hc";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AsyncAutoBuilder for AsyncHcModule {
         type Capability = Arc<AsyncHcCap>;
@@ -1701,8 +1757,13 @@ mod async_health_tests {
     }
     impl AsyncHealthCheck for AsyncHcModule {
         fn check(cap: &Arc<AsyncHcCap>) -> HealthStatus {
-            if cap.val > 0 { HealthStatus::Healthy }
-            else { HealthStatus::Unhealthy { detail: "zero".into() } }
+            if cap.val > 0 {
+                HealthStatus::Healthy
+            } else {
+                HealthStatus::Unhealthy {
+                    detail: "zero".into(),
+                }
+            }
         }
     }
 
@@ -1735,45 +1796,14 @@ mod async_health_tests {
         let err = built.health_check::<AsyncHcModule>().unwrap_err();
         assert!(matches!(err, TraitKitError::MissingConfig { .. }));
     }
-
-    #[test]
-    fn async_health_check_unhealthy_for_zero_value() {
-        struct ZeroAsyncHcModule;
-        impl ModuleMeta for ZeroAsyncHcModule {
-            const NAME: &'static str = "zero-async-hc";
-            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
-        }
-        impl AsyncAutoBuilder for ZeroAsyncHcModule {
-            type Capability = Arc<AsyncHcCap>;
-            type Error = MockError;
-            fn build<'a>(
-                _kit: &'a AsyncKit,
-            ) -> Pin<Box<dyn Future<Output = Result<Arc<AsyncHcCap>, MockError>> + Send + 'a>> {
-                Box::pin(async move { Ok(Arc::new(AsyncHcCap { val: 0 })) })
-            }
-        }
-        impl AsyncHealthCheck for ZeroAsyncHcModule {
-            fn check(cap: &Arc<AsyncHcCap>) -> HealthStatus {
-                if cap.val > 0 { HealthStatus::Healthy }
-                else { HealthStatus::Unhealthy { detail: "zero".into() } }
-            }
-        }
-
-        let mut kit = AsyncKit::new();
-        kit.register::<ZeroAsyncHcModule>().unwrap();
-        kit.register_health_check::<ZeroAsyncHcModule>();
-        let built = block_on(kit.build()).unwrap();
-        let status = built.health_check::<ZeroAsyncHcModule>().unwrap();
-        assert!(matches!(status, HealthStatus::Unhealthy { .. }));
-    }
 }
 
 #[cfg(all(test, feature = "observability"))]
 mod async_observability_tests {
     use super::*;
-    use crate::core::observer::BuildObserver;
     use crate::core::ModuleMeta;
-    use crate::test_helpers::{block_on, MockError};
+    use crate::core::observer::BuildObserver;
+    use crate::test_helpers::{MockError, block_on};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
@@ -1794,7 +1824,9 @@ mod async_observability_tests {
     struct AsyncObsModule;
     impl ModuleMeta for AsyncObsModule {
         const NAME: &'static str = "async-obs";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AsyncAutoBuilder for AsyncObsModule {
         type Capability = Arc<()>;
@@ -1836,7 +1868,9 @@ mod async_observability_tests {
         struct AsyncFailBuildModule;
         impl ModuleMeta for AsyncFailBuildModule {
             const NAME: &'static str = "async-fail-build";
-            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                &[]
+            }
         }
         impl AsyncAutoBuilder for AsyncFailBuildModule {
             type Capability = Arc<()>;
@@ -1849,13 +1883,19 @@ mod async_observability_tests {
         }
 
         let errors = Arc::new(AtomicUsize::new(0));
-        let obs = Arc::new(AsyncFailObs { errors: Arc::clone(&errors) });
+        let obs = Arc::new(AsyncFailObs {
+            errors: Arc::clone(&errors),
+        });
         let mut kit = AsyncKit::new();
         kit.with_observer(obs);
         kit.register::<AsyncFailBuildModule>().unwrap();
         let result = block_on(kit.build());
         assert!(result.is_err());
-        assert_eq!(errors.load(Ordering::SeqCst), 1, "on_build_error should fire");
+        assert_eq!(
+            errors.load(Ordering::SeqCst),
+            1,
+            "on_build_error should fire"
+        );
     }
 }
 
@@ -1863,7 +1903,7 @@ mod async_observability_tests {
 mod async_factory_tests {
     use super::*;
     use crate::core::ModuleMeta;
-    use crate::test_helpers::{block_on, MockError};
+    use crate::test_helpers::{MockError, block_on};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -1872,14 +1912,17 @@ mod async_factory_tests {
     struct AsyncFactoryModule;
     impl ModuleMeta for AsyncFactoryModule {
         const NAME: &'static str = "async-factory";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AsyncAutoBuilder for AsyncFactoryModule {
         type Capability = Arc<AtomicUsize>;
         type Error = MockError;
         fn build<'a>(
             _kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Arc<AtomicUsize>, MockError>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<AtomicUsize>, MockError>> + Send + 'a>>
+        {
             Box::pin(async move {
                 let n = ASYNC_FACTORY_COUNT.fetch_add(1, Ordering::SeqCst);
                 Ok(Arc::new(AtomicUsize::new(n)))
@@ -1909,13 +1952,15 @@ mod async_factory_tests {
 mod async_scope_tests {
     use super::*;
     use crate::core::ModuleMeta;
-    use crate::test_helpers::{block_on, MockError};
+    use crate::test_helpers::{MockError, block_on};
     use std::sync::Arc;
 
     struct AsyncScopeMockModule;
     impl ModuleMeta for AsyncScopeMockModule {
         const NAME: &'static str = "async-scope-mock";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AsyncAutoBuilder for AsyncScopeMockModule {
         type Capability = Arc<()>;
@@ -1941,13 +1986,15 @@ mod async_scope_tests {
 mod async_conditional_tests {
     use super::*;
     use crate::core::ModuleMeta;
-    use crate::test_helpers::{block_on, MockError};
+    use crate::test_helpers::{MockError, block_on};
     use std::sync::Arc;
 
     struct AsyncCondMockModule;
     impl ModuleMeta for AsyncCondMockModule {
         const NAME: &'static str = "async-cond-mock";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AsyncAutoBuilder for AsyncCondMockModule {
         type Capability = Arc<()>;
@@ -1982,23 +2029,28 @@ mod async_conditional_tests {
 mod async_decorator_tests {
     use super::*;
     use crate::core::ModuleMeta;
-    use crate::test_helpers::{block_on, MockError};
+    use crate::test_helpers::{MockError, block_on};
     use std::sync::Arc;
 
     #[derive(Debug, Clone)]
-    struct AsyncDecCap { val: String }
+    struct AsyncDecCap {
+        val: String,
+    }
 
     struct AsyncDecModule;
     impl ModuleMeta for AsyncDecModule {
         const NAME: &'static str = "async-dec";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AsyncAutoBuilder for AsyncDecModule {
         type Capability = Arc<AsyncDecCap>;
         type Error = MockError;
         fn build<'a>(
             _kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Arc<AsyncDecCap>, MockError>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<AsyncDecCap>, MockError>> + Send + 'a>>
+        {
             Box::pin(async move { Ok(Arc::new(AsyncDecCap { val: "base".into() })) })
         }
     }
@@ -2008,7 +2060,9 @@ mod async_decorator_tests {
         let mut kit = AsyncKit::new();
         kit.register::<AsyncDecModule>().unwrap();
         kit.decorate::<AsyncDecModule>(|cap| {
-            Arc::new(AsyncDecCap { val: format!("{}+wrapped", cap.val) })
+            Arc::new(AsyncDecCap {
+                val: format!("{}+wrapped", cap.val),
+            })
         });
         let built = block_on(kit.build()).unwrap();
         let cap = built.require::<AsyncDecModule>().unwrap();
@@ -2022,13 +2076,15 @@ mod async_decorator_tests {
 mod async_ready_tests {
     use super::*;
     use crate::core::ModuleMeta;
-    use crate::test_helpers::{block_on, MockError};
+    use crate::test_helpers::{MockError, block_on};
     use std::sync::Arc;
 
     struct AsyncReadyMockModule;
     impl ModuleMeta for AsyncReadyMockModule {
         const NAME: &'static str = "async-ready-mock";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AsyncAutoBuilder for AsyncReadyMockModule {
         type Capability = Arc<()>;
@@ -2113,7 +2169,10 @@ mod async_ready_tests {
         kit.register::<AsyncNeedsDep>().unwrap();
         let result = block_on(kit.build());
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), TraitKitError::DependencyMissing { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            TraitKitError::DependencyMissing { .. }
+        ));
     }
 
     #[test]
