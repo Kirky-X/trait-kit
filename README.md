@@ -1,12 +1,14 @@
 <div align="center">
 
+<p align="center">
+  <img src="assets/trait-kit.svg" width="200" alt="trait-kit logo">
+</p>
+
 [![CI][ci-badge]][ci-url] [![crates.io][crates-badge]][crates-url] [![docs.rs][docs-badge]][docs-url] [![downloads][downloads-badge]][downloads-url] [![MIT licensed][license-badge]][license-url] [![Rust 1.91+][rust-badge]][rust-url]
 
-[English](./README_EN.md)
+中文 | [English](./README_EN.md)
 
 </div>
-
-# trait-kit
 
 **trait-kit** 是一个轻量级 Rust 库，提供标准化的模块接口和集中式能力与配置管理中心（`Kit`）。采用 typestate 模式（`Kit<Unbuilt>` → `Kit<Ready>`）进行构建时验证，基于 `RefCell` 的内部可变性实现单线程设计（`!Sync`）。
 
@@ -14,7 +16,7 @@
 
 ## ✨ 核心特性
 
-- **标准化模块接口** — `ModuleMeta` + `AutoBuilder` trait 定义统一契约：每个模块声明其名称、依赖、能力类型和构建逻辑，确保初始化方式一致。
+- **标准化模块接口** — `ModuleMeta` + `AutoBuilder` trait 定义统一契约，配合 `impl_module_meta!` / `impl_auto_builder!` 宏可一行声明模块。
 - **Typestate 构建验证** — `Kit<Unbuilt>` 注册模块和配置；`kit.build()` 验证依赖图（环检测、缺失依赖检测）并返回 `Kit<Ready>`，构建错误在应用启动前暴露。
 - **类型安全的能力检索** — 能力按模块类型存储和检索（`kit.require::<LoggerModule>()`），而非字符串键。无需 downcast，无需运行时查找。
 - **配置中心** — `kit.set_config(value)` / `kit.config::<C>()` 通过 `TypeMap`（以 `TypeId` 为键）存储和检索类型化配置，无需 `ConfigKey` 或 `ConfigHandle` 样板代码。
@@ -46,6 +48,7 @@ cargo add trait-kit
 
 ```rust
 use std::sync::Arc;
+use trait_kit::impl_module_meta;
 use trait_kit::prelude::*;
 
 // 1. 定义能力（任意 Clone 类型）
@@ -56,14 +59,9 @@ impl StdoutLogger {
     }
 }
 
-// 2. 定义模块（实现 ModuleMeta + AutoBuilder）
+// 2. 定义模块（宏一行声明 ModuleMeta）
 struct LoggerModule;
-impl ModuleMeta for LoggerModule {
-    const NAME: &'static str = "logger";
-    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-        &[]
-    }
-}
+impl_module_meta!(LoggerModule, "logger");
 impl AutoBuilder for LoggerModule {
     type Capability = Arc<StdoutLogger>;
     type Error = TraitKitError;
@@ -110,31 +108,51 @@ trait-kit = { version = "0.3", features = ["encryption"] }
 
 ## 🏗️ 架构
 
-```text
-src/
-├── lib.rs          # crate 入口，#![deny(unsafe_code)]
-├── prelude.rs      # 常用类型再导出
-├── core/
-│   ├── mod.rs      # 模块声明
-│   ├── meta.rs     # ModuleMeta + AutoBuilder + AsyncAutoBuilder trait
-│   └── error.rs    # TraitKitError 错误类型
-├── kit/
-│   ├── mod.rs      # Kit 模块声明
-│   ├── kit.rs      # Kit<Unbuilt> → Kit<Ready> typestate 实现
-│   ├── graph.rs    # 依赖图：环检测 + 拓扑排序
-│   ├── typemap.rs  # TypeMap：以 TypeId 为键的能力存储
-│   ├── async_kit.rs    # AsyncKit（async feature）
-│   ├── async_typemap.rs # AsyncTypeMap（async feature）
-│   └── config.rs   # confers 集成（confers feature）
-└── i18n/
-    └── mod.rs      # ICU4X 国际化（i18n feature）
+```mermaid
+graph TB
+    subgraph core["core — 核心接口"]
+        MM[ModuleMeta<br/>名称 + 依赖声明]
+        AB[AutoBuilder<br/>同步构建]
+        AAB[AsyncAutoBuilder<br/>异步构建]
+    end
+
+    subgraph kit["kit — 能力管理中心"]
+        K[Kit&lt;Unbuilt&gt; → Kit&lt;Ready&gt;]
+        DG[DependencyGraph<br/>环检测 + 拓扑排序]
+        TM[TypeMap<br/>TypeId 键值存储]
+        CFG[Config<br/>confers 集成]
+    end
+
+    subgraph async_kit["async_kit — 异步能力管理"]
+        AK[AsyncKit&lt;Unbuilt&gt; → AsyncKit&lt;Ready&gt;]
+        ATM[AsyncTypeMap<br/>Arc&lt;RwLock&gt; 存储]
+    end
+
+    subgraph i18n_mod["i18n — ICU4X 国际化"]
+        I18N[数字 / 日期 / 复数 / 排序]
+    end
+
+    MM --> K
+    AB --> K
+    AAB --> AK
+    K --> DG
+    K --> TM
+    K --> CFG
+    AK --> ATM
 ```
 
 **核心设计**：
 
 - **Typestate 模式**：`Kit<Unbuilt>` → `Kit<Ready>`，构建时验证依赖图，运行时零开销。
-- **内部可变性**：基于 `RefCell`，单线程 `!Sync` 设计，避免锁开销。
-- **三级继承体系**（confers 集成）：模块能力继承 → Cargo feature 继承 → 配置值继承（HKDF 密钥派生）。
+- **内部可变性**：基于 `RefCell`，单线程 `!Sync` 设计，避免锁开销。`AsyncKit` 使用 `Arc<RwLock>` 支持多线程。
+- **四级 Feature 继承**（confers 集成）：
+
+```mermaid
+graph LR
+    C[confers] --> CM[confers-macros]
+    CM --> HR[hot-reload]
+    HR --> E[encryption]
+```
 
 ---
 
