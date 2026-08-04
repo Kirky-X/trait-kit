@@ -37,6 +37,14 @@ pub enum TraitKitError {
 
     #[error("missing config `{key}`")]
     MissingConfig { key: &'static str },
+
+    #[error("lifecycle hook failed for `{context}`: {source}")]
+    #[cfg(feature = "lifecycle")]
+    LifecycleFailed {
+        context: &'static str,
+        #[source]
+        source: Box<dyn std::error::Error + Send + 'static>,
+    },
 }
 
 /// Convenience `Result` alias for trait-kit operations.
