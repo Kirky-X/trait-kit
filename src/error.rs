@@ -146,6 +146,8 @@ impl std::error::Error for TraitKitError {
 }
 
 /// Convenience `Result` alias for trait-kit operations.
+///
+/// Provided for ergonomic use in downstream crates.
 pub type TraitKitResult<T> = std::result::Result<T, TraitKitError>;
 
 #[cfg(test)]
@@ -171,7 +173,10 @@ mod tests {
         };
         let msg = format!("{err}");
         assert!(msg.contains("mod-a"), "should contain module: got '{msg}'");
-        assert!(msg.contains("mod-b"), "should contain missing dep: got '{msg}'");
+        assert!(
+            msg.contains("mod-b"),
+            "should contain missing dep: got '{msg}'"
+        );
     }
 
     #[test]
@@ -194,7 +199,10 @@ mod tests {
         };
         let msg = format!("{err}");
         assert!(msg.contains("build"), "should contain context: got '{msg}'");
-        assert!(msg.contains("oops"), "should contain source error: got '{msg}'");
+        assert!(
+            msg.contains("oops"),
+            "should contain source error: got '{msg}'"
+        );
     }
 
     #[test]

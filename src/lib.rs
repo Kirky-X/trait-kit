@@ -25,23 +25,23 @@ pub use core::AsyncAutoBuilder;
 #[cfg(feature = "async")]
 pub use kit::{AsyncKit, AsyncReady, AsyncUnbuilt};
 
-#[cfg(feature = "lifecycle")]
-pub use core::Lifecycle;
 #[cfg(all(feature = "lifecycle", feature = "async"))]
 pub use core::AsyncLifecycle;
+#[cfg(feature = "lifecycle")]
+pub use core::Lifecycle;
 
-#[cfg(feature = "health")]
-pub use core::{HealthCheck, HealthStatus};
 #[cfg(all(feature = "health", feature = "async"))]
 pub use core::AsyncHealthCheck;
+#[cfg(feature = "health")]
+pub use core::{HealthCheck, HealthStatus};
 
 #[cfg(feature = "observability")]
 pub use core::BuildObserver;
 
-#[cfg(feature = "scope")]
-pub use kit::Scope;
 #[cfg(all(feature = "scope", feature = "async"))]
 pub use kit::AsyncScope;
+#[cfg(feature = "scope")]
+pub use kit::Scope;
 
 /// Shared test helpers for async test modules (`block_on` executor + `MockError`).
 ///
@@ -68,8 +68,8 @@ pub(crate) mod test_helpers {
         const MAX_POLLS: u32 = 1_000_000;
 
         let waker = task::Waker::noop();
-        // `Context::from_waker` takes `&Waker`; clippy::needless_borrow is a
-        // false positive here (removing the `&` would be a type error).
+        // `Context::from_waker` takes `&Waker`; the borrow is required by the
+        // API signature (not a clippy false positive).
         #[allow(clippy::needless_borrow)]
         let mut cx = task::Context::from_waker(&waker);
         let mut future = std::pin::pin!(future);

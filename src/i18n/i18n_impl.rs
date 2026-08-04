@@ -75,7 +75,7 @@ impl I18nFormatter {
             reason: e.to_string(),
         })?;
         let formatted = self.decimal_formatter.format(&decimal);
-        Ok(formatted.write_to_string().into_owned())
+        Ok(formatted.write_to_string().to_string())
     }
 
     /// Format an ISO calendar date (year / month / day) using a medium
@@ -93,7 +93,7 @@ impl I18nFormatter {
         let dtf = DateTimeFormatter::try_new(self.locale.clone().into(), YMD::medium())
             .map_err(|e| I18nError::FormatError(e.to_string()))?;
         let formatted = dtf.format(&datetime);
-        Ok(formatted.write_to_string().into_owned())
+        Ok(formatted.write_to_string().to_string())
     }
 
     /// Return the plural category for `count` in the formatter's locale.

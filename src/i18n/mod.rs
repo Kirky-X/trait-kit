@@ -41,7 +41,7 @@ use icu::plurals::PluralRules;
 // ─── I18nError ──────────────────────────────────────────────────────────────
 
 /// 国际化操作返回的错误类型。
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum I18nError {
     /// BCP-47 locale 字符串解析失败。
     InvalidLocale {
@@ -89,6 +89,7 @@ impl std::error::Error for I18nError {}
 ///
 /// 通过 BCP-47 locale 标签（如 `"en-US"`、`"zh-CN"`）构造。
 /// 所有格式化器在构造时 eagerly 创建，后续格式化调用低分配。
+#[derive(Debug)]
 pub struct I18nFormatter {
     /// 已解析的 locale。
     pub(crate) locale: Locale,
@@ -106,6 +107,7 @@ pub struct I18nFormatter {
 ///
 /// 解析 Fluent FTL 格式的 `key = value` 消息，支持 `{ $var }` 变量替换。
 /// 无需 `fluent-bundle` 运行时，避免自引用结构问题。
+#[derive(Debug)]
 struct MessageCatalog {
     messages: HashMap<String, String>,
 }
@@ -158,6 +160,7 @@ static GLOBAL_I18N: OnceLock<I18nManager> = OnceLock::new();
 ///
 /// 持有 FTL 消息目录和当前 locale 信息。
 /// 通过 [`I18nManager::init`] 自动检测系统语言环境并初始化。
+#[derive(Debug)]
 pub struct I18nManager {
     catalog: MessageCatalog,
     locale_tag: String,
@@ -186,10 +189,12 @@ impl I18nManager {
     /// 不会 panic。`OnceLock::set` 失败后通过 `unwrap` 获取的是已设置的值，保证安全。
     pub fn init_with_locale(locale: &str) -> Result<&'static Self, I18nError> {
         let manager = Self::build(locale);
-        GLOBAL_I18N.set(manager).map_err(|_| I18nError::InvalidLocale {
-            input: locale.to_string(),
-            reason: "global I18nManager already initialized".into(),
-        })?;
+        GLOBAL_I18N
+            .set(manager)
+            .map_err(|_| I18nError::InvalidLocale {
+                input: locale.to_string(),
+                reason: "global I18nManager already initialized".into(),
+            })?;
         Ok(GLOBAL_I18N.get().unwrap())
     }
 
@@ -298,7 +303,10 @@ mod tests {
     #[test]
     fn manager_init_returns_valid_instance() {
         let mgr = I18nManager::init();
-        assert!(!mgr.locale_tag().is_empty(), "locale tag should be non-empty");
+        assert!(
+            !mgr.locale_tag().is_empty(),
+            "locale tag should be non-empty"
+        );
     }
 
     #[test]
@@ -323,10 +331,7 @@ mod tests {
 
     #[test]
     fn tr_convenience_function_works() {
-        let msg = tr(
-            "trait-kit-error-missing-capability",
-            &[("key", "my-cap")],
-        );
+        let msg = tr("trait-kit-error-missing-capability", &[("key", "my-cap")]);
         assert!(
             msg.contains("my-cap"),
             "tr() output should contain key: got '{msg}'"
@@ -339,12 +344,16 @@ mod tests {
     fn test_locale_parsing_en() {
         let fmt = I18nFormatter::new("en-US");
         assert!(fmt.is_ok(), "en-US should parse successfully");
+        let fmt = fmt.unwrap();
+        assert_eq!(fmt.locale.to_string(), "en-US");
     }
 
     #[test]
     fn test_locale_parsing_zh() {
         let fmt = I18nFormatter::new("zh-CN");
         assert!(fmt.is_ok(), "zh-CN should parse successfully");
+        let fmt = fmt.unwrap();
+        assert_eq!(fmt.locale.to_string(), "zh-CN");
     }
 
     #[test]
@@ -432,8 +441,14 @@ mod tests {
     fn test_format_date_en() {
         let fmt = I18nFormatter::new("en-US").expect("en-US locale");
         let result = fmt.format_date(2026, 7, 11).expect("format date");
-        assert!(result.contains("2026"), "date should contain year: got '{result}'");
-        assert!(!result.is_empty(), "date should be non-empty: got '{result}'");
+        assert!(
+            result.contains("2026"),
+            "date should contain year: got '{result}'"
+        );
+        assert!(
+            !result.is_empty(),
+            "date should be non-empty: got '{result}'"
+        );
     }
 
     #[test]
@@ -456,14 +471,21 @@ mod tests {
     fn test_format_number_integer() {
         let fmt = I18nFormatter::new("en-US").expect("en-US locale");
         let result = fmt.format_number(42.0).expect("format integer-like float");
-        assert!(result.contains('4'), "should contain digit 4: got '{result}'");
+        assert!(
+            result.contains('4'),
+            "should contain digit 4: got '{result}'"
+        );
     }
 
     #[test]
     fn test_plural_category_zero() {
         let fmt = I18nFormatter::new("zh-CN").expect("zh-CN locale");
         let cat = fmt.plural_category(0).expect("plural 0");
-        assert_eq!(cat, PluralCategory::Other, "Chinese uses Other for all counts");
+        assert_eq!(
+            cat,
+            PluralCategory::Other,
+            "Chinese uses Other for all counts"
+        );
     }
 
     #[test]
