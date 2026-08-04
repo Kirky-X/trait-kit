@@ -9,18 +9,6 @@
 
 _暂无未发布变更。_
 
-## [0.4.1] - 2026-08-04
-
-### 依赖
-
-- `confers` 0.4 → 0.5（传递依赖升级：notify 7→8、hkdf 0.12→0.13、sha2 0.10→0.11 等）
-- `serial_test` 3 → 4.0（dev-dependency）
-- 统一依赖版本写法为 `x.x` 格式（serde/serde_json/thiserror/trybuild/static_assertions）
-
-### 构建
-
-- 新增 `[workspace.dependencies]` 集中管理 `confers` 和 `serde`，examples crate 通过 `workspace = true` 继承
-
 ## [0.4.0] - 2026-08-04
 
 ### 新增
@@ -193,8 +181,7 @@ _暂无未发布变更。_
 - `TypeMap` 类型安全存储（以 `TypeId` 为键）
 - 依赖图验证：环检测 + 拓扑排序构建
 
-[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.4.1...HEAD
-[0.4.1]: https://github.com/Kirky-X/trait-kit/compare/v0.4.0...v0.4.1
+[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/Kirky-X/trait-kit/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Kirky-X/trait-kit/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Kirky-X/trait-kit/compare/v0.2.5...v0.3.0
