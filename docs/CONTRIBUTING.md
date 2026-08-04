@@ -21,7 +21,7 @@
 ## Pre-commit Hooks
 
 - `cargo fmt --check`
-- `cargo clippy -D warnings`
+- `cargo clippy --all-features -- -D warnings`
 - `cargo check`
 - 禁止使用 `--no-verify` 跳过
 
