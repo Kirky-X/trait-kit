@@ -99,6 +99,7 @@ impl TypeMap {
     /// satisfy the borrow checker (the `Ref` guard must outlive the
     /// downcast reference). For the clone-based variant see
     /// [`get_cloned_by_type_id`](Self::get_cloned_by_type_id).
+    #[cfg(any(feature = "lifecycle", feature = "health"))]
     #[allow(
         clippy::type_complexity,
         reason = "return type bundles the RefCell guard with the downcast reference"
@@ -244,6 +245,7 @@ mod tests {
         let _ = map.inner_ref();
     }
 
+    #[cfg(any(feature = "lifecycle", feature = "health"))]
     #[test]
     fn get_ref_by_type_id_returns_some_for_existing() {
         let map = TypeMap::new();
@@ -255,6 +257,7 @@ mod tests {
         assert_eq!(*val, 42);
     }
 
+    #[cfg(any(feature = "lifecycle", feature = "health"))]
     #[test]
     fn get_ref_by_type_id_returns_none_for_missing() {
         let map = TypeMap::new();
@@ -263,6 +266,7 @@ mod tests {
         assert!(result.is_none());
     }
 
+    #[cfg(any(feature = "lifecycle", feature = "health"))]
     #[test]
     fn get_ref_by_type_id_returns_none_for_wrong_type() {
         let map = TypeMap::new();
