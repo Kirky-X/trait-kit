@@ -9,8 +9,8 @@
 //!
 //! Run: `cargo run -p trait-kit-example --example scope_basic --features scope`
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use trait_kit::prelude::*;
 
 static BUILD_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -44,17 +44,25 @@ fn main() {
 
     // Scope 1 — simulates request 1
     let mut scope1 = Scope::new();
-    scope1.register::<RequestModule>().expect("register in scope1");
+    scope1
+        .register::<RequestModule>()
+        .expect("register in scope1");
     assert!(scope1.contains::<RequestModule>());
 
-    let cap1 = scope1.require::<RequestModule>().expect("require from scope1");
+    let cap1 = scope1
+        .require::<RequestModule>()
+        .expect("require from scope1");
     println!("Scope 1 request id: {}", cap1.id);
 
     // Scope 2 — simulates request 2 (gets a fresh instance)
     let mut scope2 = Scope::new();
-    scope2.register::<RequestModule>().expect("register in scope2");
+    scope2
+        .register::<RequestModule>()
+        .expect("register in scope2");
 
-    let cap2 = scope2.require::<RequestModule>().expect("require from scope2");
+    let cap2 = scope2
+        .require::<RequestModule>()
+        .expect("require from scope2");
     println!("Scope 2 request id: {}", cap2.id);
 
     // Each scope has its own independent instance
@@ -65,7 +73,10 @@ fn main() {
 
     // Require within the same scope returns the cached value
     let cap1_again = scope1.require::<RequestModule>().expect("require again");
-    assert_eq!(cap1.id, cap1_again.id, "same scope should cache the instance");
+    assert_eq!(
+        cap1.id, cap1_again.id,
+        "same scope should cache the instance"
+    );
 
     println!("scope_basic: OK");
 }

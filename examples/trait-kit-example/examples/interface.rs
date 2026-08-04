@@ -9,8 +9,8 @@
 //!
 //! Run: `cargo run -p trait-kit-example --example interface --features interface`
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use trait_kit::core::InterfaceBuilder;
 use trait_kit::prelude::*;
 
@@ -67,9 +67,7 @@ fn main() {
     let kit = kit.build().expect("build should succeed");
 
     // Retrieve by interface type (not concrete type)
-    let logger: Arc<dyn Logger> = kit
-        .resolve::<dyn Logger>()
-        .expect("resolve dyn Logger");
+    let logger: Arc<dyn Logger> = kit.resolve::<dyn Logger>().expect("resolve dyn Logger");
 
     logger.log("Hello from interface-based DI!");
     logger.log("Second message");
