@@ -25,6 +25,24 @@ pub use core::AsyncAutoBuilder;
 #[cfg(feature = "async")]
 pub use kit::{AsyncKit, AsyncReady, AsyncUnbuilt};
 
+#[cfg(feature = "lifecycle")]
+pub use core::Lifecycle;
+#[cfg(all(feature = "lifecycle", feature = "async"))]
+pub use core::AsyncLifecycle;
+
+#[cfg(feature = "health")]
+pub use core::{HealthCheck, HealthStatus};
+#[cfg(all(feature = "health", feature = "async"))]
+pub use core::AsyncHealthCheck;
+
+#[cfg(feature = "observability")]
+pub use core::BuildObserver;
+
+#[cfg(feature = "scope")]
+pub use kit::Scope;
+#[cfg(all(feature = "scope", feature = "async"))]
+pub use kit::AsyncScope;
+
 /// Shared test helpers for async test modules (`block_on` executor + `MockError`).
 ///
 /// Extracted to deduplicate between `core::meta::async_tests` and
