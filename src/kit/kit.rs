@@ -397,113 +397,18 @@ impl Kit {
             }
         };
 
-        {
-            let kit_ref: &Self = &self;
+        // Phase 1: Build eager modules (overrides + build_fn in topo order)
+        self.build_eager_modules(&sorted)?;
 
-            for type_id in &sorted {
-                let module_name = kit_ref.module_name(*type_id);
+        // Phase 2: Transfer lazy builders to lazy slots
+        self.transfer_lazy_builders();
 
-                // [Override] Priority 1: check overrides map first.
-                // If an override exists, use it and skip build_fn entirely.
-                if let Some(boxed) = kit_ref.overrides.borrow_mut().remove(type_id) {
-                    kit_ref.capabilities.insert_boxed(*type_id, boxed);
-                    continue;
-                }
+        // Phase 3: Build multi-binding modules
+        self.build_multi_bindings()?;
 
-                // [Lazy] Skip lazy-registered modules — they are not built
-                // during build(). Their build_fn stays in lazy_builders and
-                // will be transferred to Kit<Ready>.lazy_slots (T008).
-                if kit_ref.lazy_builders.borrow().contains_key(type_id) {
-                    continue;
-                }
-
-                // [Build] Priority 2: invoke the registered build_fn.
-                // If not in builders, the module was registered via
-                // `register_multi` — skip here; built in the multi_builders
-                // loop below (T011).
-                let Some(build_fn) = kit_ref.builders.borrow_mut().remove(type_id) else {
-                    continue;
-                };
-
-                match (build_fn)(kit_ref) {
-                    Ok(boxed) => {
-                        kit_ref.capabilities.insert_boxed(*type_id, boxed);
-                    }
-                    Err(e) => {
-                        return Err(TraitKitError::BuildFailed {
-                            context: module_name,
-                            source: e,
-                        });
-                    }
-                }
-            }
-        }
-
-        // [Override] Handle modules that were overridden but NOT registered
-        // (override_module allows injecting unregistered modules). These are
-        // not in the sorted list, so we insert them after the topo loop.
-        {
-            let remaining: Vec<(TypeId, Box<dyn Any>)> =
-                self.overrides.borrow_mut().drain().collect();
-            for (type_id, boxed) in remaining {
-                self.capabilities.insert_boxed(type_id, boxed);
-            }
-        }
-
-        // [Lazy] Transfer lazy_builders to lazy_slots for first-access
-        // construction in Kit<Ready>. Each LazySlot wraps the build_fn with
-        // an empty OnceLock cache cell. The builder is Option::Some until
-        // consumed by the first require() call (T009).
-        {
-            let lazy: Vec<(TypeId, BuildFn)> = self.lazy_builders.borrow_mut().drain().collect();
-            for (type_id, builder) in lazy {
-                self.lazy_slots.borrow_mut().insert(
-                    type_id,
-                    LazySlot {
-                        builder: Some(builder),
-                        cell: OnceLock::new(),
-                    },
-                );
-            }
-        }
-
-        // [Multi] Build all multi-binding modules and store in
-        // multi_capabilities. Keyed by TypeId::of::<M::Capability>() so
-        // require_all::<M>() retrieves all implementations of the same
-        // capability type. Runs after the topo-sorted loop so eager
-        // dependencies are available via `self.capabilities`.
-        {
-            let multi: Vec<(TypeId, Vec<BuildFn>)> =
-                self.multi_builders.borrow_mut().drain().collect();
-            for (cap_id, build_fns) in multi {
-                let mut vec = Vec::with_capacity(build_fns.len());
-                for build_fn in build_fns {
-                    let boxed = (build_fn)(&self).map_err(|e| TraitKitError::BuildFailed {
-                        context: "<multi-binding>",
-                        source: e,
-                    })?;
-                    vec.push(boxed);
-                }
-                self.multi_capabilities.borrow_mut().insert(cap_id, vec);
-            }
-        }
-
-        // [Interface] Build all interface-registered modules and store in
-        // capabilities. Keyed by TypeId::of::<M::Interface>() so
-        // resolve::<I>() retrieves by interface type. Runs after the
-        // topo-sorted loop so eager dependencies are available (T015).
+        // Phase 4: Build interface modules
         #[cfg(feature = "interface")]
-        {
-            let interfaces: Vec<(TypeId, BuildFn)> =
-                self.interface_builders.borrow_mut().drain().collect();
-            for (interface_id, build_fn) in interfaces {
-                let boxed = (build_fn)(&self).map_err(|e| TraitKitError::BuildFailed {
-                    context: "<interface>",
-                    source: e,
-                })?;
-                self.capabilities.insert_boxed(interface_id, boxed);
-            }
-        }
+        self.build_interface_modules()?;
 
         Ok(Kit {
             builders: self.builders,
@@ -523,6 +428,100 @@ impl Kit {
             encrypted_configs: self.encrypted_configs,
             _state: std::marker::PhantomData,
         })
+    }
+
+    /// Phase 1: Build eager modules in topological order.
+    ///
+    /// For each module in the sorted list:
+    /// 1. Check overrides first (skip `build_fn` if override exists)
+    /// 2. Skip lazy-registered modules (deferred to first `require()`)
+    /// 3. Invoke the `build_fn` for regular modules
+    /// 4. Insert remaining unregistered overrides after the loop
+    fn build_eager_modules(&self, sorted: &[TypeId]) -> Result<(), TraitKitError> {
+        for type_id in sorted {
+            let module_name = self.module_name(*type_id);
+
+            // [Override] Priority 1: check overrides map first.
+            if let Some(boxed) = self.overrides.borrow_mut().remove(type_id) {
+                self.capabilities.insert_boxed(*type_id, boxed);
+                continue;
+            }
+
+            // [Lazy] Skip lazy-registered modules — deferred to first require().
+            if self.lazy_builders.borrow().contains_key(type_id) {
+                continue;
+            }
+
+            // [Build] Priority 2: invoke the registered build_fn.
+            let Some(build_fn) = self.builders.borrow_mut().remove(type_id) else {
+                continue;
+            };
+
+            match (build_fn)(self) {
+                Ok(boxed) => self.capabilities.insert_boxed(*type_id, boxed),
+                Err(e) => {
+                    return Err(TraitKitError::BuildFailed {
+                        context: module_name,
+                        source: e,
+                    });
+                }
+            }
+        }
+
+        // Handle modules that were overridden but NOT registered.
+        let remaining: Vec<(TypeId, Box<dyn Any>)> =
+            self.overrides.borrow_mut().drain().collect();
+        for (type_id, boxed) in remaining {
+            self.capabilities.insert_boxed(type_id, boxed);
+        }
+        Ok(())
+    }
+
+    /// Phase 2: Transfer lazy builders to lazy slots for first-access construction.
+    fn transfer_lazy_builders(&self) {
+        let lazy: Vec<(TypeId, BuildFn)> = self.lazy_builders.borrow_mut().drain().collect();
+        for (type_id, builder) in lazy {
+            self.lazy_slots.borrow_mut().insert(
+                type_id,
+                LazySlot {
+                    builder: Some(builder),
+                    cell: OnceLock::new(),
+                },
+            );
+        }
+    }
+
+    /// Phase 3: Build all multi-binding modules.
+    fn build_multi_bindings(&self) -> Result<(), TraitKitError> {
+        let multi: Vec<(TypeId, Vec<BuildFn>)> =
+            self.multi_builders.borrow_mut().drain().collect();
+        for (cap_id, build_fns) in multi {
+            let mut vec = Vec::with_capacity(build_fns.len());
+            for build_fn in build_fns {
+                let boxed = (build_fn)(self).map_err(|e| TraitKitError::BuildFailed {
+                    context: "<multi-binding>",
+                    source: e,
+                })?;
+                vec.push(boxed);
+            }
+            self.multi_capabilities.borrow_mut().insert(cap_id, vec);
+        }
+        Ok(())
+    }
+
+    /// Phase 4: Build all interface-registered modules.
+    #[cfg(feature = "interface")]
+    fn build_interface_modules(&self) -> Result<(), TraitKitError> {
+        let interfaces: Vec<(TypeId, BuildFn)> =
+            self.interface_builders.borrow_mut().drain().collect();
+        for (interface_id, build_fn) in interfaces {
+            let boxed = (build_fn)(self).map_err(|e| TraitKitError::BuildFailed {
+                context: "<interface>",
+                source: e,
+            })?;
+            self.capabilities.insert_boxed(interface_id, boxed);
+        }
+        Ok(())
     }
 
     fn module_name(&self, type_id: TypeId) -> &'static str {

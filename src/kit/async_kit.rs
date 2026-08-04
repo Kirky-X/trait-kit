@@ -215,25 +215,26 @@ impl AsyncKit {
             }
         };
 
-        // 2. Invoke each module's AsyncBuildFn in topological order.
-        //    The build_fn borrows `&self` for lifetime `'a` (HRTB); we await
-        //    the returned future immediately so the borrow releases before the
-        //    next iteration. The write guard on `builders` is dropped at the
-        //    end of the `remove` statement — before `.await` — to avoid
-        //    holding the lock across a suspension point (which would block
-        //    other readers and risk deadlock).
-        for type_id in &sorted {
-            let build_fn = self
+        // 2. Extract all builders from the Arc<RwLock<…>> in a single
+        //    write-lock acquisition (instead of one lock per module in the
+        //    loop). The drain leaves the original map empty; the extracted
+        //    HashMap is consumed locally during the build loop.
+        let mut builders: HashMap<TypeId, AsyncBuildFn> = {
+            let mut guard = self
                 .builders
                 .write()
-                .expect("AsyncKit builders lock poisoned: another thread panicked while holding the lock")
-                .remove(type_id)
-                .ok_or_else(|| TraitKitError::MissingCapability {
-                    key: self.module_name(*type_id),
-                })?;
-            // Write guard dropped here (end of statement).
+                .expect("AsyncKit builders lock poisoned");
+            guard.drain().collect()
+        };
 
-            let module_name = self.module_name(*type_id);
+        // 3. Invoke each module's AsyncBuildFn in topological order.
+        for type_id in &sorted {
+            let module_name = self.graph.name_of(*type_id).unwrap_or("<unknown>");
+            let build_fn = builders.remove(type_id).ok_or_else(|| {
+                TraitKitError::MissingCapability {
+                    key: module_name,
+                }
+            })?;
 
             // `build_fn(&self)` returns `Pin<Box<dyn Future + Send + 'a>>`
             // where `'a` is tied to the borrow of `self`. Awaiting consumes
@@ -250,7 +251,8 @@ impl AsyncKit {
             }
         }
 
-        // 3. Transition to Ready: reuse all containers, swap the state marker.
+        // 4. Transition to Ready: reuse all containers, swap the state marker.
+        //    `builders` was drained (not moved) above; the empty map is reused.
         Ok(AsyncKit {
             builders: self.builders,
             graph: self.graph,
@@ -261,6 +263,7 @@ impl AsyncKit {
     }
 
     /// Look up a module's diagnostic name by `TypeId` (mirrors `Kit::module_name`).
+    #[allow(dead_code, reason = "used in tests and available for diagnostics")]
     fn module_name(&self, type_id: TypeId) -> &'static str {
         self.graph.name_of(type_id).unwrap_or("<unknown>")
     }
