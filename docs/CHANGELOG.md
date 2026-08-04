@@ -9,6 +9,62 @@
 
 _暂无未发布变更。_
 
+## [0.4.0] - 2026-08-04
+
+### 新增
+
+#### 生命周期管理（feature = "lifecycle"）
+- `Lifecycle` trait — 同步生命周期钩子：`on_ready`（构建后）+ `on_shutdown`（清理）
+- `AsyncLifecycle` trait — 异步生命周期钩子（需同时启用 `async`）
+- `Kit::register_lifecycle::<M>()` / `AsyncKit::register_lifecycle::<M>()`
+- `Kit::shutdown()` / `AsyncKit::shutdown()` — 按逆拓扑序执行 `on_shutdown`
+- `TraitKitError::LifecycleFailed` 变体
+
+#### 健康检查（feature = "health"）
+- `HealthCheck` / `AsyncHealthCheck` trait — 模块运行时状态报告
+- `HealthStatus` 枚举（`Healthy` / `Degraded` / `Unhealthy`）
+- `Kit::register_health_check::<M>()` / `Kit::health_check::<M>()`
+
+#### 作用域依赖（feature = "scope"）
+- `Scope` — 基于 `RefCell` 的轻量级每请求实例隔离容器
+- `AsyncScope` — `Send + Sync` 异步作用域（需同时启用 `async`）
+
+#### 条件注册（feature = "conditional"）
+- `Kit::register_if::<M>(predicate)` — 运行时谓词控制的模块注册
+
+#### 构建可观测（feature = "observability"）
+- `BuildObserver` trait — 构建管线回调（`on_module_start` / `on_module_built` / `on_build_error`）
+- `Kit::with_observer(obs)` / `AsyncKit::with_observer(obs)`
+
+#### 工厂模式（feature = "factory"）
+- 每次调用创建新实例（非单例）
+
+#### 模块装饰器（feature = "decorator"）
+- `Kit::decorate::<M>(f)` — 构建后能力包装/增强
+
+#### 国际化增强
+- `I18nManager` + `tr()` — 基于 Fluent FTL 的中英文消息翻译，系统环境自动检测
+- `I18nFormatter` — ICU4X 驱动的数字/日期/复数/排序格式化
+- `TraitKitError` Display 实现通过 `tr()` 自动本地化输出
+- `icu`、`writeable`、`sys-locale` 成为必需依赖（不再通过 feature 门控）
+
+### ⚠️ BREAKING CHANGES
+
+- **TraitKitError 移除 `thiserror` derive** — 不再 `#[derive(Error)]`，改为手动实现 `Display` + `std::error::Error`；`Display` 输出通过 `tr()` 自动本地化
+- **TraitKitError::NotReady 变体移除** — 已在 0.2.x 标记 `#[deprecated]`，现正式移除
+- **TraitKitError 新增变体** — `MissingConfig`（无条件）和 `LifecycleFailed`（需 `feature = "lifecycle"`）；现有 `match` 需补充分支
+- **`impl_module_meta!` 依赖名生成逻辑变更** — 从 `stringify!($dep)` 改为 `<$dep as ModuleMeta>::NAME`，依赖解析名称可能与之前不同
+- **`Kit::load_config_or_default` 返回类型变更** — `Result<(), TraitKitError>` → `Result<bool, TraitKitError>`（`true` 表示加载成功，`false` 表示使用默认值）
+- **i18n 变为必选依赖** — `icu`、`writeable`、`sys-locale` 不再通过 feature 门控，所有用户均编译 i18n 模块；`i18n` feature flag 移除
+- **`ModuleMeta::dependencies()` 新增默认实现** — 默认返回 `&[]`，无依赖模块不再需要手动实现
+- **`TraitKitResult<T>` 正式导出** — 移除 `#[allow(dead_code)]`，通过 `lib.rs` 公开 re-export
+
+### 变更
+
+- `examples/integration-app` 重命名为 `examples/trait-kit-example`（独立 workspace 成员）
+- `kit.set_config()` 现在可在 `Kit<Unbuilt>` 和 `Kit<Ready>` 上调用
+- 错误模块路径 `src/core/error.rs` → `src/error.rs`
+
 ## [0.3.1] - 2026-07-22
 
 ### 修复
@@ -115,7 +171,8 @@ _暂无未发布变更。_
 - `TypeMap` 类型安全存储（以 `TypeId` 为键）
 - 依赖图验证：环检测 + 拓扑排序构建
 
-[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Kirky-X/trait-kit/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Kirky-X/trait-kit/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Kirky-X/trait-kit/compare/v0.2.5...v0.3.0
 [0.2.5]: https://github.com/Kirky-X/trait-kit/compare/v0.2.4...v0.2.5
