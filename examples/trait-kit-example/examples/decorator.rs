@@ -56,7 +56,9 @@ fn main() {
         .expect("register MessageModule");
     let kit = kit.build().expect("build should succeed");
 
-    let msg = kit.require::<MessageModule>().expect("require MessageModule");
+    let msg = kit
+        .require::<MessageModule>()
+        .expect("require MessageModule");
     println!("Final content: {}", msg.content);
 
     println!("decorator: OK");

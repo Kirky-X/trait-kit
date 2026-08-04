@@ -50,8 +50,7 @@ impl HealthCheck for CacheModule {
 
 fn main() {
     let mut kit = Kit::new();
-    kit.register::<CacheModule>()
-        .expect("register CacheModule");
+    kit.register::<CacheModule>().expect("register CacheModule");
     kit.register_health_check::<CacheModule>();
 
     let kit = kit.build().expect("build should succeed");

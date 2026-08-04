@@ -9,8 +9,8 @@
 //!
 //! Run: `cargo run -p trait-kit-example --example observability --features observability`
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use trait_kit::core::BuildObserver;
 use trait_kit::prelude::*;

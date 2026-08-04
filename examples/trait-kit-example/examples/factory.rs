@@ -9,8 +9,8 @@
 //!
 //! Run: `cargo run -p trait-kit-example --example factory --features factory`
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use trait_kit::prelude::*;
 
 static INSTANCE_COUNTER: AtomicUsize = AtomicUsize::new(0);

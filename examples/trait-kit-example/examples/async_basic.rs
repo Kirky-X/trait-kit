@@ -62,8 +62,7 @@ impl AsyncAutoBuilder for CacheModule {
 fn main() {
     let mut kit = AsyncKit::new();
     kit.set_config(200usize);
-    kit.register::<CacheModule>()
-        .expect("register CacheModule");
+    kit.register::<CacheModule>().expect("register CacheModule");
 
     let built = block_on(kit.build()).expect("build should succeed");
 
@@ -73,8 +72,5 @@ fn main() {
     assert!(built.optional::<CacheModule>().is_some());
     assert!(built.contains_config::<usize>());
 
-    println!(
-        "async_basic: OK (cache max_size={})",
-        cache.max_size
-    );
+    println!("async_basic: OK (cache max_size={})", cache.max_size);
 }

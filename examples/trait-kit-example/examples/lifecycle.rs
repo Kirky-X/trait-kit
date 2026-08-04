@@ -9,8 +9,8 @@
 //!
 //! Run: `cargo run -p trait-kit-example --example lifecycle --features lifecycle`
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use trait_kit::prelude::*;
 
 static SHUTDOWN_CALLED: AtomicBool = AtomicBool::new(false);
@@ -61,7 +61,9 @@ fn main() {
     let kit = kit.build().expect("build should succeed");
     // on_ready has been called during build()
 
-    let db = kit.require::<DatabaseModule>().expect("require DatabaseModule");
+    let db = kit
+        .require::<DatabaseModule>()
+        .expect("require DatabaseModule");
     println!("Database: {}", db.connection_string);
 
     // Shutdown in reverse topological order
