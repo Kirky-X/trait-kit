@@ -17,6 +17,24 @@ pub use crate::kit::Configurable;
 #[cfg(feature = "confers-macros")]
 pub use crate::kit::ModuleConfig;
 
+#[cfg(feature = "lifecycle")]
+pub use crate::core::Lifecycle;
+#[cfg(all(feature = "lifecycle", feature = "async"))]
+pub use crate::core::AsyncLifecycle;
+
+#[cfg(feature = "health")]
+pub use crate::core::{HealthCheck, HealthStatus};
+#[cfg(all(feature = "health", feature = "async"))]
+pub use crate::core::AsyncHealthCheck;
+
+#[cfg(feature = "observability")]
+pub use crate::core::BuildObserver;
+
+#[cfg(feature = "scope")]
+pub use crate::kit::Scope;
+#[cfg(all(feature = "scope", feature = "async"))]
+pub use crate::kit::AsyncScope;
+
 #[cfg(all(test, feature = "async"))]
 mod tests {
     //! Verify the async re-exports reachable through `prelude::*` compile
