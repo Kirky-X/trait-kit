@@ -18,10 +18,6 @@ pub enum TraitKitError {
         missing: &'static str,
     },
 
-    #[deprecated(note = "typestate pattern makes this unreachable; will be removed in 0.3.0")]
-    #[error("kit is not ready; call build() first")]
-    NotReady,
-
     #[error("module `{module}` is already registered")]
     AlreadyRegistered { module: &'static str },
 
@@ -48,8 +44,4 @@ pub enum TraitKitError {
 }
 
 /// Convenience `Result` alias for trait-kit operations.
-#[allow(
-    dead_code,
-    reason = "public API alias reserved for future re-export; not yet used internally"
-)]
 pub type TraitKitResult<T> = std::result::Result<T, TraitKitError>;

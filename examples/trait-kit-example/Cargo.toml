@@ -18,6 +18,16 @@ confers = ["dep:confers", "dep:serde", "trait-kit/confers"]
 confers-macros = ["confers", "trait-kit/confers-macros"]
 hot-reload = ["confers-macros", "trait-kit/hot-reload"]
 encryption = ["hot-reload", "trait-kit/encryption"]
+async = ["trait-kit/async"]
+lifecycle = ["trait-kit/lifecycle"]
+health = ["trait-kit/health"]
+observability = ["trait-kit/observability"]
+scope = ["trait-kit/scope"]
+conditional = ["trait-kit/conditional"]
+factory = ["trait-kit/factory"]
+decorator = ["trait-kit/decorator"]
+interface = ["trait-kit/interface"]
+i18n = ["trait-kit/i18n"]
 
 [[example]]
 name = "default_basic"
@@ -42,3 +52,53 @@ required-features = ["hot-reload"]
 name = "encryption"
 path = "examples/encryption.rs"
 required-features = ["encryption"]
+
+[[example]]
+name = "async_basic"
+path = "examples/async_basic.rs"
+required-features = ["async"]
+
+[[example]]
+name = "lifecycle"
+path = "examples/lifecycle.rs"
+required-features = ["lifecycle"]
+
+[[example]]
+name = "health_check"
+path = "examples/health_check.rs"
+required-features = ["health"]
+
+[[example]]
+name = "observability"
+path = "examples/observability.rs"
+required-features = ["observability"]
+
+[[example]]
+name = "scope_basic"
+path = "examples/scope_basic.rs"
+required-features = ["scope"]
+
+[[example]]
+name = "conditional"
+path = "examples/conditional.rs"
+required-features = ["conditional"]
+
+[[example]]
+name = "factory"
+path = "examples/factory.rs"
+required-features = ["factory"]
+
+[[example]]
+name = "decorator"
+path = "examples/decorator.rs"
+required-features = ["decorator"]
+
+[[example]]
+name = "interface"
+path = "examples/interface.rs"
+required-features = ["interface"]
+
+[[example]]
+name = "i18n"
+path = "examples/i18n.rs"
+required-features = ["i18n"]

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 //! Scoped dependency container for per-request instance isolation.
 
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -11,11 +11,7 @@ use crate::core::{AutoBuilder, BuildFn};
 use crate::error::TraitKitError;
 use crate::kit::TypeMap;
 
-/// A lazy construction slot (mirrors the one in `kit.rs`).
-struct ScopeLazySlot {
-    builder: Option<BuildFn>,
-    cell: OnceLock<Box<dyn Any>>,
-}
+use super::kit::LazySlot;
 
 /// Scoped dependency container for per-request instance isolation.
 ///
@@ -27,9 +23,8 @@ struct ScopeLazySlot {
 /// Requires the `scope` feature.
 #[cfg(feature = "scope")]
 pub struct Scope {
-    factories: RefCell<HashMap<TypeId, BuildFn>>,
     capabilities: TypeMap,
-    lazy_slots: RefCell<HashMap<TypeId, ScopeLazySlot>>,
+    lazy_slots: RefCell<HashMap<TypeId, LazySlot>>,
 }
 
 #[cfg(feature = "scope")]
@@ -38,7 +33,6 @@ impl Scope {
     #[must_use]
     pub fn new() -> Self {
         Scope {
-            factories: RefCell::new(HashMap::new()),
             capabilities: TypeMap::new(),
             lazy_slots: RefCell::new(HashMap::new()),
         }
@@ -55,28 +49,19 @@ impl Scope {
     /// already registered in this scope.
     pub fn register<M: AutoBuilder>(&mut self) -> Result<(), TraitKitError> {
         let type_id = TypeId::of::<M>();
-        if self.factories.borrow().contains_key(&type_id) {
+        if self.lazy_slots.borrow().contains_key(&type_id) {
             return Err(TraitKitError::AlreadyRegistered { module: M::NAME });
         }
 
         let build_fn: BuildFn = Box::new(|kit| {
             let cap = M::build(kit)
                 .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?;
-            Ok(Box::new(cap) as Box<dyn Any>)
-        });
-
-        self.factories.borrow_mut().insert(type_id, build_fn);
-
-        // Also set up a lazy slot for deferred construction
-        let build_fn: BuildFn = Box::new(|kit| {
-            let cap = M::build(kit)
-                .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?;
-            Ok(Box::new(cap) as Box<dyn Any>)
+            Ok(Box::new(cap) as Box<dyn std::any::Any>)
         });
 
         self.lazy_slots.borrow_mut().insert(
             type_id,
-            ScopeLazySlot {
+            LazySlot {
                 builder: Some(build_fn),
                 cell: OnceLock::new(),
             },
@@ -156,7 +141,7 @@ impl Scope {
     #[must_use]
     pub fn contains<M: AutoBuilder>(&self) -> bool {
         let type_id = TypeId::of::<M>();
-        self.factories.borrow().contains_key(&type_id)
+        self.lazy_slots.borrow().contains_key(&type_id)
             || self.capabilities.contains_by_type_id(type_id)
     }
 }
@@ -171,8 +156,7 @@ impl Default for Scope {
 #[cfg(feature = "scope")]
 impl Drop for Scope {
     fn drop(&mut self) {
-        // Explicitly clear all stored instances and factories.
-        self.factories.borrow_mut().clear();
+        // Explicitly clear all stored instances and lazy slots.
         self.capabilities.clear();
         self.lazy_slots.borrow_mut().clear();
     }
@@ -364,5 +348,98 @@ mod tests {
                 key: "scope-module"
             }
         ));
+    }
+
+    #[test]
+    fn scope_default_creates_empty() {
+        let scope = Scope::default();
+        assert!(!scope.contains::<ScopeModule>());
+    }
+
+    #[test]
+    fn scope_drop_clears_resources() {
+        let mut scope = Scope::new();
+        scope.register::<ScopeModule>().expect("register");
+        assert!(scope.contains::<ScopeModule>());
+        drop(scope);
+        // After drop, the scope is gone — no panic
+    }
+}
+
+#[cfg(all(test, feature = "scope", feature = "async"))]
+mod async_tests {
+    use super::*;
+    use crate::core::{AsyncAutoBuilder, ModuleMeta};
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct AsyncScopeCap {
+        value: i32,
+    }
+
+    #[derive(Debug)]
+    struct AsyncScopeError;
+
+    impl std::fmt::Display for AsyncScopeError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "async scope error")
+        }
+    }
+
+    impl std::error::Error for AsyncScopeError {}
+
+    struct AsyncScopeModule;
+
+    impl ModuleMeta for AsyncScopeModule {
+        const NAME: &'static str = "async-scope-module";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            &[]
+        }
+    }
+
+    impl AsyncAutoBuilder for AsyncScopeModule {
+        type Capability = Arc<AsyncScopeCap>;
+        type Error = AsyncScopeError;
+
+        fn build<'a>(
+            _kit: &'a crate::kit::AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<AsyncScopeCap>, AsyncScopeError>> + Send + 'a>>
+        {
+            Box::pin(async move { Ok(Arc::new(AsyncScopeCap { value: 99 })) })
+        }
+    }
+
+    #[test]
+    fn async_scope_new_is_empty() {
+        let scope = AsyncScope::new();
+        assert!(!scope.contains::<AsyncScopeModule>());
+    }
+
+    #[test]
+    fn async_scope_register_then_contains() {
+        let mut scope = AsyncScope::new();
+        scope.register::<AsyncScopeModule>().expect("register");
+        assert!(scope.contains::<AsyncScopeModule>());
+    }
+
+    #[test]
+    fn async_scope_register_duplicate_returns_error() {
+        let mut scope = AsyncScope::new();
+        scope.register::<AsyncScopeModule>().expect("first register");
+        let err = scope.register::<AsyncScopeModule>().unwrap_err();
+        assert!(matches!(
+            err,
+            TraitKitError::AlreadyRegistered {
+                module: "async-scope-module"
+            }
+        ));
+    }
+
+    #[test]
+    fn async_scope_default_is_empty() {
+        let scope = AsyncScope::default();
+        assert!(!scope.contains::<AsyncScopeModule>());
     }
 }

@@ -348,3 +348,19 @@ mod interface_builder_tests {
         requires_interface_builder::<ConsoleLoggerModule>();
     }
 }
+
+#[cfg(test)]
+mod module_meta_tests {
+    use super::*;
+
+    struct NoDepsModule;
+    impl ModuleMeta for NoDepsModule {
+        const NAME: &'static str = "no-deps";
+    }
+
+    #[test]
+    fn default_dependencies_returns_empty_slice() {
+        let deps = NoDepsModule::dependencies();
+        assert!(deps.is_empty(), "default dependencies() should return &[]");
+    }
+}

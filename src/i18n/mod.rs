@@ -170,4 +170,42 @@ mod tests {
             "date should be non-empty: got '{result}'"
         );
     }
+
+    #[test]
+    fn test_format_date_invalid_month() {
+        let fmt = I18nFormatter::new("en-US").expect("en-US locale");
+        let result = fmt.format_date(2026, 13, 1);
+        assert!(result.is_err(), "month 13 should be invalid");
+        assert!(matches!(result.unwrap_err(), I18nError::DateError(_)));
+    }
+
+    #[test]
+    fn test_format_date_invalid_day() {
+        let fmt = I18nFormatter::new("en-US").expect("en-US locale");
+        let result = fmt.format_date(2026, 2, 30);
+        assert!(result.is_err(), "Feb 30 should be invalid");
+        assert!(matches!(result.unwrap_err(), I18nError::DateError(_)));
+    }
+
+    #[test]
+    fn test_format_number_integer() {
+        let fmt = I18nFormatter::new("en-US").expect("en-US locale");
+        let result = fmt.format_number(42.0).expect("format integer-like float");
+        assert!(result.contains('4'), "should contain digit 4: got '{result}'");
+    }
+
+    #[test]
+    fn test_plural_category_zero() {
+        let fmt = I18nFormatter::new("zh-CN").expect("zh-CN locale");
+        let cat = fmt.plural_category(0).expect("plural 0");
+        // Chinese uses Other for all counts
+        assert_eq!(cat, PluralCategory::Other);
+    }
+
+    #[test]
+    fn test_compare_equal_strings() {
+        let fmt = I18nFormatter::new("de-DE").expect("de-DE locale");
+        let result = fmt.compare("abc", "abc").expect("compare");
+        assert_eq!(result, Ordering::Equal);
+    }
 }

@@ -195,14 +195,6 @@ fn test_cycle_detection() {
 fn kit_error_display_and_source_behavior() {
     use std::error::Error;
 
-    // Display: NotReady (deprecated — typestate pattern makes it unreachable)
-    #[allow(deprecated)]
-    let not_ready = TraitKitError::NotReady;
-    assert_eq!(
-        not_ready.to_string(),
-        "kit is not ready; call build() first"
-    );
-
     // Display: CycleDetected
     let cycle = TraitKitError::CycleDetected {
         cycle: vec!["a", "b", "a"],
@@ -244,10 +236,6 @@ fn kit_error_display_and_source_behavior() {
     assert!(build.source().is_some());
 
     // Error::source() for other variants returns None
-    #[allow(deprecated)]
-    {
-        assert!(TraitKitError::NotReady.source().is_none());
-    }
     assert!(cycle.source().is_none());
     assert!(dep.source().is_none());
 }
