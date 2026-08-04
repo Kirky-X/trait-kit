@@ -514,8 +514,8 @@ mod core_scenarios {
         assert_eq!(MetaWithDeps::NAME, "meta-with-deps");
         let deps = MetaWithDeps::dependencies();
         assert_eq!(deps.len(), 2);
-        assert_eq!(deps[0].0, "MetaDep1");
-        assert_eq!(deps[1].0, "MetaDep2");
+        assert_eq!(deps[0].0, "meta-dep1");
+        assert_eq!(deps[1].0, "meta-dep2");
         assert_eq!(deps[0].1, TypeId::of::<MetaDep1>());
         assert_eq!(deps[1].1, TypeId::of::<MetaDep2>());
         // Form 3: empty deps list (explicit)
@@ -655,7 +655,7 @@ mod core_scenarios {
         match result {
             Err(TraitKitError::DependencyMissing { module, missing }) => {
                 assert_eq!(module, "strict-target");
-                assert_eq!(missing, "AlphaModule");
+                assert_eq!(missing, "alpha");
             }
             other => panic!("expected DependencyMissing, got: {other:?}"),
         }

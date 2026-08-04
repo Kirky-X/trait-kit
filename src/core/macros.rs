@@ -44,9 +44,57 @@ macro_rules! impl_module_meta {
 
             fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
                 static DEPS: &[(&str, std::any::TypeId)] = &[
-                    $((stringify!($dep), std::any::TypeId::of::<$dep>()),)*
+                    $( (<$dep as $crate::core::ModuleMeta>::NAME, std::any::TypeId::of::<$dep>()), )*
                 ];
                 DEPS
+            }
+        }
+    };
+}
+
+/// Implements `AutoBuilder` for a module type (sync counterpart to
+/// [`impl_async_auto_builder!`]).
+///
+/// # Syntax
+///
+/// ```text
+/// impl_auto_builder!(Type, Capability, Error, |kit| <expr>);
+/// ```
+///
+/// # Example
+///
+/// ```
+/// use std::sync::Arc;
+/// use trait_kit::impl_module_meta;
+/// use trait_kit::impl_auto_builder;
+/// use trait_kit::core::{AutoBuilder, ModuleMeta};
+/// use trait_kit::kit::Kit;
+///
+/// # #[derive(Debug, thiserror::Error)]
+/// # #[error("mock")]
+/// # struct MockErr;
+/// # #[derive(Clone)]
+/// # struct Cap { v: u32 }
+/// struct MyModule;
+/// impl_module_meta!(MyModule, "my-module");
+/// impl_auto_builder!(
+///     MyModule,
+///     Arc<Cap>,
+///     MockErr,
+///     |_kit| Ok(Arc::new(Cap { v: 42 }))
+/// );
+/// ```
+#[macro_export]
+macro_rules! impl_auto_builder {
+    ($ty:ty, $cap:ty, $err:ty, |$kit:ident| $body:expr) => {
+        impl $crate::core::AutoBuilder for $ty {
+            type Capability = $cap;
+            type Error = $err;
+
+            fn build(
+                $kit: &$crate::kit::Kit,
+            ) -> ::std::result::Result<Self::Capability, Self::Error> {
+                $body
             }
         }
     };
@@ -148,8 +196,8 @@ mod tests {
         const NAME: &'static str = "macro-with-deps";
         fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
             static DEPS: &[(&str, std::any::TypeId)] = &[
-                ("Dep1", std::any::TypeId::of::<Dep1>()),
-                ("Dep2", std::any::TypeId::of::<Dep2>()),
+                (<Dep1 as ModuleMeta>::NAME, std::any::TypeId::of::<Dep1>()),
+                (<Dep2 as ModuleMeta>::NAME, std::any::TypeId::of::<Dep2>()),
             ];
             DEPS
         }
@@ -178,10 +226,10 @@ mod tests {
     }
 
     #[test]
-    fn macro_dependency_names_match_stringified_types() {
+    fn macro_dependency_names_match_module_meta_names() {
         let deps = MacroModuleWithDeps::dependencies();
-        assert_eq!(deps[0].0, "Dep1");
-        assert_eq!(deps[1].0, "Dep2");
+        assert_eq!(deps[0].0, "dep1");
+        assert_eq!(deps[1].0, "dep2");
     }
 
     #[test]
@@ -326,5 +374,112 @@ mod async_macro_tests {
     #[test]
     fn macro_async_name_equals_hand_written_name() {
         assert_eq!(MacroAsyncModule::NAME, HandAsyncModule::NAME);
+    }
+}
+
+#[cfg(test)]
+mod sync_auto_builder_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::Kit;
+    use std::sync::Arc;
+    use thiserror::Error;
+
+    // === Fixtures ===
+
+    #[derive(Debug, Error)]
+    #[allow(dead_code, reason = "mock error type verifies trait signature only")]
+    enum MockErr {
+        #[error("mock build failed: {0}")]
+        Failed(String),
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct SyncCap {
+        value: u32,
+    }
+
+    // Macro-generated impl
+    struct MacroSyncModule;
+    impl_module_meta!(MacroSyncModule, "macro-sync");
+    impl_auto_builder!(MacroSyncModule, Arc<SyncCap>, MockErr, |_kit| Ok(Arc::new(SyncCap {
+        value: 42,
+    })));
+
+    // Hand-written impl for comparison
+    struct HandSyncModule;
+    impl ModuleMeta for HandSyncModule {
+        const NAME: &'static str = "macro-sync";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            &[]
+        }
+    }
+    impl AutoBuilder for HandSyncModule {
+        type Capability = Arc<SyncCap>;
+        type Error = MockErr;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(SyncCap { value: 42 }))
+        }
+    }
+
+    // Error-propagation fixture
+    struct ErrSyncModule;
+    impl_module_meta!(ErrSyncModule, "err-sync");
+    impl_auto_builder!(ErrSyncModule, Arc<SyncCap>, MockErr, |_kit| Err(MockErr::Failed(
+        "intentional".to_string()
+    )));
+
+    // === Tests ===
+
+    #[test]
+    fn macro_sync_generates_correct_name() {
+        assert_eq!(MacroSyncModule::NAME, "macro-sync");
+    }
+
+    #[test]
+    fn macro_sync_generates_empty_dependencies() {
+        assert!(MacroSyncModule::dependencies().is_empty());
+    }
+
+    #[test]
+    fn macro_sync_capability_type_matches_hand_written() {
+        assert_eq!(
+            std::any::TypeId::of::<<MacroSyncModule as AutoBuilder>::Capability>(),
+            std::any::TypeId::of::<<HandSyncModule as AutoBuilder>::Capability>(),
+        );
+    }
+
+    #[test]
+    fn macro_sync_error_type_matches_hand_written() {
+        assert_eq!(
+            std::any::TypeId::of::<<MacroSyncModule as AutoBuilder>::Error>(),
+            std::any::TypeId::of::<<HandSyncModule as AutoBuilder>::Error>(),
+        );
+    }
+
+    #[test]
+    fn macro_sync_build_returns_expected_capability() {
+        let kit = Kit::new();
+        let cap = MacroSyncModule::build(&kit).unwrap();
+        assert_eq!(cap.value, 42);
+    }
+
+    #[test]
+    fn macro_sync_build_result_matches_hand_written() {
+        let kit = Kit::new();
+        let macro_cap = MacroSyncModule::build(&kit).unwrap();
+        let hand_cap = HandSyncModule::build(&kit).unwrap();
+        assert_eq!(macro_cap, hand_cap);
+    }
+
+    #[test]
+    fn macro_sync_build_propagates_errors() {
+        let kit = Kit::new();
+        let result = ErrSyncModule::build(&kit);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn macro_sync_name_equals_hand_written_name() {
+        assert_eq!(MacroSyncModule::NAME, HandSyncModule::NAME);
     }
 }
