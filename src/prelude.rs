@@ -18,23 +18,23 @@ pub use crate::kit::Configurable;
 #[cfg(feature = "confers-macros")]
 pub use crate::kit::ModuleConfig;
 
-#[cfg(feature = "lifecycle")]
-pub use crate::core::Lifecycle;
 #[cfg(all(feature = "lifecycle", feature = "async"))]
 pub use crate::core::AsyncLifecycle;
+#[cfg(feature = "lifecycle")]
+pub use crate::core::Lifecycle;
 
-#[cfg(feature = "health")]
-pub use crate::core::{HealthCheck, HealthStatus};
 #[cfg(all(feature = "health", feature = "async"))]
 pub use crate::core::AsyncHealthCheck;
+#[cfg(feature = "health")]
+pub use crate::core::{HealthCheck, HealthStatus};
 
 #[cfg(feature = "observability")]
 pub use crate::core::BuildObserver;
 
-#[cfg(feature = "scope")]
-pub use crate::kit::Scope;
 #[cfg(all(feature = "scope", feature = "async"))]
 pub use crate::kit::AsyncScope;
+#[cfg(feature = "scope")]
+pub use crate::kit::Scope;
 
 #[cfg(all(test, feature = "async"))]
 mod tests {
@@ -52,11 +52,7 @@ mod tests {
 
     #[test]
     fn prelude_async_markers_match_async_kit_markers() {
-        fn assert_same_type<T, U>()
-        where
-            T: std::any::Any + 'static,
-            U: std::any::Any + 'static,
-        {
+        fn assert_same_type<T: 'static, U: 'static>() {
             assert_eq!(
                 std::any::TypeId::of::<T>(),
                 std::any::TypeId::of::<U>(),
