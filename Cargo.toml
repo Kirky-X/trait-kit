@@ -11,19 +11,23 @@ license = "MIT"
 categories = ["rust-patterns", "development-tools"]
 readme = "README.md"
 
+[workspace.dependencies]
+confers = { version = "0.5", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+
 [dependencies]
-confers = { version = "0.4", default-features = false, optional = true }
-serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1", optional = true }
-thiserror = { version = "2", default-features = false }
+confers = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { version = "1.0", optional = true }
+thiserror = { version = "2.0", default-features = false }
 icu = "2.2"
 writeable = "0.6"
 sys-locale = "0.3"
 
 [dev-dependencies]
-serial_test = "3"
-static_assertions = "1"
-trybuild = "1"
+serial_test = "4.0"
+static_assertions = "1.1"
+trybuild = "1.0"
 
 [features]
 default = []
