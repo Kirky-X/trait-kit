@@ -271,3 +271,257 @@ pub enum GraphError {
     /// A dependency cycle was detected.
     CycleDetected { cycle: Vec<&'static str> },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::any::TypeId;
+
+    fn entry(name: &'static str, deps: Vec<(&'static str, TypeId)>) -> ModuleEntry {
+        ModuleEntry {
+            type_id: TypeId::of::<u8>(), // dummy — we use unique names instead
+            name,
+            dependencies: deps,
+        }
+    }
+
+    /// Each module needs a unique TypeId, so we use distinct zero-sized types.
+    mod types {
+        pub struct A;
+        pub struct B;
+        pub struct C;
+        pub struct D;
+    }
+
+    fn typed_entry<T: 'static>(
+        name: &'static str,
+        deps: Vec<(&'static str, TypeId)>,
+    ) -> ModuleEntry {
+        ModuleEntry {
+            type_id: TypeId::of::<T>(),
+            name,
+            dependencies: deps,
+        }
+    }
+
+    #[test]
+    fn graph_new_is_empty() {
+        let g = DependencyGraph::new();
+        assert!(g.entries().is_empty());
+    }
+
+    #[test]
+    fn graph_add_and_entries() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>("a", vec![])).unwrap();
+        assert_eq!(g.entries().len(), 1);
+    }
+
+    #[test]
+    fn graph_add_duplicate_returns_err() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>("a", vec![])).unwrap();
+        let err = g.add(typed_entry::<types::A>("a2", vec![])).unwrap_err();
+        assert_eq!(err, "a2");
+    }
+
+    #[test]
+    fn graph_validate_empty_succeeds() {
+        let g = DependencyGraph::new();
+        let sorted = g.validate().unwrap();
+        assert!(sorted.is_empty());
+    }
+
+    #[test]
+    fn graph_validate_single_node() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>("a", vec![])).unwrap();
+        let sorted = g.validate().unwrap();
+        assert_eq!(sorted.len(), 1);
+    }
+
+    #[test]
+    fn graph_validate_missing_dependency() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>(
+            "a",
+            vec![("b", TypeId::of::<types::B>())],
+        ))
+        .unwrap();
+        let err = g.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            GraphError::DependencyMissing {
+                module: "a",
+                missing: "b"
+            }
+        ));
+    }
+
+    #[test]
+    fn graph_validate_cycle_two_nodes() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>(
+            "a",
+            vec![("b", TypeId::of::<types::B>())],
+        ))
+        .unwrap();
+        g.add(typed_entry::<types::B>(
+            "b",
+            vec![("a", TypeId::of::<types::A>())],
+        ))
+        .unwrap();
+        let err = g.validate().unwrap_err();
+        assert!(matches!(err, GraphError::CycleDetected { .. }));
+        if let GraphError::CycleDetected { cycle } = err {
+            assert!(cycle.len() >= 2, "cycle should contain at least 2 names");
+        }
+    }
+
+    #[test]
+    fn graph_validate_cycle_three_nodes() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>(
+            "a",
+            vec![("b", TypeId::of::<types::B>())],
+        ))
+        .unwrap();
+        g.add(typed_entry::<types::B>(
+            "b",
+            vec![("c", TypeId::of::<types::C>())],
+        ))
+        .unwrap();
+        g.add(typed_entry::<types::C>(
+            "c",
+            vec![("a", TypeId::of::<types::A>())],
+        ))
+        .unwrap();
+        let err = g.validate().unwrap_err();
+        assert!(matches!(err, GraphError::CycleDetected { .. }));
+    }
+
+    #[test]
+    fn graph_validate_topo_order() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>("a", vec![])).unwrap();
+        g.add(typed_entry::<types::B>(
+            "b",
+            vec![("a", TypeId::of::<types::A>())],
+        ))
+        .unwrap();
+        let sorted = g.validate().unwrap();
+        let a_idx = sorted.iter().position(|t| *t == TypeId::of::<types::A>()).unwrap();
+        let b_idx = sorted.iter().position(|t| *t == TypeId::of::<types::B>()).unwrap();
+        assert!(a_idx < b_idx, "a should be sorted before b");
+    }
+
+    #[test]
+    fn graph_dependency_names() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>("a", vec![])).unwrap();
+        g.add(typed_entry::<types::B>(
+            "b",
+            vec![("a", TypeId::of::<types::A>())],
+        ))
+        .unwrap();
+        let names = g.dependency_names(TypeId::of::<types::B>());
+        assert_eq!(names, vec!["a"]);
+    }
+
+    #[test]
+    fn graph_dependency_names_unknown_returns_empty() {
+        let g = DependencyGraph::new();
+        let names = g.dependency_names(TypeId::of::<types::A>());
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn graph_name_of() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>("module-a", vec![])).unwrap();
+        assert_eq!(g.name_of(TypeId::of::<types::A>()), Some("module-a"));
+        assert_eq!(g.name_of(TypeId::of::<types::B>()), None);
+    }
+
+    #[test]
+    fn graph_default_is_empty() {
+        let g = DependencyGraph::default();
+        assert!(g.entries().is_empty());
+    }
+
+    #[test]
+    fn graph_to_dot_empty() {
+        let g = DependencyGraph::new();
+        assert_eq!(g.to_dot(), "digraph {}");
+    }
+
+    #[test]
+    fn graph_to_dot_with_nodes_and_edges() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>("a", vec![])).unwrap();
+        g.add(typed_entry::<types::B>(
+            "b",
+            vec![("a", TypeId::of::<types::A>())],
+        ))
+        .unwrap();
+        let dot = g.to_dot();
+        assert!(dot.starts_with("digraph {"));
+        assert!(dot.contains("\"a\""));
+        assert!(dot.contains("\"b\""));
+        assert!(dot.contains("\"a\" -> \"b\""));
+        assert!(dot.ends_with('}'));
+    }
+
+    #[test]
+    fn graph_to_mermaid_empty() {
+        let g = DependencyGraph::new();
+        assert_eq!(g.to_mermaid(), "graph TD");
+    }
+
+    #[test]
+    fn graph_to_mermaid_with_nodes_and_edges() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>("a", vec![])).unwrap();
+        g.add(typed_entry::<types::B>(
+            "b",
+            vec![("a", TypeId::of::<types::A>())],
+        ))
+        .unwrap();
+        let mermaid = g.to_mermaid();
+        assert!(mermaid.starts_with("graph TD"));
+        assert!(mermaid.contains("a[\"a\"]"));
+        assert!(mermaid.contains("b[\"b\"]"));
+        assert!(mermaid.contains("-->"));
+    }
+
+    #[test]
+    fn graph_to_mermaid_hyphen_replacement() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>("my-module", vec![])).unwrap();
+        g.add(typed_entry::<types::B>(
+            "my-dep",
+            vec![("my-module", TypeId::of::<types::A>())],
+        ))
+        .unwrap();
+        let mermaid = g.to_mermaid();
+        // Hyphens in names should be replaced with underscores for node IDs
+        assert!(mermaid.contains("my_module"));
+        assert!(mermaid.contains("my_dep"));
+    }
+
+    #[test]
+    fn graph_error_debug() {
+        let err = GraphError::DependencyMissing {
+            module: "a",
+            missing: "b",
+        };
+        let debug = format!("{err:?}");
+        assert!(debug.contains("DependencyMissing"));
+
+        let err2 = GraphError::CycleDetected {
+            cycle: vec!["a", "b", "a"],
+        };
+        let debug2 = format!("{err2:?}");
+        assert!(debug2.contains("CycleDetected"));
+    }
+}

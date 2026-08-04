@@ -1571,3 +1571,401 @@ mod tests {
         );
     }
 }
+
+// ─── Feature-gated async integration tests ────────────────────────────────
+
+#[cfg(all(test, feature = "lifecycle"))]
+mod async_lifecycle_tests {
+    use super::*;
+    use crate::core::lifecycle::AsyncLifecycle;
+    use crate::core::ModuleMeta;
+    use crate::test_helpers::{block_on, MockError};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static ASYNC_LC_READY: AtomicUsize = AtomicUsize::new(0);
+
+    struct AsyncLcModule;
+    impl ModuleMeta for AsyncLcModule {
+        const NAME: &'static str = "async-lc";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AsyncAutoBuilder for AsyncLcModule {
+        type Capability = Arc<()>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+            Box::pin(async move { Ok(Arc::new(())) })
+        }
+    }
+    impl AsyncLifecycle for AsyncLcModule {
+        fn on_ready<'a>(
+            _kit: &'a AsyncKit<Ready>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), MockError>> + Send + 'a>> {
+            Box::pin(async {
+                ASYNC_LC_READY.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+        }
+    }
+
+    #[test]
+    fn async_lifecycle_on_ready_called() {
+        ASYNC_LC_READY.store(0, Ordering::SeqCst);
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncLcModule>().unwrap();
+        kit.register_lifecycle::<AsyncLcModule>();
+        let _built = block_on(kit.build()).unwrap();
+        assert_eq!(ASYNC_LC_READY.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn async_shutdown_does_not_panic() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncLcModule>().unwrap();
+        kit.register_lifecycle::<AsyncLcModule>();
+        let built = block_on(kit.build()).unwrap();
+        built.shutdown();
+    }
+}
+
+#[cfg(all(test, feature = "health"))]
+mod async_health_tests {
+    use super::*;
+    use crate::core::health::{AsyncHealthCheck, HealthStatus};
+    use crate::core::ModuleMeta;
+    use crate::test_helpers::{block_on, MockError};
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct AsyncHcCap { val: i32 }
+
+    struct AsyncHcModule;
+    impl ModuleMeta for AsyncHcModule {
+        const NAME: &'static str = "async-hc";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AsyncAutoBuilder for AsyncHcModule {
+        type Capability = Arc<AsyncHcCap>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<AsyncHcCap>, MockError>> + Send + 'a>> {
+            Box::pin(async move { Ok(Arc::new(AsyncHcCap { val: 42 })) })
+        }
+    }
+    impl AsyncHealthCheck for AsyncHcModule {
+        fn check(cap: &Arc<AsyncHcCap>) -> HealthStatus {
+            if cap.val > 0 { HealthStatus::Healthy }
+            else { HealthStatus::Unhealthy { detail: "zero".into() } }
+        }
+    }
+
+    #[test]
+    fn async_health_check_queryable() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncHcModule>().unwrap();
+        kit.register_health_check::<AsyncHcModule>();
+        let built = block_on(kit.build()).unwrap();
+        let status = built.health_check::<AsyncHcModule>().unwrap();
+        assert_eq!(status, HealthStatus::Healthy);
+    }
+
+    #[test]
+    fn async_health_report_returns_all() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncHcModule>().unwrap();
+        kit.register_health_check::<AsyncHcModule>();
+        let built = block_on(kit.build()).unwrap();
+        let report = built.health_report();
+        assert_eq!(report.len(), 1);
+        assert_eq!(report[0].0, "async-hc");
+    }
+
+    #[test]
+    fn async_health_check_unregistered_returns_error() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncHcModule>().unwrap();
+        let built = block_on(kit.build()).unwrap();
+        let err = built.health_check::<AsyncHcModule>().unwrap_err();
+        assert!(matches!(err, TraitKitError::MissingConfig { .. }));
+    }
+}
+
+#[cfg(all(test, feature = "observability"))]
+mod async_observability_tests {
+    use super::*;
+    use crate::core::observer::BuildObserver;
+    use crate::core::ModuleMeta;
+    use crate::test_helpers::{block_on, MockError};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    struct AsyncObs {
+        start: Arc<AtomicUsize>,
+        built: Arc<AtomicUsize>,
+    }
+    impl BuildObserver for AsyncObs {
+        fn on_module_start(&self, _: &'static str) {
+            self.start.fetch_add(1, Ordering::SeqCst);
+        }
+        fn on_module_built(&self, _: &'static str, _: Duration) {
+            self.built.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct AsyncObsModule;
+    impl ModuleMeta for AsyncObsModule {
+        const NAME: &'static str = "async-obs";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AsyncAutoBuilder for AsyncObsModule {
+        type Capability = Arc<()>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+            Box::pin(async move { Ok(Arc::new(())) })
+        }
+    }
+
+    #[test]
+    fn async_observer_callbacks_fired() {
+        let start = Arc::new(AtomicUsize::new(0));
+        let built_count = Arc::new(AtomicUsize::new(0));
+        let obs = Arc::new(AsyncObs {
+            start: Arc::clone(&start),
+            built: Arc::clone(&built_count),
+        });
+        let mut kit = AsyncKit::new();
+        kit.with_observer(obs);
+        kit.register::<AsyncObsModule>().unwrap();
+        block_on(kit.build()).unwrap();
+        assert_eq!(start.load(Ordering::SeqCst), 1);
+        assert_eq!(built_count.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(all(test, feature = "factory"))]
+mod async_factory_tests {
+    use super::*;
+    use crate::core::ModuleMeta;
+    use crate::test_helpers::{block_on, MockError};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static ASYNC_FACTORY_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    struct AsyncFactoryModule;
+    impl ModuleMeta for AsyncFactoryModule {
+        const NAME: &'static str = "async-factory";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AsyncAutoBuilder for AsyncFactoryModule {
+        type Capability = Arc<AtomicUsize>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<AtomicUsize>, MockError>> + Send + 'a>> {
+            Box::pin(async move {
+                let n = ASYNC_FACTORY_COUNT.fetch_add(1, Ordering::SeqCst);
+                Ok(Arc::new(AtomicUsize::new(n)))
+            })
+        }
+    }
+
+    #[test]
+    fn async_factory_creates_new_instances() {
+        ASYNC_FACTORY_COUNT.store(0, Ordering::SeqCst);
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncFactoryModule>().unwrap();
+        let built = block_on(kit.build()).unwrap();
+        let factory = built.factory::<AsyncFactoryModule>();
+        let cap1 = block_on(factory());
+        let cap2 = block_on(factory());
+        assert!(cap1.is_ok());
+        assert!(cap2.is_ok());
+        assert_ne!(
+            cap1.unwrap().load(Ordering::SeqCst),
+            cap2.unwrap().load(Ordering::SeqCst)
+        );
+    }
+}
+
+#[cfg(all(test, feature = "scope"))]
+mod async_scope_tests {
+    use super::*;
+    use crate::core::ModuleMeta;
+    use crate::test_helpers::{block_on, MockError};
+    use std::sync::Arc;
+
+    struct AsyncScopeMockModule;
+    impl ModuleMeta for AsyncScopeMockModule {
+        const NAME: &'static str = "async-scope-mock";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AsyncAutoBuilder for AsyncScopeMockModule {
+        type Capability = Arc<()>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+            Box::pin(async move { Ok(Arc::new(())) })
+        }
+    }
+
+    #[test]
+    fn async_create_scope_returns_empty() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncScopeMockModule>().unwrap();
+        let built = block_on(kit.build()).unwrap();
+        let scope = built.create_scope();
+        assert!(!scope.contains::<AsyncScopeMockModule>());
+    }
+}
+
+#[cfg(all(test, feature = "conditional"))]
+mod async_conditional_tests {
+    use super::*;
+    use crate::core::ModuleMeta;
+    use crate::test_helpers::{block_on, MockError};
+    use std::sync::Arc;
+
+    struct AsyncCondMockModule;
+    impl ModuleMeta for AsyncCondMockModule {
+        const NAME: &'static str = "async-cond-mock";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AsyncAutoBuilder for AsyncCondMockModule {
+        type Capability = Arc<()>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+            Box::pin(async move { Ok(Arc::new(())) })
+        }
+    }
+
+    #[test]
+    fn async_register_if_true() {
+        let mut kit = AsyncKit::new();
+        let registered = kit.register_if::<AsyncCondMockModule>(|_| true).unwrap();
+        assert!(registered);
+        let built = block_on(kit.build()).unwrap();
+        assert!(built.contains::<AsyncCondMockModule>());
+    }
+
+    #[test]
+    fn async_register_if_false() {
+        let mut kit = AsyncKit::new();
+        let registered = kit.register_if::<AsyncCondMockModule>(|_| false).unwrap();
+        assert!(!registered);
+        let built = block_on(kit.build()).unwrap();
+        assert!(!built.contains::<AsyncCondMockModule>());
+    }
+}
+
+#[cfg(all(test, feature = "decorator"))]
+mod async_decorator_tests {
+    use super::*;
+    use crate::core::ModuleMeta;
+    use crate::test_helpers::{block_on, MockError};
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct AsyncDecCap { val: String }
+
+    struct AsyncDecModule;
+    impl ModuleMeta for AsyncDecModule {
+        const NAME: &'static str = "async-dec";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AsyncAutoBuilder for AsyncDecModule {
+        type Capability = Arc<AsyncDecCap>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<AsyncDecCap>, MockError>> + Send + 'a>> {
+            Box::pin(async move { Ok(Arc::new(AsyncDecCap { val: "base".into() })) })
+        }
+    }
+
+    #[test]
+    fn async_decorate_registers() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncDecModule>().unwrap();
+        kit.decorate::<AsyncDecModule>(|cap| {
+            Arc::new(AsyncDecCap { val: format!("{}+wrapped", cap.val) })
+        });
+        let built = block_on(kit.build()).unwrap();
+        let cap = built.require::<AsyncDecModule>().unwrap();
+        assert!(!cap.val.is_empty());
+    }
+}
+
+// ─── AsyncKit<Ready> surface tests ─────────────────────────────────────
+
+#[cfg(all(test, feature = "async"))]
+mod async_ready_tests {
+    use super::*;
+    use crate::core::ModuleMeta;
+    use crate::test_helpers::{block_on, MockError};
+    use std::sync::Arc;
+
+    struct AsyncReadyMockModule;
+    impl ModuleMeta for AsyncReadyMockModule {
+        const NAME: &'static str = "async-ready-mock";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AsyncAutoBuilder for AsyncReadyMockModule {
+        type Capability = Arc<()>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+            Box::pin(async move { Ok(Arc::new(())) })
+        }
+    }
+
+    #[test]
+    fn async_debug_unbuilt_format() {
+        let kit = AsyncKit::new();
+        let debug = format!("{kit:?}");
+        assert!(debug.contains("AsyncKit<Unbuilt>"));
+    }
+
+    #[test]
+    fn async_debug_ready_format() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncReadyMockModule>().unwrap();
+        let built = block_on(kit.build()).unwrap();
+        let debug = format!("{built:?}");
+        assert!(debug.contains("AsyncKit<Ready>"));
+    }
+
+    #[test]
+    fn async_default_creates_empty() {
+        let kit = AsyncKit::default();
+        let built = block_on(kit.build()).unwrap();
+        assert_eq!(built.graph.entries().len(), 0);
+    }
+
+    #[test]
+    fn async_graph_dot_works() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncReadyMockModule>().unwrap();
+        let built = block_on(kit.build()).unwrap();
+        let dot = built.graph_dot();
+        assert!(dot.contains("digraph"));
+    }
+
+    #[test]
+    fn async_graph_mermaid_works() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncReadyMockModule>().unwrap();
+        let built = block_on(kit.build()).unwrap();
+        let mermaid = built.graph_mermaid();
+        assert!(mermaid.contains("graph TD"));
+    }
+}

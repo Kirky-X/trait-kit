@@ -142,4 +142,105 @@ mod tests {
         let s2 = s.clone();
         assert_eq!(s, s2);
     }
+
+    #[test]
+    fn health_status_debug_format() {
+        let s = HealthStatus::Healthy;
+        let debug = format!("{s:?}");
+        assert!(debug.contains("Healthy"));
+
+        let s2 = HealthStatus::Unhealthy {
+            detail: "down".to_string(),
+        };
+        let debug2 = format!("{s2:?}");
+        assert!(debug2.contains("Unhealthy"));
+        assert!(debug2.contains("down"));
+    }
+
+    #[test]
+    fn health_status_ne_eq() {
+        let healthy = HealthStatus::Healthy;
+        let degraded = HealthStatus::Degraded {
+            detail: "slow".to_string(),
+        };
+        let unhealthy = HealthStatus::Unhealthy {
+            detail: "down".to_string(),
+        };
+        assert_ne!(healthy, degraded);
+        assert_ne!(healthy, unhealthy);
+        assert_ne!(degraded, unhealthy);
+    }
+}
+
+#[cfg(all(test, feature = "health", feature = "async"))]
+mod async_tests {
+    use super::*;
+    use crate::core::{AsyncAutoBuilder, ModuleMeta};
+    use crate::kit::AsyncKit;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct AsyncHealthCap {
+        value: i32,
+    }
+
+    #[derive(Debug)]
+    struct AsyncHealthError;
+
+    impl std::fmt::Display for AsyncHealthError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "async health error")
+        }
+    }
+
+    impl std::error::Error for AsyncHealthError {}
+
+    struct AsyncHealthModule;
+
+    impl ModuleMeta for AsyncHealthModule {
+        const NAME: &'static str = "async-health";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            &[]
+        }
+    }
+
+    impl AsyncAutoBuilder for AsyncHealthModule {
+        type Capability = Arc<AsyncHealthCap>;
+        type Error = AsyncHealthError;
+
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<AsyncHealthCap>, AsyncHealthError>> + Send + 'a>>
+        {
+            Box::pin(async move { Ok(Arc::new(AsyncHealthCap { value: 42 })) })
+        }
+    }
+
+    impl AsyncHealthCheck for AsyncHealthModule {
+        fn check(cap: &Arc<AsyncHealthCap>) -> HealthStatus {
+            if cap.value > 0 {
+                HealthStatus::Healthy
+            } else {
+                HealthStatus::Unhealthy {
+                    detail: "value is zero".to_string(),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn async_health_check_returns_healthy() {
+        let cap = Arc::new(AsyncHealthCap { value: 42 });
+        let status = AsyncHealthModule::check(&cap);
+        assert_eq!(status, HealthStatus::Healthy);
+    }
+
+    #[test]
+    fn async_health_check_returns_unhealthy() {
+        let cap = Arc::new(AsyncHealthCap { value: 0 });
+        let status = AsyncHealthModule::check(&cap);
+        assert!(matches!(status, HealthStatus::Unhealthy { .. }));
+    }
 }

@@ -19,6 +19,7 @@ pub mod i18n;
 pub mod prelude;
 
 pub use error::TraitKitError;
+pub use error::TraitKitResult;
 
 #[cfg(feature = "async")]
 pub use core::AsyncAutoBuilder;

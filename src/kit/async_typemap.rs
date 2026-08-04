@@ -304,4 +304,42 @@ mod tests {
         map2.insert(7i32);
         assert_eq!(map.get_cloned::<i32>(), Some(7));
     }
+
+    #[test]
+    fn read_by_type_id_returns_some_for_existing() {
+        let map = AsyncTypeMap::new();
+        map.insert(42i32);
+        let i32_id = std::any::TypeId::of::<i32>();
+        let result = map.read_by_type_id::<i32>(i32_id);
+        assert!(result.is_some());
+        let (_guard, val) = result.unwrap();
+        assert_eq!(*val, 42);
+    }
+
+    #[test]
+    fn read_by_type_id_returns_none_for_missing() {
+        let map = AsyncTypeMap::new();
+        let i32_id = std::any::TypeId::of::<i32>();
+        let result = map.read_by_type_id::<i32>(i32_id);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn read_by_type_id_returns_none_for_wrong_type() {
+        let map = AsyncTypeMap::new();
+        map.insert(42i32);
+        let i32_id = std::any::TypeId::of::<i32>();
+        // Request as u64 — downcast should fail
+        let result = map.read_by_type_id::<u64>(i32_id);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn debug_format_contains_len() {
+        let map = AsyncTypeMap::new();
+        map.insert(42i32);
+        let debug = format!("{map:?}");
+        assert!(debug.contains("AsyncTypeMap"));
+        assert!(debug.contains("len"));
+    }
 }

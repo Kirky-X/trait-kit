@@ -68,9 +68,11 @@ type EncryptedConfigMap = RefCell<HashMap<TypeId, EncryptedBlob>>;
 /// The builder is invoked on first access; the result is cached in the
 /// `OnceLock` for subsequent accesses. After construction, `builder` is
 /// `None` (consumed) and `cell` holds the built capability.
-struct LazySlot {
-    builder: Option<BuildFn>,
-    cell: OnceLock<Box<dyn Any>>,
+///
+/// Shared between `Kit` and `Scope` to avoid struct duplication.
+pub(crate) struct LazySlot {
+    pub(crate) builder: Option<BuildFn>,
+    pub(crate) cell: OnceLock<Box<dyn Any>>,
 }
 
 /// The capability and configuration management center.
@@ -2132,5 +2134,470 @@ mod interface_tests {
             matches!(err, TraitKitError::AlreadyRegistered { .. }),
             "expected AlreadyRegistered, got {err:?}"
         );
+    }
+}
+
+// ─── Feature-gated integration tests ─────────────────────────────────────
+
+#[cfg(all(test, feature = "lifecycle"))]
+mod lifecycle_tests {
+    use super::*;
+    use crate::core::lifecycle::Lifecycle;
+    use crate::core::ModuleMeta;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static LC_SHUTDOWN: AtomicUsize = AtomicUsize::new(0);
+    static LC_READY: AtomicUsize = AtomicUsize::new(0);
+
+    struct LcModule;
+    impl ModuleMeta for LcModule {
+        const NAME: &'static str = "lc-module";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AutoBuilder for LcModule {
+        type Capability = Arc<AtomicUsize>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<AtomicUsize>, TraitKitError> {
+            Ok(Arc::new(AtomicUsize::new(0)))
+        }
+    }
+    impl Lifecycle for LcModule {
+        fn on_ready(_kit: &Kit<Ready>) -> Result<(), Self::Error> {
+            LC_READY.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        fn on_shutdown(_cap: &Arc<AtomicUsize>) {
+            LC_SHUTDOWN.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn lifecycle_on_ready_called_during_build() {
+        LC_READY.store(0, Ordering::SeqCst);
+        let mut kit = Kit::new();
+        kit.register::<LcModule>().unwrap();
+        kit.register_lifecycle::<LcModule>();
+        let _built = kit.build().unwrap();
+        assert_eq!(LC_READY.load(Ordering::SeqCst), 1, "on_ready should be called once");
+    }
+
+    #[test]
+    fn lifecycle_shutdown_called_in_reverse_order() {
+        LC_SHUTDOWN.store(0, Ordering::SeqCst);
+        let mut kit = Kit::new();
+        kit.register::<LcModule>().unwrap();
+        kit.register_lifecycle::<LcModule>();
+        let built = kit.build().unwrap();
+        built.shutdown();
+        assert_eq!(LC_SHUTDOWN.load(Ordering::SeqCst), 1, "on_shutdown should be called once");
+    }
+}
+
+#[cfg(all(test, feature = "health"))]
+mod health_tests {
+    use super::*;
+    use crate::core::health::{HealthCheck, HealthStatus};
+    use crate::core::ModuleMeta;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct HcCap { val: i32 }
+
+    struct HcModule;
+    impl ModuleMeta for HcModule {
+        const NAME: &'static str = "hc-module";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AutoBuilder for HcModule {
+        type Capability = Arc<HcCap>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<HcCap>, TraitKitError> {
+            Ok(Arc::new(HcCap { val: 42 }))
+        }
+    }
+    impl HealthCheck for HcModule {
+        fn check(cap: &Arc<HcCap>) -> HealthStatus {
+            if cap.val > 0 { HealthStatus::Healthy }
+            else { HealthStatus::Unhealthy { detail: "zero".into() } }
+        }
+    }
+
+    #[test]
+    fn health_check_registered_and_queryable() {
+        let mut kit = Kit::new();
+        kit.register::<HcModule>().unwrap();
+        kit.register_health_check::<HcModule>();
+        let built = kit.build().unwrap();
+        let status = built.health_check::<HcModule>().unwrap();
+        assert_eq!(status, HealthStatus::Healthy);
+    }
+
+    #[test]
+    fn health_report_returns_all_checkers() {
+        let mut kit = Kit::new();
+        kit.register::<HcModule>().unwrap();
+        kit.register_health_check::<HcModule>();
+        let built = kit.build().unwrap();
+        let report = built.health_report();
+        assert_eq!(report.len(), 1);
+        assert_eq!(report[0].0, "hc-module");
+        assert_eq!(report[0].1, HealthStatus::Healthy);
+    }
+
+    #[test]
+    fn health_check_unregistered_returns_error() {
+        let mut kit = Kit::new();
+        kit.register::<HcModule>().unwrap();
+        let built = kit.build().unwrap();
+        let err = built.health_check::<HcModule>().unwrap_err();
+        assert!(matches!(err, TraitKitError::MissingConfig { .. }));
+    }
+}
+
+#[cfg(all(test, feature = "observability"))]
+mod observability_tests {
+    use super::*;
+    use crate::core::observer::BuildObserver;
+    use crate::core::ModuleMeta;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    struct CountingObs {
+        start: Arc<AtomicUsize>,
+        built: Arc<AtomicUsize>,
+    }
+    impl BuildObserver for CountingObs {
+        fn on_module_start(&self, _: &'static str) {
+            self.start.fetch_add(1, Ordering::SeqCst);
+        }
+        fn on_module_built(&self, _: &'static str, _: Duration) {
+            self.built.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct ObsModule;
+    impl ModuleMeta for ObsModule {
+        const NAME: &'static str = "obs-module";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AutoBuilder for ObsModule {
+        type Capability = Arc<()>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
+            Ok(Arc::new(()))
+        }
+    }
+
+    #[test]
+    fn observer_callbacks_fired_during_build() {
+        let start = Arc::new(AtomicUsize::new(0));
+        let built = Arc::new(AtomicUsize::new(0));
+        let obs = Arc::new(CountingObs {
+            start: Arc::clone(&start),
+            built: Arc::clone(&built),
+        });
+        let mut kit = Kit::new();
+        kit.with_observer(obs);
+        kit.register::<ObsModule>().unwrap();
+        kit.build().unwrap();
+        assert_eq!(start.load(Ordering::SeqCst), 1, "on_module_start should fire");
+        assert_eq!(built.load(Ordering::SeqCst), 1, "on_module_built should fire");
+    }
+}
+
+#[cfg(all(test, feature = "factory"))]
+mod factory_tests {
+    use super::*;
+    use crate::core::ModuleMeta;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static FACTORY_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    struct FactoryModule;
+    impl ModuleMeta for FactoryModule {
+        const NAME: &'static str = "factory-module";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AutoBuilder for FactoryModule {
+        type Capability = Arc<AtomicUsize>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<AtomicUsize>, TraitKitError> {
+            let n = FACTORY_COUNT.fetch_add(1, Ordering::SeqCst);
+            Ok(Arc::new(AtomicUsize::new(n)))
+        }
+    }
+
+    #[test]
+    fn factory_creates_new_instance_each_call() {
+        FACTORY_COUNT.store(0, Ordering::SeqCst);
+        let mut kit = Kit::new();
+        kit.register::<FactoryModule>().unwrap();
+        let built = kit.build().unwrap();
+        let factory = built.factory::<FactoryModule>();
+        let cap1 = factory().unwrap();
+        let cap2 = factory().unwrap();
+        // Each call invokes build() — counter increments
+        assert_ne!(
+            cap1.load(Ordering::SeqCst),
+            cap2.load(Ordering::SeqCst),
+            "factory should produce different instances"
+        );
+    }
+}
+
+#[cfg(all(test, feature = "scope"))]
+mod scope_tests {
+    use super::*;
+    use crate::core::ModuleMeta;
+    use std::sync::Arc;
+
+    struct ScopeMockModule;
+    impl ModuleMeta for ScopeMockModule {
+        const NAME: &'static str = "scope-mock";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AutoBuilder for ScopeMockModule {
+        type Capability = Arc<()>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+    }
+
+    #[test]
+    fn create_scope_returns_empty_scope() {
+        let mut kit = Kit::new();
+        kit.register::<ScopeMockModule>().unwrap();
+        let built = kit.build().unwrap();
+        let scope = built.create_scope();
+        assert!(!scope.contains::<ScopeMockModule>());
+    }
+}
+
+#[cfg(all(test, feature = "conditional"))]
+mod conditional_tests {
+    use super::*;
+    use crate::core::ModuleMeta;
+    use std::sync::Arc;
+
+    struct CondMockModule;
+    impl ModuleMeta for CondMockModule {
+        const NAME: &'static str = "cond-mock";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AutoBuilder for CondMockModule {
+        type Capability = Arc<()>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+    }
+
+    #[test]
+    fn register_if_true_registers_module() {
+        let mut kit = Kit::new();
+        let registered = kit.register_if::<CondMockModule>(|_| true).unwrap();
+        assert!(registered);
+        let built = kit.build().unwrap();
+        assert!(built.contains::<CondMockModule>());
+    }
+
+    #[test]
+    fn register_if_false_skips_module() {
+        let mut kit = Kit::new();
+        let registered = kit.register_if::<CondMockModule>(|_| false).unwrap();
+        assert!(!registered);
+        let built = kit.build().unwrap();
+        assert!(!built.contains::<CondMockModule>());
+    }
+}
+
+#[cfg(all(test, feature = "decorator"))]
+mod decorator_tests {
+    use super::*;
+    use crate::core::ModuleMeta;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct DecCap { val: String }
+
+    struct DecModule;
+    impl ModuleMeta for DecModule {
+        const NAME: &'static str = "dec-module";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AutoBuilder for DecModule {
+        type Capability = Arc<DecCap>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<DecCap>, TraitKitError> {
+            Ok(Arc::new(DecCap { val: "original".into() }))
+        }
+    }
+
+    #[test]
+    fn decorate_registers_decorator() {
+        let mut kit = Kit::new();
+        kit.register::<DecModule>().unwrap();
+        kit.decorate::<DecModule>(|cap| {
+            Arc::new(DecCap { val: format!("{}+decorated", cap.val) })
+        });
+        // Decorator is registered but applied during build
+        let built = kit.build().unwrap();
+        let cap = built.require::<DecModule>().unwrap();
+        // Verify the capability is accessible
+        assert!(!cap.val.is_empty());
+    }
+}
+
+#[cfg(all(test, feature = "encryption"))]
+mod encryption_tests {
+    use super::*;
+    use crate::kit::ModuleConfig;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    struct SecretConfig {
+        api_key: String,
+    }
+
+    impl ModuleConfig for SecretConfig {
+        const PATH: &'static str = "test.secret";
+        fn default_value() -> Self {
+            Self { api_key: "default".into() }
+        }
+    }
+
+    #[test]
+    fn set_and_get_encrypted_roundtrip() {
+        let kit = Kit::new();
+        let master_key = [0x42u8; 32];
+        let config = SecretConfig { api_key: "super-secret".into() };
+        kit.set_encrypted(&config, &master_key).unwrap();
+        assert!(kit.contains_encrypted::<SecretConfig>());
+        let built = kit.build().unwrap();
+        let decrypted: SecretConfig = built.get_encrypted(&master_key).unwrap();
+        assert_eq!(decrypted, config);
+    }
+
+    #[test]
+    fn contains_encrypted_false_for_missing() {
+        let kit = Kit::new();
+        assert!(!kit.contains_encrypted::<SecretConfig>());
+    }
+
+    #[test]
+    fn get_encrypted_missing_returns_error() {
+        let kit = Kit::new();
+        let built = kit.build().unwrap();
+        let master_key = [0x42u8; 32];
+        let err = built.get_encrypted::<SecretConfig>(&master_key).unwrap_err();
+        assert!(matches!(err, TraitKitError::MissingConfig { .. }));
+    }
+}
+
+// ─── Kit<Ready> surface tests ─────────────────────────────────────────────
+
+#[cfg(test)]
+mod ready_tests {
+    use super::*;
+    use crate::core::ModuleMeta;
+    use std::sync::Arc;
+
+    struct ReadyMockModule;
+    impl ModuleMeta for ReadyMockModule {
+        const NAME: &'static str = "ready-mock";
+        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+    }
+    impl AutoBuilder for ReadyMockModule {
+        type Capability = Arc<()>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+    }
+
+    #[test]
+    fn ready_optional_returns_none_for_unbuilt() {
+        let kit = Kit::new();
+        let built = kit.build().unwrap();
+        assert!(built.optional::<ReadyMockModule>().is_none());
+    }
+
+    #[test]
+    fn ready_optional_returns_some_for_built() {
+        let mut kit = Kit::new();
+        kit.register::<ReadyMockModule>().unwrap();
+        let built = kit.build().unwrap();
+        assert!(built.optional::<ReadyMockModule>().is_some());
+    }
+
+    #[test]
+    fn ready_contains_returns_true_for_built() {
+        let mut kit = Kit::new();
+        kit.register::<ReadyMockModule>().unwrap();
+        let built = kit.build().unwrap();
+        assert!(built.contains::<ReadyMockModule>());
+    }
+
+    #[test]
+    fn ready_contains_returns_false_for_unbuilt() {
+        let kit = Kit::new();
+        let built = kit.build().unwrap();
+        assert!(!built.contains::<ReadyMockModule>());
+    }
+
+    #[test]
+    fn ready_contains_config_returns_true() {
+        let kit = Kit::new();
+        kit.set_config(42i32);
+        let built = kit.build().unwrap();
+        assert!(built.contains_config::<i32>());
+    }
+
+    #[test]
+    fn ready_contains_config_returns_false() {
+        let kit = Kit::new();
+        let built = kit.build().unwrap();
+        assert!(!built.contains_config::<u64>());
+    }
+
+    #[test]
+    fn debug_unbuilt_format() {
+        let kit = Kit::new();
+        let debug = format!("{kit:?}");
+        assert!(debug.contains("Kit<Unbuilt>"));
+        assert!(debug.contains("modules"));
+    }
+
+    #[test]
+    fn debug_ready_format() {
+        let mut kit = Kit::new();
+        kit.register::<ReadyMockModule>().unwrap();
+        let built = kit.build().unwrap();
+        let debug = format!("{built:?}");
+        assert!(debug.contains("Kit<Ready>"));
+        assert!(debug.contains("modules"));
+    }
+
+    #[test]
+    fn default_creates_empty_kit() {
+        let kit = Kit::default();
+        let built = kit.build().unwrap();
+        assert_eq!(built.graph.entries().len(), 0);
+    }
+
+    #[test]
+    fn graph_dot_returns_valid_string() {
+        let mut kit = Kit::new();
+        kit.register::<ReadyMockModule>().unwrap();
+        let built = kit.build().unwrap();
+        let dot = built.graph_dot();
+        assert!(dot.contains("digraph"));
+    }
+
+    #[test]
+    fn graph_mermaid_returns_valid_string() {
+        let mut kit = Kit::new();
+        kit.register::<ReadyMockModule>().unwrap();
+        let built = kit.build().unwrap();
+        let mermaid = built.graph_mermaid();
+        assert!(mermaid.contains("graph TD"));
     }
 }

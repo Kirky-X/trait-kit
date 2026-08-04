@@ -25,10 +25,6 @@ impl TypeMap {
     }
 
     /// Remove all entries from the map, dropping all stored values.
-    #[allow(
-        dead_code,
-        reason = "used by feature-gated Scope Drop impl"
-    )]
     pub fn clear(&self) {
         self.inner.borrow_mut().clear();
     }
@@ -95,10 +91,6 @@ impl TypeMap {
     #[allow(
         clippy::type_complexity,
         reason = "return type bundles the RefCell guard with the downcast reference"
-    )]
-    #[allow(
-        dead_code,
-        reason = "public API used by feature-gated health/observer modules"
     )]
     pub fn get_ref_by_type_id<T: 'static>(
         &self,
@@ -243,5 +235,45 @@ mod tests {
         let _guard = map.inner.borrow_mut();
         // This should panic because inner is already mutably borrowed
         let _ = map.inner_ref();
+    }
+
+    #[test]
+    fn get_ref_by_type_id_returns_some_for_existing() {
+        let map = TypeMap::new();
+        map.insert(42i32);
+        let i32_id = std::any::TypeId::of::<i32>();
+        let result = map.get_ref_by_type_id::<i32>(i32_id);
+        assert!(result.is_some());
+        let (_guard, val) = result.unwrap();
+        assert_eq!(*val, 42);
+    }
+
+    #[test]
+    fn get_ref_by_type_id_returns_none_for_missing() {
+        let map = TypeMap::new();
+        let i32_id = std::any::TypeId::of::<i32>();
+        let result = map.get_ref_by_type_id::<i32>(i32_id);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn get_ref_by_type_id_returns_none_for_wrong_type() {
+        let map = TypeMap::new();
+        map.insert(42i32);
+        let i32_id = std::any::TypeId::of::<i32>();
+        // Request as u64 — downcast should fail
+        let result = map.get_ref_by_type_id::<u64>(i32_id);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn clear_removes_all_entries() {
+        let map = TypeMap::new();
+        map.insert(42i32);
+        map.insert("hello".to_string());
+        assert_eq!(map.len(), 2);
+        map.clear();
+        assert_eq!(map.len(), 0);
+        assert!(map.get_cloned::<i32>().is_none());
     }
 }

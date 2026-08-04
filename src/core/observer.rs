@@ -74,4 +74,36 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<CountingObserver>();
     }
+
+    /// Observer with no overrides — exercises the default no-op methods.
+    struct DefaultObserver;
+    impl BuildObserver for DefaultObserver {}
+
+    #[test]
+    fn observer_default_on_module_start_does_not_panic() {
+        let obs = DefaultObserver;
+        obs.on_module_start("test-module");
+    }
+
+    #[test]
+    fn observer_default_on_module_built_does_not_panic() {
+        let obs = DefaultObserver;
+        obs.on_module_built("test-module", Duration::from_millis(5));
+    }
+
+    #[test]
+    fn observer_default_on_build_error_does_not_panic() {
+        let obs = DefaultObserver;
+        let err = crate::error::TraitKitError::MissingCapability { key: "test" };
+        obs.on_build_error("test-module", &err);
+    }
+
+    #[test]
+    fn observer_default_via_dyn_dispatch() {
+        let obs: Box<dyn BuildObserver> = Box::new(DefaultObserver);
+        obs.on_module_start("m1");
+        obs.on_module_built("m1", Duration::from_millis(1));
+        let err = crate::error::TraitKitError::MissingConfig { key: "x" };
+        obs.on_build_error("m1", &err);
+    }
 }
