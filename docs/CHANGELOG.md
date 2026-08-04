@@ -65,6 +65,16 @@ _暂无未发布变更。_
 - `kit.set_config()` 现在可在 `Kit<Unbuilt>` 和 `Kit<Ready>` 上调用
 - 错误模块路径 `src/core/error.rs` → `src/error.rs`
 
+### 依赖
+
+- `confers` 0.4 → 0.5（传递依赖升级：notify 7→8、hkdf 0.12→0.13、sha2 0.10→0.11 等）
+- `serial_test` 3 → 4.0（dev-dependency）
+- 统一依赖版本写法为 `x.x` 格式（serde/serde_json/thiserror/trybuild/static_assertions）
+
+### 构建
+
+- 新增 `[workspace.dependencies]` 集中管理 `confers` 和 `serde`，examples crate 通过 `workspace = true` 继承
+
 ## [0.3.1] - 2026-07-22
 
 ### 修复
