@@ -794,22 +794,31 @@ impl Kit {
     /// Requires the `confers-macros` feature. Stores the resulting value
     /// via `set_config`, overriding any prior value of the same type.
     ///
+    /// # Returns
+    ///
+    /// `true` if `C::load()` succeeded, `false` if the default was used.
+    /// The return value lets callers detect fallback without inspecting the
+    /// stored value.
+    ///
     /// # Errors
     ///
-    /// Never returns an error: load failures are silently replaced by the
-    /// module's declared default. Inspect the stored value via `config::<C>()`
-    /// if you need to distinguish "loaded" from "defaulted".
+    /// Currently never returns an error, but the `Result` is reserved for
+    /// future use (e.g. validation of the default value).
     #[cfg(feature = "confers-macros")]
-    pub fn load_config_or_default<C>(&self) -> Result<(), TraitKitError>
+    pub fn load_config_or_default<C>(&self) -> Result<bool, TraitKitError>
     where
         C: super::Configurable + super::ModuleConfig,
     {
-        let config = match C::load() {
-            Ok(value) => value,
-            Err(_) => C::default_value(),
-        };
-        self.set_config(config);
-        Ok(())
+        match C::load() {
+            Ok(value) => {
+                self.set_config(value);
+                Ok(true)
+            }
+            Err(_e) => {
+                self.set_config(C::default_value());
+                Ok(false)
+            }
+        }
     }
 }
 

@@ -1011,8 +1011,10 @@ mod load_config_or_default_coverage {
     #[test]
     fn load_config_or_default_uses_default_when_load_fails() {
         let kit = Kit::new();
-        kit.load_config_or_default::<WithDefault>()
+        let loaded = kit
+            .load_config_or_default::<WithDefault>()
             .expect("should never error");
+        assert!(!loaded, "should report defaulted (load failed)");
         let kit = kit.build().expect("build should succeed");
         let cfg: WithDefault = kit.config().expect("config should be stored");
         assert_eq!(cfg.field, "fallback");
@@ -1039,8 +1041,10 @@ mod load_config_or_default_coverage {
     #[test]
     fn load_config_or_default_uses_loaded_value_when_load_succeeds() {
         let kit = Kit::new();
-        kit.load_config_or_default::<LoadOkConfig>()
+        let loaded = kit
+            .load_config_or_default::<LoadOkConfig>()
             .expect("should never error");
+        assert!(loaded, "should report loaded (load succeeded)");
         let kit = kit.build().expect("build should succeed");
         let cfg: LoadOkConfig = kit.config().expect("config should be stored");
         assert_eq!(cfg.v, 42);
@@ -1050,8 +1054,10 @@ mod load_config_or_default_coverage {
     fn load_config_or_default_overrides_prior_set_config() {
         let kit = Kit::new();
         kit.set_config(LoadOkConfig { v: 1 });
-        kit.load_config_or_default::<LoadOkConfig>()
+        let loaded = kit
+            .load_config_or_default::<LoadOkConfig>()
             .expect("should override");
+        assert!(loaded, "should report loaded");
         let kit = kit.build().expect("build should succeed");
         let cfg: LoadOkConfig = kit.config().expect("config should be stored");
         assert_eq!(cfg.v, 42);
