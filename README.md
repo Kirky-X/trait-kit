@@ -1,7 +1,7 @@
 <div align="center">
 
 <p align="center">
-  <img src="assets/trait-kit.svg" width="200" alt="trait-kit logo">
+  <img src="docs/assets/trait-kit.svg" width="200" alt="trait-kit logo">
 </p>
 
 [![CI][ci-badge]][ci-url] [![crates.io][crates-badge]][crates-url] [![docs.rs][docs-badge]][docs-url] [![downloads][downloads-badge]][downloads-url] [![MIT licensed][license-badge]][license-url] [![MSRV][msrv-badge]][msrv-url]
