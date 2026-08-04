@@ -53,7 +53,7 @@ macro_rules! impl_module_meta {
 }
 
 /// Implements `AutoBuilder` for a module type (sync counterpart to
-/// [`impl_async_auto_builder!`]).
+/// `impl_async_auto_builder!`).
 ///
 /// # Syntax
 ///
@@ -91,6 +91,7 @@ macro_rules! impl_auto_builder {
             type Capability = $cap;
             type Error = $err;
 
+            #[track_caller]
             fn build(
                 $kit: &$crate::kit::Kit,
             ) -> ::std::result::Result<Self::Capability, Self::Error> {
@@ -147,6 +148,7 @@ macro_rules! impl_async_auto_builder {
             type Capability = $cap;
             type Error = $err;
 
+            #[track_caller]
             fn build<'a>(
                 $kit: &'a $crate::kit::AsyncKit,
             ) -> ::std::pin::Pin<
@@ -406,9 +408,9 @@ mod sync_auto_builder_tests {
     // Macro-generated impl
     struct MacroSyncModule;
     impl_module_meta!(MacroSyncModule, "macro-sync");
-    impl_auto_builder!(MacroSyncModule, Arc<SyncCap>, MockErr, |_kit| Ok(Arc::new(SyncCap {
-        value: 42,
-    })));
+    impl_auto_builder!(MacroSyncModule, Arc<SyncCap>, MockErr, |_kit| Ok(Arc::new(
+        SyncCap { value: 42 }
+    )));
 
     // Hand-written impl for comparison
     struct HandSyncModule;
@@ -429,9 +431,9 @@ mod sync_auto_builder_tests {
     // Error-propagation fixture
     struct ErrSyncModule;
     impl_module_meta!(ErrSyncModule, "err-sync");
-    impl_auto_builder!(ErrSyncModule, Arc<SyncCap>, MockErr, |_kit| Err(MockErr::Failed(
-        "intentional".to_string()
-    )));
+    impl_auto_builder!(ErrSyncModule, Arc<SyncCap>, MockErr, |_kit| Err(
+        MockErr::Failed("intentional".to_string())
+    ));
 
     // === Tests ===
 

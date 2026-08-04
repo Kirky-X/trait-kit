@@ -4,9 +4,10 @@
 
 /// Runtime health status of a module.
 #[cfg(feature = "health")]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum HealthStatus {
     /// Module is operating normally.
+    #[default]
     Healthy,
     /// Module is functional but degraded (e.g. high latency, partial failure).
     Degraded {
@@ -26,6 +27,22 @@ impl HealthStatus {
     #[must_use]
     pub fn is_healthy(&self) -> bool {
         matches!(self, HealthStatus::Healthy)
+    }
+
+    /// Create a `Degraded` status with the given detail message.
+    #[must_use]
+    pub fn degraded<D: Into<String>>(detail: D) -> Self {
+        Self::Degraded {
+            detail: detail.into(),
+        }
+    }
+
+    /// Create an `Unhealthy` status with the given detail message.
+    #[must_use]
+    pub fn unhealthy<D: Into<String>>(detail: D) -> Self {
+        Self::Unhealthy {
+            detail: detail.into(),
+        }
     }
 }
 
@@ -110,14 +127,18 @@ mod tests {
     #[test]
     fn health_status_is_healthy() {
         assert!(HealthStatus::Healthy.is_healthy());
-        assert!(!HealthStatus::Degraded {
-            detail: String::new()
-        }
-        .is_healthy());
-        assert!(!HealthStatus::Unhealthy {
-            detail: String::new()
-        }
-        .is_healthy());
+        assert!(
+            !HealthStatus::Degraded {
+                detail: String::new()
+            }
+            .is_healthy()
+        );
+        assert!(
+            !HealthStatus::Unhealthy {
+                detail: String::new()
+            }
+            .is_healthy()
+        );
     }
 
     #[test]

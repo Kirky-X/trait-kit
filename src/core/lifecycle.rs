@@ -29,9 +29,7 @@ pub trait Lifecycle: crate::core::AutoBuilder {
     /// Returns `Self::Error` if initialization fails. The error is wrapped
     /// in `TraitKitError::LifecycleFailed` and propagated from `build()`.
     #[must_use = "on_ready returns Result<(), Error>; ignoring it may hide initialization failures"]
-    fn on_ready(
-        _kit: &crate::kit::Kit<crate::kit::Ready>,
-    ) -> Result<(), Self::Error> {
+    fn on_ready(_kit: &crate::kit::Kit<crate::kit::Ready>) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -133,7 +131,7 @@ mod tests {
         }
 
         fn on_shutdown(_cap: &Arc<TestCap>) {
-            SHUTDOWN_COUNTER.fetch_add(1, Ordering::SeqCst);
+            SHUTDOWN_COUNTER.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -211,12 +209,12 @@ mod tests {
 
     #[test]
     fn lifecycle_shutdown_counter_increments() {
-        let before = SHUTDOWN_COUNTER.load(Ordering::SeqCst);
+        let before = SHUTDOWN_COUNTER.load(Ordering::Relaxed);
         let cap = Arc::new(TestCap {
             name: "test".to_string(),
         });
         TestModule::on_shutdown(&cap);
-        let after = SHUTDOWN_COUNTER.load(Ordering::SeqCst);
+        let after = SHUTDOWN_COUNTER.load(Ordering::Relaxed);
         assert_eq!(after, before + 1, "shutdown counter should increment");
     }
 
