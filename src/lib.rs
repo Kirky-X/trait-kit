@@ -79,12 +79,11 @@ pub(crate) mod test_helpers {
                 Poll::Ready(v) => return v,
                 Poll::Pending => {
                     polls += 1;
-                    if polls >= MAX_POLLS {
-                        panic!(
-                            "block_on: future did not complete within \
-                             {MAX_POLLS} poll iterations (possible infinite loop)"
-                        );
-                    }
+                    assert!(
+                        polls < MAX_POLLS,
+                        "block_on: future did not complete within \
+                         {MAX_POLLS} poll iterations (possible infinite loop)"
+                    );
                     std::hint::spin_loop();
                 }
             }

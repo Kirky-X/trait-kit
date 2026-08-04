@@ -28,6 +28,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    #[allow(clippy::struct_field_names)]
     struct CountingObserver {
         start_count: Arc<AtomicUsize>,
         built_count: Arc<AtomicUsize>,
@@ -117,7 +118,7 @@ mod tests {
         };
         let err = crate::error::TraitKitError::BuildFailed {
             context: "test",
-            source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "test")),
+            source: Box::new(std::io::Error::other("test")),
         };
         obs.on_build_error("test-module", &err);
         assert_eq!(error.load(Ordering::Relaxed), 1);

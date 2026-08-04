@@ -2028,7 +2028,7 @@ mod tests {
             fn build(_kit: &Kit) -> Result<Arc<AtomicUsize>, TraitKitError> {
                 Err(TraitKitError::BuildFailed {
                     context: "fail-multi",
-                    source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "multi fail")),
+                    source: Box::new(std::io::Error::other("multi fail")),
                 })
             }
         }
@@ -2380,8 +2380,7 @@ mod lifecycle_tests {
             fn on_ready(_kit: &Kit<Ready>) -> Result<(), TraitKitError> {
                 Err(TraitKitError::BuildFailed {
                     context: "on_ready",
-                    source: Box::new(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    source: Box::new(std::io::Error::other(
                         "intentional failure",
                     )),
                 })
@@ -2589,8 +2588,7 @@ mod observability_tests {
             fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
                 Err(TraitKitError::BuildFailed {
                     context: "intentional",
-                    source: Box::new(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    source: Box::new(std::io::Error::other(
                         "test failure",
                     )),
                 })
@@ -3076,7 +3074,7 @@ mod ready_tests {
             fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
                 Err(TraitKitError::BuildFailed {
                     context: "lazy-fail",
-                    source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "lazy fail")),
+                    source: Box::new(std::io::Error::other("lazy fail")),
                 })
             }
         }
