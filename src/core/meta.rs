@@ -15,7 +15,13 @@ pub trait ModuleMeta: 'static {
     const NAME: &'static str;
 
     /// Returns (name, `TypeId`) pairs for modules this module depends on.
-    fn dependencies() -> &'static [(&'static str, std::any::TypeId)];
+    ///
+    /// Defaults to an empty slice — modules with no dependencies do not
+    /// need to override this method.
+    #[must_use]
+    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+        &[]
+    }
 }
 
 /// Builder trait for module construction.

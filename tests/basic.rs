@@ -107,10 +107,10 @@ fn test_missing_dependency_error() {
     match result.unwrap_err() {
         TraitKitError::DependencyMissing { module, missing } => {
             assert_eq!(module, "db_pool");
-            // impl_module_meta! generates dependency names via stringify!,
-            // producing the type name ("LoggerModule") rather than the
-            // module's NAME constant ("logger"). TypeId matching is unaffected.
-            assert_eq!(missing, "LoggerModule");
+            // impl_module_meta! now uses ModuleMeta::NAME for dependency
+            // names, producing the module's NAME constant ("logger") rather
+            // than the stringified type name.
+            assert_eq!(missing, "logger");
         }
         other => panic!("expected DependencyMissing, got: {other}"),
     }
