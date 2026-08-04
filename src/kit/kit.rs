@@ -2380,9 +2380,7 @@ mod lifecycle_tests {
             fn on_ready(_kit: &Kit<Ready>) -> Result<(), TraitKitError> {
                 Err(TraitKitError::BuildFailed {
                     context: "on_ready",
-                    source: Box::new(std::io::Error::other(
-                        "intentional failure",
-                    )),
+                    source: Box::new(std::io::Error::other("intentional failure")),
                 })
             }
         }
@@ -2588,9 +2586,7 @@ mod observability_tests {
             fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
                 Err(TraitKitError::BuildFailed {
                     context: "intentional",
-                    source: Box::new(std::io::Error::other(
-                        "test failure",
-                    )),
+                    source: Box::new(std::io::Error::other("test failure")),
                 })
             }
         }
