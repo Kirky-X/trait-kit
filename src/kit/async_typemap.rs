@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 //! Send + Sync type-keyed map backed by `Arc<RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>`.
 //!
-//! Multi-threaded counterpart to [`super::typemap::TypeMap`]. Safe to share
+//! Multi-threaded counterpart to `TypeMap`. Safe to share
 //! across threads (`Send + Sync`); uses `RwLock` for interior mutability.
 
 use std::any::{Any, TypeId};
@@ -12,7 +12,7 @@ use std::sync::{Arc, RwLock};
 /// A type-keyed map for storing async capabilities and configs.
 ///
 /// Multi-threaded by design. Uses `Arc<RwLock<...>>` for interior mutability
-/// (safe to share across threads, poisoning-aware). The sync [`super::typemap::TypeMap`]
+/// (safe to share across threads, poisoning-aware). The sync `TypeMap`
 /// stays `!Sync` for single-threaded performance.
 pub struct AsyncTypeMap {
     inner: Arc<RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>,
@@ -167,11 +167,7 @@ impl AsyncTypeMap {
         guard.get(&type_id)?.downcast_ref::<T>()?;
         #[allow(unsafe_code)]
         Some(unsafe {
-            let ptr: *const T = guard
-                .get(&type_id)
-                .unwrap()
-                .downcast_ref::<T>()
-                .unwrap();
+            let ptr: *const T = guard.get(&type_id).unwrap().downcast_ref::<T>().unwrap();
             (guard, &*ptr)
         })
     }

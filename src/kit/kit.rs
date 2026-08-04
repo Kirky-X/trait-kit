@@ -115,8 +115,7 @@ pub struct Kit<S = Unbuilt> {
     #[cfg(feature = "lifecycle")]
     ready_callbacks: RefCell<Vec<(TypeId, ReadyCallback)>>,
     #[cfg(feature = "health")]
-    health_checkers:
-        RefCell<HashMap<TypeId, (/* module_name */ &'static str, HealthCheckerFn)>>,
+    health_checkers: RefCell<HashMap<TypeId, (/* module_name */ &'static str, HealthCheckerFn)>>,
     #[cfg(feature = "observability")]
     observers: RefCell<Vec<ObserverRef>>,
     #[cfg(feature = "decorator")]
@@ -398,7 +397,7 @@ impl Kit {
         self.configs.insert(config);
     }
 
-    /// Load a configuration via its [`Configurable`] implementation and store it.
+    /// Load a configuration via its `Configurable` implementation and store it.
     ///
     /// Requires the `confers` feature. The type must implement `Configurable`,
     /// typically by delegating to `confers::Config`'s derived `load_sync()`.
@@ -453,13 +452,11 @@ impl Kit {
 
         // Extract ready_callbacks before moving self
         #[cfg(feature = "lifecycle")]
-        let ready_callbacks: Vec<(TypeId, ReadyCallback)> = {
-            self.ready_callbacks.borrow_mut().drain(..).collect()
-        };
+        let ready_callbacks: Vec<(TypeId, ReadyCallback)> =
+            { self.ready_callbacks.borrow_mut().drain(..).collect() };
         #[cfg(feature = "lifecycle")]
-        let shutdown_callbacks: Vec<(TypeId, ShutdownCallback)> = {
-            self.shutdown_callbacks.borrow_mut().drain(..).collect()
-        };
+        let shutdown_callbacks: Vec<(TypeId, ShutdownCallback)> =
+            { self.shutdown_callbacks.borrow_mut().drain(..).collect() };
 
         let kit = Kit {
             builders: self.builders,
@@ -596,8 +593,7 @@ impl Kit {
         }
 
         // Handle modules that were overridden but NOT registered.
-        let remaining: Vec<(TypeId, Box<dyn Any>)> =
-            self.overrides.borrow_mut().drain().collect();
+        let remaining: Vec<(TypeId, Box<dyn Any>)> = self.overrides.borrow_mut().drain().collect();
         for (type_id, boxed) in remaining {
             self.capabilities.insert_boxed(type_id, boxed);
         }
@@ -620,8 +616,7 @@ impl Kit {
 
     /// Phase 3: Build all multi-binding modules.
     fn build_multi_bindings(&self) -> Result<(), TraitKitError> {
-        let multi: Vec<(TypeId, Vec<BuildFn>)> =
-            self.multi_builders.borrow_mut().drain().collect();
+        let multi: Vec<(TypeId, Vec<BuildFn>)> = self.multi_builders.borrow_mut().drain().collect();
         for (cap_id, build_fns) in multi {
             let mut vec = Vec::with_capacity(build_fns.len());
             for build_fn in build_fns {
@@ -686,13 +681,12 @@ impl Kit {
             .push((TypeId::of::<M>(), shutdown_cb));
 
         // Store ready callback
-        let ready_cb: ReadyCallback =
-            Box::new(|kit: &Kit<Ready>| M::on_ready(kit).map_err(|e| {
-                TraitKitError::LifecycleFailed {
-                    context: M::NAME,
-                    source: Box::new(e),
-                }
-            }));
+        let ready_cb: ReadyCallback = Box::new(|kit: &Kit<Ready>| {
+            M::on_ready(kit).map_err(|e| TraitKitError::LifecycleFailed {
+                context: M::NAME,
+                source: Box::new(e),
+            })
+        });
         self.ready_callbacks
             .borrow_mut()
             .push((TypeId::of::<M>(), ready_cb));
@@ -758,7 +752,10 @@ impl Kit {
     ///
     /// Requires the `observability` feature.
     #[cfg(feature = "observability")]
-    pub fn with_observer(&mut self, observer: std::sync::Arc<dyn crate::core::observer::BuildObserver>) {
+    pub fn with_observer(
+        &mut self,
+        observer: std::sync::Arc<dyn crate::core::observer::BuildObserver>,
+    ) {
         self.observers.borrow_mut().push(observer);
     }
 
@@ -964,7 +961,7 @@ impl<S> Kit<S> {
             .push(callback);
     }
 
-    /// Reload a configuration via its [`Configurable`] implementation and
+    /// Reload a configuration via its `Configurable` implementation and
     /// notify all subscribers of type `C`.
     ///
     /// Requires the `hot-reload` feature. Calls `C::load()`, stores
@@ -1175,9 +1172,9 @@ impl Kit<Ready> {
     pub fn contains_config<C: Clone + 'static>(&self) -> bool {
         self.configs.contains::<C>()
     }
-    
+
     // ─── Lifecycle: shutdown ───────────────────────────────────────────
-    
+
     /// Shut down all lifecycle modules in reverse topological order.
     ///
     /// Calls `on_shutdown` for each module registered via `register_lifecycle`.
@@ -1193,9 +1190,9 @@ impl Kit<Ready> {
             callback(&self.capabilities);
         }
     }
-    
+
     // ─── Health Check ──────────────────────────────────────────────────
-    
+
     /// Check the health of a specific module.
     ///
     /// Requires the `health` feature and the module to have been registered
@@ -1211,30 +1208,28 @@ impl Kit<Ready> {
     ) -> Result<crate::core::health::HealthStatus, TraitKitError> {
         let type_id = TypeId::of::<M>();
         let checkers = self.health_checkers.borrow();
-        let (_name, checker) = checkers.get(&type_id).ok_or(TraitKitError::MissingConfig {
-            key: M::NAME,
-        })?;
+        let (_name, checker) = checkers
+            .get(&type_id)
+            .ok_or(TraitKitError::MissingConfig { key: M::NAME })?;
         Ok(checker(&self.capabilities))
     }
-    
+
     /// Generate a health report for all registered health checkers.
     ///
     /// Returns a list of `(module_name, HealthStatus)` pairs.
     ///
     /// Requires the `health` feature.
     #[cfg(feature = "health")]
-    pub fn health_report(
-        &self,
-    ) -> Vec<(&'static str, crate::core::health::HealthStatus)> {
+    pub fn health_report(&self) -> Vec<(&'static str, crate::core::health::HealthStatus)> {
         let checkers = self.health_checkers.borrow();
         checkers
             .values()
             .map(|(name, checker)| (*name, checker(&self.capabilities)))
             .collect()
     }
-    
+
     // ─── Factory Pattern ───────────────────────────────────────────────
-    
+
     /// Create a factory closure that produces new instances on each call.
     ///
     /// Unlike `require()` which returns the singleton built during `build()`,
@@ -1257,9 +1252,9 @@ impl Kit<Ready> {
             })
         }
     }
-    
+
     // ─── Scope ─────────────────────────────────────────────────────────
-    
+
     /// Create a new empty scope for per-request instance isolation.
     ///
     /// Requires the `scope` feature.
@@ -1268,15 +1263,15 @@ impl Kit<Ready> {
     pub fn create_scope(&self) -> super::scope::Scope {
         super::scope::Scope::new()
     }
-    
+
     // ─── Graph Visualization ───────────────────────────────────────────
-    
+
     /// Export the dependency graph as a Graphviz DOT string.
     #[must_use]
     pub fn graph_dot(&self) -> String {
         self.graph.to_dot()
     }
-    
+
     /// Export the dependency graph as a Mermaid flowchart string.
     #[must_use]
     pub fn graph_mermaid(&self) -> String {
@@ -2023,7 +2018,9 @@ mod tests {
         struct FailMultiModule;
         impl ModuleMeta for FailMultiModule {
             const NAME: &'static str = "fail-multi";
-            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                &[]
+            }
         }
         impl AutoBuilder for FailMultiModule {
             type Capability = Arc<AtomicUsize>;
@@ -2040,7 +2037,10 @@ mod tests {
         kit.register_multi::<FailMultiModule>().unwrap();
         let result = kit.build();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), TraitKitError::BuildFailed { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            TraitKitError::BuildFailed { .. }
+        ));
     }
 }
 
@@ -2267,7 +2267,9 @@ mod interface_tests {
         struct FailIfaceModule;
         impl ModuleMeta for FailIfaceModule {
             const NAME: &'static str = "fail-iface";
-            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                &[]
+            }
         }
         impl InterfaceBuilder for FailIfaceModule {
             type Interface = dyn Logger;
@@ -2285,7 +2287,10 @@ mod interface_tests {
         kit.register_as::<FailIfaceModule>().unwrap();
         let result = kit.build();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), TraitKitError::BuildFailed { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            TraitKitError::BuildFailed { .. }
+        ));
     }
 }
 
@@ -2294,8 +2299,8 @@ mod interface_tests {
 #[cfg(all(test, feature = "lifecycle"))]
 mod lifecycle_tests {
     use super::*;
-    use crate::core::lifecycle::Lifecycle;
     use crate::core::ModuleMeta;
+    use crate::core::lifecycle::Lifecycle;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -2305,7 +2310,9 @@ mod lifecycle_tests {
     struct LcModule;
     impl ModuleMeta for LcModule {
         const NAME: &'static str = "lc-module";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AutoBuilder for LcModule {
         type Capability = Arc<AtomicUsize>;
@@ -2331,7 +2338,11 @@ mod lifecycle_tests {
         kit.register::<LcModule>().unwrap();
         kit.register_lifecycle::<LcModule>();
         let _built = kit.build().unwrap();
-        assert_eq!(LC_READY.load(Ordering::SeqCst), 1, "on_ready should be called once");
+        assert_eq!(
+            LC_READY.load(Ordering::SeqCst),
+            1,
+            "on_ready should be called once"
+        );
     }
 
     #[test]
@@ -2342,7 +2353,11 @@ mod lifecycle_tests {
         kit.register_lifecycle::<LcModule>();
         let built = kit.build().unwrap();
         built.shutdown();
-        assert_eq!(LC_SHUTDOWN.load(Ordering::SeqCst), 1, "on_shutdown should be called once");
+        assert_eq!(
+            LC_SHUTDOWN.load(Ordering::SeqCst),
+            1,
+            "on_shutdown should be called once"
+        );
     }
 
     #[test]
@@ -2350,18 +2365,25 @@ mod lifecycle_tests {
         struct FailReadyModule;
         impl ModuleMeta for FailReadyModule {
             const NAME: &'static str = "fail-ready";
-            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                &[]
+            }
         }
         impl AutoBuilder for FailReadyModule {
             type Capability = Arc<()>;
             type Error = TraitKitError;
-            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
+                Ok(Arc::new(()))
+            }
         }
         impl Lifecycle for FailReadyModule {
             fn on_ready(_kit: &Kit<Ready>) -> Result<(), TraitKitError> {
                 Err(TraitKitError::BuildFailed {
                     context: "on_ready",
-                    source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "intentional failure")),
+                    source: Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "intentional failure",
+                    )),
                 })
             }
         }
@@ -2379,17 +2401,21 @@ mod lifecycle_tests {
 #[cfg(all(test, feature = "health"))]
 mod health_tests {
     use super::*;
-    use crate::core::health::{HealthCheck, HealthStatus};
     use crate::core::ModuleMeta;
+    use crate::core::health::{HealthCheck, HealthStatus};
     use std::sync::Arc;
 
     #[derive(Debug, Clone)]
-    struct HcCap { val: i32 }
+    struct HcCap {
+        val: i32,
+    }
 
     struct HcModule;
     impl ModuleMeta for HcModule {
         const NAME: &'static str = "hc-module";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AutoBuilder for HcModule {
         type Capability = Arc<HcCap>;
@@ -2400,8 +2426,13 @@ mod health_tests {
     }
     impl HealthCheck for HcModule {
         fn check(cap: &Arc<HcCap>) -> HealthStatus {
-            if cap.val > 0 { HealthStatus::Healthy }
-            else { HealthStatus::Unhealthy { detail: "zero".into() } }
+            if cap.val > 0 {
+                HealthStatus::Healthy
+            } else {
+                HealthStatus::Unhealthy {
+                    detail: "zero".into(),
+                }
+            }
         }
     }
 
@@ -2441,7 +2472,9 @@ mod health_tests {
         struct ZeroHcModule;
         impl ModuleMeta for ZeroHcModule {
             const NAME: &'static str = "zero-hc";
-            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                &[]
+            }
         }
         impl AutoBuilder for ZeroHcModule {
             type Capability = Arc<HcCap>;
@@ -2452,8 +2485,13 @@ mod health_tests {
         }
         impl HealthCheck for ZeroHcModule {
             fn check(cap: &Arc<HcCap>) -> HealthStatus {
-                if cap.val > 0 { HealthStatus::Healthy }
-                else { HealthStatus::Unhealthy { detail: "zero".into() } }
+                if cap.val > 0 {
+                    HealthStatus::Healthy
+                } else {
+                    HealthStatus::Unhealthy {
+                        detail: "zero".into(),
+                    }
+                }
             }
         }
 
@@ -2469,8 +2507,8 @@ mod health_tests {
 #[cfg(all(test, feature = "observability"))]
 mod observability_tests {
     use super::*;
-    use crate::core::observer::BuildObserver;
     use crate::core::ModuleMeta;
+    use crate::core::observer::BuildObserver;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
@@ -2491,7 +2529,9 @@ mod observability_tests {
     struct ObsModule;
     impl ModuleMeta for ObsModule {
         const NAME: &'static str = "obs-module";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AutoBuilder for ObsModule {
         type Capability = Arc<()>;
@@ -2513,8 +2553,16 @@ mod observability_tests {
         kit.with_observer(obs);
         kit.register::<ObsModule>().unwrap();
         kit.build().unwrap();
-        assert_eq!(start.load(Ordering::SeqCst), 1, "on_module_start should fire");
-        assert_eq!(built.load(Ordering::SeqCst), 1, "on_module_built should fire");
+        assert_eq!(
+            start.load(Ordering::SeqCst),
+            1,
+            "on_module_start should fire"
+        );
+        assert_eq!(
+            built.load(Ordering::SeqCst),
+            1,
+            "on_module_built should fire"
+        );
     }
 
     #[test]
@@ -2531,7 +2579,9 @@ mod observability_tests {
         struct FailBuildModule;
         impl ModuleMeta for FailBuildModule {
             const NAME: &'static str = "fail-build";
-            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                &[]
+            }
         }
         impl AutoBuilder for FailBuildModule {
             type Capability = Arc<()>;
@@ -2539,19 +2589,28 @@ mod observability_tests {
             fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
                 Err(TraitKitError::BuildFailed {
                     context: "intentional",
-                    source: Box::new(std::io::Error::new(std::io::ErrorKind::Other, "test failure")),
+                    source: Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "test failure",
+                    )),
                 })
             }
         }
 
         let errors = Arc::new(AtomicUsize::new(0));
-        let obs = Arc::new(FailObs { errors: Arc::clone(&errors) });
+        let obs = Arc::new(FailObs {
+            errors: Arc::clone(&errors),
+        });
         let mut kit = Kit::new();
         kit.with_observer(obs);
         kit.register::<FailBuildModule>().unwrap();
         let result = kit.build();
         assert!(result.is_err(), "build should fail");
-        assert_eq!(errors.load(Ordering::SeqCst), 1, "on_build_error should fire once");
+        assert_eq!(
+            errors.load(Ordering::SeqCst),
+            1,
+            "on_build_error should fire once"
+        );
     }
 }
 
@@ -2567,7 +2626,9 @@ mod factory_tests {
     struct FactoryModule;
     impl ModuleMeta for FactoryModule {
         const NAME: &'static str = "factory-module";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AutoBuilder for FactoryModule {
         type Capability = Arc<AtomicUsize>;
@@ -2605,12 +2666,16 @@ mod scope_tests {
     struct ScopeMockModule;
     impl ModuleMeta for ScopeMockModule {
         const NAME: &'static str = "scope-mock";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AutoBuilder for ScopeMockModule {
         type Capability = Arc<()>;
         type Error = TraitKitError;
-        fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+        fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
+            Ok(Arc::new(()))
+        }
     }
 
     #[test]
@@ -2632,12 +2697,16 @@ mod conditional_tests {
     struct CondMockModule;
     impl ModuleMeta for CondMockModule {
         const NAME: &'static str = "cond-mock";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AutoBuilder for CondMockModule {
         type Capability = Arc<()>;
         type Error = TraitKitError;
-        fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+        fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
+            Ok(Arc::new(()))
+        }
     }
 
     #[test]
@@ -2666,18 +2735,24 @@ mod decorator_tests {
     use std::sync::Arc;
 
     #[derive(Debug, Clone)]
-    struct DecCap { val: String }
+    struct DecCap {
+        val: String,
+    }
 
     struct DecModule;
     impl ModuleMeta for DecModule {
         const NAME: &'static str = "dec-module";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AutoBuilder for DecModule {
         type Capability = Arc<DecCap>;
         type Error = TraitKitError;
         fn build(_kit: &Kit) -> Result<Arc<DecCap>, TraitKitError> {
-            Ok(Arc::new(DecCap { val: "original".into() }))
+            Ok(Arc::new(DecCap {
+                val: "original".into(),
+            }))
         }
     }
 
@@ -2686,7 +2761,9 @@ mod decorator_tests {
         let mut kit = Kit::new();
         kit.register_lazy::<DecModule>().unwrap();
         kit.decorate::<DecModule>(|cap| {
-            Arc::new(DecCap { val: format!("{}+decorated", cap.val) })
+            Arc::new(DecCap {
+                val: format!("{}+decorated", cap.val),
+            })
         });
         // Decorator is applied during lazy require()
         let built = kit.build().unwrap();
@@ -2709,7 +2786,9 @@ mod encryption_tests {
     impl ModuleConfig for SecretConfig {
         const PATH: &'static str = "test.secret";
         fn default_value() -> Self {
-            Self { api_key: "default".into() }
+            Self {
+                api_key: "default".into(),
+            }
         }
     }
 
@@ -2717,7 +2796,9 @@ mod encryption_tests {
     fn set_and_get_encrypted_roundtrip() {
         let kit = Kit::new();
         let master_key = [0x42u8; 32];
-        let config = SecretConfig { api_key: "super-secret".into() };
+        let config = SecretConfig {
+            api_key: "super-secret".into(),
+        };
         kit.set_encrypted(&config, &master_key).unwrap();
         assert!(kit.contains_encrypted::<SecretConfig>());
         let built = kit.build().unwrap();
@@ -2736,7 +2817,9 @@ mod encryption_tests {
         let kit = Kit::new();
         let built = kit.build().unwrap();
         let master_key = [0x42u8; 32];
-        let err = built.get_encrypted::<SecretConfig>(&master_key).unwrap_err();
+        let err = built
+            .get_encrypted::<SecretConfig>(&master_key)
+            .unwrap_err();
         assert!(matches!(err, TraitKitError::MissingConfig { .. }));
     }
 
@@ -2750,7 +2833,9 @@ mod encryption_tests {
     fn get_encrypted_wrong_key_returns_error() {
         let kit = Kit::new();
         let master_key = [0x42u8; 32];
-        let config = SecretConfig { api_key: "secret".into() };
+        let config = SecretConfig {
+            api_key: "secret".into(),
+        };
         kit.set_encrypted(&config, &master_key).unwrap();
         let built = kit.build().unwrap();
         // Use a different key to trigger decryption failure
@@ -2771,12 +2856,16 @@ mod ready_tests {
     struct ReadyMockModule;
     impl ModuleMeta for ReadyMockModule {
         const NAME: &'static str = "ready-mock";
-        fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
     }
     impl AutoBuilder for ReadyMockModule {
         type Capability = Arc<()>;
         type Error = TraitKitError;
-        fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+        fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
+            Ok(Arc::new(()))
+        }
     }
 
     #[test]
@@ -2888,12 +2977,16 @@ mod ready_tests {
         struct DepModule;
         impl ModuleMeta for DepModule {
             const NAME: &'static str = "dep";
-            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                &[]
+            }
         }
         impl AutoBuilder for DepModule {
             type Capability = Arc<()>;
             type Error = TraitKitError;
-            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
+                Ok(Arc::new(()))
+            }
         }
 
         struct NeedsDepModule;
@@ -2907,7 +3000,9 @@ mod ready_tests {
         impl AutoBuilder for NeedsDepModule {
             type Capability = Arc<()>;
             type Error = TraitKitError;
-            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
+                Ok(Arc::new(()))
+            }
         }
 
         let mut kit = Kit::new();
@@ -2915,7 +3010,10 @@ mod ready_tests {
         // Don't register DepModule — should fail
         let result = kit.build();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), TraitKitError::DependencyMissing { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            TraitKitError::DependencyMissing { .. }
+        ));
     }
 
     #[test]
@@ -2931,7 +3029,9 @@ mod ready_tests {
         impl AutoBuilder for CycleA {
             type Capability = Arc<()>;
             type Error = TraitKitError;
-            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
+                Ok(Arc::new(()))
+            }
         }
 
         struct CycleB;
@@ -2945,7 +3045,9 @@ mod ready_tests {
         impl AutoBuilder for CycleB {
             type Capability = Arc<()>;
             type Error = TraitKitError;
-            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+            fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
+                Ok(Arc::new(()))
+            }
         }
 
         let mut kit = Kit::new();
@@ -2953,7 +3055,10 @@ mod ready_tests {
         kit.register::<CycleB>().unwrap();
         let result = kit.build();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), TraitKitError::CycleDetected { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            TraitKitError::CycleDetected { .. }
+        ));
     }
 
     #[test]
@@ -2961,7 +3066,9 @@ mod ready_tests {
         struct LazyFailModule;
         impl ModuleMeta for LazyFailModule {
             const NAME: &'static str = "lazy-fail";
-            fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                &[]
+            }
         }
         impl AutoBuilder for LazyFailModule {
             type Capability = Arc<()>;

@@ -21,10 +21,10 @@ pub(crate) use typemap::TypeMap;
 
 #[cfg(feature = "scope")]
 pub mod scope;
-#[cfg(feature = "scope")]
-pub use scope::Scope;
 #[cfg(all(feature = "scope", feature = "async"))]
 pub use scope::AsyncScope;
+#[cfg(feature = "scope")]
+pub use scope::Scope;
 
 #[cfg(feature = "async")]
 pub use async_kit::{AsyncKit, Ready as AsyncReady, Unbuilt as AsyncUnbuilt};

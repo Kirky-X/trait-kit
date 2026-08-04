@@ -9,7 +9,6 @@ use std::sync::OnceLock;
 
 use crate::core::{AutoBuilder, BuildFn};
 use crate::error::TraitKitError;
-use crate::kit::TypeMap;
 
 use super::kit::LazySlot;
 
@@ -20,10 +19,15 @@ use super::kit::LazySlot;
 /// creates its own instances — useful for per-request isolation in web
 /// servers, where each request gets its own scope with fresh instances.
 ///
+/// # Thread safety
+///
+/// `Scope` uses `RefCell` for interior mutability and is therefore
+/// `!Send + !Sync`. It is designed for single-threaded, per-request use.
+/// For a thread-safe async counterpart, see [`AsyncScope`].
+///
 /// Requires the `scope` feature.
 #[cfg(feature = "scope")]
 pub struct Scope {
-    capabilities: TypeMap,
     lazy_slots: RefCell<HashMap<TypeId, LazySlot>>,
 }
 
@@ -33,7 +37,6 @@ impl Scope {
     #[must_use]
     pub fn new() -> Self {
         Scope {
-            capabilities: TypeMap::new(),
             lazy_slots: RefCell::new(HashMap::new()),
         }
     }
@@ -87,15 +90,7 @@ impl Scope {
     pub fn require<M: AutoBuilder>(&self) -> Result<M::Capability, TraitKitError> {
         let type_id = TypeId::of::<M>();
 
-        // Check if already built in this scope
-        if let Some(cap) = self
-            .capabilities
-            .get_cloned_by_type_id::<M::Capability>(type_id)
-        {
-            return Ok(cap);
-        }
-
-        // Check lazy slots
+        // Check lazy slots first (the primary cache path)
         if let Some(boxed) = self
             .lazy_slots
             .borrow()
@@ -123,6 +118,8 @@ impl Scope {
                 source: e,
             })?;
             if let Some(slot) = self.lazy_slots.borrow().get(&type_id) {
+                // If the cell is already set (e.g. from a re-entrant call),
+                // the existing value is kept.
                 let _ = slot.cell.set(boxed);
             }
             return self
@@ -142,7 +139,6 @@ impl Scope {
     pub fn contains<M: AutoBuilder>(&self) -> bool {
         let type_id = TypeId::of::<M>();
         self.lazy_slots.borrow().contains_key(&type_id)
-            || self.capabilities.contains_by_type_id(type_id)
     }
 }
 
@@ -156,8 +152,7 @@ impl Default for Scope {
 #[cfg(feature = "scope")]
 impl Drop for Scope {
     fn drop(&mut self) {
-        // Explicitly clear all stored instances and lazy slots.
-        self.capabilities.clear();
+        // Explicitly clear all stored lazy slots.
         self.lazy_slots.borrow_mut().clear();
     }
 }
@@ -174,10 +169,19 @@ mod async_scope {
     use crate::error::TraitKitError;
     use crate::kit::AsyncTypeMap;
 
-    /// Async scoped dependency container (Send + Sync).
+    /// Async scoped dependency container (`Send + Sync`).
     ///
     /// Multi-threaded counterpart to [`super::Scope`]. Uses `Arc<RwLock>` for
     /// interior mutability.
+    ///
+    /// # Design differences from `Scope`
+    ///
+    /// Unlike the synchronous `Scope` (which lazily builds modules on first
+    /// `require()`), `AsyncScope` does **not** store async build functions or
+    /// perform lazy construction. This is because `AsyncAutoBuilder::build`
+    /// returns a `Future` whose lifetime is bound to the `AsyncKit` reference,
+    /// making it impossible to store in the scope. Instead, use `insert()` to
+    /// populate pre-built capabilities and `require()` to retrieve them.
     pub struct AsyncScope {
         capabilities: AsyncTypeMap,
         builders: Arc<RwLock<HashSet<TypeId>>>,
@@ -333,7 +337,7 @@ mod tests {
         type Error = ScopeTestError;
 
         fn build(_kit: &crate::kit::Kit) -> Result<Arc<ScopeCap>, ScopeTestError> {
-            let id = SCOPE_COUNTER.fetch_add(1, Ordering::SeqCst);
+            let id = SCOPE_COUNTER.fetch_add(1, Ordering::Relaxed);
             Ok(Arc::new(ScopeCap { id }))
         }
     }
@@ -346,18 +350,22 @@ mod tests {
 
     #[test]
     fn scope_register_then_require() {
-        SCOPE_COUNTER.store(0, Ordering::SeqCst);
+        SCOPE_COUNTER.store(0, Ordering::Relaxed);
         let mut scope = Scope::new();
-        scope.register::<ScopeModule>().expect("register should succeed");
+        scope
+            .register::<ScopeModule>()
+            .expect("register should succeed");
         assert!(scope.contains::<ScopeModule>());
 
-        let cap = scope.require::<ScopeModule>().expect("require should succeed");
+        let cap = scope
+            .require::<ScopeModule>()
+            .expect("require should succeed");
         assert_eq!(cap.id, 0);
     }
 
     #[test]
     fn scope_require_caches_result() {
-        SCOPE_COUNTER.store(100, Ordering::SeqCst);
+        SCOPE_COUNTER.store(100, Ordering::Relaxed);
         let mut scope = Scope::new();
         scope.register::<ScopeModule>().expect("register");
 
@@ -365,7 +373,7 @@ mod tests {
         let cap2 = scope.require::<ScopeModule>().expect("require 2");
         assert_eq!(cap1.id, cap2.id, "scope should cache the built instance");
         assert_eq!(
-            SCOPE_COUNTER.load(Ordering::SeqCst),
+            SCOPE_COUNTER.load(Ordering::Relaxed),
             101,
             "builder should be invoked exactly once"
         );
@@ -415,6 +423,12 @@ mod tests {
     fn scope_test_error_display() {
         let e = ScopeTestError;
         assert_eq!(format!("{e}"), "scope error");
+    }
+
+    #[test]
+    fn scope_module_dependencies_empty() {
+        let deps = ScopeModule::dependencies();
+        assert!(deps.is_empty());
     }
 }
 
@@ -479,7 +493,9 @@ mod async_tests {
     #[test]
     fn async_scope_register_duplicate_returns_error() {
         let mut scope = AsyncScope::new();
-        scope.register::<AsyncScopeModule>().expect("first register");
+        scope
+            .register::<AsyncScopeModule>()
+            .expect("first register");
         let err = scope.register::<AsyncScopeModule>().unwrap_err();
         assert!(matches!(
             err,
@@ -503,7 +519,9 @@ mod async_tests {
         // Insert a pre-built capability and retrieve it via require()
         let cap = Arc::new(AsyncScopeCap { value: 42 });
         scope.insert::<AsyncScopeModule>(cap.clone());
-        let retrieved = scope.require::<AsyncScopeModule>().expect("require should succeed");
+        let retrieved = scope
+            .require::<AsyncScopeModule>()
+            .expect("require should succeed");
         assert_eq!(retrieved.value, 42);
     }
 
@@ -523,5 +541,11 @@ mod async_tests {
     fn async_scope_error_display() {
         let e = AsyncScopeError;
         assert_eq!(format!("{e}"), "async scope error");
+    }
+
+    #[test]
+    fn async_scope_module_dependencies_empty() {
+        let deps = AsyncScopeModule::dependencies();
+        assert!(deps.is_empty());
     }
 }

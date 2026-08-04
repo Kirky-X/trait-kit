@@ -24,11 +24,6 @@ impl TypeMap {
         }
     }
 
-    /// Remove all entries from the map, dropping all stored values.
-    pub fn clear(&self) {
-        self.inner.borrow_mut().clear();
-    }
-
     /// Insert a value for the given type key. Overwrites any existing entry.
     pub fn insert<T: 'static>(&self, value: T) {
         let key = TypeId::of::<T>();
@@ -36,6 +31,12 @@ impl TypeMap {
     }
 
     /// Insert a boxed value by raw `TypeId`.
+    ///
+    /// # Safety invariant
+    ///
+    /// The caller must ensure that `type_id` matches the concrete type of
+    /// the boxed value (i.e. `type_id == TypeId::of::<T>()` for the inner
+    /// type `T`). A mismatch will silently produce `None` on retrieval.
     pub fn insert_boxed(&self, type_id: TypeId, value: Box<dyn Any>) {
         self.inner.borrow_mut().insert(type_id, value);
     }
@@ -80,7 +81,12 @@ impl TypeMap {
     /// Returns a `Ref` that holds a read lock on the interior `RefCell`.
     /// While the `Ref` is alive, calling any mutating method (insert, etc.)
     /// will panic due to `borrow_mut` conflict. Keep the `Ref` lifetime short.
-    pub fn inner_ref(&self) -> Ref<'_, HashMap<TypeId, Box<dyn Any>>> {
+    ///
+    /// # Visibility
+    ///
+    /// `pub(crate)` — leaking the raw `RefCell` guard to external callers
+    /// is a foot-hazard (holding it across mutations causes runtime panics).
+    pub(crate) fn inner_ref(&self) -> Ref<'_, HashMap<TypeId, Box<dyn Any>>> {
         self.inner.borrow()
     }
 
@@ -107,11 +113,7 @@ impl TypeMap {
             // through the same guard is sound.
             #[allow(unsafe_code, clippy::transmute_ptr_to_ptr)]
             Some(unsafe {
-                let ptr: *const T = guard
-                    .get(&type_id)
-                    .unwrap()
-                    .downcast_ref::<T>()
-                    .unwrap();
+                let ptr: *const T = guard.get(&type_id).unwrap().downcast_ref::<T>().unwrap();
                 (guard, &*ptr)
             })
         } else {
@@ -269,16 +271,5 @@ mod tests {
         // Request as u64 — downcast should fail
         let result = map.get_ref_by_type_id::<u64>(i32_id);
         assert!(result.is_none());
-    }
-
-    #[test]
-    fn clear_removes_all_entries() {
-        let map = TypeMap::new();
-        map.insert(42i32);
-        map.insert("hello".to_string());
-        assert_eq!(map.len(), 2);
-        map.clear();
-        assert_eq!(map.len(), 0);
-        assert!(map.get_cloned::<i32>().is_none());
     }
 }
