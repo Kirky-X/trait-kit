@@ -130,6 +130,46 @@ impl AsyncTypeMap {
             .expect("AsyncTypeMap poisoned: another thread panicked while holding the lock");
         guard.len()
     }
+
+    /// Acquire a read guard and return a reference to the stored value
+    /// downcast to `T`.
+    ///
+    /// The returned `RwLockReadGuard` keeps the lock held; the reference
+    /// is valid as long as the guard is alive.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner `RwLock` is poisoned.
+    #[must_use]
+    #[allow(
+        clippy::type_complexity,
+        reason = "return type bundles the RwLock guard with the downcast reference"
+    )]
+    pub fn read_by_type_id<T: 'static>(
+        &self,
+        type_id: TypeId,
+    ) -> Option<(
+        std::sync::RwLockReadGuard<'_, HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
+        &T,
+    )> {
+        let guard = self
+            .inner
+            .read()
+            .expect("AsyncTypeMap poisoned: another thread panicked while holding the lock");
+        if guard.get(&type_id)?.downcast_ref::<T>().is_some() {
+            #[allow(unsafe_code, clippy::transmute_ptr_to_ptr)]
+            Some(unsafe {
+                let ptr: *const T = guard
+                    .get(&type_id)
+                    .unwrap()
+                    .downcast_ref::<T>()
+                    .unwrap();
+                (guard, &*ptr)
+            })
+        } else {
+            None
+        }
+    }
 }
 
 impl Default for AsyncTypeMap {
