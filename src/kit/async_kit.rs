@@ -531,7 +531,7 @@ impl AsyncKit {
         self.decorators
             .write()
             .expect("lock poisoned")
-            .entry(TypeId::of::<M>())
+            .entry(TypeId::of::<M::Capability>())
             .or_default()
             .push(wrapper);
         // Record module TypeId → capability TypeId mapping so
