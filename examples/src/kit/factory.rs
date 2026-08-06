@@ -7,7 +7,7 @@
 //!   on every call, producing a fresh instance each time
 //! - Unlike `require()` (singleton), factory creates new instances on demand
 //!
-//! Run: `cargo run -p trait-kit-example --example factory --features factory`
+//! Run: `cargo run -p trait-kit-example --example factory`
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

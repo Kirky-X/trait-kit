@@ -11,13 +11,13 @@ cargo run -p trait-kit-example --example default_basic
 # Level 1: confers (Configurable + load_config)
 cargo run -p trait-kit-example --example confers_loader --features confers
 
-# Level 2: confers-macros (ModuleConfig trait + Config derive re-export)
-cargo run -p trait-kit-example --example confers_macros --features confers-macros
+# confers: ModuleConfig trait + Config derive re-export
+cargo run -p trait-kit-example --example confers_macros --features confers
 
-# Level 3: hot-reload (subscribe + reload_config)
-cargo run -p trait-kit-example --example hot_reload --features hot-reload
+# reload: subscribe + reload_config
+cargo run -p trait-kit-example --example hot_reload --features reload
 
-# Level 4: encryption (set_encrypted + get_encrypted + HKDF key derivation)
+# encryption: encrypted config storage (set_encrypted + get_encrypted + HKDF key derivation)
 cargo run -p trait-kit-example --example encryption --features encryption
 
 # Async: AsyncKit typestate flow
@@ -29,17 +29,17 @@ cargo run -p trait-kit-example --example lifecycle --features lifecycle
 # Health: HealthCheck + health_report
 cargo run -p trait-kit-example --example health_check --features health
 
-# Observability: BuildObserver callbacks
-cargo run -p trait-kit-example --example observability --features observability
+# Observer: BuildObserver callbacks
+cargo run -p trait-kit-example --example observability --features observer
 
 # Scope: per-request instance isolation
 cargo run -p trait-kit-example --example scope_basic --features scope
 
-# Conditional: predicate-gated registration
-cargo run -p trait-kit-example --example conditional --features conditional
+# Conditional: predicate-gated registration (no feature gate — always available)
+cargo run -p trait-kit-example --example conditional
 
-# Factory: per-call instance creation
-cargo run -p trait-kit-example --example factory --features factory
+# Factory: per-call instance creation (no feature gate — always available)
+cargo run -p trait-kit-example --example factory
 
 # Decorator: post-build capability wrapping
 cargo run -p trait-kit-example --example decorator --features decorator
@@ -57,16 +57,16 @@ cargo run -p trait-kit-example --example i18n --features i18n
 | ------------------ | ---------------- | --------------------------------------------------------------------------------------------- |
 | `default_basic`    | `default`        | `ModuleMeta` + `AutoBuilder` + `Kit::new`/`register`/`build`/`require`/`contains`/`optional`   |
 | `confers_loader`   | `confers`        | `#[derive(Config)]` + `Configurable` impl + `Kit::load_config` + env-var fallback              |
-| `confers_macros`   | `confers-macros` | `ModuleConfig` trait (`PATH` + `default_value`) + module consuming config in `build()`          |
-| `hot_reload`       | `hot-reload`     | `subscribe::<C>` + `reload_config::<C>` + callback counting via `Rc<Cell<_>>`                  |
+| `confers_macros`   | `confers`        | `ModuleConfig` trait (`PATH` + `default_value`) + module consuming config in `build()`          |
+| `hot_reload`       | `reload`         | `subscribe::<C>` + `reload_config::<C>` + callback counting via `Rc<Cell<_>>`                  |
 | `encryption`       | `encryption`     | `set_encrypted` + `get_encrypted` roundtrip + wrong-key rejection + `contains_encrypted`        |
 | `async_basic`      | `async`          | `AsyncAutoBuilder` + `AsyncKit::new`/`register`/`build`/`require`/`contains`/`set_config`       |
 | `lifecycle`        | `lifecycle`      | `Lifecycle` trait (`on_ready` + `on_shutdown`) + `register_lifecycle` + `Kit::shutdown()`       |
 | `health_check`     | `health`         | `HealthCheck` trait + `HealthStatus` + `register_health_check` + `health_check` + `health_report` |
-| `observability`    | `observability`  | `BuildObserver` trait + `with_observer` + `on_module_start`/`on_module_built` callbacks          |
+| `observability`    | `observer`       | `BuildObserver` trait + `with_observer` + `on_module_start`/`on_module_built` callbacks          |
 | `scope_basic`      | `scope`          | `Scope::new`/`register`/`require`/`contains` + per-request instance isolation + lazy caching     |
-| `conditional`      | `conditional`    | `register_if::<M>(predicate)` + runtime feature-flag gating                                     |
-| `factory`          | `factory`        | `Kit<Ready>::factory::<M>()` + per-call instance creation vs singleton `require()`               |
+| `conditional`      | —                | `register_if::<M>(predicate)` + runtime predicate-gated registration                            |
+| `factory`          | —                | `Kit<Ready>::factory::<M>()` + per-call instance creation vs singleton `require()`               |
 | `decorator`        | `decorator`      | `Kit::decorate::<M>(fn)` + post-build capability transformation                                 |
 | `interface`        | `interface`      | `InterfaceBuilder` + `register_as::<M>()` + `resolve::<dyn Trait>()` for type-erased DI          |
 | `i18n`             | `i18n`           | `I18nFormatter` + `format_number`/`format_date`/`plural_category`/`compare` + error handling     |

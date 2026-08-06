@@ -35,7 +35,7 @@ pub use core::AsyncHealthCheck;
 #[cfg(feature = "health")]
 pub use core::{HealthCheck, HealthStatus};
 
-#[cfg(feature = "observability")]
+#[cfg(feature = "observer")]
 pub use core::BuildObserver;
 
 #[cfg(all(feature = "scope", feature = "async"))]

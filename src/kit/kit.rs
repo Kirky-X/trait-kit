@@ -7,7 +7,7 @@
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::HashMap;
-#[cfg(feature = "hot-reload")]
+#[cfg(feature = "reload")]
 use std::rc::Rc;
 use std::sync::OnceLock;
 
@@ -26,7 +26,7 @@ type ShutdownCallback = Box<dyn Fn(&TypeMap)>;
 type ReadyCallback = Box<dyn Fn(&Kit<Ready>) -> Result<(), TraitKitError>>;
 #[cfg(feature = "health")]
 type HealthCheckerFn = Box<dyn Fn(&TypeMap) -> crate::core::health::HealthStatus>;
-#[cfg(feature = "observability")]
+#[cfg(feature = "observer")]
 type ObserverRef = std::sync::Arc<dyn crate::core::observer::BuildObserver>;
 #[cfg(feature = "decorator")]
 type DecoratorFn = Box<dyn Fn(Box<dyn Any>) -> Box<dyn Any>>;
@@ -57,8 +57,8 @@ pub struct Unbuilt;
 /// Marker type for the ready (built) state.
 pub struct Ready;
 
-/// Type alias for hot-reload subscriber callbacks (single-threaded, `!Sync`).
-#[cfg(feature = "hot-reload")]
+/// Type alias for reload subscriber callbacks (single-threaded, `!Sync`).
+#[cfg(feature = "reload")]
 type SubscriberMap = RefCell<HashMap<TypeId, Vec<Rc<dyn Fn()>>>>;
 
 /// Type alias for the encrypted config store (single-threaded, `!Sync`).
@@ -107,17 +107,21 @@ pub struct Kit<S = Unbuilt> {
     graph: DependencyGraph,
     configs: TypeMap,
     capabilities: TypeMap,
-    #[cfg(feature = "hot-reload")]
+    #[cfg(feature = "reload")]
     subscribers: SubscriberMap,
     #[cfg(feature = "encryption")]
     encrypted_configs: EncryptedConfigMap,
+    #[cfg(feature = "confers")]
+    config_snapshots: RefCell<HashMap<TypeId, Box<dyn Any>>>,
+    #[cfg(feature = "toggle")]
+    toggles: RefCell<HashMap<String, bool>>,
     #[cfg(feature = "lifecycle")]
     shutdown_callbacks: RefCell<Vec<(TypeId, ShutdownCallback)>>,
     #[cfg(feature = "lifecycle")]
     ready_callbacks: RefCell<Vec<(TypeId, ReadyCallback)>>,
     #[cfg(feature = "health")]
     health_checkers: RefCell<HashMap<TypeId, (/* module_name */ &'static str, HealthCheckerFn)>>,
-    #[cfg(feature = "observability")]
+    #[cfg(feature = "observer")]
     observers: RefCell<Vec<ObserverRef>>,
     #[cfg(feature = "decorator")]
     decorators: RefCell<HashMap<TypeId, Vec<DecoratorFn>>>,
@@ -145,17 +149,21 @@ impl Kit {
             graph: DependencyGraph::new(),
             configs: TypeMap::new(),
             capabilities: TypeMap::new(),
-            #[cfg(feature = "hot-reload")]
+            #[cfg(feature = "reload")]
             subscribers: RefCell::new(HashMap::new()),
             #[cfg(feature = "encryption")]
             encrypted_configs: RefCell::new(HashMap::new()),
+            #[cfg(feature = "confers")]
+            config_snapshots: RefCell::new(HashMap::new()),
+            #[cfg(feature = "toggle")]
+            toggles: RefCell::new(HashMap::new()),
             #[cfg(feature = "lifecycle")]
             shutdown_callbacks: RefCell::new(Vec::new()),
             #[cfg(feature = "lifecycle")]
             ready_callbacks: RefCell::new(Vec::new()),
             #[cfg(feature = "health")]
             health_checkers: RefCell::new(HashMap::new()),
-            #[cfg(feature = "observability")]
+            #[cfg(feature = "observer")]
             observers: RefCell::new(Vec::new()),
             #[cfg(feature = "decorator")]
             decorators: RefCell::new(HashMap::new()),
@@ -417,6 +425,131 @@ impl Kit {
         Ok(())
     }
 
+    /// Load a configuration and validate it before storing.
+    ///
+    /// Requires the `confers` feature. Calls `C::load()`, then
+    /// `C::validate()`. The configuration is only stored if validation passes.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::BuildFailed` if loading or validation fails.
+    /// On validation failure, the error source is a `ValidationError` containing
+    /// all failure reasons, and the configuration is not stored.
+    #[cfg(feature = "confers")]
+    pub fn load_and_validate<C>(&self) -> Result<(), TraitKitError>
+    where
+        C: super::Configurable + super::Validatable,
+    {
+        let config = C::load().map_err(|e| TraitKitError::BuildFailed {
+            context: "load_and_validate".into(),
+            source: e,
+        })?;
+        match config.validate() {
+            Ok(()) => {
+                self.set_config(config);
+                Ok(())
+            }
+            Err(errors) => Err(TraitKitError::BuildFailed {
+                context: "load_and_validate".into(),
+                source: Box::new(super::ValidationError { errors }),
+            }),
+        }
+    }
+
+    /// Snapshot the current configuration of type `C`.
+    ///
+    /// Requires the `confers` feature. Clones the current config and stores
+    /// it as a snapshot. Returns `false` if no config of type `C` is present.
+    /// Subsequent snapshots of the same type overwrite the previous one.
+    #[cfg(feature = "confers")]
+    pub fn snapshot_config<C: Clone + 'static>(&self) -> bool {
+        if let Some(config) = self.configs.get_cloned::<C>() {
+            self.config_snapshots
+                .borrow_mut()
+                .insert(TypeId::of::<C>(), Box::new(config));
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Restore a configuration from its snapshot.
+    ///
+    /// Requires the `confers` feature. Clones the snapshot back into the
+    /// configs `TypeMap`, overwriting the current value.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::MissingConfig` if no snapshot exists for `C`.
+    #[cfg(feature = "confers")]
+    pub fn restore_config<C: Clone + 'static>(&self) -> Result<(), TraitKitError> {
+        let snapshots = self.config_snapshots.borrow();
+        let boxed =
+            snapshots
+                .get(&TypeId::of::<C>())
+                .ok_or_else(|| TraitKitError::MissingConfig {
+                    key: format!("{} (snapshot)", std::any::type_name::<C>()),
+                })?;
+        let config =
+            boxed
+                .downcast_ref::<C>()
+                .cloned()
+                .ok_or_else(|| TraitKitError::MissingConfig {
+                    key: format!("{} (snapshot downcast)", std::any::type_name::<C>()),
+                })?;
+        drop(snapshots);
+        self.set_config(config);
+        Ok(())
+    }
+
+    /// Check if a snapshot exists for configuration type `C`.
+    #[cfg(feature = "confers")]
+    pub fn has_snapshot<C: 'static>(&self) -> bool {
+        self.config_snapshots
+            .borrow()
+            .contains_key(&TypeId::of::<C>())
+    }
+
+    /// Load a configuration with variable interpolation.
+    ///
+    /// Requires the `confers` feature. Calls `C::load()`, serializes to JSON,
+    /// replaces `${VAR}` and `${VAR:-default}` patterns in string values using
+    /// the provided `vars` map, then deserializes back and stores the result.
+    ///
+    /// `C` must implement `serde::Serialize` and `serde::de::DeserializeOwned`
+    /// in addition to `Configurable`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::BuildFailed` if loading, serialization,
+    /// or deserialization fails.
+    #[cfg(feature = "confers")]
+    pub fn load_config_with<C, S: std::hash::BuildHasher>(
+        &self,
+        vars: &std::collections::HashMap<String, String, S>,
+    ) -> Result<(), TraitKitError>
+    where
+        C: super::Configurable + serde::Serialize + serde::de::DeserializeOwned,
+    {
+        let config = C::load().map_err(|e| TraitKitError::BuildFailed {
+            context: "load_config_with".into(),
+            source: e,
+        })?;
+        let mut json_value =
+            serde_json::to_value(&config).map_err(|e| TraitKitError::BuildFailed {
+                context: "load_config_with (serialize)".into(),
+                source: Box::new(e),
+            })?;
+        super::config::interpolate_json_value(&mut json_value, vars);
+        let interpolated: C =
+            serde_json::from_value(json_value).map_err(|e| TraitKitError::BuildFailed {
+                context: "load_config_with (deserialize)".into(),
+                source: Box::new(e),
+            })?;
+        self.set_config(interpolated);
+        Ok(())
+    }
+
     /// Validate the dependency graph and build all modules in topological order.
     ///
     /// After this call, all capabilities are available via `require()`.
@@ -471,17 +604,21 @@ impl Kit {
             graph: self.graph,
             configs: self.configs,
             capabilities: self.capabilities,
-            #[cfg(feature = "hot-reload")]
+            #[cfg(feature = "reload")]
             subscribers: self.subscribers,
             #[cfg(feature = "encryption")]
             encrypted_configs: self.encrypted_configs,
+            #[cfg(feature = "confers")]
+            config_snapshots: self.config_snapshots,
+            #[cfg(feature = "toggle")]
+            toggles: self.toggles,
             #[cfg(feature = "lifecycle")]
             shutdown_callbacks: RefCell::new(shutdown_callbacks),
             #[cfg(feature = "lifecycle")]
             ready_callbacks: RefCell::new(Vec::new()),
             #[cfg(feature = "health")]
             health_checkers: self.health_checkers,
-            #[cfg(feature = "observability")]
+            #[cfg(feature = "observer")]
             observers: self.observers,
             #[cfg(feature = "decorator")]
             decorators: self.decorators,
@@ -529,7 +666,7 @@ impl Kit {
             };
 
             // Observer: notify build start
-            #[cfg(feature = "observability")]
+            #[cfg(feature = "observer")]
             {
                 let start_instant = std::time::Instant::now();
                 for obs in self.observers.borrow().iter() {
@@ -567,7 +704,7 @@ impl Kit {
                 }
             }
 
-            #[cfg(not(feature = "observability"))]
+            #[cfg(not(feature = "observer"))]
             {
                 match (build_fn)(self) {
                     Ok(boxed) => {
@@ -729,13 +866,10 @@ impl Kit {
     /// The predicate receives the current `Kit` (for inspecting configs
     /// or other state). Returns `true` if the module was actually registered.
     ///
-    /// Requires the `conditional` feature.
-    ///
     /// # Errors
     ///
     /// Returns `TraitKitError::AlreadyRegistered` if the predicate returns
     /// `true` but the module was already registered.
-    #[cfg(feature = "conditional")]
     pub fn register_if<M: AutoBuilder>(
         &mut self,
         predicate: impl FnOnce(&Kit) -> bool,
@@ -748,12 +882,49 @@ impl Kit {
         }
     }
 
+    // ─── Feature Toggle ────────────────────────────────────────────────
+
+    /// Enable or disable a feature toggle.
+    ///
+    /// Requires the `toggle` feature. The toggle state is stored as a
+    /// `HashMap<String, bool>` and can be queried via `is_toggle_enabled`.
+    #[cfg(feature = "toggle")]
+    pub fn enable_toggle(&self, key: impl Into<String>, enabled: bool) {
+        self.toggles.borrow_mut().insert(key.into(), enabled);
+    }
+
+    /// Check if a feature toggle is enabled.
+    ///
+    /// Returns `false` for unknown keys.
+    #[cfg(feature = "toggle")]
+    pub fn is_toggle_enabled(&self, key: &str) -> bool {
+        self.toggles.borrow().get(key).copied().unwrap_or(false)
+    }
+
+    /// Conditionally register a module based on a feature toggle.
+    ///
+    /// Requires the `toggle` feature. Delegates to `register_if` with a
+    /// predicate that checks `is_toggle_enabled(key)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::AlreadyRegistered` if the toggle is enabled
+    /// but the module was already registered.
+    #[cfg(feature = "toggle")]
+    pub fn register_if_toggle<M: AutoBuilder>(&mut self, key: &str) -> Result<bool, TraitKitError> {
+        let enabled = self.is_toggle_enabled(key);
+        if enabled {
+            self.register::<M>()?;
+        }
+        Ok(enabled)
+    }
+
     // ─── Observability ─────────────────────────────────────────────────
 
     /// Register a build observer that receives callbacks during `build()`.
     ///
-    /// Requires the `observability` feature.
-    #[cfg(feature = "observability")]
+    /// Requires the `observer` feature.
+    #[cfg(feature = "observer")]
     pub fn with_observer(
         &mut self,
         observer: std::sync::Arc<dyn crate::core::observer::BuildObserver>,
@@ -958,13 +1129,13 @@ impl<S> Kit<S> {
 
     /// Subscribe a callback to be invoked when config of type `C` is reloaded.
     ///
-    /// Requires the `hot-reload` feature. The callback receives no
+    /// Requires the `reload` feature. The callback receives no
     /// arguments; use `Kit::config::<C>()` inside it to read the new value.
     /// Callbacks are stored in a `RefCell` (single-threaded, `!Sync`).
     ///
     /// Layer 2 of the inheritance system: cargo feature chain
-    /// `hot-reload` → `confers-macros` → `confers`.
-    #[cfg(feature = "hot-reload")]
+    /// `reload` → `confers`.
+    #[cfg(feature = "reload")]
     pub fn subscribe<C: 'static>(&self, callback: impl Fn() + 'static) {
         let callback: Rc<dyn Fn()> = Rc::new(callback);
         self.subscribers
@@ -977,7 +1148,7 @@ impl<S> Kit<S> {
     /// Reload a configuration via its `Configurable` implementation and
     /// notify all subscribers of type `C`.
     ///
-    /// Requires the `hot-reload` feature. Calls `C::load()`, stores
+    /// Requires the `reload` feature. Calls `C::load()`, stores
     /// the result via `set_config`, then invokes every `subscribe::<C>`
     /// callback. Errors from `load()` are mapped to `TraitKitError::BuildFailed`.
     ///
@@ -992,7 +1163,7 @@ impl<S> Kit<S> {
     /// # Errors
     ///
     /// Returns `TraitKitError::BuildFailed` if `Configurable::load` fails.
-    #[cfg(feature = "hot-reload")]
+    #[cfg(feature = "reload")]
     pub fn reload_config<C: super::Configurable>(&self) -> Result<(), TraitKitError> {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
             context: "reload_config".into(),
@@ -1107,7 +1278,7 @@ impl Kit {
     /// Load a configuration via `Configurable::load`, falling back to
     /// `ModuleConfig::default_value` if loading fails.
     ///
-    /// Requires the `confers-macros` feature. Stores the resulting value
+    /// Requires the `confers` feature. Stores the resulting value
     /// via `set_config`, overriding any prior value of the same type.
     ///
     /// # Returns
@@ -1120,7 +1291,7 @@ impl Kit {
     ///
     /// Currently never returns an error, but the `Result` is reserved for
     /// future use (e.g. validation of the default value).
-    #[cfg(feature = "confers-macros")]
+    #[cfg(feature = "confers")]
     pub fn load_config_or_default<C>(&self) -> Result<bool, TraitKitError>
     where
         C: super::Configurable + super::ModuleConfig,
@@ -1190,6 +1361,20 @@ impl Kit<Ready> {
         self.configs.contains::<C>()
     }
 
+    // ─── Feature Toggle (Ready state) ──────────────────────────────────
+
+    /// Check if a feature toggle is enabled (available after build).
+    #[cfg(feature = "toggle")]
+    pub fn is_toggle_enabled(&self, key: &str) -> bool {
+        self.toggles.borrow().get(key).copied().unwrap_or(false)
+    }
+
+    /// Enable or disable a feature toggle (available after build).
+    #[cfg(feature = "toggle")]
+    pub fn enable_toggle(&self, key: impl Into<String>, enabled: bool) {
+        self.toggles.borrow_mut().insert(key.into(), enabled);
+    }
+
     // ─── Lifecycle: shutdown ───────────────────────────────────────────
 
     /// Shut down all lifecycle modules in reverse topological order.
@@ -1253,8 +1438,6 @@ impl Kit<Ready> {
     /// the factory invokes `M::build()` on every call, producing a fresh
     /// instance each time.
     ///
-    /// Requires the `factory` feature.
-    #[cfg(feature = "factory")]
     pub fn factory<M: AutoBuilder>(
         &self,
     ) -> impl Fn() -> Result<M::Capability, TraitKitError> + '_ {
@@ -2518,7 +2701,7 @@ mod health_tests {
     }
 }
 
-#[cfg(all(test, feature = "observability"))]
+#[cfg(all(test, feature = "observer"))]
 mod observability_tests {
     use super::*;
     use crate::core::ModuleMeta;
@@ -2625,7 +2808,7 @@ mod observability_tests {
     }
 }
 
-#[cfg(all(test, feature = "factory"))]
+#[cfg(test)]
 mod factory_tests {
     use super::*;
     use crate::core::ModuleMeta;
@@ -2699,7 +2882,7 @@ mod scope_tests {
     }
 }
 
-#[cfg(all(test, feature = "conditional"))]
+#[cfg(test)]
 mod conditional_tests {
     use super::*;
     use crate::core::ModuleMeta;
@@ -3097,5 +3280,389 @@ mod ready_tests {
         let built = kit.build().unwrap();
         let err = built.require::<LazyFailModule>().unwrap_err();
         assert!(matches!(err, TraitKitError::BuildFailed { .. }));
+    }
+}
+
+// ─── Validation Tests ───────────────────────────────────────────────────────
+
+#[cfg(all(test, feature = "confers"))]
+mod validation_tests {
+    use super::*;
+    use crate::kit::config::{Configurable, Validatable};
+    use std::error::Error;
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct ValidConfig {
+        port: u16,
+    }
+
+    impl Configurable for ValidConfig {
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
+            Ok(Self { port: 8080 })
+        }
+    }
+
+    impl Validatable for ValidConfig {
+        fn validate(&self) -> Result<(), Vec<String>> {
+            if self.port > 0 && self.port < 65535 {
+                Ok(())
+            } else {
+                Err(vec!["port out of range".to_string()])
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct InvalidConfig {
+        port: u16,
+    }
+
+    impl Configurable for InvalidConfig {
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
+            Ok(Self { port: 0 })
+        }
+    }
+
+    impl Validatable for InvalidConfig {
+        fn validate(&self) -> Result<(), Vec<String>> {
+            Err(vec![
+                "port must be > 0".to_string(),
+                "port must be < 65535".to_string(),
+            ])
+        }
+    }
+
+    #[test]
+    fn load_and_validate_succeeds_with_valid_config() {
+        let kit = Kit::new();
+        kit.load_and_validate::<ValidConfig>()
+            .expect("valid config should pass");
+        let config: ValidConfig = kit.config().expect("config should be stored");
+        assert_eq!(config.port, 8080);
+    }
+
+    #[test]
+    fn load_and_validate_fails_with_invalid_config() {
+        let kit = Kit::new();
+        let err = kit
+            .load_and_validate::<InvalidConfig>()
+            .expect_err("invalid config should fail");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("port must be > 0"),
+            "error should contain first validation error: {msg}"
+        );
+        assert!(
+            msg.contains("port must be < 65535"),
+            "error should contain second validation error: {msg}"
+        );
+    }
+
+    #[test]
+    fn load_and_validate_does_not_store_on_failure() {
+        let kit = Kit::new();
+        let _ = kit.load_and_validate::<InvalidConfig>();
+        let result: Result<InvalidConfig, _> = kit.config();
+        assert!(result.is_err(), "invalid config should not be stored");
+    }
+
+    #[test]
+    fn load_and_validate_retry_after_failure() {
+        let kit = Kit::new();
+        let _ = kit.load_and_validate::<InvalidConfig>();
+        // Now load a valid config of a different type
+        kit.load_and_validate::<ValidConfig>()
+            .expect("valid config should succeed after previous failure");
+        let config: ValidConfig = kit.config().expect("valid config should be stored");
+        assert_eq!(config.port, 8080);
+    }
+}
+
+// ─── Snapshot Tests ─────────────────────────────────────────────────────────
+
+#[cfg(all(test, feature = "confers"))]
+mod snapshot_tests {
+    use super::*;
+    use crate::kit::config::Configurable;
+    use std::error::Error;
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct SnapConfig {
+        value: String,
+    }
+
+    impl Configurable for SnapConfig {
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
+            Ok(Self {
+                value: "loaded".to_string(),
+            })
+        }
+    }
+
+    #[test]
+    fn snapshot_returns_true_when_config_exists() {
+        let kit = Kit::new();
+        kit.set_config(SnapConfig {
+            value: "original".to_string(),
+        });
+        assert!(kit.snapshot_config::<SnapConfig>());
+    }
+
+    #[test]
+    fn snapshot_returns_false_when_config_missing() {
+        let kit = Kit::new();
+        assert!(!kit.snapshot_config::<SnapConfig>());
+    }
+
+    #[test]
+    fn restore_overwrites_current_config() {
+        let kit = Kit::new();
+        kit.set_config(SnapConfig {
+            value: "original".to_string(),
+        });
+        kit.snapshot_config::<SnapConfig>();
+        // Modify current config
+        kit.set_config(SnapConfig {
+            value: "modified".to_string(),
+        });
+        let current: SnapConfig = kit.config().unwrap();
+        assert_eq!(current.value, "modified");
+        // Restore from snapshot
+        kit.restore_config::<SnapConfig>()
+            .expect("restore should succeed");
+        let restored: SnapConfig = kit.config().unwrap();
+        assert_eq!(restored.value, "original");
+    }
+
+    #[test]
+    fn restore_returns_error_when_no_snapshot() {
+        let kit = Kit::new();
+        let err = kit
+            .restore_config::<SnapConfig>()
+            .expect_err("restore without snapshot should fail");
+        assert!(matches!(err, TraitKitError::MissingConfig { .. }));
+    }
+
+    #[test]
+    fn has_snapshot_reflects_state() {
+        let kit = Kit::new();
+        assert!(!kit.has_snapshot::<SnapConfig>());
+        kit.set_config(SnapConfig {
+            value: "test".to_string(),
+        });
+        kit.snapshot_config::<SnapConfig>();
+        assert!(kit.has_snapshot::<SnapConfig>());
+    }
+
+    #[test]
+    fn snapshot_overwrite_replaces_previous() {
+        let kit = Kit::new();
+        kit.set_config(SnapConfig {
+            value: "v1".to_string(),
+        });
+        kit.snapshot_config::<SnapConfig>();
+        kit.set_config(SnapConfig {
+            value: "v2".to_string(),
+        });
+        kit.snapshot_config::<SnapConfig>();
+        // Restore should get v2 (latest snapshot)
+        kit.set_config(SnapConfig {
+            value: "current".to_string(),
+        });
+        kit.restore_config::<SnapConfig>().unwrap();
+        let restored: SnapConfig = kit.config().unwrap();
+        assert_eq!(restored.value, "v2");
+    }
+}
+
+// ─── Toggle Tests ───────────────────────────────────────────────────────────
+
+#[cfg(all(test, feature = "toggle"))]
+mod toggle_tests {
+    use super::*;
+    use crate::core::ModuleMeta;
+    use std::sync::Arc;
+
+    struct ToggleModule;
+    impl ModuleMeta for ToggleModule {
+        const NAME: &'static str = "toggle-mod";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
+    }
+    impl AutoBuilder for ToggleModule {
+        type Capability = Arc<String>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<String>, TraitKitError> {
+            Ok(Arc::new("toggle-cap".to_string()))
+        }
+    }
+
+    #[test]
+    fn enable_toggle_sets_value() {
+        let kit = Kit::new();
+        kit.enable_toggle("feature-a", true);
+        assert!(kit.is_toggle_enabled("feature-a"));
+        kit.enable_toggle("feature-a", false);
+        assert!(!kit.is_toggle_enabled("feature-a"));
+    }
+
+    #[test]
+    fn is_toggle_enabled_returns_false_for_unknown() {
+        let kit = Kit::new();
+        assert!(!kit.is_toggle_enabled("nonexistent"));
+    }
+
+    #[test]
+    fn register_if_toggle_registers_when_enabled() {
+        let mut kit = Kit::new();
+        kit.enable_toggle("mod-x", true);
+        let registered = kit
+            .register_if_toggle::<ToggleModule>("mod-x")
+            .expect("registration should succeed");
+        assert!(registered);
+    }
+
+    #[test]
+    fn register_if_toggle_skips_when_disabled() {
+        let mut kit = Kit::new();
+        kit.enable_toggle("mod-x", false);
+        let registered = kit
+            .register_if_toggle::<ToggleModule>("mod-x")
+            .expect("should return Ok(false)");
+        assert!(!registered);
+    }
+
+    #[test]
+    fn register_if_toggle_returns_error_on_duplicate() {
+        let mut kit = Kit::new();
+        kit.enable_toggle("mod-x", true);
+        kit.register_if_toggle::<ToggleModule>("mod-x")
+            .expect("first registration");
+        let err = kit
+            .register_if_toggle::<ToggleModule>("mod-x")
+            .expect_err("duplicate should fail");
+        assert!(matches!(err, TraitKitError::AlreadyRegistered { .. }));
+    }
+
+    #[test]
+    fn toggle_state_survives_build() {
+        let mut kit = Kit::new();
+        kit.enable_toggle("persist", true);
+        kit.register_if_toggle::<ToggleModule>("persist").unwrap();
+        let ready = kit.build().unwrap();
+        assert!(ready.is_toggle_enabled("persist"));
+    }
+
+    #[test]
+    fn toggle_enable_on_ready_state() {
+        let mut kit = Kit::new();
+        kit.register::<ToggleModule>().unwrap();
+        let ready = kit.build().unwrap();
+        ready.enable_toggle("runtime", true);
+        assert!(ready.is_toggle_enabled("runtime"));
+    }
+}
+
+// ─── Interpolation Tests ────────────────────────────────────────────────────
+
+#[cfg(all(test, feature = "confers"))]
+mod interpolation_tests {
+    use crate::kit::config::interpolate_json_value;
+    use std::collections::HashMap;
+
+    #[test]
+    fn basic_var_replacement() {
+        let mut value = serde_json::json!("${HOST}");
+        let mut vars = HashMap::new();
+        vars.insert("HOST".to_string(), "localhost".to_string());
+        interpolate_json_value(&mut value, &vars);
+        assert_eq!(value, serde_json::json!("localhost"));
+    }
+
+    #[test]
+    fn default_value_when_var_missing() {
+        let mut value = serde_json::json!("${HOST:-127.0.0.1}");
+        let vars = HashMap::new();
+        interpolate_json_value(&mut value, &vars);
+        assert_eq!(value, serde_json::json!("127.0.0.1"));
+    }
+
+    #[test]
+    fn default_value_ignored_when_var_present() {
+        let mut value = serde_json::json!("${HOST:-127.0.0.1}");
+        let mut vars = HashMap::new();
+        vars.insert("HOST".to_string(), "10.0.0.1".to_string());
+        interpolate_json_value(&mut value, &vars);
+        assert_eq!(value, serde_json::json!("10.0.0.1"));
+    }
+
+    #[test]
+    fn no_match_preserved() {
+        let mut value = serde_json::json!("${UNKNOWN}");
+        let vars = HashMap::new();
+        interpolate_json_value(&mut value, &vars);
+        assert_eq!(value, serde_json::json!("${UNKNOWN}"));
+    }
+
+    #[test]
+    fn nested_object_replacement() {
+        let mut value = serde_json::json!({
+            "db": {
+                "host": "${DB_HOST}",
+                "port": 5432
+            }
+        });
+        let mut vars = HashMap::new();
+        vars.insert("DB_HOST".to_string(), "db.example.com".to_string());
+        interpolate_json_value(&mut value, &vars);
+        assert_eq!(value["db"]["host"], serde_json::json!("db.example.com"));
+        // Non-string values untouched
+        assert_eq!(value["db"]["port"], serde_json::json!(5432));
+    }
+
+    #[test]
+    fn array_string_elements_replaced() {
+        let mut value = serde_json::json!(["${A}", "${B}", 42]);
+        let mut vars = HashMap::new();
+        vars.insert("A".to_string(), "alpha".to_string());
+        vars.insert("B".to_string(), "beta".to_string());
+        interpolate_json_value(&mut value, &vars);
+        assert_eq!(value[0], serde_json::json!("alpha"));
+        assert_eq!(value[1], serde_json::json!("beta"));
+        assert_eq!(value[2], serde_json::json!(42));
+    }
+
+    #[test]
+    fn non_string_values_untouched() {
+        let mut value = serde_json::json!({
+            "num": 42,
+            "bool": true,
+            "null": null
+        });
+        let vars = HashMap::new();
+        interpolate_json_value(&mut value, &vars);
+        assert_eq!(value["num"], serde_json::json!(42));
+        assert_eq!(value["bool"], serde_json::json!(true));
+        assert_eq!(value["null"], serde_json::json!(null));
+    }
+
+    #[test]
+    fn object_keys_not_replaced() {
+        let mut value = serde_json::json!({"${KEY}": "value"});
+        let vars = HashMap::new();
+        interpolate_json_value(&mut value, &vars);
+        // Key should remain as "${KEY}", not be replaced
+        assert!(value.as_object().unwrap().contains_key("${KEY}"));
+    }
+
+    #[test]
+    fn multiple_vars_in_one_string() {
+        let mut value = serde_json::json!("${HOST}:${PORT}");
+        let mut vars = HashMap::new();
+        vars.insert("HOST".to_string(), "localhost".to_string());
+        vars.insert("PORT".to_string(), "8080".to_string());
+        interpolate_json_value(&mut value, &vars);
+        assert_eq!(value, serde_json::json!("localhost:8080"));
     }
 }

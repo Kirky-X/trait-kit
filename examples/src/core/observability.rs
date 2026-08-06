@@ -7,7 +7,7 @@
 //! - `Kit::with_observer()` to register an observer
 //! - Observer receives callbacks for every module built during `build()`
 //!
-//! Run: `cargo run -p trait-kit-example --example observability --features observability`
+//! Run: `cargo run -p trait-kit-example --example observability --features observer`
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

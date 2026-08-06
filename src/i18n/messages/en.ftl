@@ -16,6 +16,10 @@ trait-kit-error-lifecycle-failed = lifecycle hook failed for `{ $context }`: { $
 
 trait-kit-error-shutdown-timed-out = graceful shutdown timed out in phases: { $phases }
 
+trait-kit-error-config-validation-failed = config validation failed for `{ $context }`: { $errors }
+
+trait-kit-error-no-snapshot = no snapshot found for `{ $key }`
+
 i18n-error-invalid-locale = invalid locale '{ $input }': { $reason }
 
 i18n-error-invalid-number = invalid number '{ $input }': { $reason }

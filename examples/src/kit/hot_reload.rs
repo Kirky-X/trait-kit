@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Kirky.X
 // SPDX-License-Identifier: MIT
-//! Level 3: `hot-reload` feature — subscribe + reload_config.
+//! `reload` feature — subscribe + reload_config.
 //!
 //! Registers a callback that fires when `reload_config::<C>()` re-loads the
 //! value. Uses `Rc<Cell<u32>>` to count invocations across the `Kit<Unbuilt>`
 //! → `Kit<Ready>` boundary (callbacks survive `build()`).
-//! Run: `cargo run -p trait-kit-example --example hot_reload --features hot-reload`
+//! Run: `cargo run -p trait-kit-example --example hot_reload --features reload`
 
 use std::cell::Cell;
 use std::error::Error;

@@ -9,8 +9,8 @@ use std::time::Duration;
 /// Implement this trait and register via `Kit::with_observer()` or
 /// `AsyncKit::with_observer()` to receive callbacks during `build()`.
 ///
-/// Requires the `observability` feature.
-#[cfg(feature = "observability")]
+/// Requires the `observer` feature.
+#[cfg(feature = "observer")]
 pub trait BuildObserver: Send + Sync + 'static {
     /// Called before a module's build function is invoked.
     fn on_module_start(&self, _module_name: &'static str) {}
@@ -22,7 +22,7 @@ pub trait BuildObserver: Send + Sync + 'static {
     fn on_build_error(&self, _module_name: &'static str, _error: &crate::error::TraitKitError) {}
 }
 
-#[cfg(all(test, feature = "observability"))]
+#[cfg(all(test, feature = "observer"))]
 mod tests {
     use super::*;
     use std::sync::Arc;

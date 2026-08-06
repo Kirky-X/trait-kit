@@ -26,6 +26,7 @@
 //! let mgr = I18nManager::init_with_locale("zh-CN").expect("zh-CN locale");
 //! ```
 
+#[cfg(feature = "i18n")]
 mod i18n_impl;
 mod messages;
 
@@ -33,9 +34,13 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::OnceLock;
 
+#[cfg(feature = "i18n")]
 use icu::collator::CollatorBorrowed;
+#[cfg(feature = "i18n")]
 use icu::decimal::DecimalFormatter;
+#[cfg(feature = "i18n")]
 use icu::locale::Locale;
+#[cfg(feature = "i18n")]
 use icu::plurals::PluralRules;
 
 // ─── I18nError ──────────────────────────────────────────────────────────────
@@ -106,6 +111,7 @@ impl std::error::Error for I18nError {}
 ///
 /// 通过 BCP-47 locale 标签（如 `"en-US"`、`"zh-CN"`）构造。
 /// 所有格式化器在构造时 eagerly 创建，后续格式化调用低分配。
+#[cfg(feature = "i18n")]
 #[derive(Debug)]
 pub struct I18nFormatter {
     /// 已解析的 locale。
@@ -190,7 +196,10 @@ impl I18nManager {
     /// 后续调用直接返回已初始化的实例。
     pub fn init() -> &'static Self {
         GLOBAL_I18N.get_or_init(|| {
+            #[cfg(feature = "i18n")]
             let locale_str = detect_system_locale();
+            #[cfg(not(feature = "i18n"))]
+            let locale_str = String::from("en-US");
             Self::build(&locale_str)
         })
     }
@@ -273,6 +282,7 @@ pub fn tr(message_id: &str, args: &[(&str, &str)]) -> String {
 /// 检测系统语言环境，返回 BCP-47 标签。
 ///
 /// 如果检测失败或返回空值，回退到 `"en-US"`。
+#[cfg(feature = "i18n")]
 fn detect_system_locale() -> String {
     sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string())
 }
@@ -284,6 +294,7 @@ mod tests {
     use super::*;
     use std::cmp::Ordering;
 
+    #[cfg(feature = "i18n")]
     use icu::plurals::PluralCategory;
 
     // ─── MessageCatalog 测试 ────────────────────────────────────────────────
@@ -357,6 +368,7 @@ mod tests {
 
     // ─── I18nFormatter 测试 ─────────────────────────────────────────────────
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_locale_parsing_en() {
         let fmt = I18nFormatter::new("en-US");
@@ -365,6 +377,7 @@ mod tests {
         assert_eq!(fmt.locale.to_string(), "en-US");
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_locale_parsing_zh() {
         let fmt = I18nFormatter::new("zh-CN");
@@ -373,6 +386,7 @@ mod tests {
         assert_eq!(fmt.locale.to_string(), "zh-CN");
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_invalid_locale() {
         let result = I18nFormatter::new("not-a-valid-locale!!!");
@@ -383,6 +397,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_format_number_en() {
         let fmt = I18nFormatter::new("en-US").expect("en-US locale");
@@ -397,6 +412,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_format_number_zh() {
         let fmt = I18nFormatter::new("zh-CN").expect("zh-CN locale");
@@ -407,6 +423,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_format_number_not_finite() {
         let fmt = I18nFormatter::new("en-US").expect("en-US locale");
@@ -414,6 +431,7 @@ mod tests {
         assert!(fmt.format_number(f64::INFINITY).is_err());
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_plural_rules_en() {
         let fmt = I18nFormatter::new("en").expect("en locale");
@@ -434,6 +452,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_collator_basic() {
         let fmt = I18nFormatter::new("en").expect("en locale");
@@ -454,6 +473,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_format_date_en() {
         let fmt = I18nFormatter::new("en-US").expect("en-US locale");
@@ -468,6 +488,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_format_date_invalid_month() {
         let fmt = I18nFormatter::new("en-US").expect("en-US locale");
@@ -476,6 +497,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), I18nError::DateError(_)));
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_format_date_invalid_day() {
         let fmt = I18nFormatter::new("en-US").expect("en-US locale");
@@ -484,6 +506,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), I18nError::DateError(_)));
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_format_number_integer() {
         let fmt = I18nFormatter::new("en-US").expect("en-US locale");
@@ -494,6 +517,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_plural_category_zero() {
         let fmt = I18nFormatter::new("zh-CN").expect("zh-CN locale");
@@ -505,6 +529,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
     fn test_compare_equal_strings() {
         let fmt = I18nFormatter::new("de-DE").expect("de-DE locale");

@@ -8,7 +8,7 @@
 //! through its `TypeMap` backend, keeping `set_config`/`config` synchronous and
 //! type-safe.
 //!
-//! Level 2 (`confers-macros` feature) adds the `ModuleConfig` trait for
+//! Level 2 (`confers` feature) adds the `ModuleConfig` trait for
 //! module-level config metadata (path + default) and re-exports the
 //! `confers::Config` derive macro so users can `use trait_kit::kit::Config;`.
 //!
@@ -17,13 +17,13 @@
 //! The confers integration is built on a three-tier inheritance model:
 //!
 //! 1. **Module capability inheritance (模块能力继承)** — `#[derive(Config)]`
-//!    auto-implements serialization, deserialization, hot-reload subscription,
+//!    auto-implements serialization, deserialization, reload subscription,
 //!    encryption markers, and validation rules. `ModuleConfig` binds each
 //!    config type to its module's configuration path (`PATH`).
 //!
 //! 2. **Cargo feature inheritance (cargo feature 继承)** — feature flags form
-//!    a dependency chain: `encryption` → `hot-reload` →
-//!    `confers-macros` → `confers`. Enabling a higher level automatically
+//!    a dependency chain: `encryption` → `reload` →
+//!    `confers`. Enabling a higher level automatically
 //!    enables all lower levels.
 //!
 //! 3. **Config value inheritance (配置值继承)** — the encryption key is
@@ -53,7 +53,7 @@ pub trait Configurable: Clone + 'static {
 ///
 /// Allows `use trait_kit::kit::Config;` to derive the configuration loader
 /// implementation backed by confers' `load_sync()` / `load_file()` codegen.
-#[cfg(feature = "confers-macros")]
+#[cfg(feature = "confers")]
 pub use confers::Config;
 
 /// Trait for module-level configuration metadata.
@@ -67,7 +67,7 @@ pub use confers::Config;
 /// `default_value()` is not invoked automatically by `Kit` internally;
 /// callers must opt-in via [`Kit::load_config_or_default`](super::kit::Kit::load_config_or_default)
 /// when they want load-with-fallback semantics.
-#[cfg(feature = "confers-macros")]
+#[cfg(feature = "confers")]
 pub trait ModuleConfig: Clone + 'static {
     /// Configuration file path relative to the application root.
     const PATH: &'static str;
@@ -75,6 +75,137 @@ pub trait ModuleConfig: Clone + 'static {
     /// Return the default configuration value (fallback when loading fails
     /// or no source is configured).
     fn default_value() -> Self;
+}
+
+/// Trait for configuration types that support validation after loading.
+///
+/// Implementors define validation rules that are checked by
+/// `Kit::load_and_validate` after the configuration is loaded. If validation
+/// fails, the configuration is not stored in the Kit.
+///
+/// This trait is backend-agnostic — users may implement validation by hand,
+/// via `garde`, or any other mechanism.
+#[cfg(feature = "confers")]
+pub trait Validatable: Clone + 'static {
+    /// Validate the configuration value.
+    ///
+    /// Returns `Ok(())` if valid, or `Err` with all failure reasons.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(Vec<String>)` containing every validation failure
+    /// when the configuration is invalid.
+    fn validate(&self) -> Result<(), Vec<String>>;
+}
+
+/// Error type for configuration validation failures.
+///
+/// Wraps a list of validation error messages into a single `Error + Send`
+/// suitable for `TraitKitError::BuildFailed::source`.
+#[cfg(feature = "confers")]
+#[derive(Debug)]
+pub struct ValidationError {
+    /// Individual validation failure messages.
+    pub errors: Vec<String>,
+}
+
+#[cfg(feature = "confers")]
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "validation failed: {}", self.errors.join("; "))
+    }
+}
+
+#[cfg(feature = "confers")]
+impl std::error::Error for ValidationError {}
+
+use std::collections::HashMap;
+use std::hash::BuildHasher;
+
+/// Interpolate `${VAR}` and `${VAR:-default}` patterns in a JSON value.
+///
+/// Recursively walks the JSON structure, replacing patterns in String values
+/// only. Object keys and non-String variants are left unchanged. Unknown
+/// variables without a default are preserved as-is.
+#[cfg(feature = "confers")]
+pub fn interpolate_json_value<S: BuildHasher>(
+    value: &mut serde_json::Value,
+    vars: &HashMap<String, String, S>,
+) {
+    match value {
+        serde_json::Value::String(s) => {
+            *s = interpolate_string(s, vars);
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                interpolate_json_value(item, vars);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for (_, v) in map {
+                interpolate_json_value(v, vars);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Replace `${VAR}` and `${VAR:-default}` patterns in a single string.
+#[cfg(feature = "confers")]
+fn interpolate_string<S: BuildHasher>(s: &str, vars: &HashMap<String, String, S>) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '$' && chars.peek() == Some(&'{') {
+            chars.next(); // consume '{'
+            let mut var_name = String::new();
+            let mut found_close = false;
+            let mut has_default = false;
+            let mut default_value = String::new();
+            while let Some(c) = chars.next() {
+                if c == '}' {
+                    found_close = true;
+                    break;
+                }
+                if c == ':' && !has_default {
+                    // Check for `:-` default syntax
+                    if chars.peek() == Some(&'-') {
+                        chars.next(); // consume '-'
+                        has_default = true;
+                        continue;
+                    }
+                }
+                if has_default {
+                    default_value.push(c);
+                } else {
+                    var_name.push(c);
+                }
+            }
+            if found_close {
+                if let Some(val) = vars.get(&var_name) {
+                    result.push_str(val);
+                } else if has_default {
+                    result.push_str(&default_value);
+                } else {
+                    // Preserve original pattern
+                    result.push_str("${");
+                    result.push_str(&var_name);
+                    result.push('}');
+                }
+            } else {
+                // Unclosed `${`, preserve as-is
+                result.push_str("${");
+                result.push_str(&var_name);
+                if has_default {
+                    result.push_str(":-");
+                    result.push_str(&default_value);
+                }
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    result
 }
 
 /// Re-export of confers' XChaCha20-Poly1305 cipher (synchronous API).

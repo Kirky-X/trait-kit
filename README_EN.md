@@ -20,7 +20,7 @@
 - **Typestate Build Validation** — `Kit<Unbuilt>` registers modules and configs; `kit.build()` validates the dependency graph (cycle detection, missing deps) and returns `Kit<Ready>`. Build errors surface before your app starts.
 - **Type-Safe Capability Retrieval** — Capabilities are stored and retrieved by module type (`kit.require::<LoggerModule>()`), not string keys. No downcasting, no runtime lookups.
 - **Configuration Center** — `kit.set_config(value)` / `kit.config::<C>()` store and retrieve typed configs via a `TypeMap` keyed by `TypeId`. No `ConfigKey` or `ConfigHandle` boilerplate.
-- **Optional confers Integration** — Four-level feature flags integrate [`confers`](https://crates.io/crates/confers) for derive-macro config loading, hot-reload subscriptions, and XChaCha20-Poly1305 encrypted config storage.
+- **Optional confers Integration** — Three-level feature flags integrate [`confers`](https://crates.io/crates/confers) for derive-macro config loading, hot-reload subscriptions, and XChaCha20-Poly1305 encrypted config storage.
 - **`AsyncKit` Async Support** — The `async` feature provides `AsyncKit` with `Send + Sync` async capability management for database pools, HTTP clients, and other async initialization scenarios.
 - **ICU4X Internationalization** — Built-in ICU4X support for locale-aware number, date, plural, and collation formatting, plus Fluent FTL-based message translation (`tr()`) for multilingual error messages.
 - **Minimal Dependencies** — Only `thiserror`, `icu`, `writeable`, and `sys-locale` are required. `confers`, `serde`, and `serde_json` are optional, pulled in only when you enable the corresponding feature.
@@ -214,17 +214,15 @@ fn main() {
 | --- | --- | --- |
 | `default` | — | No extra features, just core `Module` + `Kit`. |
 | `async` | — | `AsyncKit`: `Send + Sync` async capability management, no extra deps. |
-| `confers` | `dep:confers`, `dep:serde` | `Configurable` trait + `Kit::load_config`. |
-| `confers-macros` | `confers` | `ModuleConfig` trait + `Config` derive re-export. |
-| `hot-reload` | `confers-macros`, `confers/watch` | `subscribe` / `reload_config` hot-reload API. |
-| `encryption` | `hot-reload`, `confers/encryption`, `dep:serde_json` | `set_encrypted` / `get_encrypted` encrypted config storage. |
+| `confers` | `dep:confers`, `dep:serde` | `Configurable` + `ModuleConfig` trait + `Config` derive re-export. |
+| `reload` | `confers`, `confers/watch` | `subscribe` / `reload_config` hot-reload API. |
+| `encryption` | `confers`, `confers/encryption` | `set_encrypted` / `get_encrypted` encrypted config storage. |
 | `interface` | — | Interface/implementation separation: `register_as` / `resolve` with `dyn Trait` type erasure. |
 | `lifecycle` | — | Lifecycle hooks: `on_ready` (after build) + `on_shutdown` (cleanup). |
 | `health` | — | Health checks: `HealthCheck` trait + `HealthStatus` reporting. |
 | `scope` | — | Scoped dependencies: `Scope` per-request instance isolation. |
-| `conditional` | — | Conditional registration: runtime predicate-controlled module registration. |
-| `observability` | — | Build observability: `BuildObserver` callbacks (start/complete/error). |
-| `factory` | — | Factory pattern: new instance per call (non-singleton). |
+| `toggle` | — | Feature toggle: runtime string-keyed module enable/disable. |
+| `observer` | — | Build observability: `BuildObserver` callbacks (start/complete/error). |
 | `decorator` | — | Module decorator: post-build capability wrapping/enhancement. |
 | `shutdown` | — | Graceful shutdown coordinator: phased shutdown with hook registration + timeout. |
 
@@ -239,22 +237,21 @@ trait-kit = { version = "0.4", features = ["encryption"] }
 
 ## ⚙️ Configuration: confers Integration
 
-trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.5 via four-level feature flags. Each level inherits from the previous, forming a layered capability system.
+trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.5 via three-level feature flags. Each level inherits from the previous, forming a layered capability system.
 
 ### confers Feature Flags
 
 | Feature               | Enables                                         | Description                                      |
 | --------------------- | ----------------------------------------------- | ------------------------------------------------ |
-| `confers`             | `dep:confers`, `dep:serde`                      | `Configurable` trait + `Kit::load_config`.       |
-| `confers-macros`      | `confers`                                       | `ModuleConfig` trait + `Config` derive re-export.|
-| `hot-reload`  | `confers-macros`, `confers/watch`               | `subscribe` / `reload_config` API.               |
-| `encryption`  | `hot-reload`, `confers/encryption`, `dep:serde_json` | `set_encrypted` / `get_encrypted` API.    |
+| `confers`             | `dep:confers`, `dep:serde`                      | `Configurable` + `ModuleConfig` trait + `Config` derive re-export. |
+| `reload`  | `confers`, `confers/watch`               | `subscribe` / `reload_config` API.               |
+| `encryption`  | `confers`, `confers/encryption` | `set_encrypted` / `get_encrypted` API.    |
 
 ### Three-Tier Inheritance System
 
 1. **Module capability inheritance** (Layer 1): `ModuleConfig` trait declares `PATH` and `default_value()`, binding a config type to its module's configuration path.
 
-2. **Cargo feature inheritance** (Layer 2): Each feature level inherits the previous (`encryption` → `hot-reload` → `confers-macros` → `confers`). Enabling a higher level automatically enables all lower levels.
+2. **Cargo feature inheritance** (Layer 2): Each feature level inherits the previous (`encryption` → `reload` → `confers`). Enabling a higher level automatically enables all lower levels.
 
 3. **Config value inheritance** (Layer 3): The encryption key is derived from `ModuleConfig::PATH` via HKDF, so the same master key produces different field keys for different modules.
 
@@ -385,13 +382,12 @@ graph TB
 
 - **Typestate Pattern**: `Kit<Unbuilt>` → `Kit<Ready>`, build-time dependency graph validation, zero runtime overhead.
 - **Interior Mutability**: `RefCell`-based, single-threaded `!Sync` design, avoiding lock overhead. `AsyncKit` uses `Arc<RwLock>` for multi-threading.
-- **Four-Level Feature Inheritance** (confers integration):
+- **Three-Level Feature Inheritance** (confers integration):
 
 ```mermaid
 graph LR
-    C[confers] --> CM[confers-macros]
-    CM --> HR[hot-reload]
-    HR --> E[encryption]
+    C[confers] --> R[reload]
+    R --> E[encryption]
 ```
 
 ---

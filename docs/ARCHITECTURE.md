@@ -112,14 +112,13 @@ graph LR
 
     subgraph 可选["可选 Feature"]
         F1[async]
-        F2[confers → confers-macros → hot-reload → encryption]
+        F2[confers → reload → encryption]
         F3[interface]
         F4[lifecycle]
         F5[health]
         F6[scope]
-        F7[conditional]
-        F8[observability]
-        F9[factory]
+        F7[toggle]
+        F8[observer]
         F10[decorator]
         F11[shutdown]
     end

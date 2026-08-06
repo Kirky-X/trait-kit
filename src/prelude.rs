@@ -4,7 +4,9 @@
 
 pub use crate::core::{AutoBuilder, ModuleMeta};
 pub use crate::error::TraitKitError;
-pub use crate::i18n::{I18nError, I18nFormatter, I18nManager, tr};
+#[cfg(feature = "i18n")]
+pub use crate::i18n::I18nFormatter;
+pub use crate::i18n::{I18nError, I18nManager, tr};
 pub use crate::kit::{Kit, Ready, Unbuilt};
 
 #[cfg(feature = "async")]
@@ -15,8 +17,10 @@ pub use crate::{AsyncKit, AsyncReady, AsyncUnbuilt};
 #[cfg(feature = "confers")]
 pub use crate::kit::Configurable;
 
-#[cfg(feature = "confers-macros")]
+#[cfg(feature = "confers")]
 pub use crate::kit::ModuleConfig;
+#[cfg(feature = "confers")]
+pub use crate::kit::Validatable;
 
 #[cfg(all(feature = "lifecycle", feature = "async"))]
 pub use crate::core::AsyncLifecycle;
@@ -28,7 +32,7 @@ pub use crate::core::AsyncHealthCheck;
 #[cfg(feature = "health")]
 pub use crate::core::{HealthCheck, HealthStatus};
 
-#[cfg(feature = "observability")]
+#[cfg(feature = "observer")]
 pub use crate::core::BuildObserver;
 
 #[cfg(all(feature = "scope", feature = "async"))]

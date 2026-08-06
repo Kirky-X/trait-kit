@@ -1,16 +1,16 @@
 // Copyright (c) 2026 Kirky.X
 // SPDX-License-Identifier: MIT
-//! Level 2: `confers-macros` feature — ModuleConfig + Config derive re-export.
+//! `confers` feature — ModuleConfig + Config derive re-export.
 //!
 //! Demonstrates binding a config type to its module via `ModuleConfig::PATH` and
 //! `default_value()`, then having a module's `build()` retrieve that config via
 //! `kit.config::<C>()`.
 //!
-//! Run: `cargo run -p trait-kit-example --example confers_macros --features confers-macros`
+//! Run: `cargo run -p trait-kit-example --example confers_macros --features confers`
 
 use std::sync::Arc;
 use trait_kit::kit::config::ModuleConfig;
-// Level 2 re-export: `trait_kit::kit::Config` is gated behind `confers-macros`.
+// `trait_kit::kit::Config` is re-exported from the `confers` feature.
 use trait_kit::kit::Config;
 use trait_kit::prelude::*;
 
