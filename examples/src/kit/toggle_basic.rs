@@ -62,7 +62,10 @@ fn main() {
     let registered2 = kit2
         .register_if_toggle::<CacheModule>("cache")
         .expect("registration should succeed");
-    assert!(!registered2, "module should NOT be registered when toggle is off");
+    assert!(
+        !registered2,
+        "module should NOT be registered when toggle is off"
+    );
 
     let kit2 = kit2.build().expect("build should succeed");
     assert!(!kit2.contains::<CacheModule>());

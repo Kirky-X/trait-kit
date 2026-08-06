@@ -453,7 +453,7 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 
 ## 📋 Changelog
 
-See [CHANGELOG.md](CHANGELOG.md).
+See [CHANGELOG.md](docs/CHANGELOG.md).
 
 ---
 

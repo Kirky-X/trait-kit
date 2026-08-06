@@ -531,7 +531,7 @@ mod tests {
 
         let results = coord.shutdown();
         assert_eq!(results.len(), 3);
-        assert!(results.iter().all(|r| r.is_ok()));
+        assert!(results.iter().all(ShutdownPhaseResult::is_ok));
         assert_eq!(ORDER.load(Ordering::SeqCst), 4);
     }
 
@@ -557,7 +557,7 @@ mod tests {
             PHASE_ORDER.lock().unwrap().push(ShutdownPhase::DrainQueue);
         });
 
-        coord.shutdown();
+        let _ = coord.shutdown();
 
         let order = PHASE_ORDER.lock().unwrap();
         assert_eq!(
@@ -702,7 +702,7 @@ mod tests {
         let coord = ShutdownCoordinator::default();
         let results = coord.shutdown();
         assert_eq!(results.len(), 3);
-        assert!(results.iter().all(|r| r.is_ok()));
+        assert!(results.iter().all(ShutdownPhaseResult::is_ok));
     }
 
     #[test]
@@ -729,11 +729,11 @@ mod tests {
         });
 
         // 第一次 shutdown
-        coord.shutdown();
+        let _ = coord.shutdown();
         assert_eq!(CALL_COUNT.load(Ordering::SeqCst), 1);
 
         // 第二次 shutdown — 钩子已被 drain，不应再执行
-        coord.shutdown();
+        let _ = coord.shutdown();
         assert_eq!(CALL_COUNT.load(Ordering::SeqCst), 1);
     }
 }
@@ -850,10 +850,10 @@ mod async_tests {
                 })
                 .unwrap();
 
-            coord.shutdown().await;
+            let _ = coord.shutdown().await;
             assert_eq!(CALL_COUNT.load(Ordering::SeqCst), 1);
 
-            coord.shutdown().await;
+            let _ = coord.shutdown().await;
             assert_eq!(CALL_COUNT.load(Ordering::SeqCst), 1);
         });
     }

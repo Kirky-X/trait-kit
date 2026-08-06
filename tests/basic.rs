@@ -369,7 +369,7 @@ mod confers_derive_bridge {
     }
 }
 
-#[cfg(feature = "confers-macros")]
+#[cfg(feature = "confers")]
 mod module_config_trait {
     use trait_kit::kit::Config;
     use trait_kit::kit::ModuleConfig;
@@ -404,7 +404,7 @@ mod module_config_trait {
     }
 }
 
-#[cfg(feature = "hot-reload")]
+#[cfg(feature = "reload")]
 mod hot_reload {
     use std::cell::Cell;
     use std::error::Error;
@@ -892,7 +892,7 @@ mod kit_build_coverage {
     }
 }
 
-#[cfg(feature = "hot-reload")]
+#[cfg(feature = "reload")]
 mod reload_config_coverage {
     use std::error::Error;
     use trait_kit::prelude::*;
@@ -971,7 +971,7 @@ mod reload_config_coverage {
     }
 }
 
-#[cfg(feature = "confers-macros")]
+#[cfg(feature = "confers")]
 mod load_config_or_default_coverage {
     use std::error::Error;
     use trait_kit::kit::ModuleConfig;

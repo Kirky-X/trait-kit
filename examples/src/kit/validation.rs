@@ -68,7 +68,10 @@ fn main() {
     match invalid.validate() {
         Ok(()) => println!("Scenario 2: unexpected success"),
         Err(errors) => {
-            println!("Scenario 2 (invalid): validation failed with {} errors", errors.len());
+            println!(
+                "Scenario 2 (invalid): validation failed with {} errors",
+                errors.len()
+            );
             for e in &errors {
                 println!("  - {e}");
             }
