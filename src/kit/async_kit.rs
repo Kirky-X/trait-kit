@@ -267,7 +267,7 @@ impl AsyncKit {
             let module_name = self.graph.name_of(*type_id).unwrap_or("<unknown>");
             let build_fn = builders
                 .remove(type_id)
-                .ok_or_else(|| TraitKitError::MissingCapability { key: module_name })?;
+                .ok_or_else(|| TraitKitError::MissingCapability { key: module_name.to_string() })?;
 
             // Observer: notify build start
             #[cfg(feature = "observability")]
@@ -298,7 +298,7 @@ impl AsyncKit {
                 }
                 Err(e) => {
                     let err = TraitKitError::BuildFailed {
-                        context: module_name,
+                        context: module_name.to_string(),
                         source: e,
                     };
                     #[cfg(feature = "observability")]
@@ -403,7 +403,7 @@ impl AsyncKit {
             let fut = M::on_ready(kit);
             Box::pin(async move {
                 fut.await.map_err(|e| TraitKitError::LifecycleFailed {
-                    context: M::NAME,
+                    context: M::NAME.to_string(),
                     source: Box::new(e),
                 })
             })
@@ -535,7 +535,7 @@ impl<S> AsyncKit<S> {
         self.configs
             .get_cloned::<C>()
             .ok_or(TraitKitError::MissingConfig {
-                key: std::any::type_name::<C>(),
+                key: std::any::type_name::<C>().to_string(),
             })
     }
 
@@ -558,7 +558,7 @@ impl<S> AsyncKit<S> {
         let type_id = TypeId::of::<M>();
         self.capabilities
             .get_cloned_by_type_id::<M::Capability>(type_id)
-            .ok_or(TraitKitError::MissingCapability { key: M::NAME })
+            .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() })
     }
 }
 
@@ -646,7 +646,7 @@ impl AsyncKit<Ready> {
         let checkers = self.health_checkers.read().expect("lock poisoned");
         let (_name, checker) = checkers
             .get(&type_id)
-            .ok_or(TraitKitError::MissingConfig { key: M::NAME })?;
+            .ok_or(TraitKitError::MissingConfig { key: M::NAME.to_string() })?;
         Ok(checker(&self.capabilities))
     }
 
@@ -694,7 +694,7 @@ impl AsyncKit<Ready> {
             let fut = M::build(kit_ref);
             Box::pin(async move {
                 fut.await.map_err(|e| TraitKitError::BuildFailed {
-                    context: M::NAME,
+                    context: M::NAME.to_string(),
                     source: Box::new(e),
                 })
             })
@@ -1106,16 +1106,13 @@ mod tests {
             .expect("register should succeed");
         let err =
             block_on(kit.build()).expect_err("build should fail when module build returns Err");
-        assert!(
-            matches!(
-                err,
-                TraitKitError::BuildFailed {
-                    context: "mock-err-module",
-                    ..
-                }
-            ),
-            "expected BuildFailed for mock-err-module, got {err:?}"
-        );
+        match &err {
+            TraitKitError::BuildFailed { context, .. } => {
+                assert_eq!(context.as_str(), "mock-err-module",
+                    "expected BuildFailed for mock-err-module, got {err:?}");
+            }
+            _ => panic!("expected BuildFailed for mock-err-module, got {err:?}"),
+        }
     }
 
     // --- T010 tests for AsyncKit<Ready> retrieval API (require/optional/contains/contains_config) ---
@@ -1142,7 +1139,7 @@ mod tests {
             .require::<MockModule>()
             .expect_err("require on unbuilt module should error");
         assert!(
-            matches!(err, TraitKitError::MissingCapability { key: "mock-module" }),
+            matches!(err, TraitKitError::MissingCapability { ref key } if key == "mock-module"),
             "expected MissingCapability for mock-module, got {err:?}"
         );
     }
