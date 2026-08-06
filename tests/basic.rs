@@ -805,6 +805,7 @@ mod graph_coverage {
     }
 }
 
+#[cfg(test)]
 mod kit_build_coverage {
     use std::sync::Arc;
     use trait_kit::impl_module_meta;

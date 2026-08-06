@@ -17,9 +17,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
 
+use std::cell::RefCell;
 #[cfg(feature = "async")]
 use std::sync::{Arc, RwLock};
-use std::cell::RefCell;
 
 use crate::error::TraitKitError;
 
@@ -148,9 +148,7 @@ impl ShutdownCoordinator {
         F: FnOnce() + 'static,
     {
         let idx = Self::phase_index(phase);
-        self.phases.borrow_mut()[idx]
-            .hooks
-            .push(Box::new(hook));
+        self.phases.borrow_mut()[idx].hooks.push(Box::new(hook));
     }
 
     /// 执行完整的分阶段关闭流程。
@@ -295,9 +293,8 @@ impl ShutdownResult {
 
 /// 异步关闭钩子。
 #[cfg(feature = "async")]
-type AsyncShutdownHook = Box<
-    dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync,
->;
+type AsyncShutdownHook =
+    Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 /// 异步阶段的配置。
 #[cfg(feature = "async")]
@@ -335,7 +332,7 @@ impl AsyncPhaseConfig {
 ///     Box::pin(async {
 ///         // 异步停止接收请求
 ///     })
-/// }).await;
+/// }).expect("register_hook failed");
 ///
 /// let result = coord.shutdown().await;
 /// ```
@@ -367,10 +364,7 @@ impl AsyncShutdownCoordinator {
     ///
     /// 当内部 `RwLock` 中毒时 panic。
     pub fn set_global_timeout(&self, timeout: Duration) {
-        *self
-            .global_timeout
-            .write()
-            .expect("lock poisoned") = Some(timeout);
+        *self.global_timeout.write().expect("lock poisoned") = Some(timeout);
     }
 
     /// 设置指定阶段的超时。
@@ -399,10 +393,11 @@ impl AsyncShutdownCoordinator {
     {
         let idx = Self::phase_index(phase);
         // 将 hook 包装为 AsyncShutdownHook（erased future）
-        let boxed: AsyncShutdownHook = Box::new(move || -> Pin<Box<dyn Future<Output = ()> + Send>> {
-            let fut = hook();
-            Box::pin(fut) as Pin<Box<dyn Future<Output = ()> + Send>>
-        });
+        let boxed: AsyncShutdownHook =
+            Box::new(move || -> Pin<Box<dyn Future<Output = ()> + Send>> {
+                let fut = hook();
+                Box::pin(fut) as Pin<Box<dyn Future<Output = ()> + Send>>
+            });
         self.phases
             .write()
             .map_err(|_| TraitKitError::BuildFailed {
@@ -547,10 +542,16 @@ mod tests {
 
         let coord = ShutdownCoordinator::new();
         coord.register_hook(ShutdownPhase::CloseConnections, || {
-            PHASE_ORDER.lock().unwrap().push(ShutdownPhase::CloseConnections);
+            PHASE_ORDER
+                .lock()
+                .unwrap()
+                .push(ShutdownPhase::CloseConnections);
         });
         coord.register_hook(ShutdownPhase::StopRequests, || {
-            PHASE_ORDER.lock().unwrap().push(ShutdownPhase::StopRequests);
+            PHASE_ORDER
+                .lock()
+                .unwrap()
+                .push(ShutdownPhase::StopRequests);
         });
         coord.register_hook(ShutdownPhase::DrainQueue, || {
             PHASE_ORDER.lock().unwrap().push(ShutdownPhase::DrainQueue);
@@ -690,7 +691,10 @@ mod tests {
         assert_eq!(result.timed_out_phases(), vec![ShutdownPhase::DrainQueue]);
         let err = result.into_result().unwrap_err();
         let msg = format!("{err}");
-        assert!(msg.contains("drain_queue"), "error should mention timed out phase: {msg}");
+        assert!(
+            msg.contains("drain_queue"),
+            "error should mention timed out phase: {msg}"
+        );
     }
 
     #[test]
@@ -708,7 +712,10 @@ mod tests {
         assert_eq!(results.len(), 3);
         for r in &results {
             assert!(r.is_ok());
-            assert!(r.elapsed.as_nanos() < 1_000_000, "empty phase should be near-instant");
+            assert!(
+                r.elapsed.as_nanos() < 1_000_000,
+                "empty phase should be near-instant"
+            );
         }
     }
 
