@@ -43,7 +43,7 @@ fn main() {
     println!("错误消息: {err}");
 
     let err2 = TraitKitError::MissingCapability {
-        key: "cache-backend",
+        key: "cache-backend".into(),
     };
     println!("错误消息: {err2}");
 

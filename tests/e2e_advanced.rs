@@ -615,7 +615,7 @@ mod core_scenarios {
         kit.register::<FailingModule>().expect("register");
         match kit.build() {
             Err(TraitKitError::BuildFailed { context, source }) => {
-                assert_eq!(context, "failing");
+                assert_eq!(&*context, "failing");
                 assert!(
                     source.to_string().contains("intentional build failure"),
                     "source should mention intentional failure: {source}"
@@ -636,7 +636,7 @@ mod core_scenarios {
             .expect("build should succeed (lazy not yet built)");
         match built.require::<FailingLazyModule>() {
             Err(TraitKitError::BuildFailed { context, source }) => {
-                assert_eq!(context, "failing-lazy");
+                assert_eq!(&*context, "failing-lazy");
                 assert!(
                     source.to_string().contains("intentional build failure"),
                     "source should mention failure: {source}"
@@ -668,7 +668,7 @@ mod core_scenarios {
         let built = kit.build().expect("build");
         match built.require_all::<MultiA>() {
             Err(TraitKitError::MissingCapability { key }) => {
-                assert_eq!(key, "multi-a");
+                assert_eq!(&*key, "multi-a");
             }
             other => panic!("expected MissingCapability, got: {other:?}"),
         }
@@ -1571,7 +1571,7 @@ mod async_scenarios {
         kit.register::<AsyncFailing>().expect("register");
         match block_on(kit.build()) {
             Err(TraitKitError::BuildFailed { context, source }) => {
-                assert_eq!(context, "async-failing");
+                assert_eq!(&*context, "async-failing");
                 assert!(
                     source.to_string().contains("intentional async failure"),
                     "source should mention failure: {source}"
@@ -1620,7 +1620,7 @@ mod async_scenarios {
         // wrapped as BuildFailed by AsyncKit::build.
         match block_on(kit.build()) {
             Err(TraitKitError::BuildFailed { context, source }) => {
-                assert_eq!(context, "async-require-unbuilt");
+                assert_eq!(&*context, "async-require-unbuilt");
                 assert!(
                     source.to_string().contains("async-unregistered"),
                     "source should mention the unregistered module: {source}"
@@ -1778,7 +1778,7 @@ mod interface_scenarios {
         let built = kit.build().expect("build");
         match built.resolve::<dyn Logger>() {
             Err(TraitKitError::MissingCapability { key }) => {
-                assert_eq!(key, "interface");
+                assert_eq!(&*key, "interface");
             }
             Ok(_) => panic!("expected MissingCapability, got Ok"),
             Err(e) => panic!("expected MissingCapability, got: {e:?}"),
@@ -2219,7 +2219,7 @@ mod encryption_boundary {
             }
             Err(TraitKitError::BuildFailed { context, .. }) => {
                 // HKDF rejected empty key — verify context is set_encrypted.
-                assert_eq!(context, "set_encrypted");
+                assert_eq!(&*context, "set_encrypted");
             }
             other => panic!("unexpected result for empty master_key: {other:?}"),
         }
@@ -2304,7 +2304,7 @@ mod encryption_boundary {
         let wrong_key: [u8; 32] = *b"fedcba9876543210fedcba9876543210";
         match built.get_encrypted::<BoundaryConfig>(&wrong_key) {
             Err(TraitKitError::BuildFailed { context, .. }) => {
-                assert_eq!(context, "get_encrypted");
+                assert_eq!(&*context, "get_encrypted");
             }
             other => panic!(
                 "expected BuildFailed for wrong-key (analog of tampered ciphertext), got: {other:?}"
