@@ -57,7 +57,11 @@ fn main() {
 
     println!("\n--- 关闭结果 ---");
     for r in &results {
-        let status = if r.is_ok() { "✓ 完成" } else { "✗ 超时" };
+        let status = if r.is_ok() {
+            "✓ 完成"
+        } else {
+            "✗ 超时"
+        };
         println!(
             "  {} ({:?}): {} (耗时 {:?})",
             r.phase.as_str(),
@@ -70,10 +74,7 @@ fn main() {
     // ─── 验证 ──────────────────────────────────────────────
     let total_hooks = HOOK_COUNTER.load(Ordering::SeqCst);
     assert_eq!(total_hooks, 5, "所有 5 个钩子应被执行");
-    assert!(
-        results.iter().all(|r| r.is_ok()),
-        "所有阶段应正常完成"
-    );
+    assert!(results.iter().all(|r| r.is_ok()), "所有阶段应正常完成");
 
     println!("\nshutdown: OK (共执行 {total_hooks} 个钩子)");
 }

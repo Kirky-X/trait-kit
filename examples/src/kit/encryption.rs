@@ -54,10 +54,7 @@ fn main() {
         .get_encrypted(&MASTER_KEY)
         .expect("get_encrypted with correct key should succeed");
     assert_eq!(decrypted, original, "roundtrip should preserve value");
-    println!(
-        "Roundtrip OK: api_key=***, port={}",
-        decrypted.port
-    );
+    println!("Roundtrip OK: api_key=***, port={}", decrypted.port);
 
     let wrong_key = *b"fedcba9876543210fedcba9876543210";
     let result: Result<SecretConfig, _> = kit.get_encrypted(&wrong_key);
