@@ -107,6 +107,7 @@ pub trait InterfaceBuilder: ModuleMeta {
 | `get_encrypted::<C>(key)` | `encryption` | 解密检索配置 |
 | `health_check::<M>()` | `health` | 查询单模块健康状态 |
 | `health_report()` | `health` | 查询所有模块健康报告 |
+| `factory::<M>()` | `factory` | 创建工厂闭包，每次调用产生新实例 |
 | `shutdown()` | `lifecycle` | 按逆拓扑序执行 `on_shutdown` |
 | `set_config::<C>(value)` | — | 运行时更新配置 |
 | `subscribe::<C>(cb)` | `hot-reload` | 订阅热重载 |
@@ -183,20 +184,26 @@ impl_async_auto_builder!(MyModule, Arc<Cap>, MyError, |kit| Box::pin(async move 
 ```rust
 pub trait Lifecycle: AutoBuilder {
     fn on_ready(kit: &Kit<Ready>) -> Result<(), Self::Error> { Ok(()) }
-    fn on_shutdown(cap: &Self::Capability) {}
+    fn on_shutdown(cap: &Self::Capability) {}  // 默认空操作
 }
 ```
+
+两个方法均有默认实现（no-op），可按需覆盖。
 
 ### `AsyncLifecycle` `async`
 
 ```rust
 pub trait AsyncLifecycle: AsyncAutoBuilder {
     fn on_ready<'a>(kit: &'a AsyncKit<Ready>)
-        -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>>;
+        -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>>
+        { Box::pin(async { Ok(()) }) }
     fn on_shutdown<'a>(cap: &'a Self::Capability)
-        -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
+        -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
+        { Box::pin(async {}) }
 }
 ```
+
+两个方法均有默认实现（no-op），可按需覆盖。
 
 ---
 
@@ -236,11 +243,13 @@ pub trait AsyncHealthCheck: AsyncAutoBuilder {
 
 ```rust
 pub trait BuildObserver: Send + Sync + 'static {
-    fn on_module_start(&self, module_name: &'static str) {}
-    fn on_module_built(&self, module_name: &'static str, elapsed: Duration) {}
-    fn on_build_error(&self, module_name: &'static str, error: &TraitKitError) {}
+    fn on_module_start(&self, module_name: &'static str) {}                        // 默认 no-op
+    fn on_module_built(&self, module_name: &'static str, elapsed: Duration) {}      // 默认 no-op
+    fn on_build_error(&self, module_name: &'static str, error: &TraitKitError) {}   // 默认 no-op
 }
 ```
+
+所有方法均有默认 no-op 实现，可按需覆盖。
 
 ---
 
@@ -280,10 +289,11 @@ pub enum TraitKitError {
     CycleDetected { cycle: Vec<&'static str> },
     DependencyMissing { module: &'static str, missing: &'static str },
     AlreadyRegistered { module: &'static str },
-    BuildFailed { context: &'static str, source: Box<dyn Error + Send> },
-    MissingCapability { key: &'static str },
-    MissingConfig { key: &'static str },
-    LifecycleFailed { context: &'static str, source: Box<dyn Error + Send> }, // lifecycle
+    BuildFailed { context: String, source: Box<dyn Error + Send> },
+    MissingCapability { key: String },
+    MissingConfig { key: String },
+    LifecycleFailed { context: String, source: Box<dyn Error + Send> }, // lifecycle
+    ShutdownTimedOut { phases: Vec<ShutdownPhase> },                     // shutdown
 }
 ```
 
@@ -345,3 +355,5 @@ fmt.format_date(...);
 | `BuildObserver` | `observability` |
 | `Scope` | `scope` |
 | `AsyncScope` | `scope` + `async` |
+| `ShutdownCoordinator`, `ShutdownPhase`, `ShutdownPhaseResult`, `ShutdownResult` | `shutdown` |
+| `AsyncShutdownCoordinator` | `shutdown` + `async` |
