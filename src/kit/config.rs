@@ -96,12 +96,22 @@ pub use confers::derive_field_key;
 /// `ModuleConfig::PATH`, so the encrypted blob is bound to the module's
 /// declared configuration path.
 #[cfg(feature = "encryption")]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct EncryptedBlob {
     /// XChaCha20-Poly1305 nonce (24 bytes).
     nonce: Vec<u8>,
     /// Ciphertext + Poly1305 authentication tag.
     ciphertext: Vec<u8>,
+}
+
+#[cfg(feature = "encryption")]
+impl std::fmt::Debug for EncryptedBlob {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EncryptedBlob")
+            .field("nonce", &"[REDACTED]")
+            .field("ciphertext", &"[REDACTED]")
+            .finish()
+    }
 }
 
 #[cfg(feature = "encryption")]
@@ -152,11 +162,13 @@ mod encrypted_blob_tests {
     }
 
     #[test]
-    fn debug_format_contains_fields() {
+    fn debug_format_redacts_sensitive_data() {
         let blob = EncryptedBlob::new(vec![1, 2, 3], vec![4, 5, 6]);
         let s = format!("{blob:?}");
         assert!(s.contains("EncryptedBlob"));
-        assert!(s.contains("nonce"));
-        assert!(s.contains("ciphertext"));
+        assert!(s.contains("[REDACTED]"));
+        // Ensure raw byte values are NOT leaked
+        assert!(!s.contains("[1, 2, 3]"));
+        assert!(!s.contains("[4, 5, 6]"));
     }
 }
