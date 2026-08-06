@@ -92,7 +92,7 @@ fn test_missing_config_error() {
 
     assert!(result.is_err());
     match result.unwrap_err() {
-        TraitKitError::BuildFailed { context, .. } => assert_eq!(context, "db_pool"),
+        TraitKitError::BuildFailed { context, .. } => assert_eq!(&*context, "db_pool"),
         other => panic!("expected BuildFailed, got: {other}"),
     }
 }
@@ -216,17 +216,17 @@ fn kit_error_display_and_source_behavior() {
     assert_eq!(dup.to_string(), "module `logger` is already registered");
 
     // Display: MissingCapability
-    let cap = TraitKitError::MissingCapability { key: "logger" };
+    let cap = TraitKitError::MissingCapability { key: "logger".into() };
     assert_eq!(cap.to_string(), "missing capability `logger`");
 
     // Display: MissingConfig
-    let cfg = TraitKitError::MissingConfig { key: "db_url" };
+    let cfg = TraitKitError::MissingConfig { key: "db_url".into() };
     assert_eq!(cfg.to_string(), "missing config `db_url`");
 
     // Display: BuildFailed (contains source message)
     let source: Box<dyn Error + Send + Sync> = "inner failure".into();
     let build = TraitKitError::BuildFailed {
-        context: "db",
+        context: "db".into(),
         source,
     };
     assert!(build.to_string().contains("failed to build `db`"));
@@ -284,7 +284,7 @@ mod confers_loader {
 
         match result {
             Err(TraitKitError::BuildFailed { context, source }) => {
-                assert_eq!(context, "load_config");
+                assert_eq!(&*context, "load_config");
                 assert!(source.to_string().contains("intentional load failure"));
             }
             other => panic!("expected BuildFailed, got: {other:?}"),
@@ -621,7 +621,7 @@ mod encryption {
         let result = kit.set_encrypted(&Unserializable, &MASTER_KEY);
         match result {
             Err(TraitKitError::BuildFailed { context, source }) => {
-                assert_eq!(context, "set_encrypted");
+                assert_eq!(&*context, "set_encrypted");
                 assert!(source.to_string().contains("intentional serialize failure"));
             }
             other => panic!("expected BuildFailed, got: {other:?}"),
@@ -909,7 +909,7 @@ mod reload_config_coverage {
         let result = kit.reload_config::<FailingReloadConfig>();
         match result {
             Err(TraitKitError::BuildFailed { context, source }) => {
-                assert_eq!(context, "reload_config");
+                assert_eq!(&*context, "reload_config");
                 assert!(source.to_string().contains("reload intentional failure"));
             }
             other => panic!("expected BuildFailed, got: {other:?}"),

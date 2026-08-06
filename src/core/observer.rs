@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn observer_default_on_build_error_does_not_panic() {
         let obs = DefaultObserver;
-        let err = crate::error::TraitKitError::MissingCapability { key: "test" };
+        let err = crate::error::TraitKitError::MissingCapability { key: "test".into() };
         obs.on_build_error("test-module", &err);
     }
 
@@ -104,7 +104,7 @@ mod tests {
         let obs: Box<dyn BuildObserver> = Box::new(DefaultObserver);
         obs.on_module_start("m1");
         obs.on_module_built("m1", Duration::from_millis(1));
-        let err = crate::error::TraitKitError::MissingConfig { key: "x" };
+        let err = crate::error::TraitKitError::MissingConfig { key: "x".into() };
         obs.on_build_error("m1", &err);
     }
 
@@ -117,7 +117,7 @@ mod tests {
             error_count: Arc::clone(&error),
         };
         let err = crate::error::TraitKitError::BuildFailed {
-            context: "test",
+            context: "test".into(),
             source: Box::new(std::io::Error::other("test")),
         };
         obs.on_build_error("test-module", &err);
