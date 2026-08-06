@@ -184,9 +184,9 @@ mod tests {
             cycle: vec!["A", "B", "C"],
         };
         let msg = format!("{err}");
-        assert!(msg.contains("A"), "should contain module A: got '{msg}'");
-        assert!(msg.contains("B"), "should contain module B: got '{msg}'");
-        assert!(msg.contains("C"), "should contain module C: got '{msg}'");
+        assert!(msg.contains('A'), "should contain module A: got '{msg}'");
+        assert!(msg.contains('B'), "should contain module B: got '{msg}'");
+        assert!(msg.contains('C'), "should contain module C: got '{msg}'");
     }
 
     #[test]

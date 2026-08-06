@@ -453,7 +453,7 @@ cargo fmt --check
 
 ## 📋 更新日志
 
-详见 [CHANGELOG.md](CHANGELOG.md)。
+详见 [CHANGELOG.md](docs/CHANGELOG.md)。
 
 ---
 

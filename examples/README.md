@@ -79,4 +79,4 @@ cargo run -p trait-kit-example --example i18n --features i18n
 
 ---
 
-[← Back to trait-kit](../../README.md)
+[← Back to trait-kit](../README.md)
