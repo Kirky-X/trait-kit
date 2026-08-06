@@ -106,6 +106,8 @@ pub struct AsyncKit<S = Unbuilt> {
     observers: Arc<RwLock<Vec<AsyncObserverRef>>>,
     #[cfg(feature = "decorator")]
     decorators: Arc<RwLock<HashMap<TypeId, Vec<AsyncDecoratorFn>>>>,
+    #[cfg(feature = "decorator")]
+    decorator_module_to_cap: Arc<RwLock<HashMap<TypeId, TypeId>>>,
     _state: PhantomData<S>,
 }
 
@@ -131,6 +133,8 @@ impl AsyncKit {
             observers: Arc::new(RwLock::new(Vec::new())),
             #[cfg(feature = "decorator")]
             decorators: Arc::new(RwLock::new(HashMap::new())),
+            #[cfg(feature = "decorator")]
+            decorator_module_to_cap: Arc::new(RwLock::new(HashMap::new())),
             _state: PhantomData,
         }
     }
@@ -152,6 +156,7 @@ impl AsyncKit {
     /// Panics if the `builders` [`RwLock`] is poisoned (a worker thread
     /// panicked while holding the write lock). Lock poisoning indicates a
     /// logic bug in the async build pipeline and should fail loudly.
+    #[must_use = "ignoring the Result may hide AlreadyRegistered errors"]
     pub fn register<M: AsyncAutoBuilder>(&mut self) -> Result<(), TraitKitError> {
         let entry = ModuleEntry {
             type_id: TypeId::of::<M>(),
@@ -238,6 +243,8 @@ impl AsyncKit {
     /// Panics if the `builders` [`RwLock`] is poisoned (a worker thread
     /// panicked while holding the write lock). Lock poisoning indicates a
     /// logic bug in the async build pipeline and should fail loudly.
+    #[must_use = "ignoring the built kit loses all capabilities and lifecycle callbacks"]
+    #[allow(clippy::too_many_lines)]
     pub async fn build(self) -> Result<AsyncKit<Ready>, TraitKitError> {
         // 1. Validate the dependency graph: missing-dep check + Kahn topo sort.
         let sorted = match self.graph.validate() {
@@ -289,6 +296,18 @@ impl AsyncKit {
             let fut = build_fn(&self);
             match fut.await {
                 Ok(boxed) => {
+                    // Apply decorators (keyed by capability TypeId)
+                    #[cfg(feature = "decorator")]
+                    let boxed = {
+                        let cap_type_id = self
+                            .decorator_module_to_cap
+                            .read()
+                            .expect("lock poisoned")
+                            .get(type_id)
+                            .copied()
+                            .unwrap_or(*type_id);
+                        self.apply_decorators(cap_type_id, boxed)
+                    };
                     self.capabilities.insert_boxed(*type_id, boxed);
                     #[cfg(feature = "observability")]
                     {
@@ -342,6 +361,8 @@ impl AsyncKit {
             observers: self.observers,
             #[cfg(feature = "decorator")]
             decorators: self.decorators,
+            #[cfg(feature = "decorator")]
+            decorator_module_to_cap: self.decorator_module_to_cap,
             _state: PhantomData::<Ready>,
         };
 
@@ -457,6 +478,7 @@ impl AsyncKit {
     ///
     /// Returns [`TraitKitError::AlreadyRegistered`] if the module was already registered.
     #[cfg(feature = "conditional")]
+    #[must_use = "ignoring the Result may hide registration failures"]
     pub fn register_if<M: AsyncAutoBuilder>(
         &mut self,
         predicate: impl FnOnce(&AsyncKit) -> bool,
@@ -517,10 +539,34 @@ impl AsyncKit {
             .entry(TypeId::of::<M>())
             .or_default()
             .push(wrapper);
+        // Record module TypeId → capability TypeId mapping so
+        // `build()` can look up decorators by module TypeId.
+        self.decorator_module_to_cap
+            .write()
+            .expect("lock poisoned")
+            .insert(TypeId::of::<M>(), TypeId::of::<M::Capability>());
     }
 }
 
 impl<S> AsyncKit<S> {
+    /// Apply registered decorators for a capability (keyed by capability `TypeId`).
+    #[cfg(feature = "decorator")]
+    fn apply_decorators(
+        &self,
+        cap_type_id: TypeId,
+        boxed: Box<dyn Any + Send + Sync>,
+    ) -> Box<dyn Any + Send + Sync> {
+        let decorators = self.decorators.read().expect("lock poisoned");
+        let Some(dec_list) = decorators.get(&cap_type_id) else {
+            return boxed;
+        };
+        let mut current = boxed;
+        for dec in dec_list {
+            current = dec(current);
+        }
+        current
+    }
+
     /// Get a configuration value.
     ///
     /// Available on both `AsyncKit<Unbuilt>` (inside `AsyncAutoBuilder::build`
@@ -691,6 +737,13 @@ impl AsyncKit<Ready> {
         // Store self's address as usize so the closure is Send+Sync.
         // SAFETY: AsyncKit<Ready> and AsyncKit<Unbuilt> have identical layout.
         // The pointer remains valid for the lifetime bound `'_`.
+        //
+        // Compile-time layout assertion: if any field depending on `S` is
+        // added to `AsyncKit`, this will fail at compile time.
+        const _: () = assert!(
+            std::mem::size_of::<AsyncKit<Ready>>() == std::mem::size_of::<AsyncKit>(),
+            "AsyncKit layout changed; unsafe cast is no longer sound"
+        );
         let addr: usize = std::ptr::from_ref::<AsyncKit<Ready>>(self) as usize;
 
         move || {
