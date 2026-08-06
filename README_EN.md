@@ -225,6 +225,7 @@ fn main() {
 | `observer` | — | Build observability: `BuildObserver` callbacks (start/complete/error). |
 | `decorator` | — | Module decorator: post-build capability wrapping/enhancement. |
 | `shutdown` | — | Graceful shutdown coordinator: phased shutdown with hook registration + timeout. |
+| `i18n` | `dep:icu`, `dep:writeable`, `dep:sys-locale` | ICU4X internationalization: locale-aware number/date/plural/collation formatting. |
 
 Enable the desired level in `Cargo.toml`:
 

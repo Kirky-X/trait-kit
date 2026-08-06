@@ -188,12 +188,24 @@ fn main() {
 | `kit.register_multi::<M>()`          | `Kit<Unbuilt>`  | 注册多绑定（相同能力类型）。                           |
 | `kit.register_as::<M>()`             | `Kit<Unbuilt>`  | 按接口类型注册（`dyn Trait`）。                         |
 | `kit.register_if::<M>()`             | `Kit<Unbuilt>`  | 条件注册（运行时谓词控制）。                           |
+| `kit.register_if_toggle::<M>()`      | `Kit<Unbuilt>`  | `toggle` 特性开关条件注册。                            |
 | `kit.register_lifecycle::<M>()`      | `Kit<Unbuilt>`  | 注册模块的生命周期钩子。                               |
 | `kit.register_health_check::<M>()`   | `Kit<Unbuilt>`  | 注册模块的健康检查。                                   |
 | `kit.with_observer(obs)`             | `Kit<Unbuilt>`  | 附加 `BuildObserver` 构建回调。                         |
 | `kit.decorate::<M>(f)`               | `Kit<Unbuilt>`  | 构建后能力包装/增强。                                  |
 | `kit.set_config::<C>(value)`         | 两者皆可        | 存储类型化配置值。                                     |
 | `kit.config::<C>()`                  | 两者皆可        | 检索配置值（克隆）。                                   |
+| `kit.load_config::<C>()`             | `Kit<Unbuilt>` `confers` | 通过 `Configurable::load()` 加载配置。             |
+| `kit.load_and_validate::<C>()`       | `Kit<Unbuilt>` `confers` | 加载配置并验证，失败不存入。                     |
+| `kit.load_config_with::<C>(vars)`    | `Kit<Unbuilt>` `confers` | 加载配置并做 `${VAR}` 变量替换。                 |
+| `kit.snapshot_config::<C>()`         | `Kit<Unbuilt>` `confers` | 快照当前配置（返回是否成功）。                   |
+| `kit.restore_config::<C>()`          | `Kit<Unbuilt>` `confers` | 回滚配置到最近快照。                             |
+| `kit.has_snapshot::<C>()`            | `Kit<Unbuilt>` `confers` | 检查指定类型快照是否存在。                       |
+| `kit.subscribe::<C>(cb)`             | 两者皆可 `reload` | 订阅配置热重载回调。                                 |
+| `kit.reload_config::<C>()`           | 两者皆可 `reload` | 重新加载配置并通知订阅者。                           |
+| `kit.set_encrypted(val, key)`        | `Kit<Unbuilt>` `encryption` | 加密存储配置。                                   |
+| `kit.enable_toggle(key, bool)`       | 两者皆可 `toggle` | 设置特性开关。                                       |
+| `kit.is_toggle_enabled(key)`         | 两者皆可 `toggle` | 查询特性开关状态。                                   |
 | `kit.build()`                         | `Kit<Unbuilt>`  | 验证依赖图并构建所有模块 → `Kit<Ready>`。               |
 | `kit.require::<M>()`                 | `Kit<Ready>`    | 检索能力（缺失时报错）。                               |
 | `kit.require_ref::<M>()`             | `Kit<Ready>`    | 零拷贝能力检索（`Ref<'_, Cap>`）。                      |
@@ -202,6 +214,7 @@ fn main() {
 | `kit.resolve::<I>()`                 | `Kit<Ready>`    | 按接口类型检索（`Arc<I>`）。                            |
 | `kit.contains::<M>()`                | `Kit<Ready>`    | 检查能力是否已构建。                                   |
 | `kit.contains_config::<C>()`         | `Kit<Ready>`    | 检查配置值是否存在。                                   |
+| `kit.get_encrypted::<C>(key)`        | `Kit<Ready>` `encryption` | 解密检索配置。                                   |
 | `kit.health_check::<M>()`            | `Kit<Ready>`    | 运行模块健康检查。                                     |
 | `kit.health_report()`                | `Kit<Ready>`    | 返回所有模块的健康报告。                               |
 | `kit.shutdown()`                     | `Kit<Ready>`    | 按拓扑逆序运行 `on_shutdown`。                          |
@@ -225,6 +238,7 @@ fn main() {
 | `observer` | — | 构建可观测：`BuildObserver` 回调（开始/完成/错误）。 |
 | `decorator` | — | 模块装饰器：构建后能力包装/增强。 |
 | `shutdown` | — | 优雅关闭协调器：分阶段有序关闭 + 超时强退。 |
+| `i18n` | `dep:icu`, `dep:writeable`, `dep:sys-locale` | ICU4X 国际化：本地化数字/日期/复数/排序格式化。 |
 
 在 `Cargo.toml` 中启用所需级别：
 
