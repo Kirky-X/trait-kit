@@ -72,14 +72,20 @@ impl fmt::Display for I18nError {
                 write!(
                     f,
                     "{}",
-                    tr("i18n-error-invalid-locale", &[("input", input), ("reason", reason)]),
+                    tr(
+                        "i18n-error-invalid-locale",
+                        &[("input", input), ("reason", reason)]
+                    ),
                 )
             }
             Self::InvalidNumber { input, reason } => {
                 write!(
                     f,
                     "{}",
-                    tr("i18n-error-invalid-number", &[("input", input), ("reason", reason)]),
+                    tr(
+                        "i18n-error-invalid-number",
+                        &[("input", input), ("reason", reason)]
+                    ),
                 )
             }
             Self::DateError(detail) => {
