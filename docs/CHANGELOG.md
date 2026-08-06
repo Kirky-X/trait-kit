@@ -7,7 +7,15 @@
 
 ## [Unreleased]
 
-_暂无未发布变更。_
+### 新增
+
+#### 优雅关闭协调器（feature = "shutdown"）
+- `ShutdownCoordinator` — 同步分阶段关闭（`StopRequests` → `DrainQueue` → `CloseConnections`）+ 超时强退
+- `AsyncShutdownCoordinator` — 异步版本（需同时启用 `async`）
+- `ShutdownPhase` / `ShutdownPhaseResult` / `ShutdownResult` — 关闭阶段与结果类型
+- `TraitKitError::ShutdownTimedOut` 变体
+
+_暂无其他未发布变更。_
 
 ## [0.4.0] - 2026-08-04
 

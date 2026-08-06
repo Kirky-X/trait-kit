@@ -121,6 +121,7 @@ graph LR
         F8[observability]
         F9[factory]
         F10[decorator]
+        F11[shutdown]
     end
 ```
 
@@ -200,6 +201,7 @@ src/
 │   ├── graph.rs        # DependencyGraph：环检测 + 拓扑排序
 │   ├── typemap.rs      # TypeMap：TypeId 键值存储
 │   ├── scope.rs        # Scope / AsyncScope
+│   ├── shutdown.rs     # ShutdownCoordinator / AsyncShutdownCoordinator
 │   ├── async_kit.rs    # AsyncKit
 │   ├── async_typemap.rs # AsyncTypeMap
 │   └── config.rs       # confers 集成
@@ -223,6 +225,8 @@ src/
 | `TypeMap` | ✗ | ✗ | `RefCell<HashMap>` |
 | `AsyncTypeMap` | ✓ | ✓ | `Arc<RwLock<HashMap>>` |
 | `BuildObserver` | ✓ | ✓ | trait bound: `Send + Sync` |
+| `ShutdownCoordinator` | ✗ | ✗ | `RefCell` |
+| `AsyncShutdownCoordinator` | ✓ | ✓ | `Arc<RwLock>` |
 
 ## 错误处理
 
@@ -237,3 +241,4 @@ src/
 | `MissingCapability` | 能力不存在 |
 | `MissingConfig` | 配置不存在 |
 | `LifecycleFailed` | 生命周期钩子失败（需 `lifecycle` feature） |
+| `ShutdownTimedOut` | 优雅关闭超时（需 `shutdown` feature） |

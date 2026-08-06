@@ -203,6 +203,7 @@ fn main() {
 | `kit.contains::<M>()`                | `Kit<Ready>`    | 检查能力是否已构建。                                   |
 | `kit.contains_config::<C>()`         | `Kit<Ready>`    | 检查配置值是否存在。                                   |
 | `kit.health_check::<M>()`            | `Kit<Ready>`    | 运行模块健康检查。                                     |
+| `kit.health_report()`                | `Kit<Ready>`    | 返回所有模块的健康报告。                               |
 | `kit.shutdown()`                     | `Kit<Ready>`    | 按拓扑逆序运行 `on_shutdown`。                          |
 
 ---
@@ -225,6 +226,7 @@ fn main() {
 | `observability` | — | 构建可观测：`BuildObserver` 回调（开始/完成/错误）。 |
 | `factory` | — | 工厂模式：每次调用创建新实例（非单例）。 |
 | `decorator` | — | 模块装饰器：构建后能力包装/增强。 |
+| `shutdown` | — | 优雅关闭协调器：分阶段有序关闭 + 超时强退。 |
 
 在 `Cargo.toml` 中启用所需级别：
 
@@ -237,7 +239,7 @@ trait-kit = { version = "0.4", features = ["encryption"] }
 
 ## ⚙️ 配置：confers 集成
 
-trait-kit 通过四级 feature flag 集成 [`confers`](https://crates.io/crates/confers) 0.4。每个级别继承前一级别，形成分层能力系统。
+trait-kit 通过四级 feature flag 集成 [`confers`](https://crates.io/crates/confers) 0.5。每个级别继承前一级别，形成分层能力系统。
 
 ### confers 特性标志
 

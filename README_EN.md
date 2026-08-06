@@ -203,6 +203,7 @@ fn main() {
 | `kit.contains::<M>()`              | `Kit<Ready>`    | Check if a capability was built.                       |
 | `kit.contains_config::<C>()`       | `Kit<Ready>`    | Check if a config value exists.                        |
 | `kit.health_check::<M>()`          | `Kit<Ready>`    | Run health check for a module.                         |
+| `kit.health_report()`              | `Kit<Ready>`    | Return health report for all modules.                  |
 | `kit.shutdown()`                   | `Kit<Ready>`    | Run `on_shutdown` in reverse topological order.        |
 
 ---
@@ -225,6 +226,7 @@ fn main() {
 | `observability` | — | Build observability: `BuildObserver` callbacks (start/complete/error). |
 | `factory` | — | Factory pattern: new instance per call (non-singleton). |
 | `decorator` | — | Module decorator: post-build capability wrapping/enhancement. |
+| `shutdown` | — | Graceful shutdown coordinator: phased shutdown with hook registration + timeout. |
 
 Enable the desired level in `Cargo.toml`:
 
@@ -237,7 +239,7 @@ trait-kit = { version = "0.4", features = ["encryption"] }
 
 ## ⚙️ Configuration: confers Integration
 
-trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.4 via four-level feature flags. Each level inherits from the previous, forming a layered capability system.
+trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.5 via four-level feature flags. Each level inherits from the previous, forming a layered capability system.
 
 ### confers Feature Flags
 
