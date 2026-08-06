@@ -9,6 +9,17 @@
 
 _暂无未发布变更。_
 
+## [0.4.2] - 2026-08-06
+
+### 修复
+
+#### AsyncKit decorator 存储 key 错误
+- `AsyncKit::decorate()` 将 decorator 存储在 `TypeId::of::<M>()`（模块 TypeId）下，
+  但 `apply_decorators()` 按 `TypeId::of::<M::Capability>()`（能力 TypeId）查找，
+  导致 decorator 永远不会被应用，返回未装饰的原始能力。
+- 修复：存储 key 改为 `TypeId::of::<M::Capability>()`，与同步 `Kit::decorate()` 对齐。
+- 影响范围：所有使用 `AsyncKit::decorate()` 的异步模块。
+
 ## [0.4.1] - 2026-08-06
 
 ### 新增
