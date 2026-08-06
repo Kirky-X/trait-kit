@@ -35,29 +35,29 @@ pub enum TraitKitError {
 
     /// 模块构建失败。
     BuildFailed {
-        /// 构建失败的上下文描述。
-        context: &'static str,
+        /// 构建失败的上下文描述（支持 i18n 翻译后的文本）。
+        context: String,
         /// 底层错误源。
         source: Box<dyn std::error::Error + Send + 'static>,
     },
 
     /// 请求的能力不存在。
     MissingCapability {
-        /// 缺失的能力标识。
-        key: &'static str,
+        /// 缺失的能力标识（支持 i18n 翻译后的文本）。
+        key: String,
     },
 
     /// 请求的配置不存在。
     MissingConfig {
-        /// 缺失的配置键。
-        key: &'static str,
+        /// 缺失的配置键（支持 i18n 翻译后的文本）。
+        key: String,
     },
 
     /// 生命周期钩子执行失败。
     #[cfg(feature = "lifecycle")]
     LifecycleFailed {
-        /// 钩子所属模块的上下文描述。
-        context: &'static str,
+        /// 钩子所属模块的上下文描述（支持 i18n 翻译后的文本）。
+        context: String,
         /// 底层错误源。
         source: Box<dyn std::error::Error + Send + 'static>,
     },
@@ -100,7 +100,7 @@ impl fmt::Display for TraitKitError {
                     "{}",
                     tr(
                         "trait-kit-error-build-failed",
-                        &[("context", *context), ("source", &source_str)],
+                        &[("context", context.as_str()), ("source", &source_str)],
                     )
                 )
             }
@@ -108,14 +108,14 @@ impl fmt::Display for TraitKitError {
                 write!(
                     f,
                     "{}",
-                    tr("trait-kit-error-missing-capability", &[("key", *key)]),
+                    tr("trait-kit-error-missing-capability", &[("key", key.as_str())]),
                 )
             }
             Self::MissingConfig { key } => {
                 write!(
                     f,
                     "{}",
-                    tr("trait-kit-error-missing-config", &[("key", *key)]),
+                    tr("trait-kit-error-missing-config", &[("key", key.as_str())]),
                 )
             }
             #[cfg(feature = "lifecycle")]
@@ -126,7 +126,7 @@ impl fmt::Display for TraitKitError {
                     "{}",
                     tr(
                         "trait-kit-error-lifecycle-failed",
-                        &[("context", *context), ("source", &source_str)],
+                        &[("context", context.as_str()), ("source", &source_str)],
                     )
                 )
             }
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn build_failed_display_contains_context_and_source() {
         let err = TraitKitError::BuildFailed {
-            context: "build",
+            context: "build".into(),
             source: Box::new(std::io::Error::other("oops")),
         };
         let msg = format!("{err}");
@@ -207,14 +207,14 @@ mod tests {
 
     #[test]
     fn missing_capability_display_contains_key() {
-        let err = TraitKitError::MissingCapability { key: "cap" };
+        let err = TraitKitError::MissingCapability { key: "cap".into() };
         let msg = format!("{err}");
         assert!(msg.contains("cap"), "should contain key: got '{msg}'");
     }
 
     #[test]
     fn missing_config_display_contains_key() {
-        let err = TraitKitError::MissingConfig { key: "db.url" };
+        let err = TraitKitError::MissingConfig { key: "db.url".into() };
         let msg = format!("{err}");
         assert!(
             msg.contains("db.url"),
@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn lifecycle_failed_display_contains_context_and_source() {
         let err = TraitKitError::LifecycleFailed {
-            context: "on_ready",
+            context: "on_ready".into(),
             source: Box::new(std::io::Error::other("fail")),
         };
         let msg = format!("{err}");
@@ -240,7 +240,7 @@ mod tests {
     #[test]
     fn error_source_returns_inner_for_build_failed() {
         let err = TraitKitError::BuildFailed {
-            context: "build",
+            context: "build".into(),
             source: Box::new(std::io::Error::other("oops")),
         };
         assert!(std::error::Error::source(&err).is_some());
@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn error_source_returns_none_for_simple_variants() {
-        let err = TraitKitError::MissingConfig { key: "x" };
+        let err = TraitKitError::MissingConfig { key: "x".into() };
         assert!(std::error::Error::source(&err).is_none());
     }
 
@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn error_source_returns_inner_for_lifecycle_failed() {
         let err = TraitKitError::LifecycleFailed {
-            context: "on_ready",
+            context: "on_ready".into(),
             source: Box::new(std::io::Error::other("fail")),
         };
         assert!(std::error::Error::source(&err).is_some());
@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn error_debug_format() {
-        let err = TraitKitError::MissingConfig { key: "x" };
+        let err = TraitKitError::MissingConfig { key: "x".into() };
         let debug = format!("{err:?}");
         assert!(debug.contains("MissingConfig"));
     }
