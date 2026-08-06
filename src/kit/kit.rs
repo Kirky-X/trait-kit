@@ -603,6 +603,7 @@ impl Kit {
     /// Phase 2: Transfer lazy builders to lazy slots for first-access construction.
     fn transfer_lazy_builders(&self) {
         let lazy: Vec<(TypeId, BuildFn)> = self.lazy_builders.borrow_mut().drain().collect();
+        self.lazy_slots.borrow_mut().reserve(lazy.len());
         for (type_id, builder) in lazy {
             self.lazy_slots.borrow_mut().insert(
                 type_id,
@@ -834,7 +835,7 @@ impl<S> Kit<S> {
     pub fn require<M: AutoBuilder>(&self) -> Result<M::Capability, TraitKitError> {
         let type_id = TypeId::of::<M>();
 
-        // 1. Eager capabilities (already-built modules + overrides + previously-built lazy)
+        // 1. Eager capabilities (already-built modules + overrides)
         if let Some(cap) = self
             .capabilities
             .get_cloned_by_type_id::<M::Capability>(type_id)
@@ -842,17 +843,9 @@ impl<S> Kit<S> {
             return Ok(cap);
         }
 
-        // 2. Lazy slots — check OnceLock cache first (previously-built lazy modules)
-        if let Some(boxed) = self
-            .lazy_slots
-            .borrow()
-            .get(&type_id)
-            .and_then(|slot| slot.cell.get())
-        {
-            return boxed
-                .downcast_ref::<M::Capability>()
-                .cloned()
-                .ok_or(TraitKitError::MissingCapability { key: M::NAME });
+        // 2. Lazy slots — check OnceLock cache (previously-built lazy modules)
+        if let Some(cached) = Self::get_lazy_cached::<M>(self, type_id) {
+            return Ok(cached);
         }
 
         // 3. Lazy slots — first-access construction (cell empty, builder exists)
@@ -885,17 +878,25 @@ impl<S> Kit<S> {
             if let Some(slot) = self.lazy_slots.borrow().get(&type_id) {
                 let _ = slot.cell.set(boxed);
             }
-            return self
-                .lazy_slots
-                .borrow()
-                .get(&type_id)
-                .and_then(|slot| slot.cell.get())
-                .and_then(|b| b.downcast_ref::<M::Capability>().cloned())
+            return Self::get_lazy_cached::<M>(self, type_id)
                 .ok_or(TraitKitError::MissingCapability { key: M::NAME });
         }
 
         // 4. Not found
         Err(TraitKitError::MissingCapability { key: M::NAME })
+    }
+
+    /// Extracted helper: retrieve a cached lazy-slot value without rebuilding.
+    /// Consolidates the duplicate lazy-cache lookup pattern in `require()`.
+    fn get_lazy_cached<M: AutoBuilder>(
+        &self,
+        type_id: TypeId,
+    ) -> Option<M::Capability> {
+        self.lazy_slots
+            .borrow()
+            .get(&type_id)
+            .and_then(|slot| slot.cell.get())
+            .and_then(|b| b.downcast_ref::<M::Capability>().cloned())
     }
 
     /// Retrieve all capabilities registered via `register_multi` for the
@@ -986,14 +987,12 @@ impl<S> Kit<S> {
             source: e,
         })?;
         self.configs.insert(config);
-        // Clone the Rc list out to avoid holding the RefCell borrow across
-        // user callbacks (which may re-enter subscribe).
-        let callbacks: Vec<Rc<dyn Fn()>> = self
-            .subscribers
-            .borrow()
-            .get(&TypeId::of::<C>())
-            .cloned()
-            .unwrap_or_default();
+        // Clone individual Rc pointers (ref-count increment only) with
+        // pre-allocated Vec to avoid a full `.cloned()` pass.
+        let callbacks: Vec<Rc<dyn Fn()>> = match self.subscribers.borrow().get(&TypeId::of::<C>()) {
+            Some(subs) => subs.iter().map(Rc::clone).collect(),
+            None => Vec::new(),
+        };
         for cb in &callbacks {
             cb();
         }
