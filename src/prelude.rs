@@ -36,6 +36,11 @@ pub use crate::kit::AsyncScope;
 #[cfg(feature = "scope")]
 pub use crate::kit::Scope;
 
+#[cfg(all(feature = "shutdown", feature = "async"))]
+pub use crate::kit::AsyncShutdownCoordinator;
+#[cfg(feature = "shutdown")]
+pub use crate::kit::{ShutdownCoordinator, ShutdownPhase, ShutdownPhaseResult, ShutdownResult};
+
 #[cfg(all(test, feature = "async"))]
 mod tests {
     //! Verify the async re-exports reachable through `prelude::*` compile
