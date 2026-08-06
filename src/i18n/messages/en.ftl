@@ -21,3 +21,10 @@ i18n-error-invalid-number = invalid number '{ $input }': { $reason }
 i18n-error-date = date error: { $detail }
 
 i18n-error-format = formatting error: { $detail }
+
+# diagnostic context markers (used in error messages)
+
+trait-kit-diag-unknown = <unknown>
+trait-kit-diag-multi-binding = <multi-binding>
+trait-kit-diag-interface = <interface>
+trait-kit-diag-unknown-cycle = <unknown cycle>
