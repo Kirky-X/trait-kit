@@ -117,16 +117,18 @@ impl DependencyGraph {
             index: &HashMap<TypeId, usize>,
             visited: &mut [u8],
             stack: &mut Vec<usize>,
+            stack_pos: &mut HashMap<usize, usize>,
             cycle_names: &mut Vec<&'static str>,
         ) -> bool {
             visited[node] = 1;
+            stack_pos.insert(node, stack.len());
             stack.push(node);
 
             for (_dep_name, dep_id) in &entries[node].dependencies {
                 if let Some(&dep_idx) = index.get(dep_id) {
                     if visited[dep_idx] == 1 {
-                        // Found cycle — extract it
-                        let Some(start) = stack.iter().position(|&x| x == dep_idx) else {
+                        // Found cycle — O(1) lookup via stack_pos map
+                        let Some(&start) = stack_pos.get(&dep_idx) else {
                             // Invariant violation: dep_idx should be in the
                             // stack when visited[dep_idx] == 1. Fall back to
                             // a generic cycle report instead of panicking.
@@ -141,7 +143,15 @@ impl DependencyGraph {
                         return true;
                     }
                     if visited[dep_idx] == 0
-                        && dfs(dep_idx, entries, index, visited, stack, cycle_names)
+                        && dfs(
+                            dep_idx,
+                            entries,
+                            index,
+                            visited,
+                            stack,
+                            stack_pos,
+                            cycle_names,
+                        )
                     {
                         return true;
                     }
@@ -149,13 +159,15 @@ impl DependencyGraph {
             }
 
             stack.pop();
+            stack_pos.remove(&node);
             visited[node] = 2;
             false
         }
 
         let n = self.entries.len();
         let mut visited = vec![0u8; n]; // 0=unvisited, 1=in-stack, 2=done
-        let mut stack = Vec::new();
+        let mut stack = Vec::with_capacity(n);
+        let mut stack_pos = HashMap::with_capacity(n);
         let mut cycle_names = Vec::new();
 
         for i in 0..n {
@@ -166,6 +178,7 @@ impl DependencyGraph {
                     &self.index,
                     &mut visited,
                     &mut stack,
+                    &mut stack_pos,
                     &mut cycle_names,
                 )
             {
