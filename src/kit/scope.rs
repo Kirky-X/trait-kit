@@ -100,7 +100,7 @@ impl Scope {
             return boxed
                 .downcast_ref::<M::Capability>()
                 .cloned()
-                .ok_or(TraitKitError::MissingCapability { key: M::NAME });
+                .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() });
         }
 
         // First-access construction
@@ -114,7 +114,7 @@ impl Scope {
             // Create a minimal empty Kit for the build callback.
             let temp_kit = crate::kit::Kit::new();
             let boxed = (builder)(&temp_kit).map_err(|e| TraitKitError::BuildFailed {
-                context: M::NAME,
+                context: M::NAME.to_string(),
                 source: e,
             })?;
             if let Some(slot) = self.lazy_slots.borrow().get(&type_id) {
@@ -128,10 +128,10 @@ impl Scope {
                 .get(&type_id)
                 .and_then(|slot| slot.cell.get())
                 .and_then(|b| b.downcast_ref::<M::Capability>().cloned())
-                .ok_or(TraitKitError::MissingCapability { key: M::NAME });
+                .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() });
         }
 
-        Err(TraitKitError::MissingCapability { key: M::NAME })
+        Err(TraitKitError::MissingCapability { key: M::NAME.to_string() })
     }
 
     /// Check if a module type is registered in this scope.
@@ -268,7 +268,7 @@ mod async_scope {
             let type_id = TypeId::of::<M>();
             self.capabilities
                 .get_cloned_by_type_id::<M::Capability>(type_id)
-                .ok_or(TraitKitError::MissingCapability { key: M::NAME })
+                .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() })
         }
 
         /// Check if a module type is registered in this scope.
@@ -399,8 +399,8 @@ mod tests {
         assert!(matches!(
             err,
             TraitKitError::MissingCapability {
-                key: "scope-module"
-            }
+                ref key
+            } if key == "scope-module"
         ));
     }
 
@@ -532,8 +532,8 @@ mod async_tests {
         assert!(matches!(
             err,
             TraitKitError::MissingCapability {
-                key: "async-scope-module"
-            }
+                ref key
+            } if key == "async-scope-module"
         ));
     }
 

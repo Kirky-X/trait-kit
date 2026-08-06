@@ -13,6 +13,7 @@ use std::sync::OnceLock;
 
 use crate::core::{AutoBuilder, BuildFn};
 use crate::error::TraitKitError;
+use crate::i18n::tr;
 
 #[cfg(feature = "encryption")]
 use super::EncryptedBlob;
@@ -44,7 +45,7 @@ fn derive_kit_field_key(
 ) -> Result<[u8; 32], TraitKitError> {
     super::config::derive_field_key(master_key, path, KEY_DERIVATION_VERSION).map_err(|e| {
         TraitKitError::BuildFailed {
-            context,
+            context: context.to_string(),
             source: Box::new(e),
         }
     })
@@ -409,7 +410,7 @@ impl Kit {
     #[cfg(feature = "confers")]
     pub fn load_config<C: super::Configurable>(&self) -> Result<(), TraitKitError> {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
-            context: "load_config",
+            context: "load_config".into(),
             source: e,
         })?;
         self.set_config(config);
@@ -555,7 +556,7 @@ impl Kit {
                     }
                     Err(e) => {
                         let err = TraitKitError::BuildFailed {
-                            context: module_name,
+                            context: module_name.to_string(),
                             source: e,
                         };
                         for obs in self.observers.borrow().iter() {
@@ -584,7 +585,7 @@ impl Kit {
                     }
                     Err(e) => {
                         return Err(TraitKitError::BuildFailed {
-                            context: module_name,
+                            context: module_name.to_string(),
                             source: e,
                         });
                     }
@@ -622,7 +623,7 @@ impl Kit {
             let mut vec = Vec::with_capacity(build_fns.len());
             for build_fn in build_fns {
                 let boxed = (build_fn)(self).map_err(|e| TraitKitError::BuildFailed {
-                    context: "<multi-binding>",
+                    context: tr("trait-kit-diag-multi-binding", &[]),
                     source: e,
                 })?;
                 #[cfg(feature = "decorator")]
@@ -641,7 +642,7 @@ impl Kit {
             self.interface_builders.borrow_mut().drain().collect();
         for (interface_id, build_fn) in interfaces {
             let boxed = (build_fn)(self).map_err(|e| TraitKitError::BuildFailed {
-                context: "<interface>",
+                context: tr("trait-kit-diag-interface", &[]),
                 source: e,
             })?;
             #[cfg(feature = "decorator")]
@@ -684,7 +685,7 @@ impl Kit {
         // Store ready callback
         let ready_cb: ReadyCallback = Box::new(|kit: &Kit<Ready>| {
             M::on_ready(kit).map_err(|e| TraitKitError::LifecycleFailed {
-                context: M::NAME,
+                context: M::NAME.to_string(),
                 source: Box::new(e),
             })
         });
@@ -868,7 +869,7 @@ impl<S> Kit<S> {
             #[allow(unsafe_code)]
             let kit_ref: &Kit = unsafe { &*std::ptr::from_ref(self).cast::<Kit>() };
             let boxed = (builder)(kit_ref).map_err(|e| TraitKitError::BuildFailed {
-                context: M::NAME,
+                context: M::NAME.to_string(),
                 source: e,
             })?;
             // Apply decorators (keyed by capability TypeId)
@@ -879,11 +880,11 @@ impl<S> Kit<S> {
                 let _ = slot.cell.set(boxed);
             }
             return Self::get_lazy_cached::<M>(self, type_id)
-                .ok_or(TraitKitError::MissingCapability { key: M::NAME });
+                .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() });
         }
 
         // 4. Not found
-        Err(TraitKitError::MissingCapability { key: M::NAME })
+        Err(TraitKitError::MissingCapability { key: M::NAME.to_string() })
     }
 
     /// Extracted helper: retrieve a cached lazy-slot value without rebuilding.
@@ -918,14 +919,14 @@ impl<S> Kit<S> {
         let multi = self.multi_capabilities.borrow();
         let vec = multi
             .get(&cap_id)
-            .ok_or(TraitKitError::MissingCapability { key: M::NAME })?;
+            .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() })?;
 
         let mut result = Vec::with_capacity(vec.len());
         for boxed in vec {
             let cap = boxed
                 .downcast_ref::<M::Capability>()
                 .cloned()
-                .ok_or(TraitKitError::MissingCapability { key: M::NAME })?;
+                .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() })?;
             result.push(cap);
         }
         Ok(result)
@@ -940,7 +941,7 @@ impl<S> Kit<S> {
         self.configs
             .get_cloned::<C>()
             .ok_or(TraitKitError::MissingConfig {
-                key: std::any::type_name::<C>(),
+                key: std::any::type_name::<C>().to_string(),
             })
     }
 
@@ -983,7 +984,7 @@ impl<S> Kit<S> {
     #[cfg(feature = "hot-reload")]
     pub fn reload_config<C: super::Configurable>(&self) -> Result<(), TraitKitError> {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
-            context: "reload_config",
+            context: "reload_config".into(),
             source: e,
         })?;
         self.configs.insert(config);
@@ -1020,7 +1021,7 @@ impl<S> Kit<S> {
         let interface_id = TypeId::of::<I>();
         self.capabilities
             .get_cloned_by_type_id::<std::sync::Arc<I>>(interface_id)
-            .ok_or(TraitKitError::MissingCapability { key: "interface" })
+            .ok_or(TraitKitError::MissingCapability { key: "interface".into() })
     }
 }
 
@@ -1051,7 +1052,7 @@ impl Kit {
         // a reasonably sized input key material. Reject short keys early.
         if master_key.len() < 16 {
             return Err(TraitKitError::BuildFailed {
-                context: "set_encrypted",
+                context: "set_encrypted".into(),
                 source: Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     format!(
@@ -1063,7 +1064,7 @@ impl Kit {
         }
 
         let plaintext = serde_json::to_vec(value).map_err(|e| TraitKitError::BuildFailed {
-            context: "set_encrypted",
+            context: "set_encrypted".into(),
             source: Box::new(e),
         })?;
 
@@ -1072,7 +1073,7 @@ impl Kit {
         let (nonce, ciphertext) = XChaCha20Crypto::new()
             .encrypt(&plaintext, &field_key)
             .map_err(|e| TraitKitError::BuildFailed {
-                context: "set_encrypted",
+                context: "set_encrypted".into(),
                 source: Box::new(e),
             })?;
 
@@ -1153,13 +1154,13 @@ impl Kit<Ready> {
 
         let type_id = TypeId::of::<M>();
         if !self.capabilities.contains_by_type_id(type_id) {
-            return Err(TraitKitError::MissingCapability { key: M::NAME });
+            return Err(TraitKitError::MissingCapability { key: M::NAME.to_string() });
         }
         Ref::filter_map(self.capabilities.inner_ref(), |map| {
             map.get(&type_id)
                 .and_then(|b| b.downcast_ref::<M::Capability>())
         })
-        .map_err(|_| TraitKitError::MissingCapability { key: M::NAME })
+        .map_err(|_| TraitKitError::MissingCapability { key: M::NAME.to_string() })
     }
 
     /// Check if a capability has been built.
@@ -1209,7 +1210,7 @@ impl Kit<Ready> {
         let checkers = self.health_checkers.borrow();
         let (_name, checker) = checkers
             .get(&type_id)
-            .ok_or(TraitKitError::MissingConfig { key: M::NAME })?;
+            .ok_or(TraitKitError::MissingConfig { key: M::NAME.to_string() })?;
         Ok(checker(&self.capabilities))
     }
 
@@ -1246,7 +1247,7 @@ impl Kit<Ready> {
             #[allow(unsafe_code)]
             let kit_ref: &Kit = unsafe { &*std::ptr::from_ref::<Kit<Ready>>(self).cast::<Kit>() };
             M::build(kit_ref).map_err(|e| TraitKitError::BuildFailed {
-                context: M::NAME,
+                context: M::NAME.to_string(),
                 source: Box::new(e),
             })
         }
@@ -1298,7 +1299,7 @@ impl Kit<Ready> {
 
         if master_key.len() < 16 {
             return Err(TraitKitError::BuildFailed {
-                context: "get_encrypted",
+                context: "get_encrypted".into(),
                 source: Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     format!(
@@ -1315,7 +1316,7 @@ impl Kit<Ready> {
             .get(&TypeId::of::<C>())
             .cloned()
             .ok_or(TraitKitError::MissingConfig {
-                key: std::any::type_name::<C>(),
+                key: std::any::type_name::<C>().to_string(),
             })?;
 
         let field_key = derive_kit_field_key(master_key, C::PATH, "get_encrypted")?;
@@ -1323,12 +1324,12 @@ impl Kit<Ready> {
         let plaintext = XChaCha20Crypto::new()
             .decrypt(blob.nonce(), blob.ciphertext(), &field_key)
             .map_err(|e| TraitKitError::BuildFailed {
-                context: "get_encrypted",
+                context: "get_encrypted".into(),
                 source: Box::new(e),
             })?;
 
         serde_json::from_slice(&plaintext).map_err(|e| TraitKitError::BuildFailed {
-            context: "get_encrypted",
+            context: "get_encrypted".into(),
             source: Box::new(e),
         })
     }
@@ -1535,7 +1536,7 @@ mod tests {
         let result = built.require_ref::<CountingModule>();
         assert!(matches!(
             result,
-            Err(TraitKitError::MissingCapability { key: "counting" })
+            Err(TraitKitError::MissingCapability { ref key }) if key == "counting"
         ));
     }
 
@@ -1903,7 +1904,7 @@ mod tests {
         let result = built.require_all::<MultiModuleA>();
         assert!(matches!(
             result,
-            Err(TraitKitError::MissingCapability { key: "multi-a" })
+            Err(TraitKitError::MissingCapability { ref key }) if key == "multi-a"
         ));
     }
 
@@ -1960,7 +1961,7 @@ mod tests {
         let result = kit.require_all::<MultiModuleA>();
         assert!(matches!(
             result,
-            Err(TraitKitError::MissingCapability { key: "multi-a" })
+            Err(TraitKitError::MissingCapability { ref key }) if key == "multi-a"
         ));
     }
 
@@ -2026,7 +2027,7 @@ mod tests {
             type Error = TraitKitError;
             fn build(_kit: &Kit) -> Result<Arc<AtomicUsize>, TraitKitError> {
                 Err(TraitKitError::BuildFailed {
-                    context: "fail-multi",
+                    context: "fail-multi".into(),
                     source: Box::new(std::io::Error::other("multi fail")),
                 })
             }
@@ -2378,7 +2379,7 @@ mod lifecycle_tests {
         impl Lifecycle for FailReadyModule {
             fn on_ready(_kit: &Kit<Ready>) -> Result<(), TraitKitError> {
                 Err(TraitKitError::BuildFailed {
-                    context: "on_ready",
+                    context: "on_ready".into(),
                     source: Box::new(std::io::Error::other("intentional failure")),
                 })
             }
@@ -2584,7 +2585,7 @@ mod observability_tests {
             type Error = TraitKitError;
             fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
                 Err(TraitKitError::BuildFailed {
-                    context: "intentional",
+                    context: "intentional".into(),
                     source: Box::new(std::io::Error::other("test failure")),
                 })
             }
@@ -3068,7 +3069,7 @@ mod ready_tests {
             type Error = TraitKitError;
             fn build(_kit: &Kit) -> Result<Arc<()>, TraitKitError> {
                 Err(TraitKitError::BuildFailed {
-                    context: "lazy-fail",
+                    context: "lazy-fail".into(),
                     source: Box::new(std::io::Error::other("lazy fail")),
                 })
             }
