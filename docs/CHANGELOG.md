@@ -7,15 +7,47 @@
 
 ## [Unreleased]
 
+_暂无未发布变更。_
+
+## [0.4.1] - 2026-08-06
+
 ### 新增
 
-#### 优雅关闭协调器（feature = "shutdown"）
-- `ShutdownCoordinator` — 同步分阶段关闭（`StopRequests` → `DrainQueue` → `CloseConnections`）+ 超时强退
-- `AsyncShutdownCoordinator` — 异步版本（需同时启用 `async`）
-- `ShutdownPhase` / `ShutdownPhaseResult` / `ShutdownResult` — 关闭阶段与结果类型
-- `TraitKitError::ShutdownTimedOut` 变体
+#### 国际化增强
+- ICU4X 重依赖门控在 `i18n` feature 后，无 feature 时 `tr()` 和 `I18nManager` 仍可用（轻量 FTL 翻译）
+- Kit 构造点诊断标记支持翻译键
+- `I18nError::Display` 修复
 
-_暂无其他未发布变更。_
+#### 优雅关闭协调器补充
+- 关闭协调器 example + 集成测试 + doctest 修复
+
+#### 配置扩展 API 文档
+- 补充 `load_and_validate`、`snapshot_config`、`restore_config`、`has_snapshot`、`load_config_with` API 文档
+- 补充 `toggle`（`enable_toggle`/`is_toggle_enabled`/`register_if_toggle`）API 文档
+- 补充 `Validatable` trait 和 `interpolate_json_value` 函数文档
+- 新增 `snapshot_restore`、`toggle_basic`、`validation` example
+
+### 修复
+
+- **安全**: `EncryptedBlob` Debug 实现不再泄露加密材料
+- **异步**: `decorate()` 装饰器在 `build()` 中从未生效的问题已修复
+- 多项 bug 修复 + 文档示例修复 + 测试门控修正
+- CI clippy 与 dead_code 错误修复
+
+### 性能
+
+- `Kit::require()`、`reload_config()`、`transfer_lazy_builders()` 优化
+- `find_cycle()` 使用 HashMap 实现 O(1) 栈位置查找
+
+### 重构
+
+- `TraitKitError` 的 context/key 字段改为 `String` 支持翻译文本
+- `EncryptedBlob` 字段封装在构造器和 getter 后
+- examples 按模块结构重组
+
+### 杂项
+
+- workspace 元数据继承 + `trait-kit` 加入 `workspace.dependencies`
 
 ## [0.4.0] - 2026-08-04
 
@@ -189,7 +221,8 @@ _暂无其他未发布变更。_
 - `TypeMap` 类型安全存储（以 `TypeId` 为键）
 - 依赖图验证：环检测 + 拓扑排序构建
 
-[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Kirky-X/trait-kit/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Kirky-X/trait-kit/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Kirky-X/trait-kit/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Kirky-X/trait-kit/compare/v0.2.5...v0.3.0
