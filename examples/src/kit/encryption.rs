@@ -55,8 +55,8 @@ fn main() {
         .expect("get_encrypted with correct key should succeed");
     assert_eq!(decrypted, original, "roundtrip should preserve value");
     println!(
-        "Roundtrip OK: api_key={}, port={}",
-        decrypted.api_key, decrypted.port
+        "Roundtrip OK: api_key=***, port={}",
+        decrypted.port
     );
 
     let wrong_key = *b"fedcba9876543210fedcba9876543210";
