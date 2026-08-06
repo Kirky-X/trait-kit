@@ -32,73 +32,73 @@ interface = ["trait-kit/interface"]
 
 [[example]]
 name = "default_basic"
-path = "examples/default_basic.rs"
+path = "src/core/default_basic.rs"
 
 [[example]]
 name = "confers_loader"
-path = "examples/confers_loader.rs"
+path = "src/kit/confers_loader.rs"
 required-features = ["confers"]
 
 [[example]]
 name = "confers_macros"
-path = "examples/confers_macros.rs"
+path = "src/kit/confers_macros.rs"
 required-features = ["confers-macros"]
 
 [[example]]
 name = "hot_reload"
-path = "examples/hot_reload.rs"
+path = "src/kit/hot_reload.rs"
 required-features = ["hot-reload"]
 
 [[example]]
 name = "encryption"
-path = "examples/encryption.rs"
+path = "src/kit/encryption.rs"
 required-features = ["encryption"]
 
 [[example]]
 name = "async_basic"
-path = "examples/async_basic.rs"
+path = "src/kit/async_basic.rs"
 required-features = ["async"]
 
 [[example]]
 name = "lifecycle"
-path = "examples/lifecycle.rs"
+path = "src/core/lifecycle.rs"
 required-features = ["lifecycle"]
 
 [[example]]
 name = "health_check"
-path = "examples/health_check.rs"
+path = "src/core/health_check.rs"
 required-features = ["health"]
 
 [[example]]
 name = "observability"
-path = "examples/observability.rs"
+path = "src/core/observability.rs"
 required-features = ["observability"]
 
 [[example]]
 name = "scope_basic"
-path = "examples/scope_basic.rs"
+path = "src/kit/scope_basic.rs"
 required-features = ["scope"]
 
 [[example]]
 name = "conditional"
-path = "examples/conditional.rs"
+path = "src/kit/conditional.rs"
 required-features = ["conditional"]
 
 [[example]]
 name = "factory"
-path = "examples/factory.rs"
+path = "src/kit/factory.rs"
 required-features = ["factory"]
 
 [[example]]
 name = "decorator"
-path = "examples/decorator.rs"
+path = "src/kit/decorator.rs"
 required-features = ["decorator"]
 
 [[example]]
 name = "interface"
-path = "examples/interface.rs"
+path = "src/core/interface.rs"
 required-features = ["interface"]
 
 [[example]]
 name = "i18n"
-path = "examples/i18n.rs"
+path = "src/i18n/i18n.rs"

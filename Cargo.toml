@@ -68,9 +68,11 @@ observability = []
 factory = []
 # Module decorators: post-build capability wrapping/enhancement.
 decorator = []
+# Graceful shutdown coordinator: phased shutdown with hook registration + timeout.
+shutdown = []
 
 [workspace]
 resolver = "2"
-members = [".", "examples/trait-kit-example"]
+members = [".", "examples"]
 default-members = ["."]
 

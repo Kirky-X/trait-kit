@@ -4,6 +4,8 @@
 
 use std::fmt;
 
+#[cfg(feature = "shutdown")]
+use crate::kit::shutdown::ShutdownPhase;
 use crate::i18n::tr;
 
 /// Unified trait-kit error type.
@@ -60,6 +62,13 @@ pub enum TraitKitError {
         context: String,
         /// 底层错误源。
         source: Box<dyn std::error::Error + Send + 'static>,
+    },
+
+    /// 优雅关闭超时。
+    #[cfg(feature = "shutdown")]
+    ShutdownTimedOut {
+        /// 超时的关闭阶段列表。
+        phases: Vec<crate::kit::shutdown::ShutdownPhase>,
     },
 }
 
@@ -130,6 +139,19 @@ impl fmt::Display for TraitKitError {
                     tr(
                         "trait-kit-error-lifecycle-failed",
                         &[("context", context.as_str()), ("source", &source_str)],
+                    )
+                )
+            }
+            #[cfg(feature = "shutdown")]
+            Self::ShutdownTimedOut { phases } => {
+                let phase_names: Vec<&str> =
+                    phases.iter().map(ShutdownPhase::as_str).collect();
+                write!(
+                    f,
+                    "{}",
+                    tr(
+                        "trait-kit-error-shutdown-timed-out",
+                        &[("phases", &phase_names.join(", "))],
                     )
                 )
             }

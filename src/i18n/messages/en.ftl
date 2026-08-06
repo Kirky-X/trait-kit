@@ -14,6 +14,8 @@ trait-kit-error-missing-config = missing config `{ $key }`
 
 trait-kit-error-lifecycle-failed = lifecycle hook failed for `{ $context }`: { $source }
 
+trait-kit-error-shutdown-timed-out = graceful shutdown timed out in phases: { $phases }
+
 i18n-error-invalid-locale = invalid locale '{ $input }': { $reason }
 
 i18n-error-invalid-number = invalid number '{ $input }': { $reason }

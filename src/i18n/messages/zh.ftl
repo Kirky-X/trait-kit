@@ -14,6 +14,8 @@ trait-kit-error-missing-config = 缺少配置 `{ $key }`
 
 trait-kit-error-lifecycle-failed = `{ $context }` 生命周期钩子失败: { $source }
 
+trait-kit-error-shutdown-timed-out = 优雅关闭在以下阶段超时: { $phases }
+
 i18n-error-invalid-locale = 无效的区域设置 '{ $input }': { $reason }
 
 i18n-error-invalid-number = 无效的数字 '{ $input }': { $reason }

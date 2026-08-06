@@ -43,6 +43,11 @@ pub use kit::AsyncScope;
 #[cfg(feature = "scope")]
 pub use kit::Scope;
 
+#[cfg(all(feature = "shutdown", feature = "async"))]
+pub use kit::AsyncShutdownCoordinator;
+#[cfg(feature = "shutdown")]
+pub use kit::{ShutdownCoordinator, ShutdownPhase, ShutdownPhaseResult, ShutdownResult};
+
 /// Shared test helpers for async test modules (`block_on` executor + `MockError`).
 ///
 /// Extracted to deduplicate between `core::meta::async_tests` and

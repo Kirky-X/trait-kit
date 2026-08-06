@@ -26,6 +26,13 @@ pub use scope::AsyncScope;
 #[cfg(feature = "scope")]
 pub use scope::Scope;
 
+#[cfg(feature = "shutdown")]
+pub mod shutdown;
+#[cfg(all(feature = "shutdown", feature = "async"))]
+pub use shutdown::AsyncShutdownCoordinator;
+#[cfg(feature = "shutdown")]
+pub use shutdown::{ShutdownCoordinator, ShutdownPhase, ShutdownPhaseResult, ShutdownResult};
+
 #[cfg(feature = "async")]
 pub use async_kit::{AsyncKit, Ready as AsyncReady, Unbuilt as AsyncUnbuilt};
 #[cfg(feature = "async")]
