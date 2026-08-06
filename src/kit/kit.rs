@@ -1079,7 +1079,7 @@ impl Kit {
 
         self.encrypted_configs
             .borrow_mut()
-            .insert(TypeId::of::<C>(), EncryptedBlob { nonce, ciphertext });
+            .insert(TypeId::of::<C>(), EncryptedBlob::new(nonce, ciphertext));
         Ok(())
     }
 
@@ -1322,7 +1322,7 @@ impl Kit<Ready> {
         let field_key = derive_kit_field_key(master_key, C::PATH, "get_encrypted")?;
 
         let plaintext = XChaCha20Crypto::new()
-            .decrypt(&blob.nonce, &blob.ciphertext, &field_key)
+            .decrypt(blob.nonce(), blob.ciphertext(), &field_key)
             .map_err(|e| TraitKitError::BuildFailed {
                 context: "get_encrypted",
                 source: Box::new(e),
