@@ -86,7 +86,7 @@ impl PhaseConfig {
 /// # 示例
 ///
 /// ```
-/// use trait-kit::kit::shutdown::{ShutdownCoordinator, ShutdownPhase};
+/// use trait_kit::kit::shutdown::{ShutdownCoordinator, ShutdownPhase};
 /// use std::time::Duration;
 ///
 /// let coord = ShutdownCoordinator::new();

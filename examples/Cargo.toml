@@ -29,6 +29,7 @@ conditional = ["trait-kit/conditional"]
 factory = ["trait-kit/factory"]
 decorator = ["trait-kit/decorator"]
 interface = ["trait-kit/interface"]
+shutdown = ["trait-kit/shutdown"]
 
 [[example]]
 name = "default_basic"
@@ -102,3 +103,8 @@ required-features = ["interface"]
 [[example]]
 name = "i18n"
 path = "src/i18n/i18n.rs"
+
+[[example]]
+name = "shutdown"
+path = "src/kit/shutdown.rs"
+required-features = ["shutdown"]

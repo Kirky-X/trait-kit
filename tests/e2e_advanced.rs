@@ -2312,3 +2312,194 @@ mod encryption_boundary {
         }
     }
 }
+
+// =============================================================================
+// Shutdown scenarios (feature = "shutdown")
+// =============================================================================
+
+#[cfg(feature = "shutdown")]
+mod shutdown_scenarios {
+    use super::*;
+    use std::time::Duration;
+    use trait_kit::kit::shutdown::{
+        ShutdownCoordinator, ShutdownPhase, ShutdownPhaseResult, ShutdownResult,
+    };
+
+    #[test]
+    fn s01_basic_three_phase_shutdown() {
+        // 基本三阶段关闭流程，每阶段注册钩子
+        let coord = ShutdownCoordinator::new();
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let c = counter.clone();
+        coord.register_hook(ShutdownPhase::StopRequests, move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        });
+        let c = counter.clone();
+        coord.register_hook(ShutdownPhase::DrainQueue, move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        });
+        let c = counter.clone();
+        coord.register_hook(ShutdownPhase::CloseConnections, move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        });
+
+        let results = coord.shutdown();
+        assert_eq!(results.len(), 3);
+        assert!(results.iter().all(|r| r.is_ok()));
+        assert_eq!(counter.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn s02_phase_execution_order() {
+        // 验证阶段执行顺序：StopRequests → DrainQueue → CloseConnections
+        let order = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        let coord = ShutdownCoordinator::new();
+        let o = order.clone();
+        coord.register_hook(ShutdownPhase::CloseConnections, move || {
+            o.lock().unwrap().push("close");
+        });
+        let o = order.clone();
+        coord.register_hook(ShutdownPhase::StopRequests, move || {
+            o.lock().unwrap().push("stop");
+        });
+        let o = order.clone();
+        coord.register_hook(ShutdownPhase::DrainQueue, move || {
+            o.lock().unwrap().push("drain");
+        });
+
+        let results = coord.shutdown();
+        assert!(results.iter().all(|r| r.is_ok()));
+        let order = order.lock().unwrap();
+        assert_eq!(*order, vec!["stop", "drain", "close"]);
+    }
+
+    #[test]
+    fn s03_phase_timeout_skips_remaining_hooks() {
+        // 阶段超时跳过剩余钩子
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let coord = ShutdownCoordinator::new();
+        coord.set_phase_timeout(ShutdownPhase::DrainQueue, Duration::from_millis(10));
+
+        let c = counter.clone();
+        coord.register_hook(ShutdownPhase::StopRequests, move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        });
+        // 第一个 DrainQueue 钩子：sleep 超过超时
+        let c = counter.clone();
+        coord.register_hook(ShutdownPhase::DrainQueue, move || {
+            std::thread::sleep(Duration::from_millis(50));
+            c.fetch_add(1, Ordering::SeqCst);
+        });
+        // 第二个 DrainQueue 钩子：应被超时跳过
+        let c = counter.clone();
+        coord.register_hook(ShutdownPhase::DrainQueue, move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        });
+        let c = counter.clone();
+        coord.register_hook(ShutdownPhase::CloseConnections, move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        });
+
+        let results = coord.shutdown();
+        assert!(results[1].timed_out, "DrainQueue should have timed out");
+        // StopRequests(1) + DrainQueue[0](1) + CloseConnections(1) = 3
+        assert_eq!(counter.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn s04_global_timeout_skips_later_phases() {
+        // 全局超时跳过后续阶段
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let coord = ShutdownCoordinator::new();
+        coord.set_global_timeout(Duration::from_millis(10));
+
+        let c = counter.clone();
+        coord.register_hook(ShutdownPhase::StopRequests, move || {
+            std::thread::sleep(Duration::from_millis(50));
+            c.fetch_add(1, Ordering::SeqCst);
+        });
+        let c = counter.clone();
+        coord.register_hook(ShutdownPhase::DrainQueue, move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        });
+
+        let results = coord.shutdown();
+        assert!(results[0].is_ok()); // StopRequests completes (phase timeout is 30s)
+        assert!(results[1].timed_out); // DrainQueue skipped by global timeout
+        assert!(results[2].timed_out); // CloseConnections skipped by global timeout
+    }
+
+    #[test]
+    fn s05_shutdown_result_into_result() {
+        // ShutdownResult::into_result() 正确转换
+        let ok_result = ShutdownResult {
+            phases: vec![
+                ShutdownPhaseResult {
+                    phase: ShutdownPhase::StopRequests,
+                    timed_out: false,
+                    elapsed: Duration::from_millis(1),
+                },
+                ShutdownPhaseResult {
+                    phase: ShutdownPhase::DrainQueue,
+                    timed_out: false,
+                    elapsed: Duration::from_millis(1),
+                },
+                ShutdownPhaseResult {
+                    phase: ShutdownPhase::CloseConnections,
+                    timed_out: false,
+                    elapsed: Duration::from_millis(1),
+                },
+            ],
+        };
+        assert!(ok_result.into_result().is_ok());
+
+        let timeout_result = ShutdownResult {
+            phases: vec![
+                ShutdownPhaseResult {
+                    phase: ShutdownPhase::StopRequests,
+                    timed_out: false,
+                    elapsed: Duration::from_millis(1),
+                },
+                ShutdownPhaseResult {
+                    phase: ShutdownPhase::DrainQueue,
+                    timed_out: true,
+                    elapsed: Duration::from_secs(30),
+                },
+                ShutdownPhaseResult {
+                    phase: ShutdownPhase::CloseConnections,
+                    timed_out: false,
+                    elapsed: Duration::from_millis(1),
+                },
+            ],
+        };
+        let err = timeout_result.into_result().unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("drain_queue"),
+            "error should mention timed-out phase: {msg}"
+        );
+    }
+
+    #[test]
+    fn s06_hooks_not_reentrant() {
+        // 钩子不可重入：shutdown 后钩子被 drain
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let coord = ShutdownCoordinator::new();
+        let c = counter.clone();
+        coord.register_hook(ShutdownPhase::StopRequests, move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        });
+
+        let _ = coord.shutdown();
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+
+        // 第二次 shutdown 不应再执行钩子
+        let _ = coord.shutdown();
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+}
