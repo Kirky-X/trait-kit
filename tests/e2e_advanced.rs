@@ -1790,6 +1790,7 @@ mod interface_scenarios {
 // i18n feature scenarios
 // =============================================================================
 
+#[cfg(feature = "i18n")]
 mod i18n_scenarios {
     use icu::plurals::PluralCategory;
     use std::cmp::Ordering;

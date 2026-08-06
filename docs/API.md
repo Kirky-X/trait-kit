@@ -78,17 +78,17 @@ pub trait InterfaceBuilder: ModuleMeta {
 | `register_lazy::<M>()` | — | 注册模块（延迟构建，首次 require 时触发） |
 | `register_multi::<M>()` | — | 多绑定注册（同类型聚合为 Vec） |
 | `register_as::<M>()` | `interface` | 按接口类型注册（`dyn Trait` 类型擦除） |
-| `register_if::<M>(pred)` | `conditional` | 条件注册（运行时谓词） |
+| `register_if::<M>(pred)` | — | 条件注册（运行时谓词） |
 | `register_lifecycle::<M>()` | `lifecycle` | 注册生命周期钩子 |
 | `register_health_check::<M>()` | `health` | 注册健康检查 |
-| `with_observer(obs)` | `observability` | 附加构建观察者 |
+| `with_observer(obs)` | `observer` | 附加构建观察者 |
 | `decorate::<M>(f)` | `decorator` | 注册能力装饰器 |
 | `override_module::<M>(cap)` | — | 覆盖模块能力（测试注入） |
 | `override_module_strict::<M>(cap)` | — | 覆盖并验证依赖存在性 |
 | `set_config::<C>(value)` | — | 存储类型化配置 |
 | `load_config::<C>()` | `confers` | 通过 `Configurable::load()` 加载配置 |
-| `subscribe::<C>(cb)` | `hot-reload` | 订阅配置热重载回调 |
-| `reload_config::<C>()` | `hot-reload` | 重新加载配置并通知订阅者 |
+| `subscribe::<C>(cb)` | `reload` | 订阅配置热重载回调 |
+| `reload_config::<C>()` | `reload` | 重新加载配置并通知订阅者 |
 | `set_encrypted(val, key)` | `encryption` | 加密存储配置 |
 | `build()` | — | 验证依赖图 → 拓扑排序 → 构建 → `Kit<Ready>` |
 
@@ -107,11 +107,11 @@ pub trait InterfaceBuilder: ModuleMeta {
 | `get_encrypted::<C>(key)` | `encryption` | 解密检索配置 |
 | `health_check::<M>()` | `health` | 查询单模块健康状态 |
 | `health_report()` | `health` | 查询所有模块健康报告 |
-| `factory::<M>()` | `factory` | 创建工厂闭包，每次调用产生新实例 |
+| `factory::<M>()` | — | 创建工厂闭包，每次调用产生新实例 |
 | `shutdown()` | `lifecycle` | 按逆拓扑序执行 `on_shutdown` |
 | `set_config::<C>(value)` | — | 运行时更新配置 |
-| `subscribe::<C>(cb)` | `hot-reload` | 订阅热重载 |
-| `reload_config::<C>()` | `hot-reload` | 重新加载配置 |
+| `subscribe::<C>(cb)` | `reload` | 订阅热重载 |
+| `reload_config::<C>()` | `reload` | 重新加载配置 |
 
 ---
 
@@ -237,7 +237,7 @@ pub trait AsyncHealthCheck: AsyncAutoBuilder {
 
 ---
 
-## 构建可观测 `observability`
+## 构建可观测 `observer`
 
 ### `BuildObserver`
 
@@ -347,12 +347,12 @@ fmt.format_date(...);
 | `AsyncAutoBuilder` | `async` |
 | `AsyncKit`, `AsyncUnbuilt`, `AsyncReady` | `async` |
 | `Configurable` | `confers` |
-| `ModuleConfig` | `confers-macros` |
+| `ModuleConfig` | `confers` |
 | `Lifecycle` | `lifecycle` |
 | `AsyncLifecycle` | `lifecycle` + `async` |
 | `HealthCheck`, `HealthStatus` | `health` |
 | `AsyncHealthCheck` | `health` + `async` |
-| `BuildObserver` | `observability` |
+| `BuildObserver` | `observer` |
 | `Scope` | `scope` |
 | `AsyncScope` | `scope` + `async` |
 | `ShutdownCoordinator`, `ShutdownPhase`, `ShutdownPhaseResult`, `ShutdownResult` | `shutdown` |

@@ -28,12 +28,12 @@ trait-kit = { path = ".", default-features = false }
 confers = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { version = "1.0", optional = true }
-thiserror = { version = "2.0", default-features = false }
-icu = "2.2"
-writeable = "0.6"
-sys-locale = "0.3"
+icu = { version = "2.2", optional = true }
+writeable = { version = "0.6", optional = true }
+sys-locale = { version = "0.3", optional = true }
 
 [dev-dependencies]
+thiserror = { version = "2.0", default-features = false }
 serial_test = "4.0"
 static_assertions = "1.1"
 trybuild = "1.0"
@@ -42,16 +42,12 @@ trybuild = "1.0"
 default = []
 # AsyncKit: Send + Sync async capability management (no extra deps, Rust native async).
 async = []
-# Level 1: basic confers integration (Store + Config trait).
-confers = ["dep:confers", "dep:serde"]
-# Level 2: module-level config inheritance (ModuleConfig trait + Config re-export).
-# confers 0.4 ships macros as a non-optional workspace member, so this level
-# is a semantic marker for trait-kit's ModuleConfig surface.
-confers-macros = ["confers"]
-# Level 3: hot-reload subscription (maps to confers `watch` feature).
-hot-reload = ["confers-macros", "confers/watch"]
-# Level 4: encrypted config storage (maps to confers `encryption` feature).
-encryption = ["hot-reload", "confers/encryption", "dep:serde", "dep:serde_json"]
+# Config integration: Store + ModuleConfig trait + derive macro re-export.
+confers = ["dep:confers", "dep:serde", "dep:serde_json"]
+# Hot-reload subscription (maps to confers `watch` feature).
+reload = ["confers", "confers/watch"]
+# Encrypted config storage (maps to confers `encryption` feature).
+encryption = ["confers", "confers/encryption"]
 # Interface/implementation separation: register_as / resolve behind a feature gate.
 interface = []
 # Lifecycle hooks: on_ready (post-build) + on_shutdown (cleanup).
@@ -60,19 +56,19 @@ lifecycle = []
 health = []
 # Scoped dependencies: per-request instance isolation.
 scope = []
-# Conditional registration: runtime predicate-gated module registration.
-conditional = []
+# Feature toggle: runtime module enable/disable via string-keyed HashMap.
+toggle = []
 # Build observability: observer callbacks during module construction.
-observability = []
-# Factory pattern: per-call instance creation (non-singleton).
-factory = []
+observer = []
 # Module decorators: post-build capability wrapping/enhancement.
 decorator = []
 # Graceful shutdown coordinator: phased shutdown with hook registration + timeout.
 shutdown = []
+# ICU4X locale-aware formatting (number/date/plural/collation).
+# Without this feature, `tr()` and `I18nManager` still work (lightweight FTL translation).
+i18n = ["dep:icu", "dep:writeable", "dep:sys-locale"]
 
 [workspace]
 resolver = "2"
 members = [".", "examples"]
 default-members = ["."]
-

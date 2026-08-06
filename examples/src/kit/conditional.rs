@@ -7,7 +7,7 @@
 //! - Predicate receives `&Kit` for inspecting configs or other state
 //! - Returns `Ok(true)` if registered, `Ok(false)` if skipped
 //!
-//! Run: `cargo run -p trait-kit-example --example conditional --features conditional`
+//! Run: `cargo run -p trait-kit-example --example conditional`
 
 use std::sync::Arc;
 use trait_kit::prelude::*;

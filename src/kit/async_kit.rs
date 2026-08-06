@@ -34,7 +34,7 @@ type AsyncReadyCallback = Box<
 #[cfg(feature = "health")]
 type AsyncHealthCheckerFn =
     Box<dyn Fn(&AsyncTypeMap) -> crate::core::health::HealthStatus + Send + Sync>;
-#[cfg(feature = "observability")]
+#[cfg(feature = "observer")]
 type AsyncObserverRef = Arc<dyn crate::core::observer::BuildObserver>;
 #[cfg(feature = "decorator")]
 type AsyncDecoratorFn =
@@ -102,7 +102,7 @@ pub struct AsyncKit<S = Unbuilt> {
     ready_callbacks: Arc<RwLock<Vec<(TypeId, AsyncReadyCallback)>>>,
     #[cfg(feature = "health")]
     health_checkers: Arc<RwLock<HashMap<TypeId, (&'static str, AsyncHealthCheckerFn)>>>,
-    #[cfg(feature = "observability")]
+    #[cfg(feature = "observer")]
     observers: Arc<RwLock<Vec<AsyncObserverRef>>>,
     #[cfg(feature = "decorator")]
     decorators: Arc<RwLock<HashMap<TypeId, Vec<AsyncDecoratorFn>>>>,
@@ -129,7 +129,7 @@ impl AsyncKit {
             ready_callbacks: Arc::new(RwLock::new(Vec::new())),
             #[cfg(feature = "health")]
             health_checkers: Arc::new(RwLock::new(HashMap::new())),
-            #[cfg(feature = "observability")]
+            #[cfg(feature = "observer")]
             observers: Arc::new(RwLock::new(Vec::new())),
             #[cfg(feature = "decorator")]
             decorators: Arc::new(RwLock::new(HashMap::new())),
@@ -280,9 +280,9 @@ impl AsyncKit {
                     })?;
 
             // Observer: notify build start
-            #[cfg(feature = "observability")]
+            #[cfg(feature = "observer")]
             let start_instant = std::time::Instant::now();
-            #[cfg(feature = "observability")]
+            #[cfg(feature = "observer")]
             {
                 let observers = self.observers.read().expect("lock poisoned");
                 for obs in observers.iter() {
@@ -309,7 +309,7 @@ impl AsyncKit {
                         self.apply_decorators(cap_type_id, boxed)
                     };
                     self.capabilities.insert_boxed(*type_id, boxed);
-                    #[cfg(feature = "observability")]
+                    #[cfg(feature = "observer")]
                     {
                         let elapsed = start_instant.elapsed();
                         let observers = self.observers.read().expect("lock poisoned");
@@ -323,7 +323,7 @@ impl AsyncKit {
                         context: module_name.to_string(),
                         source: e,
                     };
-                    #[cfg(feature = "observability")]
+                    #[cfg(feature = "observer")]
                     {
                         let observers = self.observers.read().expect("lock poisoned");
                         for obs in observers.iter() {
@@ -357,7 +357,7 @@ impl AsyncKit {
             ready_callbacks: Arc::new(RwLock::new(Vec::new())),
             #[cfg(feature = "health")]
             health_checkers: self.health_checkers,
-            #[cfg(feature = "observability")]
+            #[cfg(feature = "observer")]
             observers: self.observers,
             #[cfg(feature = "decorator")]
             decorators: self.decorators,
@@ -472,12 +472,9 @@ impl AsyncKit {
 
     /// Conditionally register an async module based on a runtime predicate.
     ///
-    /// Requires the `conditional` feature.
-    ///
     /// # Errors
     ///
     /// Returns [`TraitKitError::AlreadyRegistered`] if the module was already registered.
-    #[cfg(feature = "conditional")]
     #[must_use = "ignoring the Result may hide registration failures"]
     pub fn register_if<M: AsyncAutoBuilder>(
         &mut self,
@@ -495,12 +492,10 @@ impl AsyncKit {
 
     /// Register a build observer for the async build pipeline.
     ///
-    /// Requires the `observability` feature.
-    ///
     /// # Panics
     ///
     /// Panics if the internal `RwLock` is poisoned.
-    #[cfg(feature = "observability")]
+    #[cfg(feature = "observer")]
     pub fn with_observer(&mut self, observer: Arc<dyn crate::core::observer::BuildObserver>) {
         self.observers
             .write()
@@ -725,8 +720,6 @@ impl AsyncKit<Ready> {
     /// The returned closure is `Send + Sync`, suitable for use in multi-threaded
     /// async runtimes.
     ///
-    /// Requires the `factory` feature.
-    #[cfg(feature = "factory")]
     #[allow(clippy::type_complexity)]
     pub fn factory<M: AsyncAutoBuilder>(
         &self,
@@ -1856,7 +1849,7 @@ mod async_health_tests {
     }
 }
 
-#[cfg(all(test, feature = "observability"))]
+#[cfg(test)]
 mod async_observability_tests {
     use super::*;
     use crate::core::ModuleMeta;
@@ -1957,7 +1950,7 @@ mod async_observability_tests {
     }
 }
 
-#[cfg(all(test, feature = "factory"))]
+#[cfg(test)]
 mod async_factory_tests {
     use super::*;
     use crate::core::ModuleMeta;
@@ -2040,7 +2033,7 @@ mod async_scope_tests {
     }
 }
 
-#[cfg(all(test, feature = "conditional"))]
+#[cfg(test)]
 mod async_conditional_tests {
     use super::*;
     use crate::core::ModuleMeta;

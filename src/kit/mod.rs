@@ -26,6 +26,9 @@ pub use scope::AsyncScope;
 #[cfg(feature = "scope")]
 pub use scope::Scope;
 
+#[cfg(feature = "toggle")]
+pub mod toggle;
+
 #[cfg(feature = "shutdown")]
 pub mod shutdown;
 #[cfg(all(feature = "shutdown", feature = "async"))]
@@ -38,12 +41,18 @@ pub use async_kit::{AsyncKit, Ready as AsyncReady, Unbuilt as AsyncUnbuilt};
 #[cfg(feature = "async")]
 pub use async_typemap::AsyncTypeMap;
 
-#[cfg(feature = "confers-macros")]
+#[cfg(feature = "confers")]
 pub use config::Config;
 #[cfg(feature = "confers")]
 pub use config::Configurable;
-#[cfg(feature = "confers-macros")]
+#[cfg(feature = "confers")]
 pub use config::ModuleConfig;
+#[cfg(feature = "confers")]
+pub use config::Validatable;
+#[cfg(feature = "confers")]
+pub use config::ValidationError;
+#[cfg(feature = "confers")]
+pub use config::interpolate_json_value;
 
 #[cfg(feature = "encryption")]
 pub use config::EncryptedBlob;

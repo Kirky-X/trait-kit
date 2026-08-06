@@ -20,7 +20,7 @@ pub mod meta;
 pub mod health;
 #[cfg(feature = "lifecycle")]
 pub mod lifecycle;
-#[cfg(feature = "observability")]
+#[cfg(feature = "observer")]
 pub mod observer;
 
 #[cfg(feature = "async")]
@@ -40,5 +40,5 @@ pub use health::AsyncHealthCheck;
 #[cfg(feature = "health")]
 pub use health::{HealthCheck, HealthStatus};
 
-#[cfg(feature = "observability")]
+#[cfg(feature = "observer")]
 pub use observer::BuildObserver;

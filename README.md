@@ -214,17 +214,15 @@ fn main() {
 | --- | --- | --- |
 | `default` | — | 无额外特性，仅核心 `Module` + `Kit`。 |
 | `async` | — | `AsyncKit`：`Send + Sync` 异步能力管理，无需额外依赖。 |
-| `confers` | `dep:confers`, `dep:serde` | `Configurable` trait + `Kit::load_config`。 |
-| `confers-macros` | `confers` | `ModuleConfig` trait + `Config` derive 宏再导出。 |
-| `hot-reload` | `confers-macros`, `confers/watch` | `subscribe` / `reload_config` 热重载 API。 |
-| `encryption` | `hot-reload`, `confers/encryption`, `dep:serde_json` | `set_encrypted` / `get_encrypted` 加密配置存储。 |
+| `confers` | `dep:confers`, `dep:serde` | `Configurable` + `ModuleConfig` trait + `Config` derive 宏再导出。 |
+| `reload` | `confers`, `confers/watch` | `subscribe` / `reload_config` 热重载 API。 |
+| `encryption` | `confers`, `confers/encryption` | `set_encrypted` / `get_encrypted` 加密配置存储。 |
 | `interface` | — | 接口/实现分离：`register_as` / `resolve` 支持 `dyn Trait` 类型擦除注册与检索。 |
 | `lifecycle` | — | 生命周期钩子：`on_ready`（构建后）+ `on_shutdown`（清理）。 |
 | `health` | — | 健康检查：`HealthCheck` trait + `HealthStatus` 状态报告。 |
 | `scope` | — | 作用域依赖：`Scope` 每请求实例隔离。 |
-| `conditional` | — | 条件注册：运行时谓词控制的模块注册。 |
-| `observability` | — | 构建可观测：`BuildObserver` 回调（开始/完成/错误）。 |
-| `factory` | — | 工厂模式：每次调用创建新实例（非单例）。 |
+| `toggle` | — | 特性开关：运行时字符串键控的模块启用/禁用。 |
+| `observer` | — | 构建可观测：`BuildObserver` 回调（开始/完成/错误）。 |
 | `decorator` | — | 模块装饰器：构建后能力包装/增强。 |
 | `shutdown` | — | 优雅关闭协调器：分阶段有序关闭 + 超时强退。 |
 
@@ -239,22 +237,21 @@ trait-kit = { version = "0.4", features = ["encryption"] }
 
 ## ⚙️ 配置：confers 集成
 
-trait-kit 通过四级 feature flag 集成 [`confers`](https://crates.io/crates/confers) 0.5。每个级别继承前一级别，形成分层能力系统。
+trait-kit 通过三级 feature flag 集成 [`confers`](https://crates.io/crates/confers) 0.5。每个级别继承前一级别，形成分层能力系统。
 
 ### confers 特性标志
 
 | Feature               | 启用                                            | 说明                                           |
 | --------------------- | ----------------------------------------------- | ---------------------------------------------- |
-| `confers`             | `dep:confers`, `dep:serde`                      | `Configurable` trait + `Kit::load_config`。     |
-| `confers-macros`      | `confers`                                       | `ModuleConfig` trait + `Config` derive 宏再导出。|
-| `hot-reload`  | `confers-macros`, `confers/watch`               | `subscribe` / `reload_config` API。             |
-| `encryption`  | `hot-reload`, `confers/encryption`, `dep:serde_json` | `set_encrypted` / `get_encrypted` API。  |
+| `confers`             | `dep:confers`, `dep:serde`                      | `Configurable` + `ModuleConfig` trait + `Config` derive 宏再导出。 |
+| `reload`  | `confers`, `confers/watch`               | `subscribe` / `reload_config` API。             |
+| `encryption`  | `confers`, `confers/encryption` | `set_encrypted` / `get_encrypted` API。  |
 
 ### 三级继承体系
 
 1. **模块能力继承**（第一层）：`ModuleConfig` trait 声明 `PATH` 和 `default_value()`，将配置类型绑定到模块的配置路径。
 
-2. **Cargo feature 继承**（第二层）：每个 feature 级别继承前一级别（`encryption` → `hot-reload` → `confers-macros` → `confers`）。启用高级别会自动启用所有低级别。
+2. **Cargo feature 继承**（第二层）：每个 feature 级别继承前一级别（`encryption` → `reload` → `confers`）。启用高级别会自动启用所有低级别。
 
 3. **配置值继承**（第三层）：加密密钥通过 HKDF 从 `ModuleConfig::PATH` 派生，因此同一主密钥可为不同模块生成不同的字段密钥。
 
@@ -385,13 +382,12 @@ graph TB
 
 - **Typestate 模式**：`Kit<Unbuilt>` → `Kit<Ready>`，构建时验证依赖图，运行时零开销。
 - **内部可变性**：基于 `RefCell`，单线程 `!Sync` 设计，避免锁开销。`AsyncKit` 使用 `Arc<RwLock>` 支持多线程。
-- **四级 Feature 继承**（confers 集成）：
+- **三级 Feature 继承**（confers 集成）：
 
 ```mermaid
 graph LR
-    C[confers] --> CM[confers-macros]
-    CM --> HR[hot-reload]
-    HR --> E[encryption]
+    C[confers] --> R[reload]
+    R --> E[encryption]
 ```
 
 ---

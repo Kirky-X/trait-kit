@@ -11,7 +11,7 @@ use trait_kit::prelude::*;
 
 // At Level 1 (`confers` feature), the derive macro is accessed via the
 // `confers` crate directly. The `trait_kit::kit::Config` re-export is gated
-// behind `confers-macros` (Level 2).
+// behind the `confers` feature.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, confers::Config)]
 #[config(env_prefix = "TRAIT_KIT_EXAMPLE_")]
 struct AppConfig {

@@ -17,19 +17,18 @@ confers = { workspace = true, optional = true }
 [features]
 default = []
 confers = ["dep:confers", "dep:serde", "trait-kit/confers"]
-confers-macros = ["confers", "trait-kit/confers-macros"]
-hot-reload = ["confers-macros", "trait-kit/hot-reload"]
-encryption = ["hot-reload", "trait-kit/encryption"]
+reload = ["confers", "trait-kit/reload"]
+encryption = ["reload", "trait-kit/encryption"]
 async = ["trait-kit/async"]
 lifecycle = ["trait-kit/lifecycle"]
 health = ["trait-kit/health"]
-observability = ["trait-kit/observability"]
+observer = ["trait-kit/observer"]
 scope = ["trait-kit/scope"]
-conditional = ["trait-kit/conditional"]
-factory = ["trait-kit/factory"]
+toggle = ["trait-kit/toggle"]
 decorator = ["trait-kit/decorator"]
 interface = ["trait-kit/interface"]
 shutdown = ["trait-kit/shutdown"]
+i18n = ["trait-kit/i18n"]
 
 [[example]]
 name = "default_basic"
@@ -43,12 +42,12 @@ required-features = ["confers"]
 [[example]]
 name = "confers_macros"
 path = "src/kit/confers_macros.rs"
-required-features = ["confers-macros"]
+required-features = ["confers"]
 
 [[example]]
 name = "hot_reload"
 path = "src/kit/hot_reload.rs"
-required-features = ["hot-reload"]
+required-features = ["reload"]
 
 [[example]]
 name = "encryption"
@@ -73,7 +72,7 @@ required-features = ["health"]
 [[example]]
 name = "observability"
 path = "src/core/observability.rs"
-required-features = ["observability"]
+required-features = ["observer"]
 
 [[example]]
 name = "scope_basic"
@@ -83,12 +82,10 @@ required-features = ["scope"]
 [[example]]
 name = "conditional"
 path = "src/kit/conditional.rs"
-required-features = ["conditional"]
 
 [[example]]
 name = "factory"
 path = "src/kit/factory.rs"
-required-features = ["factory"]
 
 [[example]]
 name = "decorator"
@@ -103,8 +100,24 @@ required-features = ["interface"]
 [[example]]
 name = "i18n"
 path = "src/i18n/i18n.rs"
+required-features = ["i18n"]
 
 [[example]]
 name = "shutdown"
 path = "src/kit/shutdown.rs"
 required-features = ["shutdown"]
+
+[[example]]
+name = "validation"
+path = "src/kit/validation.rs"
+required-features = ["confers"]
+
+[[example]]
+name = "snapshot_restore"
+path = "src/kit/snapshot_restore.rs"
+required-features = ["confers"]
+
+[[example]]
+name = "toggle_basic"
+path = "src/kit/toggle_basic.rs"
+required-features = ["toggle"]
