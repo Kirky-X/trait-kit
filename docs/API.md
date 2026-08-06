@@ -87,6 +87,14 @@ pub trait InterfaceBuilder: ModuleMeta {
 | `override_module_strict::<M>(cap)` | — | 覆盖并验证依赖存在性 |
 | `set_config::<C>(value)` | — | 存储类型化配置 |
 | `load_config::<C>()` | `confers` | 通过 `Configurable::load()` 加载配置 |
+| `load_and_validate::<C>()` | `confers` | 加载配置并验证，失败不存入 |
+| `snapshot_config::<C>()` | `confers` | 快照当前配置（返回是否成功） |
+| `restore_config::<C>()` | `confers` | 回滚配置到最近快照 |
+| `has_snapshot::<C>()` | `confers` | 检查指定类型快照是否存在 |
+| `load_config_with::<C, S>(vars)` | `confers` | 加载配置并做 `${VAR}` 变量替换 |
+| `enable_toggle(key, bool)` | `toggle` | 设置 feature flag |
+| `is_toggle_enabled(key)` | `toggle` | 查询 flag 状态 |
+| `register_if_toggle::<M>(key)` | `toggle` | 按 toggle 条件注册模块 |
 | `subscribe::<C>(cb)` | `reload` | 订阅配置热重载回调 |
 | `reload_config::<C>()` | `reload` | 重新加载配置并通知订阅者 |
 | `set_encrypted(val, key)` | `encryption` | 加密存储配置 |
@@ -112,6 +120,33 @@ pub trait InterfaceBuilder: ModuleMeta {
 | `set_config::<C>(value)` | — | 运行时更新配置 |
 | `subscribe::<C>(cb)` | `reload` | 订阅热重载 |
 | `reload_config::<C>()` | `reload` | 重新加载配置 |
+| `enable_toggle(key, bool)` | `toggle` | 运行时修改 feature flag |
+| `is_toggle_enabled(key)` | `toggle` | 查询 flag 状态 |
+
+---
+
+## 配置扩展
+
+### `Validatable` `confers`
+
+配置验证 trait，用户实现后通过 `Kit::load_and_validate` 在加载后自动检查。
+
+```rust
+pub trait Validatable: Clone + 'static {
+    fn validate(&self) -> Result<(), Vec<String>>;
+}
+```
+
+### `interpolate_json_value` `confers`
+
+递归替换 JSON 值中的 `${VAR}` 和 `${VAR:-default}` 模式。
+
+```rust
+pub fn interpolate_json_value<S: BuildHasher>(
+    value: &mut serde_json::Value,
+    vars: &HashMap<String, String, S>,
+)
+```
 
 ---
 
