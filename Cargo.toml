@@ -1,19 +1,28 @@
 [package]
 name = "trait-kit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "Module Standard Interface and Capability Management Center — A lightweight Rust library that provides a standard interface for module definition and Kit capability management."
+keywords = ["module", "trait", "capability", "kit", "interface"]
+categories = ["rust-patterns", "development-tools"]
+readme = "README.md"
+
+[workspace.package]
 version = "0.4.0"
 edition = "2024"
 rust-version = "1.91"
 authors = ["Kirky.X"]
 repository = "https://github.com/Kirky-X/trait-kit.git"
-description = "Module Standard Interface and Capability Management Center — A lightweight Rust library that provides a standard interface for module definition and Kit capability management."
-keywords = ["module", "trait", "capability", "kit", "interface"]
 license = "MIT"
-categories = ["rust-patterns", "development-tools"]
-readme = "README.md"
 
 [workspace.dependencies]
 confers = { version = "0.5", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
+trait-kit = { path = ".", default-features = false }
 
 [dependencies]
 confers = { workspace = true, optional = true }

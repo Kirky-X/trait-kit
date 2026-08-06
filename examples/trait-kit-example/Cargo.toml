@@ -1,12 +1,14 @@
 [package]
 name = "trait-kit-example"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.91"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
 publish = false
 
 [dependencies]
-trait-kit = { path = "../..", default-features = false }
+trait-kit = { workspace = true }
 # serde + confers are direct deps because #[derive(Config)] expands to code that
 # references confers::* / serde::* paths from the *caller's* crate.
 serde = { workspace = true, optional = true }
