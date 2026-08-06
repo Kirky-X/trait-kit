@@ -13,7 +13,6 @@ use std::sync::Arc;
 use trait_kit::prelude::*;
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 struct MetricsCap {
     enabled: bool,
 }
@@ -31,8 +30,12 @@ impl AutoBuilder for MetricsModule {
     type Capability = Arc<MetricsCap>;
     type Error = TraitKitError;
 
-    fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
-        Ok(Arc::new(MetricsCap { enabled: true }))
+    fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
+        let enabled = kit
+            .config::<FeatureFlags>()
+            .map(|f| f.enable_metrics)
+            .unwrap_or(false);
+        Ok(Arc::new(MetricsCap { enabled }))
     }
 }
 
@@ -59,7 +62,11 @@ fn main() {
 
     let kit = kit.build().expect("build should succeed");
     assert!(kit.contains::<MetricsModule>());
-    println!("Scenario 1 (enabled): metrics registered = true");
+    let cap = kit
+        .require::<MetricsModule>()
+        .expect("require MetricsModule");
+    assert!(cap.enabled, "capability should reflect enabled flag");
+    println!("Scenario 1 (enabled): metrics registered = true, capability.enabled = true");
 
     // ── Scenario 2: metrics disabled ────────────────────────────────────
     let mut kit2 = Kit::new();

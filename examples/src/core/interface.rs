@@ -16,7 +16,7 @@ use trait_kit::prelude::*;
 
 // ─── Interface (trait object) ──────────────────────────────────────────────
 
-trait Logger: 'static {
+trait Logger: 'static + Send + Sync {
     fn log(&self, msg: &str);
 }
 

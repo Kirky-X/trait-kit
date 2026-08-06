@@ -12,7 +12,7 @@
 use std::sync::Arc;
 use trait_kit::prelude::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct MessageCap {
     content: String,
 }
