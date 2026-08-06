@@ -11,8 +11,8 @@
 //!
 //! Run: `cargo run -p trait-kit-example --example i18n`
 
-use trait_kit::i18n::{tr, I18nFormatter, I18nManager};
 use trait_kit::TraitKitError;
+use trait_kit::i18n::{I18nFormatter, I18nManager, tr};
 
 fn main() {
     // ─── 全局 I18nManager 初始化 ─────────────────────────────────────────
