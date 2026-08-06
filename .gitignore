@@ -33,6 +33,7 @@ temp/
 logs/
 
 # ── AI / Agent Tools (not for version control) ───────
+codenexus.lbug
 AGENTS.md
 CLAUDE.md
 GEMINI.md
