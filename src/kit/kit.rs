@@ -879,20 +879,22 @@ impl<S> Kit<S> {
             if let Some(slot) = self.lazy_slots.borrow().get(&type_id) {
                 let _ = slot.cell.set(boxed);
             }
-            return Self::get_lazy_cached::<M>(self, type_id)
-                .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() });
+            return Self::get_lazy_cached::<M>(self, type_id).ok_or(
+                TraitKitError::MissingCapability {
+                    key: M::NAME.to_string(),
+                },
+            );
         }
 
         // 4. Not found
-        Err(TraitKitError::MissingCapability { key: M::NAME.to_string() })
+        Err(TraitKitError::MissingCapability {
+            key: M::NAME.to_string(),
+        })
     }
 
     /// Extracted helper: retrieve a cached lazy-slot value without rebuilding.
     /// Consolidates the duplicate lazy-cache lookup pattern in `require()`.
-    fn get_lazy_cached<M: AutoBuilder>(
-        &self,
-        type_id: TypeId,
-    ) -> Option<M::Capability> {
+    fn get_lazy_cached<M: AutoBuilder>(&self, type_id: TypeId) -> Option<M::Capability> {
         self.lazy_slots
             .borrow()
             .get(&type_id)
@@ -917,16 +919,17 @@ impl<S> Kit<S> {
     {
         let cap_id = TypeId::of::<M::Capability>();
         let multi = self.multi_capabilities.borrow();
-        let vec = multi
-            .get(&cap_id)
-            .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() })?;
+        let vec = multi.get(&cap_id).ok_or(TraitKitError::MissingCapability {
+            key: M::NAME.to_string(),
+        })?;
 
         let mut result = Vec::with_capacity(vec.len());
         for boxed in vec {
-            let cap = boxed
-                .downcast_ref::<M::Capability>()
-                .cloned()
-                .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() })?;
+            let cap = boxed.downcast_ref::<M::Capability>().cloned().ok_or(
+                TraitKitError::MissingCapability {
+                    key: M::NAME.to_string(),
+                },
+            )?;
             result.push(cap);
         }
         Ok(result)
@@ -1021,7 +1024,9 @@ impl<S> Kit<S> {
         let interface_id = TypeId::of::<I>();
         self.capabilities
             .get_cloned_by_type_id::<std::sync::Arc<I>>(interface_id)
-            .ok_or(TraitKitError::MissingCapability { key: "interface".into() })
+            .ok_or(TraitKitError::MissingCapability {
+                key: "interface".into(),
+            })
     }
 }
 
@@ -1154,13 +1159,17 @@ impl Kit<Ready> {
 
         let type_id = TypeId::of::<M>();
         if !self.capabilities.contains_by_type_id(type_id) {
-            return Err(TraitKitError::MissingCapability { key: M::NAME.to_string() });
+            return Err(TraitKitError::MissingCapability {
+                key: M::NAME.to_string(),
+            });
         }
         Ref::filter_map(self.capabilities.inner_ref(), |map| {
             map.get(&type_id)
                 .and_then(|b| b.downcast_ref::<M::Capability>())
         })
-        .map_err(|_| TraitKitError::MissingCapability { key: M::NAME.to_string() })
+        .map_err(|_| TraitKitError::MissingCapability {
+            key: M::NAME.to_string(),
+        })
     }
 
     /// Check if a capability has been built.
@@ -1208,9 +1217,9 @@ impl Kit<Ready> {
     ) -> Result<crate::core::health::HealthStatus, TraitKitError> {
         let type_id = TypeId::of::<M>();
         let checkers = self.health_checkers.borrow();
-        let (_name, checker) = checkers
-            .get(&type_id)
-            .ok_or(TraitKitError::MissingConfig { key: M::NAME.to_string() })?;
+        let (_name, checker) = checkers.get(&type_id).ok_or(TraitKitError::MissingConfig {
+            key: M::NAME.to_string(),
+        })?;
         Ok(checker(&self.capabilities))
     }
 

@@ -216,11 +216,15 @@ fn kit_error_display_and_source_behavior() {
     assert_eq!(dup.to_string(), "module `logger` is already registered");
 
     // Display: MissingCapability
-    let cap = TraitKitError::MissingCapability { key: "logger".into() };
+    let cap = TraitKitError::MissingCapability {
+        key: "logger".into(),
+    };
     assert_eq!(cap.to_string(), "missing capability `logger`");
 
     // Display: MissingConfig
-    let cfg = TraitKitError::MissingConfig { key: "db_url".into() };
+    let cfg = TraitKitError::MissingConfig {
+        key: "db_url".into(),
+    };
     assert_eq!(cfg.to_string(), "missing config `db_url`");
 
     // Display: BuildFailed (contains source message)

@@ -108,7 +108,10 @@ impl fmt::Display for TraitKitError {
                 write!(
                     f,
                     "{}",
-                    tr("trait-kit-error-missing-capability", &[("key", key.as_str())]),
+                    tr(
+                        "trait-kit-error-missing-capability",
+                        &[("key", key.as_str())]
+                    ),
                 )
             }
             Self::MissingConfig { key } => {
@@ -214,7 +217,9 @@ mod tests {
 
     #[test]
     fn missing_config_display_contains_key() {
-        let err = TraitKitError::MissingConfig { key: "db.url".into() };
+        let err = TraitKitError::MissingConfig {
+            key: "db.url".into(),
+        };
         let msg = format!("{err}");
         assert!(
             msg.contains("db.url"),

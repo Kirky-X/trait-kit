@@ -265,9 +265,12 @@ impl AsyncKit {
         // 3. Invoke each module's AsyncBuildFn in topological order.
         for type_id in &sorted {
             let module_name = self.graph.name_of(*type_id).unwrap_or("<unknown>");
-            let build_fn = builders
-                .remove(type_id)
-                .ok_or_else(|| TraitKitError::MissingCapability { key: module_name.to_string() })?;
+            let build_fn =
+                builders
+                    .remove(type_id)
+                    .ok_or_else(|| TraitKitError::MissingCapability {
+                        key: module_name.to_string(),
+                    })?;
 
             // Observer: notify build start
             #[cfg(feature = "observability")]
@@ -558,7 +561,9 @@ impl<S> AsyncKit<S> {
         let type_id = TypeId::of::<M>();
         self.capabilities
             .get_cloned_by_type_id::<M::Capability>(type_id)
-            .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() })
+            .ok_or(TraitKitError::MissingCapability {
+                key: M::NAME.to_string(),
+            })
     }
 }
 
@@ -644,9 +649,9 @@ impl AsyncKit<Ready> {
     ) -> Result<crate::core::health::HealthStatus, TraitKitError> {
         let type_id = TypeId::of::<M>();
         let checkers = self.health_checkers.read().expect("lock poisoned");
-        let (_name, checker) = checkers
-            .get(&type_id)
-            .ok_or(TraitKitError::MissingConfig { key: M::NAME.to_string() })?;
+        let (_name, checker) = checkers.get(&type_id).ok_or(TraitKitError::MissingConfig {
+            key: M::NAME.to_string(),
+        })?;
         Ok(checker(&self.capabilities))
     }
 
@@ -1108,8 +1113,11 @@ mod tests {
             block_on(kit.build()).expect_err("build should fail when module build returns Err");
         match &err {
             TraitKitError::BuildFailed { context, .. } => {
-                assert_eq!(context.as_str(), "mock-err-module",
-                    "expected BuildFailed for mock-err-module, got {err:?}");
+                assert_eq!(
+                    context.as_str(),
+                    "mock-err-module",
+                    "expected BuildFailed for mock-err-module, got {err:?}"
+                );
             }
             _ => panic!("expected BuildFailed for mock-err-module, got {err:?}"),
         }

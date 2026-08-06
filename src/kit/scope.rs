@@ -97,10 +97,11 @@ impl Scope {
             .get(&type_id)
             .and_then(|slot| slot.cell.get())
         {
-            return boxed
-                .downcast_ref::<M::Capability>()
-                .cloned()
-                .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() });
+            return boxed.downcast_ref::<M::Capability>().cloned().ok_or(
+                TraitKitError::MissingCapability {
+                    key: M::NAME.to_string(),
+                },
+            );
         }
 
         // First-access construction
@@ -128,10 +129,14 @@ impl Scope {
                 .get(&type_id)
                 .and_then(|slot| slot.cell.get())
                 .and_then(|b| b.downcast_ref::<M::Capability>().cloned())
-                .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() });
+                .ok_or(TraitKitError::MissingCapability {
+                    key: M::NAME.to_string(),
+                });
         }
 
-        Err(TraitKitError::MissingCapability { key: M::NAME.to_string() })
+        Err(TraitKitError::MissingCapability {
+            key: M::NAME.to_string(),
+        })
     }
 
     /// Check if a module type is registered in this scope.
@@ -268,7 +273,9 @@ mod async_scope {
             let type_id = TypeId::of::<M>();
             self.capabilities
                 .get_cloned_by_type_id::<M::Capability>(type_id)
-                .ok_or(TraitKitError::MissingCapability { key: M::NAME.to_string() })
+                .ok_or(TraitKitError::MissingCapability {
+                    key: M::NAME.to_string(),
+                })
         }
 
         /// Check if a module type is registered in this scope.
