@@ -65,18 +65,29 @@ pub enum I18nError {
 
 impl fmt::Display for I18nError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Display does NOT call tr() to avoid recursive dependency on
-        // I18nManager::init() (which uses OnceLock and could deadlock if
-        // Display is invoked during initialization).
+        // tr() 通过 OnceLock 惰性初始化，build() 不调用 Display，
+        // 因此不存在递归风险。
         match self {
             Self::InvalidLocale { input, reason } => {
-                write!(f, "invalid locale '{input}': {reason}")
+                write!(
+                    f,
+                    "{}",
+                    tr("i18n-error-invalid-locale", &[("input", input), ("reason", reason)]),
+                )
             }
             Self::InvalidNumber { input, reason } => {
-                write!(f, "invalid number '{input}': {reason}")
+                write!(
+                    f,
+                    "{}",
+                    tr("i18n-error-invalid-number", &[("input", input), ("reason", reason)]),
+                )
             }
-            Self::DateError(detail) => write!(f, "date error: {detail}"),
-            Self::FormatError(detail) => write!(f, "format error: {detail}"),
+            Self::DateError(detail) => {
+                write!(f, "{}", tr("i18n-error-date", &[("detail", detail)]))
+            }
+            Self::FormatError(detail) => {
+                write!(f, "{}", tr("i18n-error-format", &[("detail", detail)]))
+            }
         }
     }
 }

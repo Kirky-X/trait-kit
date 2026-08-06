@@ -21,3 +21,10 @@ i18n-error-invalid-number = 无效的数字 '{ $input }': { $reason }
 i18n-error-date = 日期错误: { $detail }
 
 i18n-error-format = 格式化错误: { $detail }
+
+# 诊断上下文标记（用于错误消息）
+
+trait-kit-diag-unknown = <未知>
+trait-kit-diag-multi-binding = <多绑定>
+trait-kit-diag-interface = <接口>
+trait-kit-diag-unknown-cycle = <未知循环>
