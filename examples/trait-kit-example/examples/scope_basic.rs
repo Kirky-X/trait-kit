@@ -9,8 +9,8 @@
 //!
 //! Run: `cargo run -p trait-kit-example --example scope_basic --features scope`
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use trait_kit::prelude::*;
 
 static BUILD_COUNTER: AtomicUsize = AtomicUsize::new(0);

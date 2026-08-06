@@ -9,8 +9,8 @@
 //!
 //! Run: `cargo run -p trait-kit-example --example lifecycle --features lifecycle`
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use trait_kit::prelude::*;
 
 static SHUTDOWN_CALLED: AtomicBool = AtomicBool::new(false);

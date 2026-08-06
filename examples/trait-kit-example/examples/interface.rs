@@ -9,8 +9,8 @@
 //!
 //! Run: `cargo run -p trait-kit-example --example interface --features interface`
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use trait_kit::core::InterfaceBuilder;
 use trait_kit::prelude::*;
 
