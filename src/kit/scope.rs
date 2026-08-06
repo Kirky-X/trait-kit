@@ -214,19 +214,13 @@ mod async_scope {
         /// Panics if the internal `RwLock` is poisoned.
         pub fn register<M: AsyncAutoBuilder>(&mut self) -> Result<(), TraitKitError> {
             let type_id = TypeId::of::<M>();
-            if self
-                .builders
-                .read()
-                .expect("lock poisoned")
-                .contains(&type_id)
-            {
+            // Perform check + insert atomically under a single write lock
+            // to prevent TOCTOU race between read-check and write-insert.
+            let mut guard = self.builders.write().expect("lock poisoned");
+            if guard.contains(&type_id) {
                 return Err(TraitKitError::AlreadyRegistered { module: M::NAME });
             }
-
-            self.builders
-                .write()
-                .expect("lock poisoned")
-                .insert(type_id);
+            guard.insert(type_id);
             Ok(())
         }
 

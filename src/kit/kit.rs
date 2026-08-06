@@ -866,6 +866,14 @@ impl<S> Kit<S> {
             // layout is identical. In practice, this code path is only reached
             // on `Kit<Ready>` (lazy_slots is only populated after `build()`),
             // but the cast is valid regardless.
+            //
+            // Compile-time layout assertion: if any field depending on `S` is
+            // added to `Kit`, this will fail at compile time, catching the
+            // unsoundness before runtime.
+            const _: () = assert!(
+                std::mem::size_of::<Kit<Ready>>() == std::mem::size_of::<Kit>(),
+                "Kit layout changed; unsafe cast is no longer sound"
+            );
             #[allow(unsafe_code)]
             let kit_ref: &Kit = unsafe { &*std::ptr::from_ref(self).cast::<Kit>() };
             let boxed = (builder)(kit_ref).map_err(|e| TraitKitError::BuildFailed {

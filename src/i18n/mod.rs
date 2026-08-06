@@ -240,7 +240,7 @@ impl I18nManager {
 
     /// 内部构造：根据 locale 选择 FTL 内容并解析。
     fn build(locale: &str) -> Self {
-        let ftl_content = if locale.starts_with("zh") {
+        let ftl_content = if locale.to_lowercase().starts_with("zh") {
             messages::ZH_FTL
         } else {
             messages::EN_FTL
