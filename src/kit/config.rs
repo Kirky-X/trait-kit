@@ -99,13 +99,19 @@ pub use confers::derive_field_key;
 #[derive(Debug, Clone)]
 pub struct EncryptedBlob {
     /// XChaCha20-Poly1305 nonce (24 bytes).
-    pub(crate) nonce: Vec<u8>,
+    nonce: Vec<u8>,
     /// Ciphertext + Poly1305 authentication tag.
-    pub(crate) ciphertext: Vec<u8>,
+    ciphertext: Vec<u8>,
 }
 
 #[cfg(feature = "encryption")]
 impl EncryptedBlob {
+    /// Create a new encrypted blob from raw nonce and ciphertext.
+    #[must_use]
+    pub(crate) fn new(nonce: Vec<u8>, ciphertext: Vec<u8>) -> Self {
+        Self { nonce, ciphertext }
+    }
+
     /// Returns the XChaCha20-Poly1305 nonce (24 bytes).
     #[must_use]
     pub fn nonce(&self) -> &[u8] {
@@ -125,30 +131,21 @@ mod encrypted_blob_tests {
 
     #[test]
     fn getters_return_raw_slices() {
-        let blob = EncryptedBlob {
-            nonce: vec![1, 2, 3],
-            ciphertext: vec![4, 5, 6],
-        };
+        let blob = EncryptedBlob::new(vec![1, 2, 3], vec![4, 5, 6]);
         assert_eq!(blob.nonce(), &[1, 2, 3]);
         assert_eq!(blob.ciphertext(), &[4, 5, 6]);
     }
 
     #[test]
     fn getters_return_empty_for_empty_blob() {
-        let blob = EncryptedBlob {
-            nonce: Vec::new(),
-            ciphertext: Vec::new(),
-        };
+        let blob = EncryptedBlob::new(Vec::new(), Vec::new());
         assert!(blob.nonce().is_empty());
         assert!(blob.ciphertext().is_empty());
     }
 
     #[test]
     fn clone_produces_equal_blob() {
-        let blob = EncryptedBlob {
-            nonce: vec![1, 2, 3],
-            ciphertext: vec![4, 5, 6],
-        };
+        let blob = EncryptedBlob::new(vec![1, 2, 3], vec![4, 5, 6]);
         let cloned = blob.clone();
         assert_eq!(blob.nonce(), cloned.nonce());
         assert_eq!(blob.ciphertext(), cloned.ciphertext());
@@ -156,10 +153,7 @@ mod encrypted_blob_tests {
 
     #[test]
     fn debug_format_contains_fields() {
-        let blob = EncryptedBlob {
-            nonce: vec![1, 2, 3],
-            ciphertext: vec![4, 5, 6],
-        };
+        let blob = EncryptedBlob::new(vec![1, 2, 3], vec![4, 5, 6]);
         let s = format!("{blob:?}");
         assert!(s.contains("EncryptedBlob"));
         assert!(s.contains("nonce"));
