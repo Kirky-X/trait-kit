@@ -250,23 +250,27 @@ impl DependencyGraph {
             return "graph TD".to_string();
         }
         let mut out = String::from("graph TD\n");
-        for entry in &self.entries {
+        // Use index-based node IDs to avoid collisions when names contain
+        // hyphens or other special characters (e.g. 'my-module' vs 'my_module').
+        for (idx, entry) in self.entries.iter().enumerate() {
             for (dep_name, _) in &entry.dependencies {
-                // Mermaid node IDs: replace hyphens with underscores
-                let from_id = dep_name.replace('-', "_");
-                let to_id = entry.name.replace('-', "_");
+                // Find the index of the dependency entry for its node ID
+                let dep_idx = self
+                    .entries
+                    .iter()
+                    .position(|e| e.name == *dep_name)
+                    .unwrap_or(idx);
                 let _ = writeln!(
                     out,
-                    "    {}[\"{}\"] --> {}[\"{}\"]",
-                    from_id, dep_name, to_id, entry.name
+                    "    n{dep_idx}[\"{dep_name}\"] --> n{idx}[\"{}\"]",
+                    entry.name
                 );
             }
         }
         // Ensure nodes with no dependencies still appear
-        for entry in &self.entries {
+        for (idx, entry) in self.entries.iter().enumerate() {
             if entry.dependencies.is_empty() {
-                let id = entry.name.replace('-', "_");
-                let _ = writeln!(out, "    {}[\"{}\"]", id, entry.name);
+                let _ = writeln!(out, "    n{idx}[\"{}\"]", entry.name);
             }
         }
         out
@@ -505,13 +509,14 @@ mod tests {
         .unwrap();
         let mermaid = g.to_mermaid();
         assert!(mermaid.starts_with("graph TD"));
-        assert!(mermaid.contains("a[\"a\"]"));
-        assert!(mermaid.contains("b[\"b\"]"));
+        // Index-based node IDs: n0 for "a", n1 for "b"
+        assert!(mermaid.contains("n0[\"a\"]"));
+        assert!(mermaid.contains("n1[\"b\"]"));
         assert!(mermaid.contains("-->"));
     }
 
     #[test]
-    fn graph_to_mermaid_hyphen_replacement() {
+    fn graph_to_mermaid_hyphen_names_no_collision() {
         let mut g = DependencyGraph::new();
         g.add(typed_entry::<types::A>("my-module", vec![])).unwrap();
         g.add(typed_entry::<types::B>(
@@ -520,9 +525,12 @@ mod tests {
         ))
         .unwrap();
         let mermaid = g.to_mermaid();
-        // Hyphens in names should be replaced with underscores for node IDs
-        assert!(mermaid.contains("my_module"));
-        assert!(mermaid.contains("my_dep"));
+        // Index-based IDs avoid collision between hyphens and underscores
+        assert!(mermaid.contains("n0[\"my-module\"]"));
+        assert!(mermaid.contains("n1[\"my-dep\"]"));
+        // Original names (with hyphens) are preserved in display labels
+        assert!(mermaid.contains("my-module"));
+        assert!(mermaid.contains("my-dep"));
     }
 
     #[test]
