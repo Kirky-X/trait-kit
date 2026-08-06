@@ -34,7 +34,11 @@ fn main() {
     // reload_config is available on Kit<Unbuilt> (matches test pattern).
     kit.reload_config::<AppConfig>()
         .expect("reload should succeed");
-    assert_eq!(counter.get(), 1, "callback should fire exactly once on reload");
+    assert_eq!(
+        counter.get(),
+        1,
+        "callback should fire exactly once on reload"
+    );
 
     let kit = kit.build().expect("build should succeed");
     let config: AppConfig = kit.config().expect("config should be retrievable");

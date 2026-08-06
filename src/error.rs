@@ -4,9 +4,9 @@
 
 use std::fmt;
 
+use crate::i18n::tr;
 #[cfg(feature = "shutdown")]
 use crate::kit::shutdown::ShutdownPhase;
-use crate::i18n::tr;
 
 /// Unified trait-kit error type.
 ///
@@ -144,8 +144,7 @@ impl fmt::Display for TraitKitError {
             }
             #[cfg(feature = "shutdown")]
             Self::ShutdownTimedOut { phases } => {
-                let phase_names: Vec<&str> =
-                    phases.iter().map(ShutdownPhase::as_str).collect();
+                let phase_names: Vec<&str> = phases.iter().map(ShutdownPhase::as_str).collect();
                 write!(
                     f,
                     "{}",
