@@ -194,6 +194,11 @@ dependencies = [
 [[package]]
 name = "confers"
 version = "0.5.1"
+<<<<<<< HEAD
+=======
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "244b20e949d764487201236b7f1a581091ccd4181f370cc37871c974a3d076cc"
+>>>>>>> 219bfb5 (chore(deps): bump confers from 0.5.0 to 0.5.1)
 dependencies = [
  "aes-gcm",
  "anyhow",
