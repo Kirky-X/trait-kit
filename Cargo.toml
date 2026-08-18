@@ -20,7 +20,7 @@ repository = "https://github.com/Kirky-X/trait-kit.git"
 license = "MIT"
 
 [workspace.dependencies]
-confers = { version = "0.5", default-features = false }
+confers = { version = "0.5", path = "../confers", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 trait-kit = { path = ".", default-features = false }
 
