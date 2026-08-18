@@ -193,9 +193,7 @@ dependencies = [
 
 [[package]]
 name = "confers"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd0d2855e5f4fbbe2a053c9022aab3c629d4c436fe9dac428906802063cd109c"
+version = "0.5.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -224,9 +222,7 @@ dependencies = [
 
 [[package]]
 name = "confers-macros"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0d43290c30d6525b030da018de1275168c94f7fdb41f382c37529bbb546cfb6"
+version = "0.5.1"
 dependencies = [
  "darling",
  "proc-macro2",
