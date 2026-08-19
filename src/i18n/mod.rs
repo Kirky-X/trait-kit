@@ -292,6 +292,7 @@ fn detect_system_locale() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "i18n")]
     use std::cmp::Ordering;
 
     #[cfg(feature = "i18n")]
