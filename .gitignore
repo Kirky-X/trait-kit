@@ -47,3 +47,6 @@ CODEIUM.md
 .continue/
 .codeium/
 .github/copilot/
+
+# Reviews (security/quality scan artifacts)
+reviews/
