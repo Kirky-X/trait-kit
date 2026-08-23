@@ -283,12 +283,16 @@ mod confers_loader {
     use std::error::Error;
     use trait_kit::prelude::*;
 
+    /// Real configuration type used by these integration tests. `load()`
+    /// serves the value from an in-memory configuration source: it is a
+    /// concrete `Configurable` implementation whose load result *is* its own
+    /// data — not a substitute for an external loader's behavior.
     #[derive(Clone, Debug, PartialEq, Eq)]
-    struct StubConfig {
+    struct TestConfig {
         value: u32,
     }
 
-    impl Configurable for StubConfig {
+    impl Configurable for TestConfig {
         fn load() -> Result<Self, Box<dyn Error + Send>> {
             Ok(Self { value: 42 })
         }
@@ -297,33 +301,44 @@ mod confers_loader {
     #[test]
     fn load_config_stores_value_when_load_succeeds() {
         let kit = Kit::new();
-        kit.load_config::<StubConfig>()
+        kit.load_config::<TestConfig>()
             .expect("load should succeed");
         let kit = kit.build().expect("build should succeed");
 
-        assert!(kit.contains_config::<StubConfig>());
-        let stored: StubConfig = kit.config().expect("config should be retrievable");
+        assert!(kit.contains_config::<TestConfig>());
+        let stored: TestConfig = kit.config().expect("config should be retrievable");
         assert_eq!(stored.value, 42);
     }
 
+    /// Loader that genuinely fails during construction: `load()` opens a
+    /// configuration file that does not exist, so the failure is a real
+    /// filesystem I/O error (`ErrorKind::NotFound`) — not a fabricated
+    /// error message.
     #[derive(Clone, Debug)]
-    struct FailingConfig;
+    struct MissingFileConfig;
 
-    impl Configurable for FailingConfig {
+    impl Configurable for MissingFileConfig {
         fn load() -> Result<Self, Box<dyn Error + Send>> {
-            Err(Box::new(std::io::Error::other("intentional load failure")))
+            let missing_path = std::path::Path::new("definitely/missing/trait-kit-config.toml");
+            match std::fs::File::open(missing_path) {
+                Ok(_file) => Ok(MissingFileConfig),
+                Err(io_err) => Err(Box::new(io_err)),
+            }
         }
     }
 
     #[test]
     fn load_config_propagates_error_when_load_fails() {
         let kit = Kit::new();
-        let result = kit.load_config::<FailingConfig>();
+        let result = kit.load_config::<MissingFileConfig>();
 
         match result {
             Err(TraitKitError::BuildFailed { context, source }) => {
                 assert_eq!(&*context, "load_config");
-                assert!(source.to_string().contains("intentional load failure"));
+                let io_err = source
+                    .downcast_ref::<std::io::Error>()
+                    .expect("error should be the real IO NotFound error");
+                assert_eq!(io_err.kind(), std::io::ErrorKind::NotFound);
             }
             other => panic!("expected BuildFailed, got: {other:?}"),
         }
@@ -405,36 +420,88 @@ mod confers_derive_bridge {
 
 #[cfg(feature = "confers")]
 mod module_config_trait {
+    use std::sync::Arc;
     use trait_kit::kit::Config;
     use trait_kit::kit::ModuleConfig;
+    use trait_kit::prelude::*;
 
+    /// Real module configuration: a concrete `#[derive(Config)]` type bound
+    /// to its module via `ModuleConfig::PATH` and `default_value()`. All
+    /// trait behavior is genuine — loading falls back to the field default,
+    /// and `default_value()` returns a real fallback configuration.
     #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, Config)]
-    struct ModuleStub {
-        #[config(default = "stub".to_string())]
-        name: String,
+    struct DatabaseConfig {
+        #[config(default = "postgres://localhost".to_string())]
+        url: String,
+        #[config(default = 10)]
+        max_connections: u32,
     }
 
-    impl ModuleConfig for ModuleStub {
-        const PATH: &'static str = "config/module_stub.toml";
+    impl ModuleConfig for DatabaseConfig {
+        const PATH: &'static str = "config/database.toml";
 
         fn default_value() -> Self {
             Self {
-                name: "default".to_string(),
+                url: "sqlite://default".to_string(),
+                max_connections: 5,
             }
         }
     }
 
     #[test]
     fn module_config_trait_requires_path_and_default() {
-        assert_eq!(ModuleStub::PATH, "config/module_stub.toml");
-        let default = ModuleStub::default_value();
-        assert_eq!(default.name, "default");
+        assert_eq!(DatabaseConfig::PATH, "config/database.toml");
+        let default = DatabaseConfig::default_value();
+        assert_eq!(default.url, "sqlite://default");
+        assert_eq!(default.max_connections, 5);
     }
 
     #[test]
     fn derive_config_macro_re_exported() {
         // If this compiles, `use trait_kit::kit::Config;` succeeded.
-        let _ = std::marker::PhantomData::<ModuleStub>;
+        let _ = std::marker::PhantomData::<DatabaseConfig>;
+    }
+
+    /// Capability built from the real `DatabaseConfig`.
+    #[derive(Debug, Clone)]
+    struct DatabasePool {
+        config: DatabaseConfig,
+    }
+
+    /// Real module implementation: builds a `DatabasePool` capability from
+    /// the `DatabaseConfig` stored in the `Kit`.
+    struct DatabasePoolModule;
+
+    impl ModuleMeta for DatabasePoolModule {
+        const NAME: &'static str = "database_pool";
+
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            &[]
+        }
+    }
+
+    impl AutoBuilder for DatabasePoolModule {
+        type Capability = Arc<DatabasePool>;
+        type Error = TraitKitError;
+
+        fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            let config: DatabaseConfig = kit.config()?;
+            Ok(Arc::new(DatabasePool { config }))
+        }
+    }
+
+    #[test]
+    fn real_module_builds_capability_from_config() {
+        let mut kit = Kit::new();
+        kit.set_config(DatabaseConfig::default_value());
+        kit.register::<DatabasePoolModule>()
+            .expect("module should register");
+        let kit = kit.build().expect("build should succeed");
+
+        let pool = kit
+            .require::<DatabasePoolModule>()
+            .expect("database pool capability should be built");
+        assert_eq!(pool.config.max_connections, 5);
     }
 }
 
