@@ -416,6 +416,32 @@ mod tests {
     }
 
     #[test]
+    fn scope_registrations_do_not_leak_across_scopes() {
+        // 两个独立 Scope 之间必须完全隔离：在一个 scope 注册/构建的
+        // 模块不得在另一个 scope 中可见（per-request 隔离的语义保证）。
+        let mut scope_a = Scope::new();
+        scope_a.register::<ScopeModule>().expect("register in A");
+        assert!(scope_a.contains::<ScopeModule>());
+
+        let mut scope_b = Scope::new();
+        // B 未注册该模块：contains 与 require 都必须失败。
+        assert!(!scope_b.contains::<ScopeModule>());
+        let err = scope_b.require::<ScopeModule>().unwrap_err();
+        assert!(matches!(
+            err,
+            TraitKitError::MissingCapability {
+                ref key
+            } if key == "scope-module"
+        ));
+
+        // A 与 B 各构建出自己的独立实例：id 不同即证明未共享缓存。
+        let cap_a = scope_a.require::<ScopeModule>().expect("require A");
+        scope_b.register::<ScopeModule>().expect("register in B");
+        let cap_b = scope_b.require::<ScopeModule>().expect("require B");
+        assert_ne!(cap_a.id, cap_b.id, "scopes must not share instances");
+    }
+
+    #[test]
     fn scope_test_error_display() {
         let e = ScopeTestError;
         assert_eq!(format!("{e}"), "scope error");

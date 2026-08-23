@@ -3475,6 +3475,74 @@ mod snapshot_tests {
     }
 }
 
+// ─── Reload Tests ───────────────────────────────────────────────────────────
+
+#[cfg(all(test, feature = "reload"))]
+mod reload_tests {
+    use super::*;
+    use crate::kit::config::Configurable;
+    use std::error::Error;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct ReloadConfig {
+        version: u32,
+    }
+
+    // 每次 load() 递增，证明 reload 真正重新加载而非复用缓存。
+    static LOAD_COUNT: AtomicU32 = AtomicU32::new(0);
+
+    impl Configurable for ReloadConfig {
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
+            let v = LOAD_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(Self { version: v })
+        }
+    }
+
+    #[test]
+    fn reload_config_updates_value_and_fires_subscribers() {
+        let kit = Kit::new();
+        let notified = Arc::new(AtomicU32::new(0));
+        let notified_clone = Arc::clone(&notified);
+        kit.subscribe::<ReloadConfig>(move || {
+            notified_clone.fetch_add(1, Ordering::SeqCst);
+        });
+
+        // 记录当前计数，断言 reload 后一定递增（对测试执行顺序无关）。
+        let before = LOAD_COUNT.load(Ordering::SeqCst);
+        kit.set_config(ReloadConfig { version: 0 });
+        kit.reload_config::<ReloadConfig>()
+            .expect("reload should succeed");
+        let cfg: ReloadConfig = kit.config().expect("config present");
+        assert!(cfg.version > before, "reload must call Configurable::load");
+        assert_eq!(
+            notified.load(Ordering::SeqCst),
+            1,
+            "subscriber must be invoked exactly once"
+        );
+    }
+
+    #[test]
+    fn reload_config_fires_all_subscribers() {
+        let kit = Kit::new();
+        let count = Arc::new(AtomicU32::new(0));
+        for _ in 0..3 {
+            let count = Arc::clone(&count);
+            kit.subscribe::<ReloadConfig>(move || {
+                count.fetch_add(1, Ordering::SeqCst);
+            });
+        }
+        kit.set_config(ReloadConfig { version: 0 });
+        kit.reload_config::<ReloadConfig>().expect("reload ok");
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            3,
+            "all three subscribers must fire"
+        );
+    }
+}
+
 // ─── Toggle Tests ───────────────────────────────────────────────────────────
 
 #[cfg(all(test, feature = "toggle"))]
@@ -3561,6 +3629,27 @@ mod toggle_tests {
         let ready = kit.build().unwrap();
         ready.enable_toggle("runtime", true);
         assert!(ready.is_toggle_enabled("runtime"));
+    }
+
+    #[test]
+    fn toggle_disabled_capability_not_retrievable() {
+        // 运行时停用 toggle 后：未注册的模块能力必须不可检索
+        // （require 返回 MissingCapability，而非返回任何能力）。
+        let mut kit = Kit::new();
+        kit.enable_toggle("feature-gate", false);
+        let registered = kit
+            .register_if_toggle::<ToggleModule>("feature-gate")
+            .expect("should return Ok(false)");
+        assert!(!registered, "disabled toggle must not register the module");
+
+        let ready = kit.build().expect("build without the module succeeds");
+        let err = ready.require::<ToggleModule>().unwrap_err();
+        assert!(matches!(
+            err,
+            TraitKitError::MissingCapability { ref key } if key == "toggle-mod"
+        ));
+        assert!(!ready.contains::<ToggleModule>());
+        assert!(ready.optional::<ToggleModule>().is_none());
     }
 }
 

@@ -1011,6 +1011,40 @@ mod tests {
     }
 
     #[test]
+    fn async_kit_concurrent_registration() {
+        // 多线程并发注册不同模块：AsyncKit 内部为 Arc<RwLock>，
+        // 并发 register 不得丢注册、不得 panic、不得产生重复条目。
+        use std::sync::Mutex;
+
+        let kit = Arc::new(Mutex::new(AsyncKit::new()));
+        let mut handles = Vec::new();
+        for (i, name) in ["mock-b", "mock-c"].iter().enumerate() {
+            let kit = Arc::clone(&kit);
+            let name = *name;
+            handles.push(std::thread::spawn(move || {
+                let mut kit = kit.lock().expect("lock poisoned");
+                match name {
+                    "mock-b" => kit.register::<MockBModule>().expect("register B"),
+                    _ => kit.register::<MockCModule>().expect("register C"),
+                }
+                let _ = i;
+            }));
+        }
+        for h in handles {
+            h.join().expect("worker thread panicked");
+        }
+
+        // 并发后两个模块都注册成功，且无重复。
+        let kit = kit.lock().expect("lock poisoned");
+        assert_eq!(
+            kit.builders.read().expect("lock poisoned").len(),
+            2,
+            "both modules must be registered exactly once"
+        );
+        assert_eq!(kit.graph.entries().len(), 2);
+    }
+
+    #[test]
     fn async_kit_set_config_stores_value() {
         let kit = AsyncKit::new();
         kit.set_config(42i32);

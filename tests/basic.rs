@@ -199,33 +199,60 @@ fn kit_error_display_and_source_behavior() {
     let cycle = TraitKitError::CycleDetected {
         cycle: vec!["a", "b", "a"],
     };
-    assert_eq!(cycle.to_string(), "dependency cycle detected: a → b → a");
+    // Error messages are localized via i18n `tr()` (system locale). Assert the
+    // interpolated arguments are present regardless of locale text.
+    let cycle_msg = cycle.to_string();
+    assert!(
+        cycle_msg.contains("a"),
+        "cycle members interpolated: {cycle_msg}"
+    );
+    assert!(
+        cycle_msg.contains("b"),
+        "cycle members interpolated: {cycle_msg}"
+    );
 
     // Display: DependencyMissing
     let dep = TraitKitError::DependencyMissing {
         module: "db",
         missing: "logger",
     };
-    assert_eq!(
-        dep.to_string(),
-        "module `db` depends on `logger` which is not registered"
+    let dep_msg = dep.to_string();
+    assert!(
+        dep_msg.contains("db"),
+        "module name interpolated: {dep_msg}"
+    );
+    assert!(
+        dep_msg.contains("logger"),
+        "missing dep name interpolated: {dep_msg}"
     );
 
     // Display: AlreadyRegistered
     let dup = TraitKitError::AlreadyRegistered { module: "logger" };
-    assert_eq!(dup.to_string(), "module `logger` is already registered");
+    let dup_msg = dup.to_string();
+    assert!(
+        dup_msg.contains("logger"),
+        "module name interpolated: {dup_msg}"
+    );
 
     // Display: MissingCapability
     let cap = TraitKitError::MissingCapability {
         key: "logger".into(),
     };
-    assert_eq!(cap.to_string(), "missing capability `logger`");
+    let cap_msg = cap.to_string();
+    assert!(
+        cap_msg.contains("logger"),
+        "capability key interpolated: {cap_msg}"
+    );
 
     // Display: MissingConfig
     let cfg = TraitKitError::MissingConfig {
         key: "db_url".into(),
     };
-    assert_eq!(cfg.to_string(), "missing config `db_url`");
+    let cfg_msg = cfg.to_string();
+    assert!(
+        cfg_msg.contains("db_url"),
+        "config key interpolated: {cfg_msg}"
+    );
 
     // Display: BuildFailed (contains source message)
     let source: Box<dyn Error + Send + Sync> = "inner failure".into();
@@ -233,8 +260,15 @@ fn kit_error_display_and_source_behavior() {
         context: "db".into(),
         source,
     };
-    assert!(build.to_string().contains("failed to build `db`"));
-    assert!(build.to_string().contains("inner failure"));
+    let build_msg = build.to_string();
+    assert!(
+        build_msg.contains("db"),
+        "context interpolated: {build_msg}"
+    );
+    assert!(
+        build_msg.contains("inner failure"),
+        "source message propagated: {build_msg}"
+    );
 
     // Error::source() for BuildFailed returns Some
     assert!(build.source().is_some());
