@@ -1,5 +1,0 @@
-# 本地开发：自研依赖经 patch 重定向到兄弟目录源码（CI/发布时无此文件路径，
-# cargo 直接按 version 从 crates.io 解析——version-only 依赖 + patch 是
-# 「本地源码联调 / CI registry 解析」双模式的标准做法）。
-[patch.crates-io]
-confers = { path = "../confers" }

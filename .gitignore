@@ -50,3 +50,4 @@ CODEIUM.md
 
 # Reviews (security/quality scan artifacts)
 reviews/
+.cargo/
