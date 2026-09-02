@@ -52,3 +52,6 @@ CODEIUM.md
 reviews/
 .cargo/
 Cargo.lock
+
+# WorkBuddy AI local notes
+.workbuddy-ai/
