@@ -9,6 +9,18 @@
 
 _暂无未发布变更。_
 
+## [0.5.0-rc.2] - 2026-09-03
+
+### 文档
+
+- 同步 README/USER_GUIDE 等文档中的版本号 0.4 → 0.5.0-rc.2
+- 同步 Kit API 表格：按 `#[derive(Kit)]` 宏生成的 `Kit` 结构体实际表项展开
+
+### Changed
+
+- 依赖路径本地化：`confers` 在 `[workspace.dependencies]` 改用 `path` + `version` 双写，供本地联调与 CI 发布模式共用
+- 版本号递增至 `0.5.0-rc.2`（下一个 minor 预发布）
+
 ## [0.4.2] - 2026-08-06
 
 ### 修复
