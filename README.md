@@ -244,7 +244,7 @@ fn main() {
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.4", features = ["encryption"] }
+trait-kit = { version = "0.5", features = ["encryption"] }
 ```
 
 ---

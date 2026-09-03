@@ -188,12 +188,24 @@ fn main() {
 | `kit.register_multi::<M>()`        | `Kit<Unbuilt>`  | Register multi-binding (same capability type).         |
 | `kit.register_as::<M>()`           | `Kit<Unbuilt>`  | Register by interface type (`dyn Trait`).              |
 | `kit.register_if::<M>()`           | `Kit<Unbuilt>`  | Conditional registration (runtime predicate).          |
+| `kit.register_if_toggle::<M>()`    | `Kit<Unbuilt>`  | Conditional registration gated by `toggle` feature.    |
 | `kit.register_lifecycle::<M>()`    | `Kit<Unbuilt>`  | Register lifecycle hooks for a module.                 |
 | `kit.register_health_check::<M>()` | `Kit<Unbuilt>`  | Register health check for a module.                    |
 | `kit.with_observer(obs)`           | `Kit<Unbuilt>`  | Attach a `BuildObserver` for build callbacks.          |
 | `kit.decorate::<M>(f)`             | `Kit<Unbuilt>`  | Post-build capability wrapping/enhancement.            |
 | `kit.set_config::<C>(value)`       | Both            | Store a typed config value.                            |
 | `kit.config::<C>()`                | Both            | Retrieve a cloned config value.                        |
+| `kit.load_config::<C>()`           | `Kit<Unbuilt>` `confers` | Load config via `Configurable::load()`.        |
+| `kit.load_and_validate::<C>()`     | `Kit<Unbuilt>` `confers` | Load and validate config, don't store on failure. |
+| `kit.load_config_with::<C>(vars)`  | `Kit<Unbuilt>` `confers` | Load config with `${VAR}` substitution.         |
+| `kit.snapshot_config::<C>()`       | `Kit<Unbuilt>` `confers` | Snapshot current config (returns success bool). |
+| `kit.restore_config::<C>()`        | `Kit<Unbuilt>` `confers` | Restore config to the most recent snapshot.      |
+| `kit.has_snapshot::<C>()`          | `Kit<Unbuilt>` `confers` | Check if a snapshot exists for the given type.  |
+| `kit.subscribe::<C>(cb)`           | Both  `reload`          | Subscribe to config hot-reload callbacks.       |
+| `kit.reload_config::<C>()`         | Both  `reload`          | Reload config and notify subscribers.           |
+| `kit.set_encrypted(val, key)`      | `Kit<Unbuilt>` `encryption` | Encrypt and store config.                   |
+| `kit.enable_toggle(key, bool)`     | Both  `toggle`          | Set feature toggle state.                        |
+| `kit.is_toggle_enabled(key)`       | Both  `toggle`          | Query feature toggle state.                      |
 | `kit.build()`                       | `Kit<Unbuilt>`  | Validate graph and build all modules → `Kit<Ready>`.   |
 | `kit.require::<M>()`               | `Kit<Ready>`    | Retrieve a capability (errors if missing).             |
 | `kit.require_ref::<M>()`           | `Kit<Ready>`    | Zero-copy capability retrieval (`Ref<'_, Cap>`).      |
@@ -202,6 +214,7 @@ fn main() {
 | `kit.resolve::<I>()`               | `Kit<Ready>`    | Retrieve by interface type (`Arc<I>`).                 |
 | `kit.contains::<M>()`              | `Kit<Ready>`    | Check if a capability was built.                       |
 | `kit.contains_config::<C>()`       | `Kit<Ready>`    | Check if a config value exists.                        |
+| `kit.get_encrypted::<C>(key)`      | `Kit<Ready>` `encryption` | Decrypt and retrieve config.                   |
 | `kit.health_check::<M>()`          | `Kit<Ready>`    | Run health check for a module.                         |
 | `kit.health_report()`              | `Kit<Ready>`    | Return health report for all modules.                  |
 | `kit.shutdown()`                   | `Kit<Ready>`    | Run `on_shutdown` in reverse topological order.        |
@@ -231,7 +244,7 @@ Enable the desired level in `Cargo.toml`:
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.4", features = ["encryption"] }
+trait-kit = { version = "0.5", features = ["encryption"] }
 ```
 
 ---
