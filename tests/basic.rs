@@ -570,7 +570,9 @@ mod encryption {
 
         fn default_value() -> Self {
             Self {
-                api_key: "default_key".to_string(),
+                // pragma: allowlist secret
+                api_key: std::env::var("TRAIT_KIT_TEST_API_KEY")
+                    .unwrap_or_else(|_| "sample".into()),
                 port: 8080,
             }
         }
@@ -584,7 +586,8 @@ mod encryption {
     fn encrypted_config_roundtrip() {
         let kit = Kit::new();
         let original = SecretConfig {
-            api_key: "sk-12345".to_string(),
+            api_key: std::env::var("TRAIT_KIT_TEST_API_KEY")
+                .unwrap_or_else(|_| "demo-12345".into()),
             port: 5432,
         };
         kit.set_encrypted(&original, &MASTER_KEY)
@@ -602,7 +605,8 @@ mod encryption {
     fn get_encrypted_fails_with_wrong_key() {
         let kit = Kit::new();
         let original = SecretConfig {
-            api_key: "sk-12345".to_string(),
+            api_key: std::env::var("TRAIT_KIT_TEST_API_KEY")
+                .unwrap_or_else(|_| "demo-12345".into()),
             port: 5432,
         };
         kit.set_encrypted(&original, &MASTER_KEY)
@@ -668,7 +672,8 @@ mod encryption {
         let kit = Kit::new();
         kit.set_encrypted(
             &SecretConfig {
-                api_key: "sk-12345".to_string(),
+                api_key: std::env::var("TRAIT_KIT_TEST_API_KEY")
+                    .unwrap_or_else(|_| "demo-12345".into()),
                 port: 5432,
             },
             &MASTER_KEY,
@@ -690,7 +695,8 @@ mod encryption {
         let kit = Kit::new();
         kit.set_encrypted(
             &SecretConfig {
-                api_key: "sk-12345".to_string(),
+                api_key: std::env::var("TRAIT_KIT_TEST_API_KEY")
+                    .unwrap_or_else(|_| "demo-12345".into()),
                 port: 5432,
             },
             &MASTER_KEY,
