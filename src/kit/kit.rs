@@ -318,6 +318,12 @@ impl Kit {
     /// Returns `TraitKitError::AlreadyRegistered` if the interface type was
     /// already registered via `register_as`, or if the module type `M` was
     /// already registered via any `register*` method.
+    ///
+    /// # Panics
+    ///
+    /// With the `decorator` feature, panics at build time if a registered
+    /// decorator's internal `downcast` fails due to a type mismatch (should
+    /// never happen when `decorate::<M>()` is used with the same module).
     #[cfg(feature = "interface")]
     pub fn register_as<M>(&mut self) -> Result<(), TraitKitError>
     where
@@ -343,6 +349,23 @@ impl Kit {
         let build_fn: BuildFn = Box::new(|kit| {
             let cap = M::build(kit)
                 .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?;
+            // Apply decorators (keyed by capability TypeId) before the
+            // interface conversion, mirroring the eager / lazy / multi paths
+            // so `decorate::<M>()` covers all four build paths.
+            #[cfg(feature = "decorator")]
+            let cap = {
+                let boxed = kit.apply_decorators(
+                    kit.decorator_module_to_cap
+                        .borrow()
+                        .get(&TypeId::of::<M>())
+                        .copied()
+                        .unwrap_or_else(TypeId::of::<M::Capability>),
+                    Box::new(cap),
+                );
+                *boxed
+                    .downcast::<M::Capability>()
+                    .expect("decorator type mismatch")
+            };
             let iface: std::sync::Arc<M::Interface> = M::into_interface(cap);
             Ok(Box::new(iface) as Box<dyn Any>)
         });
@@ -781,6 +804,12 @@ impl Kit {
     }
 
     /// Phase 4: Build all interface-registered modules.
+    ///
+    /// Decorators are applied inside the registered `build_fn` (keyed by the
+    /// module's capability `TypeId`, before `into_interface`) — the same
+    /// mechanism as the eager / lazy / multi paths. A lookup by interface
+    /// `TypeId` here can never match: `decorate` keys by `M::Capability`,
+    /// whose `TypeId` always differs from the unsized `dyn Interface`.
     #[cfg(feature = "interface")]
     fn build_interface_modules(&self) -> Result<(), TraitKitError> {
         let interfaces: Vec<(TypeId, BuildFn)> =
@@ -790,8 +819,6 @@ impl Kit {
                 context: tr("trait-kit-diag-interface", &[]),
                 source: e,
             })?;
-            #[cfg(feature = "decorator")]
-            let boxed = self.apply_decorators(interface_id, boxed);
             self.capabilities.insert_boxed(interface_id, boxed);
         }
         Ok(())
