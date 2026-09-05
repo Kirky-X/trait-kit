@@ -347,6 +347,34 @@ let decrypted: AppConfig = kit.get_encrypted(&master_key)?;
 assert_eq!(decrypted, secret);
 ```
 
+### 第五级：配置继承（跨模块/跨项目）
+
+四层配置继承体系，支持项目 A 的配置丝滑继承到项目 B：
+
+```rust,ignore
+use trait_kit::kit::{Kit, ModuleConfig};
+use trait_kit_derive::{ConfigInherit, SharedConfig};
+
+// 声明共享字段
+#[derive(Clone, ConfigInherit, SharedConfig)]
+#[shared(host, port)]
+struct DbConfig {
+    host: String,
+    port: u16,
+    max_connections: u32,
+}
+
+let kit = Kit::new();
+kit.populate_defaults::<DbConfig>();       // 零配置默认值
+kit.extract_shared::<AppConfig>();         // 从 AppConfig 提取共享字段
+kit.inject_shared::<DbConfig>();           // 注入到 DbConfig
+kit.merge_config::<DbConfig>(ovr);         // 编译期安全字段覆盖
+```
+
+- `trait-kit-derive` 提供 `#[derive(ConfigInherit)]` 和 `#[derive(SharedConfig)]` 宏
+- 共享字段使用 `serde_json::Value` 保留类型信息
+- AsyncKit 提供完全对称的 `Send + Sync` API
+
 ---
 
 ## 🏗️ 架构

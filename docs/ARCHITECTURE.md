@@ -124,6 +124,35 @@ graph LR
     end
 ```
 
+### 配置继承四层体系
+
+`confers` feature 提供四层配置继承机制，支持跨模块/跨项目的配置丝滑继承：
+
+```mermaid
+graph TB
+    subgraph Layer1["Layer 1: merge_json_deep"]
+        L1["递归深合并 JSON Object"]
+    end
+
+    subgraph Layer2["Layer 2: ConfigInherit"]
+        L2["编译期安全字段覆盖\nOption&lt;T&gt; 仅 Some 时覆盖"]
+        L2D["#[derive\(ConfigInherit\)]"]
+    end
+
+    subgraph Layer3["Layer 3: SharedConfig"]
+        L3["serde_json::Value overlay\n跨类型共享字段继承"]
+        L3D["#[derive\(SharedConfig\)]\n#[shared\(field1, field2\)]"]
+    end
+
+    subgraph Layer4["Layer 4: populate_defaults"]
+        L4["零配置自动加载\nModuleConfig::default_value\(\)"]
+    end
+
+    Layer4 --> Layer3 --> Layer2 --> Layer1
+```
+
+**数据流**：`AppConfig` → `extract_shared` → `shared_fields overlay` → `inject_shared` → `DbConfig`
+
 ## 数据流
 
 ### 构建流程

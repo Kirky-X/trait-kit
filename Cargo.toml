@@ -37,6 +37,7 @@ thiserror = { version = "2.0", default-features = false }
 serial_test = "4.0"
 static_assertions = "1.1"
 trybuild = "1.0"
+trait-kit-derive = { path = "trait-kit-derive" }
 
 [features]
 default = []

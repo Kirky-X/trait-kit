@@ -347,6 +347,34 @@ let decrypted: AppConfig = kit.get_encrypted(&master_key)?;
 assert_eq!(decrypted, secret);
 ```
 
+### Level 5: Config Inheritance (Cross-Module / Cross-Project)
+
+A four-layer config inheritance system enabling seamless config inheritance from project A to project B:
+
+```rust,ignore
+use trait_kit::kit::{Kit, ModuleConfig};
+use trait_kit_derive::{ConfigInherit, SharedConfig};
+
+// Declare shared fields
+#[derive(Clone, ConfigInherit, SharedConfig)]
+#[shared(host, port)]
+struct DbConfig {
+    host: String,
+    port: u16,
+    max_connections: u32,
+}
+
+let kit = Kit::new();
+kit.populate_defaults::<DbConfig>();       // Zero-config defaults
+kit.extract_shared::<AppConfig>();         // Extract shared fields from AppConfig
+kit.inject_shared::<DbConfig>();           // Inject into DbConfig
+kit.merge_config::<DbConfig>(ovr);         // Compile-time safe field override
+```
+
+- `trait-kit-derive` provides `#[derive(ConfigInherit)]` and `#[derive(SharedConfig)]` macros
+- Shared fields use `serde_json::Value` to preserve type information
+- AsyncKit provides a fully symmetric `Send + Sync` API
+
 ---
 
 ## 🏗️ Architecture

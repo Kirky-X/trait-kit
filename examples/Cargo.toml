@@ -9,14 +9,16 @@ publish = false
 
 [dependencies]
 trait-kit = { workspace = true }
+trait-kit-derive = { path = "../trait-kit-derive" }
 # serde + confers are direct deps because #[derive(Config)] expands to code that
 # references confers::* / serde::* paths from the *caller's* crate.
 serde = { workspace = true, optional = true }
 confers = { workspace = true, optional = true }
+serde_json = { version = "1.0", optional = true }
 
 [features]
 default = []
-confers = ["dep:confers", "dep:serde", "trait-kit/confers"]
+confers = ["dep:confers", "dep:serde", "dep:serde_json", "trait-kit/confers"]
 reload = ["confers", "trait-kit/reload"]
 encryption = ["reload", "trait-kit/encryption"]
 async = ["trait-kit/async"]
@@ -121,3 +123,8 @@ required-features = ["confers"]
 name = "toggle_basic"
 path = "src/kit/toggle_basic.rs"
 required-features = ["toggle"]
+
+[[example]]
+name = "config_inheritance"
+path = "src/kit/config_inheritance.rs"
+required-features = ["confers"]

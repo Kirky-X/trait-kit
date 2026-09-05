@@ -148,6 +148,53 @@ pub fn interpolate_json_value<S: BuildHasher>(
 )
 ```
 
+### 配置继承体系 `confers`
+
+四层配置继承系统，支持跨模块/跨项目配置丝滑继承：
+
+| 层级 | 机制 | API | 说明 |
+|---|---|---|---|
+| Layer 1 | 深合并 | `merge_json_deep` | 递归合并 JSON Object，非 Object 替换 |
+| Layer 2 | 字段覆盖 | `ConfigInherit` trait | 编译期安全，`Option<T>` 字段仅 `Some` 时覆盖 |
+| Layer 3 | 共享字段 | `SharedConfig` trait | `serde_json::Value` overlay 跨类型继承 |
+| Layer 4 | 零配置 | `populate_defaults` | 空 Kit 自动填充 `ModuleConfig::default_value()` |
+
+#### `ConfigInherit` trait
+
+```rust
+pub trait ConfigInherit: Clone + 'static {
+    type Override: Clone + Default + 'static;
+    fn apply_override(&mut self, ovr: &Self::Override);
+}
+```
+
+- `Kit::merge_config::<C>(ovr)` — 应用字段覆盖
+- `#[derive(ConfigInherit)]` — 自动生成 Override 类型（`trait-kit-derive`）
+- `#[config_inherit(nested)]` — 嵌套字段递归委托
+
+#### `SharedConfig` trait
+
+```rust
+pub trait SharedConfig: Clone + 'static {
+    fn extract_shared(&self) -> serde_json::Map<String, serde_json::Value>;
+    fn inject_shared(&mut self, shared: &serde_json::Map<String, serde_json::Value>);
+}
+```
+
+- `Kit::extract_shared::<C>()` — 从配置提取共享字段到 overlay
+- `Kit::inject_shared::<C>()` — 从 overlay 注入共享字段到配置
+- `#[derive(SharedConfig)]` + `#[shared(field1, field2)]` — 自动生成实现
+
+#### `populate_defaults`
+
+```rust
+impl Kit {
+    pub fn populate_defaults<C: ModuleConfig>(&self) -> bool;
+}
+```
+
+空 Kit 时填充 `C::default_value()`，已有值不覆盖。返回 `true` 表示填充了默认值。
+
 ---
 
 ## AsyncKit API
