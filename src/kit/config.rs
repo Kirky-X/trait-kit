@@ -119,6 +119,67 @@ impl std::fmt::Display for ValidationError {
 #[cfg(feature = "confers")]
 impl std::error::Error for ValidationError {}
 
+/// Trait for compile-time safe field-level configuration override.
+///
+/// Types implementing `ConfigInherit` declare an associated `Override` type
+/// where each field is wrapped in `Option<T>`. Only fields set to `Some`
+/// in the override are applied; `None` fields leave the original value intact.
+///
+/// Designed for use with `#[derive(ConfigInherit)]` from `trait-kit-derive`,
+/// which auto-generates the `Override` type and `apply_override` implementation.
+///
+/// # Example (manual implementation)
+///
+/// ```ignore
+/// struct DbConfig { host: String, port: u16 }
+///
+/// #[derive(Clone, Default)]
+/// struct DbConfigOverride {
+///     host: Option<String>,
+///     port: Option<u16>,
+/// }
+///
+/// impl ConfigInherit for DbConfig {
+///     type Override = DbConfigOverride;
+///     fn apply_override(&mut self, ovr: &Self::Override) {
+///         if let Some(ref h) = ovr.host { self.host = h.clone(); }
+///         if let Some(ref p) = ovr.port { self.port = *p; }
+///     }
+/// }
+/// ```
+#[cfg(feature = "confers")]
+pub trait ConfigInherit: Clone + 'static {
+    /// Override type with each field wrapped in `Option<T>`.
+    type Override: Clone + Default + 'static;
+
+    /// Apply non-`None` fields from the override to `self`.
+    fn apply_override(&mut self, ovr: &Self::Override);
+}
+
+/// Trait for declaring which config fields participate in the shared namespace.
+///
+/// The shared namespace is a `serde_json::Map<String, Value>` overlay inside
+/// the Kit that bridges values across different config types. When project A
+/// and project B both declare `host` as a shared field, A's `host` value
+/// flows to B automatically via `extract_shared` → `inject_shared`.
+///
+/// Uses `serde_json::Value` (not `String`) to preserve type information and
+/// avoid parse failures.
+///
+/// Designed for use with `#[derive(SharedConfig)]` from `trait-kit-derive`,
+/// which parses `#[shared(field1, field2)]` attributes to auto-generate
+/// both methods.
+#[cfg(feature = "confers")]
+pub trait SharedConfig: Clone + 'static {
+    /// Extract shared fields as a JSON map.
+    fn extract_shared(&self) -> serde_json::Map<String, serde_json::Value>;
+
+    /// Inject shared fields from a JSON map into `self`.
+    ///
+    /// Fields with type-mismatched values are silently skipped (no panic).
+    fn inject_shared(&mut self, shared: &serde_json::Map<String, serde_json::Value>);
+}
+
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 
@@ -147,6 +208,35 @@ pub fn interpolate_json_value<S: BuildHasher>(
             }
         }
         _ => {}
+    }
+}
+
+/// Recursively deep-merge `overlay` into `base`.
+///
+/// - When both `base` and `overlay` are JSON Objects, merge key-by-key:
+///   - Keys only in `overlay` are inserted into `base`.
+///   - Keys in both where both values are Objects are merged recursively.
+///   - Keys in both where values are not both Objects: `overlay` wins (replaces).
+/// - Arrays are treated as atomic values (replaced, not element-wise merged).
+/// - Scalars are replaced.
+#[cfg(feature = "confers")]
+pub(crate) fn merge_json_deep(
+    base: &mut serde_json::Value,
+    overlay: &serde_json::Value,
+) {
+    match (base, overlay) {
+        (serde_json::Value::Object(base_map), serde_json::Value::Object(overlay_map)) => {
+            for (key, overlay_val) in overlay_map {
+                if let Some(base_val) = base_map.get_mut(key) {
+                    merge_json_deep(base_val, overlay_val);
+                } else {
+                    base_map.insert(key.clone(), overlay_val.clone());
+                }
+            }
+        }
+        (base, overlay) => {
+            *base = overlay.clone();
+        }
     }
 }
 
@@ -301,5 +391,86 @@ mod encrypted_blob_tests {
         // Ensure raw byte values are NOT leaked
         assert!(!s.contains("[1, 2, 3]"));
         assert!(!s.contains("[4, 5, 6]"));
+    }
+}
+
+#[cfg(all(test, feature = "confers"))]
+mod merge_json_tests {
+    use super::merge_json_deep;
+    use serde_json::json;
+
+    #[test]
+    fn empty_objects_merge_to_empty() {
+        let mut base = json!({});
+        let overlay = json!({});
+        merge_json_deep(&mut base, &overlay);
+        assert_eq!(base, json!({}));
+    }
+
+    #[test]
+    fn overlay_inserts_new_keys() {
+        let mut base = json!({"a": 1});
+        let overlay = json!({"b": 2});
+        merge_json_deep(&mut base, &overlay);
+        assert_eq!(base, json!({"a": 1, "b": 2}));
+    }
+
+    #[test]
+    fn overlay_replaces_scalars() {
+        let mut base = json!({"a": 1, "b": "old"});
+        let overlay = json!({"a": 99, "b": "new"});
+        merge_json_deep(&mut base, &overlay);
+        assert_eq!(base, json!({"a": 99, "b": "new"}));
+    }
+
+    #[test]
+    fn nested_objects_merge_recursively() {
+        let mut base = json!({"a": {"b": 1, "c": 2}});
+        let overlay = json!({"a": {"c": 3, "d": 4}});
+        merge_json_deep(&mut base, &overlay);
+        assert_eq!(base, json!({"a": {"b": 1, "c": 3, "d": 4}}));
+    }
+
+    #[test]
+    fn deeply_nested_merge() {
+        let mut base = json!({"l1": {"l2": {"l3": {"keep": true, "override": "old"}}}});
+        let overlay = json!({"l1": {"l2": {"l3": {"override": "new"}}}});
+        merge_json_deep(&mut base, &overlay);
+        assert_eq!(
+            base,
+            json!({"l1": {"l2": {"l3": {"keep": true, "override": "new"}}}})
+        );
+    }
+
+    #[test]
+    fn arrays_are_replaced_not_merged() {
+        let mut base = json!({"arr": [1, 2, 3]});
+        let overlay = json!({"arr": [4]});
+        merge_json_deep(&mut base, &overlay);
+        assert_eq!(base, json!({"arr": [4]}));
+    }
+
+    #[test]
+    fn object_replaces_non_object() {
+        let mut base = json!({"x": 42});
+        let overlay = json!({"x": {"nested": true}});
+        merge_json_deep(&mut base, &overlay);
+        assert_eq!(base, json!({"x": {"nested": true}}));
+    }
+
+    #[test]
+    fn non_object_replaces_object() {
+        let mut base = json!({"x": {"nested": true}});
+        let overlay = json!({"x": 42});
+        merge_json_deep(&mut base, &overlay);
+        assert_eq!(base, json!({"x": 42}));
+    }
+
+    #[test]
+    fn null_overlay_replaces_value() {
+        let mut base = json!({"a": 1});
+        let overlay = json!({"a": null});
+        merge_json_deep(&mut base, &overlay);
+        assert_eq!(base, json!({"a": null}));
     }
 }

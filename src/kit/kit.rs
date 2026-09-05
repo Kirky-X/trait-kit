@@ -113,6 +113,10 @@ pub struct Kit<S = Unbuilt> {
     encrypted_configs: EncryptedConfigMap,
     #[cfg(feature = "confers")]
     config_snapshots: RefCell<HashMap<TypeId, Box<dyn Any>>>,
+    /// Shared field overlay for cross-type config inheritance.
+    /// Values are `serde_json::Value` to preserve type information.
+    #[cfg(feature = "confers")]
+    shared_fields: RefCell<serde_json::Map<String, serde_json::Value>>,
     #[cfg(feature = "toggle")]
     toggles: RefCell<HashMap<String, bool>>,
     #[cfg(feature = "lifecycle")]
@@ -155,6 +159,8 @@ impl Kit {
             encrypted_configs: RefCell::new(HashMap::new()),
             #[cfg(feature = "confers")]
             config_snapshots: RefCell::new(HashMap::new()),
+            #[cfg(feature = "confers")]
+            shared_fields: RefCell::new(serde_json::Map::new()),
             #[cfg(feature = "toggle")]
             toggles: RefCell::new(HashMap::new()),
             #[cfg(feature = "lifecycle")]
@@ -610,6 +616,8 @@ impl Kit {
             encrypted_configs: self.encrypted_configs,
             #[cfg(feature = "confers")]
             config_snapshots: self.config_snapshots,
+            #[cfg(feature = "confers")]
+            shared_fields: self.shared_fields,
             #[cfg(feature = "toggle")]
             toggles: self.toggles,
             #[cfg(feature = "lifecycle")]
@@ -1305,6 +1313,73 @@ impl Kit {
                 self.set_config(C::default_value());
                 Ok(false)
             }
+        }
+    }
+}
+
+// ─── Config inheritance (confers feature) ─────────────────────────────────
+
+impl<S> Kit<S> {
+    /// Populate the config TypeMap with `C::default_value()` if no value of
+    /// type `C` is present.
+    ///
+    /// Returns `true` if the default was populated, `false` if a value already
+    /// existed (the existing value is not overridden).
+    ///
+    /// Requires the `confers` feature.
+    #[cfg(feature = "confers")]
+    pub fn populate_defaults<C: super::ModuleConfig>(&self) -> bool {
+        if self.configs.contains::<C>() {
+            return false;
+        }
+        self.configs.insert(C::default_value());
+        true
+    }
+
+    /// Apply a compile-time safe field-level override to the config of type `C`.
+    ///
+    /// Reads the current config, applies non-`None` fields from `ovr`, and
+    /// writes the result back. If no config of type `C` exists, this is a
+    /// no-op (does not panic).
+    ///
+    /// Requires the `confers` feature.
+    #[cfg(feature = "confers")]
+    pub fn merge_config<C: super::ConfigInherit>(&self, ovr: C::Override) {
+        if let Ok(mut current) = self.config::<C>() {
+            current.apply_override(&ovr);
+            self.configs.insert(current);
+        }
+    }
+
+    /// Extract shared fields from config `C` into the Kit's shared overlay.
+    ///
+    /// Calls `C::extract_shared()` and merges the result into
+    /// `self.shared_fields`. New values override same-named keys from
+    /// previous extractions. If no config of type `C` exists, this is a
+    /// no-op.
+    ///
+    /// Requires the `confers` feature.
+    #[cfg(feature = "confers")]
+    pub fn extract_shared<C: super::SharedConfig>(&self) {
+        if let Ok(config) = self.config::<C>() {
+            let fields = config.extract_shared();
+            self.shared_fields.borrow_mut().extend(fields);
+        }
+    }
+
+    /// Inject shared fields from the Kit's overlay into config `C`.
+    ///
+    /// Reads the current shared overlay and calls `C::inject_shared()`.
+    /// The updated config is written back to the TypeMap. If no config of
+    /// type `C` exists, this is a no-op.
+    ///
+    /// Requires the `confers` feature.
+    #[cfg(feature = "confers")]
+    pub fn inject_shared<C: super::SharedConfig>(&self) {
+        if let Ok(mut config) = self.config::<C>() {
+            let overlay = self.shared_fields.borrow().clone();
+            config.inject_shared(&overlay);
+            self.configs.insert(config);
         }
     }
 }
@@ -3753,5 +3828,278 @@ mod interpolation_tests {
         vars.insert("PORT".to_string(), "8080".to_string());
         interpolate_json_value(&mut value, &vars);
         assert_eq!(value, serde_json::json!("localhost:8080"));
+    }
+}
+
+// ─── Config inheritance tests ─────────────────────────────────────────────
+
+#[cfg(all(test, feature = "confers"))]
+mod config_inheritance_tests {
+    use super::*;
+    use crate::kit::{ConfigInherit, ModuleConfig, SharedConfig};
+
+    // ── Test fixtures ──
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct TestDbConfig {
+        host: String,
+        port: u16,
+        max_connections: u32,
+    }
+
+    #[derive(Clone, Default)]
+    struct TestDbConfigOverride {
+        host: Option<String>,
+        port: Option<u16>,
+        max_connections: Option<u32>,
+    }
+
+    impl ConfigInherit for TestDbConfig {
+        type Override = TestDbConfigOverride;
+        fn apply_override(&mut self, ovr: &Self::Override) {
+            if let Some(ref h) = ovr.host {
+                self.host = h.clone();
+            }
+            if let Some(ref p) = ovr.port {
+                self.port = *p;
+            }
+            if let Some(ref m) = ovr.max_connections {
+                self.max_connections = *m;
+            }
+        }
+    }
+
+    impl ModuleConfig for TestDbConfig {
+        const PATH: &'static str = "config/db.toml";
+        fn default_value() -> Self {
+            Self {
+                host: "localhost".into(),
+                port: 3306,
+                max_connections: 10,
+            }
+        }
+    }
+
+    impl SharedConfig for TestDbConfig {
+        fn extract_shared(&self) -> serde_json::Map<String, serde_json::Value> {
+            let mut map = serde_json::Map::new();
+            map.insert("host".into(), serde_json::Value::String(self.host.clone()));
+            map.insert("port".into(), serde_json::json!(self.port));
+            map
+        }
+        fn inject_shared(&mut self, shared: &serde_json::Map<String, serde_json::Value>) {
+            if let Some(v) = shared.get("host") {
+                if let Ok(s) = serde_json::from_value(v.clone()) {
+                    self.host = s;
+                }
+            }
+            if let Some(v) = shared.get("port") {
+                if let Ok(n) = serde_json::from_value(v.clone()) {
+                    self.port = n;
+                }
+            }
+        }
+    }
+
+    // Second config type sharing `host` and `port` with TestDbConfig.
+    #[derive(Clone, Debug, PartialEq)]
+    struct TestAppConfig {
+        host: String,
+        port: u16,
+        app_name: String,
+    }
+
+    impl SharedConfig for TestAppConfig {
+        fn extract_shared(&self) -> serde_json::Map<String, serde_json::Value> {
+            let mut map = serde_json::Map::new();
+            map.insert("host".into(), serde_json::Value::String(self.host.clone()));
+            map.insert("port".into(), serde_json::json!(self.port));
+            map
+        }
+        fn inject_shared(&mut self, shared: &serde_json::Map<String, serde_json::Value>) {
+            if let Some(v) = shared.get("host") {
+                if let Ok(s) = serde_json::from_value(v.clone()) {
+                    self.host = s;
+                }
+            }
+            if let Some(v) = shared.get("port") {
+                if let Ok(n) = serde_json::from_value(v.clone()) {
+                    self.port = n;
+                }
+            }
+        }
+    }
+
+    // ── populate_defaults tests (T013) ──
+
+    #[test]
+    fn populate_defaults_fills_empty_kit() {
+        let kit = Kit::new();
+        assert!(!kit.configs.contains::<TestDbConfig>());
+        let filled = kit.populate_defaults::<TestDbConfig>();
+        assert!(filled, "should return true when default was populated");
+        let config: TestDbConfig = kit.config().expect("config should exist");
+        assert_eq!(config.host, "localhost");
+        assert_eq!(config.port, 3306);
+        assert_eq!(config.max_connections, 10);
+    }
+
+    #[test]
+    fn populate_defaults_does_not_overwrite_existing() {
+        let kit = Kit::new();
+        kit.set_config(TestDbConfig {
+            host: "prod-db".into(),
+            port: 5432,
+            max_connections: 100,
+        });
+        let filled = kit.populate_defaults::<TestDbConfig>();
+        assert!(!filled, "should return false when config already exists");
+        let config: TestDbConfig = kit.config().expect("config should exist");
+        assert_eq!(config.host, "prod-db");
+        assert_eq!(config.port, 5432);
+    }
+
+    // ── merge_config tests (T005) ──
+
+    #[test]
+    fn merge_config_overrides_only_some_fields() {
+        let kit = Kit::new();
+        kit.set_config(TestDbConfig {
+            host: "localhost".into(),
+            port: 3306,
+            max_connections: 10,
+        });
+        kit.merge_config::<TestDbConfig>(TestDbConfigOverride {
+            host: Some("prod-db.example.com".into()),
+            port: None, // keep original
+            max_connections: None,
+        });
+        let config: TestDbConfig = kit.config().expect("config should exist");
+        assert_eq!(config.host, "prod-db.example.com");
+        assert_eq!(config.port, 3306); // unchanged
+        assert_eq!(config.max_connections, 10); // unchanged
+    }
+
+    #[test]
+    fn merge_config_noop_when_missing() {
+        let kit = Kit::new();
+        // No config set — should not panic
+        kit.merge_config::<TestDbConfig>(TestDbConfigOverride {
+            host: Some("x".into()),
+            ..Default::default()
+        });
+        assert!(!kit.configs.contains::<TestDbConfig>());
+    }
+
+    // ── SharedConfig tests (T010) ──
+
+    #[test]
+    fn extract_then_inject_shared_flows_values() {
+        let kit = Kit::new();
+        // A loads its config
+        kit.set_config(TestAppConfig {
+            host: "prod.example.com".into(),
+            port: 9090,
+            app_name: "my-app".into(),
+        });
+        // A extracts shared fields
+        kit.extract_shared::<TestAppConfig>();
+
+        // B gets defaults
+        kit.populate_defaults::<TestDbConfig>();
+        // B injects shared fields from A
+        kit.inject_shared::<TestDbConfig>();
+
+        let db: TestDbConfig = kit.config().expect("db config should exist");
+        assert_eq!(db.host, "prod.example.com"); // inherited from A
+        assert_eq!(db.port, 9090); // inherited from A
+        assert_eq!(db.max_connections, 10); // B's own default preserved
+    }
+
+    // ── inject_shared type safety test (T011) ──
+
+    #[test]
+    fn inject_shared_skips_type_mismatch_silently() {
+        let kit = Kit::new();
+        // Manually put a wrong-type value into shared overlay
+        kit.shared_fields
+            .borrow_mut()
+            .insert("host".into(), serde_json::json!([1, 2, 3])); // array, not string
+        kit.shared_fields
+            .borrow_mut()
+            .insert("port".into(), serde_json::json!("not-a-number")); // string, not number
+
+        kit.set_config(TestDbConfig {
+            host: "original".into(),
+            port: 3306,
+            max_connections: 10,
+        });
+        // Should not panic — type mismatches are silently skipped
+        kit.inject_shared::<TestDbConfig>();
+
+        let db: TestDbConfig = kit.config().expect("config should exist");
+        assert_eq!(db.host, "original"); // unchanged
+        assert_eq!(db.port, 3306); // unchanged
+    }
+
+    // ── no-op boundary tests ──
+
+    #[test]
+    fn extract_shared_noop_when_config_missing() {
+        let kit = Kit::new();
+        // No config set — should not panic, overlay stays empty
+        kit.extract_shared::<TestDbConfig>();
+        assert!(kit.shared_fields.borrow().is_empty());
+    }
+
+    #[test]
+    fn inject_shared_noop_when_config_missing() {
+        let kit = Kit::new();
+        // Put something in overlay first
+        kit.shared_fields
+            .borrow_mut()
+            .insert("host".into(), serde_json::json!("some-host"));
+        // No config set — should not panic
+        kit.inject_shared::<TestDbConfig>();
+        // Overlay unchanged
+        assert_eq!(kit.shared_fields.borrow().len(), 1);
+    }
+
+    // ── Kit<Ready> tests ──
+
+    #[test]
+    fn config_inheritance_works_on_ready_kit() {
+        let kit = Kit::new();
+        kit.set_config(TestDbConfig {
+            host: "pre-build".into(),
+            port: 3306,
+            max_connections: 10,
+        });
+        kit.set_config(TestAppConfig {
+            host: "app-host".into(),
+            port: 9090,
+            app_name: "ready-test".into(),
+        });
+
+        let ready = kit.build().expect("build should succeed");
+
+        // extract_shared on Ready kit
+        ready.extract_shared::<TestAppConfig>();
+
+        // inject_shared on Ready kit
+        ready.inject_shared::<TestDbConfig>();
+
+        let db: TestDbConfig = ready.config().expect("db config should exist");
+        assert_eq!(db.host, "app-host"); // inherited
+        assert_eq!(db.port, 9090); // inherited
+        assert_eq!(db.max_connections, 10); // unchanged
+
+        // merge_config on Ready kit
+        ready.merge_config::<TestDbConfig>(TestDbConfigOverride {
+            host: Some("post-merge".into()),
+            ..Default::default()
+        });
+        let db2: TestDbConfig = ready.config().unwrap();
+        assert_eq!(db2.host, "post-merge");
     }
 }

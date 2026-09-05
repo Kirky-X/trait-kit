@@ -15,12 +15,20 @@ pub use crate::core::AsyncAutoBuilder;
 pub use crate::{AsyncKit, AsyncReady, AsyncUnbuilt};
 
 #[cfg(feature = "confers")]
+pub use crate::kit::ConfigInherit;
+#[cfg(feature = "confers")]
 pub use crate::kit::Configurable;
 
 #[cfg(feature = "confers")]
 pub use crate::kit::ModuleConfig;
 #[cfg(feature = "confers")]
+pub use crate::kit::SharedConfig;
+#[cfg(feature = "confers")]
 pub use crate::kit::Validatable;
+
+// NOTE: derive macros (ConfigInherit, SharedConfig) live in `trait-kit-derive`.
+// Add `trait-kit-derive` to your Cargo.toml to use #[derive(ConfigInherit)]
+// and #[derive(SharedConfig)].
 
 #[cfg(all(feature = "lifecycle", feature = "async"))]
 pub use crate::core::AsyncLifecycle;

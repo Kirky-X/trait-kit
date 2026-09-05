@@ -44,15 +44,23 @@ pub use async_typemap::AsyncTypeMap;
 #[cfg(feature = "confers")]
 pub use config::Config;
 #[cfg(feature = "confers")]
+pub use config::ConfigInherit;
+#[cfg(feature = "confers")]
 pub use config::Configurable;
 #[cfg(feature = "confers")]
 pub use config::ModuleConfig;
+#[cfg(feature = "confers")]
+pub use config::SharedConfig;
 #[cfg(feature = "confers")]
 pub use config::Validatable;
 #[cfg(feature = "confers")]
 pub use config::ValidationError;
 #[cfg(feature = "confers")]
 pub use config::interpolate_json_value;
+
+// NOTE: derive macros (ConfigInherit, SharedConfig) live in `trait-kit-derive`.
+// Users add `trait-kit-derive` as a dependency to use #[derive(ConfigInherit)]
+// and #[derive(SharedConfig)]. The traits are re-exported above.
 
 #[cfg(feature = "encryption")]
 pub use config::EncryptedBlob;

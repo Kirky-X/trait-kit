@@ -108,6 +108,10 @@ pub struct AsyncKit<S = Unbuilt> {
     decorators: Arc<RwLock<HashMap<TypeId, Vec<AsyncDecoratorFn>>>>,
     #[cfg(feature = "decorator")]
     decorator_module_to_cap: Arc<RwLock<HashMap<TypeId, TypeId>>>,
+    /// Shared field overlay for cross-type config inheritance (async counterpart).
+    /// Values are `serde_json::Value` to preserve type information.
+    #[cfg(feature = "confers")]
+    shared_fields: Arc<RwLock<serde_json::Map<String, serde_json::Value>>>,
     _state: PhantomData<S>,
 }
 
@@ -135,6 +139,8 @@ impl AsyncKit {
             decorators: Arc::new(RwLock::new(HashMap::new())),
             #[cfg(feature = "decorator")]
             decorator_module_to_cap: Arc::new(RwLock::new(HashMap::new())),
+            #[cfg(feature = "confers")]
+            shared_fields: Arc::new(RwLock::new(serde_json::Map::new())),
             _state: PhantomData,
         }
     }
@@ -363,6 +369,8 @@ impl AsyncKit {
             decorators: self.decorators,
             #[cfg(feature = "decorator")]
             decorator_module_to_cap: self.decorator_module_to_cap,
+            #[cfg(feature = "confers")]
+            shared_fields: self.shared_fields,
             _state: PhantomData::<Ready>,
         };
 
@@ -776,6 +784,99 @@ impl AsyncKit<Ready> {
     #[must_use]
     pub fn graph_mermaid(&self) -> String {
         self.graph.to_mermaid()
+    }
+}
+
+// ─── Config inheritance (confers feature, async) ────────────────────────
+
+impl AsyncKit {
+    /// Populate the config TypeMap with `C::default_value()` if no value of
+    /// type `C` is present.
+    ///
+    /// Returns `true` if the default was populated, `false` if a value already
+    /// existed (the existing value is not overridden).
+    ///
+    /// Requires the `confers` feature.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `configs` [`RwLock`] is poisoned.
+    #[cfg(feature = "confers")]
+    pub fn populate_defaults<C: super::ModuleConfig + Send + Sync>(&self) -> bool {
+        if self.configs.contains::<C>() {
+            return false;
+        }
+        self.set_config(C::default_value());
+        true
+    }
+
+    /// Apply a compile-time safe field-level override to the config of type `C`.
+    ///
+    /// Reads the current config, applies non-`None` fields from `ovr`, and
+    /// writes the result back. If no config of type `C` exists, this is a
+    /// no-op (does not panic).
+    ///
+    /// Requires the `confers` feature.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `configs` [`RwLock`] is poisoned.
+    #[cfg(feature = "confers")]
+    pub fn merge_config<C: super::ConfigInherit + Send + Sync>(&self, ovr: C::Override)
+    where
+        C::Override: Send + Sync,
+    {
+        if let Ok(mut current) = self.config::<C>() {
+            current.apply_override(&ovr);
+            self.set_config(current);
+        }
+    }
+
+    /// Extract shared fields from config `C` into the AsyncKit's shared overlay.
+    ///
+    /// Calls `C::extract_shared()` and merges the result into
+    /// `self.shared_fields`. New values override same-named keys from
+    /// previous extractions. If no config of type `C` exists, this is a
+    /// no-op.
+    ///
+    /// Requires the `confers` feature.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `shared_fields` [`RwLock`] is poisoned.
+    #[cfg(feature = "confers")]
+    pub fn extract_shared<C: super::SharedConfig + Send + Sync>(&self) {
+        if let Ok(config) = self.config::<C>() {
+            let fields = config.extract_shared();
+            self.shared_fields
+                .write()
+                .expect("shared_fields lock poisoned")
+                .extend(fields);
+        }
+    }
+
+    /// Inject shared fields from the AsyncKit's overlay into config `C`.
+    ///
+    /// Reads the current shared overlay and calls `C::inject_shared()`.
+    /// The updated config is written back to the TypeMap. If no config of
+    /// type `C` exists, this is a no-op.
+    ///
+    /// Requires the `confers` feature.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `shared_fields` [`RwLock`] is poisoned.
+    #[cfg(feature = "confers")]
+    pub fn inject_shared<C: super::SharedConfig + Send + Sync>(&self) {
+        if let Ok(mut config) = self.config::<C>() {
+            let overlay = self
+                .shared_fields
+                .read()
+                .expect("shared_fields lock poisoned")
+                .clone();
+            config.inject_shared(&overlay);
+            self.set_config(config);
+        }
     }
 }
 
@@ -2265,5 +2366,261 @@ mod async_ready_tests {
         let kit = AsyncKit::new();
         let built = block_on(kit.build()).unwrap();
         assert!(built.optional::<AsyncReadyMockModule>().is_none());
+    }
+}
+
+// ─── Config inheritance tests (async) ───────────────────────────────────
+
+#[cfg(all(test, feature = "confers"))]
+mod async_config_inheritance_tests {
+    use super::*;
+    use crate::kit::{ConfigInherit, ModuleConfig, SharedConfig};
+    use crate::test_helpers::block_on;
+
+    // ── Test fixtures ──
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct AsyncDbConfig {
+        host: String,
+        port: u16,
+        max_connections: u32,
+    }
+
+    #[derive(Clone, Default)]
+    struct AsyncDbConfigOverride {
+        host: Option<String>,
+        port: Option<u16>,
+        max_connections: Option<u32>,
+    }
+
+    impl ConfigInherit for AsyncDbConfig {
+        type Override = AsyncDbConfigOverride;
+        fn apply_override(&mut self, ovr: &Self::Override) {
+            if let Some(ref h) = ovr.host {
+                self.host = h.clone();
+            }
+            if let Some(ref p) = ovr.port {
+                self.port = *p;
+            }
+            if let Some(ref m) = ovr.max_connections {
+                self.max_connections = *m;
+            }
+        }
+    }
+
+    impl ModuleConfig for AsyncDbConfig {
+        const PATH: &'static str = "config/db.toml";
+        fn default_value() -> Self {
+            Self {
+                host: "localhost".into(),
+                port: 3306,
+                max_connections: 10,
+            }
+        }
+    }
+
+    impl SharedConfig for AsyncDbConfig {
+        fn extract_shared(&self) -> serde_json::Map<String, serde_json::Value> {
+            let mut map = serde_json::Map::new();
+            map.insert("host".into(), serde_json::Value::String(self.host.clone()));
+            map.insert("port".into(), serde_json::json!(self.port));
+            map
+        }
+        fn inject_shared(&mut self, shared: &serde_json::Map<String, serde_json::Value>) {
+            if let Some(v) = shared.get("host") {
+                if let Ok(s) = serde_json::from_value(v.clone()) {
+                    self.host = s;
+                }
+            }
+            if let Some(v) = shared.get("port") {
+                if let Ok(n) = serde_json::from_value(v.clone()) {
+                    self.port = n;
+                }
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct AsyncAppConfig {
+        host: String,
+        port: u16,
+        app_name: String,
+    }
+
+    impl SharedConfig for AsyncAppConfig {
+        fn extract_shared(&self) -> serde_json::Map<String, serde_json::Value> {
+            let mut map = serde_json::Map::new();
+            map.insert("host".into(), serde_json::Value::String(self.host.clone()));
+            map.insert("port".into(), serde_json::json!(self.port));
+            map
+        }
+        fn inject_shared(&mut self, shared: &serde_json::Map<String, serde_json::Value>) {
+            if let Some(v) = shared.get("host") {
+                if let Ok(s) = serde_json::from_value(v.clone()) {
+                    self.host = s;
+                }
+            }
+            if let Some(v) = shared.get("port") {
+                if let Ok(n) = serde_json::from_value(v.clone()) {
+                    self.port = n;
+                }
+            }
+        }
+    }
+
+    // ── Tests ──
+
+    #[test]
+    fn async_populate_defaults_fills_and_skips() {
+        let kit = AsyncKit::new();
+        assert!(kit.populate_defaults::<AsyncDbConfig>());
+        assert!(!kit.populate_defaults::<AsyncDbConfig>());
+
+        let cfg: AsyncDbConfig = kit.config().unwrap();
+        assert_eq!(cfg.host, "localhost");
+        assert_eq!(cfg.port, 3306);
+        assert_eq!(cfg.max_connections, 10);
+    }
+
+    #[test]
+    fn async_merge_config_applies_override() {
+        let kit = AsyncKit::new();
+        kit.set_config(AsyncDbConfig {
+            host: "db.example.com".into(),
+            port: 5432,
+            max_connections: 50,
+        });
+
+        kit.merge_config::<AsyncDbConfig>(AsyncDbConfigOverride {
+            host: Some("override.example.com".into()),
+            port: None,
+            max_connections: Some(100),
+        });
+
+        let cfg: AsyncDbConfig = kit.config().unwrap();
+        assert_eq!(cfg.host, "override.example.com");
+        assert_eq!(cfg.port, 5432); // unchanged
+        assert_eq!(cfg.max_connections, 100);
+    }
+
+    #[test]
+    fn async_extract_inject_shared_flow() {
+        let kit = AsyncKit::new();
+
+        // Set DbConfig with specific host/port
+        kit.set_config(AsyncDbConfig {
+            host: "shared-host".into(),
+            port: 9999,
+            max_connections: 20,
+        });
+
+        // Set AppConfig with different host/port
+        kit.set_config(AsyncAppConfig {
+            host: "app-host".into(),
+            port: 8080,
+            app_name: "my-app".into(),
+        });
+
+        // Extract from DbConfig → overlay
+        kit.extract_shared::<AsyncDbConfig>();
+
+        // Inject overlay → AppConfig (overrides host/port)
+        kit.inject_shared::<AsyncAppConfig>();
+
+        let app_cfg: AsyncAppConfig = kit.config().unwrap();
+        assert_eq!(app_cfg.host, "shared-host");
+        assert_eq!(app_cfg.port, 9999);
+        assert_eq!(app_cfg.app_name, "my-app"); // unchanged
+    }
+
+    #[test]
+    fn async_config_inheritance_survives_build() {
+        let kit = AsyncKit::new();
+        kit.set_config(AsyncDbConfig {
+            host: "prod-db".into(),
+            port: 5432,
+            max_connections: 100,
+        });
+        kit.extract_shared::<AsyncDbConfig>();
+
+        let built = block_on(kit.build()).unwrap();
+
+        // shared_fields should be accessible on Ready kit
+        let overlay = built.shared_fields.read().unwrap().clone();
+        assert_eq!(
+            overlay.get("host"),
+            Some(&serde_json::Value::String("prod-db".into()))
+        );
+    }
+
+    // ── no-op boundary tests ──
+
+    #[test]
+    fn async_merge_config_noop_when_missing() {
+        let kit = AsyncKit::new();
+        kit.merge_config::<AsyncDbConfig>(AsyncDbConfigOverride {
+            host: Some("x".into()),
+            ..Default::default()
+        });
+        assert!(!kit.configs.contains::<AsyncDbConfig>());
+    }
+
+    #[test]
+    fn async_extract_shared_noop_when_config_missing() {
+        let kit = AsyncKit::new();
+        kit.extract_shared::<AsyncDbConfig>();
+        let overlay = kit.shared_fields.read().unwrap();
+        assert!(overlay.is_empty());
+    }
+
+    #[test]
+    fn async_inject_shared_noop_when_config_missing() {
+        let kit = AsyncKit::new();
+        kit.shared_fields
+            .write()
+            .unwrap()
+            .insert("host".into(), serde_json::json!("some-host"));
+        kit.inject_shared::<AsyncDbConfig>();
+        assert_eq!(kit.shared_fields.read().unwrap().len(), 1);
+    }
+
+    // ── concurrent safety test ──
+
+    #[test]
+    fn async_shared_fields_concurrent_access() {
+        use std::thread;
+
+        let kit = Arc::new(AsyncKit::new());
+        kit.set_config(AsyncDbConfig {
+            host: "concurrent-host".into(),
+            port: 1234,
+            max_connections: 5,
+        });
+
+        let kit2 = Arc::clone(&kit);
+        let kit3 = Arc::clone(&kit);
+
+        // Thread 1: extract_shared
+        let h1 = thread::spawn(move || {
+            kit2.extract_shared::<AsyncDbConfig>();
+        });
+
+        // Thread 2: extract_shared (concurrent write to shared_fields)
+        let h2 = thread::spawn(move || {
+            kit3.set_config(AsyncAppConfig {
+                host: "thread3-host".into(),
+                port: 5678,
+                app_name: "concurrent-app".into(),
+            });
+            kit3.extract_shared::<AsyncAppConfig>();
+        });
+
+        h1.join().unwrap();
+        h2.join().unwrap();
+
+        // Both extractions should have completed without panic
+        let overlay = kit.shared_fields.read().unwrap();
+        assert!(overlay.contains_key("host"));
+        assert!(overlay.contains_key("port"));
     }
 }
