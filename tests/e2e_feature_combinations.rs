@@ -2,6 +2,15 @@
 // SPDX-License-Identifier: MIT
 //
 // 穷举特性组合 E2E 测试：每个 feature 独立 + 关键多特性组合。
+//
+// 覆盖场景 ID（docs/TEST_SCENARIOS.md §2.20）：
+// - CMP-10 shutdown+decorator 关闭次序（shutdown_decorator_e2e）
+// - CMP-11 toggle+scope 开关门控作用域（toggle_scope_e2e）
+// - CMP-12 interface+decorator interface 构建路径装饰（interface_decorator_e2e）
+// - CMP-13 encryption+reload 双链共存（encryption_reload_e2e）
+// - CMP-15 全 feature 行为级烟囱（all_features_smoke_e2e）
+// （CMP-14 i18n+shutdown 落点为 tests/e2e_i18n.rs，因 zh locale 全局单例
+//   需独立测试进程锚定，避免与默认 locale 测试互相竞争 OnceLock 初始化。）
 
 use std::sync::Arc;
 use trait_kit::impl_module_meta;
@@ -939,4 +948,587 @@ mod toggle_decorator_e2e {
         let ready = kit.build().unwrap();
         assert_eq!(*ready.require::<TdMod>().unwrap(), 30);
     }
+}
+
+// ─── CMP-10：shutdown + decorator 关闭次序 ─────────────────────────────
+//
+// 语义固化：被装饰模块关闭时，装饰层先于核心层释放（Drop 外层先于内层），
+// 且 `Lifecycle::on_shutdown` 接收到的是装饰后的最外层能力。
+
+#[cfg(all(feature = "shutdown", feature = "decorator", feature = "lifecycle"))]
+mod shutdown_decorator_e2e {
+    use super::*;
+    use std::sync::Mutex;
+    use trait_kit::core::lifecycle::Lifecycle;
+    use trait_kit::kit::{ShutdownCoordinator, ShutdownPhase};
+
+    type Log = Arc<Mutex<Vec<String>>>;
+
+    /// 核心资源（最内层）。Drop 时记录释放次序。
+    struct CoreRes {
+        val: u32,
+        log: Log,
+    }
+    impl Drop for CoreRes {
+        fn drop(&mut self) {
+            self.log
+                .lock()
+                .unwrap()
+                .push(format!("core-drop val={}", self.val));
+        }
+    }
+
+    /// 装饰层（外层），持有内层引用形成链。Drop 时先记录自身释放，
+    /// 随后字段 `inner` 的 drop glue 才释放内层（装饰层先于核心层）。
+    struct DecoratedRes {
+        val: u32,
+        log: Log,
+        #[allow(dead_code, reason = "inner/core 仅承载 Drop 次序，从不读取")]
+        inner: Option<Arc<DecoratedRes>>,
+        #[allow(dead_code, reason = "inner/core 仅承载 Drop 次序，从不读取")]
+        core: Option<Arc<CoreRes>>,
+    }
+    impl Drop for DecoratedRes {
+        fn drop(&mut self) {
+            self.log
+                .lock()
+                .unwrap()
+                .push(format!("decorator-drop val={}", self.val));
+        }
+    }
+
+    struct SdMod;
+    impl_module_meta!(SdMod, "sd-mod");
+    impl AutoBuilder for SdMod {
+        type Capability = Arc<DecoratedRes>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            // 样例日志句柄（测试数据，非真实凭据）。
+            let log: Log = Arc::new(Mutex::new(Vec::new()));
+            Ok(Arc::new(DecoratedRes {
+                val: 10,
+                log: Arc::clone(&log),
+                inner: None,
+                core: Some(Arc::new(CoreRes { val: 10, log })),
+            }))
+        }
+    }
+    impl Lifecycle for SdMod {
+        fn on_shutdown(cap: &Arc<DecoratedRes>) {
+            cap.log
+                .lock()
+                .unwrap()
+                .push(format!("on-shutdown val={}", cap.val));
+        }
+    }
+
+    #[test]
+    fn e2e_shutdown_decorator_release_order() {
+        let coord = ShutdownCoordinator::new();
+        coord.register_hook(ShutdownPhase::StopRequests, || {});
+        coord.register_hook(ShutdownPhase::DrainQueue, || {});
+        coord.register_hook(ShutdownPhase::CloseConnections, || {});
+
+        let mut kit = Kit::new();
+        kit.register::<SdMod>().unwrap();
+        kit.register_lifecycle::<SdMod>();
+        // 两个装饰器按注册顺序叠加：f1 先（10→20），f2 后（20→40）。
+        kit.decorate::<SdMod>(|cap: Arc<DecoratedRes>| {
+            let log = Arc::clone(&cap.log);
+            Arc::new(DecoratedRes {
+                val: cap.val * 2,
+                log,
+                inner: Some(cap),
+                core: None,
+            })
+        });
+        kit.decorate::<SdMod>(|cap: Arc<DecoratedRes>| {
+            let log = Arc::clone(&cap.log);
+            Arc::new(DecoratedRes {
+                val: cap.val * 2,
+                log,
+                inner: Some(cap),
+                core: None,
+            })
+        });
+
+        let log: Log = {
+            let ready = kit.build().unwrap();
+            // require 的克隆在作用域内结束，不干扰后续 drop 次序。
+            let cap = ready.require::<SdMod>().unwrap();
+            let observed = Arc::clone(&cap);
+            let log = Arc::clone(&observed.log);
+            assert_eq!(observed.val, 40, "decorator 应已包裹基础能力 10*2*2");
+            drop(observed);
+
+            // 协调器三阶段先行，随后 Kit 级 on_shutdown 观察到最外层 val=40。
+            let results = coord.shutdown();
+            assert_eq!(results.len(), 3);
+            assert!(results.iter().all(|r| r.is_ok()));
+            ready.shutdown();
+            log
+        };
+        // drop(ready) 后能力表释放：装饰层(40) → 内层装饰(20) → 基础层(10)
+        // → 核心资源。装饰层一律先于核心层释放。
+        let events = log.lock().unwrap().clone();
+        assert_eq!(
+            events,
+            vec![
+                "on-shutdown val=40",
+                "decorator-drop val=40",
+                "decorator-drop val=20",
+                "decorator-drop val=10",
+                "core-drop val=10",
+            ],
+            "on_shutdown 应观察最外层，且装饰层先于核心层释放"
+        );
+    }
+}
+
+// ─── CMP-11：toggle + scope 开关门控作用域 ─────────────────────────────
+
+#[cfg(all(feature = "toggle", feature = "scope"))]
+mod toggle_scope_e2e {
+    use super::*;
+
+    struct TsMod;
+    impl_module_meta!(TsMod, "ts-mod");
+    impl AutoBuilder for TsMod {
+        type Capability = Arc<String>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<String>, TraitKitError> {
+            Ok(Arc::new("scoped".into()))
+        }
+    }
+
+    #[test]
+    fn e2e_toggle_gates_scope_registration() {
+        let mut kit = Kit::new();
+        kit.register::<TsMod>().unwrap();
+        let ready = kit.build().unwrap();
+
+        // 分支一：开关开启 → 作用域内注册并可用。
+        ready.enable_toggle("per-request", true);
+        let mut scope_on = ready.create_scope();
+        if ready.is_toggle_enabled("per-request") {
+            scope_on.register::<TsMod>().unwrap();
+        }
+        assert!(scope_on.contains::<TsMod>());
+        assert_eq!(
+            *scope_on.require::<TsMod>().unwrap(),
+            "scoped",
+            "开关开启时作用域内能力可获取"
+        );
+
+        // 分支二：开关关闭 → 跳过作用域注册，能力不可获取。
+        ready.enable_toggle("per-request", false);
+        let mut scope_off = ready.create_scope();
+        if ready.is_toggle_enabled("per-request") {
+            scope_off.register::<TsMod>().unwrap();
+        }
+        assert!(!scope_off.contains::<TsMod>());
+        assert!(
+            scope_off.require::<TsMod>().is_err(),
+            "开关关闭时作用域内不应注册模块"
+        );
+    }
+}
+
+// ─── CMP-12：interface + decorator interface 构建路径装饰 ───────────────
+//
+// DEC-04 契约：装饰器须覆盖全部四条构建路径（eager/lazy/multi/interface）。
+// register_as 路径的装饰按能力类型（`M::Capability`）在 `into_interface`
+// 转换之前应用，`resolve` 取回的是装饰后的接口对象。
+
+#[cfg(all(feature = "interface", feature = "decorator"))]
+mod interface_decorator_e2e {
+    use super::*;
+    use trait_kit::core::InterfaceBuilder;
+
+    trait Codec: Send + Sync + 'static {
+        fn quality(&self) -> u32;
+    }
+
+    /// 具体能力：装饰器按值包装（同一能力类型，提升 quality）。
+    struct CodecCap {
+        quality: u32,
+    }
+    impl Codec for CodecCap {
+        fn quality(&self) -> u32 {
+            self.quality
+        }
+    }
+
+    struct CodecModule;
+    impl_module_meta!(CodecModule, "codec-mod");
+    impl AutoBuilder for CodecModule {
+        type Capability = Arc<CodecCap>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            Ok(Arc::new(CodecCap { quality: 10 }))
+        }
+    }
+    impl InterfaceBuilder for CodecModule {
+        type Interface = dyn Codec;
+        type Capability = Arc<CodecCap>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            Ok(Arc::new(CodecCap { quality: 10 }))
+        }
+        fn into_interface(cap: Self::Capability) -> Arc<Self::Interface> {
+            cap as Arc<Self::Interface>
+        }
+    }
+
+    #[test]
+    fn e2e_interface_path_decorator_applies() {
+        let mut kit = Kit::new();
+        kit.register_as::<CodecModule>().unwrap();
+        // 装饰器与 eager/lazy/multi 路径同口径：按模块能力类型注册。
+        kit.decorate::<CodecModule>(|cap: Arc<CodecCap>| {
+            Arc::new(CodecCap {
+                quality: cap.quality * 10,
+            })
+        });
+        let ready = kit.build().unwrap();
+        let codec = ready.resolve::<dyn Codec>().unwrap();
+        assert_eq!(
+            codec.quality(),
+            100,
+            "register_as 构建路径产出的接口对象应携带装饰（10 * 10）"
+        );
+    }
+}
+
+// ─── CMP-13：encryption + reload 双链共存 ──────────────────────────────
+
+#[cfg(all(feature = "encryption", feature = "reload"))]
+mod encryption_reload_e2e {
+    use super::*;
+    use std::cell::Cell;
+    use std::error::Error;
+    use std::rc::Rc;
+    use trait_kit::kit::ModuleConfig;
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct ErRuntimeCfg {
+        v: u32,
+    }
+    impl Configurable for ErRuntimeCfg {
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
+            Ok(Self { v: 2 })
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct ErSecret {
+        token: String,
+    }
+    impl ModuleConfig for ErSecret {
+        const PATH: &'static str = "config/er-secret.toml";
+        fn default_value() -> Self {
+            Self {
+                token: std::env::var("TRAIT_KIT_TEST_API_KEY").unwrap_or_else(|_| "sample".into()),
+            }
+        }
+    }
+    // 32 字节样例主密钥（测试夹具，非真实凭据）。
+    // pragma: allowlist secret
+    const MASTER_KEY: [u8; 32] = *b"0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn e2e_encryption_plus_reload_dual_chain() {
+        let kit = Kit::new();
+
+        // reload 链（confers/watch）：明文配置订阅 + 重载。
+        kit.set_config(ErRuntimeCfg { v: 1 });
+        let hits = Rc::new(Cell::new(0u32));
+        let h = Rc::clone(&hits);
+        kit.subscribe::<ErRuntimeCfg>(move || {
+            h.set(h.get() + 1);
+        });
+
+        // encryption 链（confers/encryption）：密文存储与明文配置并存。
+        let secret = ErSecret {
+            token: std::env::var("TRAIT_KIT_TEST_API_KEY")
+                .unwrap_or_else(|_| "demo-er-6241".into()),
+        };
+        kit.set_encrypted(&secret, &MASTER_KEY).unwrap();
+
+        let ready = kit.build().unwrap();
+        assert_eq!(
+            ready.config::<ErRuntimeCfg>().unwrap().v,
+            1,
+            "明文配置不受密文存储影响"
+        );
+        assert_eq!(
+            ready.get_encrypted::<ErSecret>(&MASTER_KEY).unwrap(),
+            secret,
+            "密文 roundtrip 与 reload 链共存"
+        );
+
+        // Ready 态重载：watch 引擎与加密引擎互不干扰。
+        ready.reload_config::<ErRuntimeCfg>().unwrap();
+        assert_eq!(hits.get(), 1);
+        assert_eq!(ready.config::<ErRuntimeCfg>().unwrap().v, 2);
+        assert_eq!(
+            ready.get_encrypted::<ErSecret>(&MASTER_KEY).unwrap(),
+            secret,
+            "重载后密文原样保留"
+        );
+    }
+}
+
+// ─── CMP-15：全 feature 行为级烟囱 ─────────────────────────────────────
+
+#[cfg(all(
+    feature = "async",
+    feature = "confers",
+    feature = "reload",
+    feature = "encryption",
+    feature = "interface",
+    feature = "lifecycle",
+    feature = "health",
+    feature = "scope",
+    feature = "toggle",
+    feature = "observer",
+    feature = "decorator",
+    feature = "shutdown",
+    feature = "i18n"
+))]
+mod all_features_smoke_e2e {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::Duration;
+    use trait_kit::core::InterfaceBuilder;
+    use trait_kit::core::health::{HealthCheck, HealthStatus};
+    use trait_kit::core::lifecycle::Lifecycle;
+    use trait_kit::core::observer::BuildObserver;
+    use trait_kit::i18n::I18nManager;
+    use trait_kit::kit::{ShutdownCoordinator, ShutdownPhase};
+
+    // ── 各子系统共用一组最小模块（样例数据，非真实凭据）──
+
+    struct SmokeRes {
+        val: u32,
+    }
+
+    struct SmokeMod;
+    impl_module_meta!(SmokeMod, "smoke-core");
+    impl AutoBuilder for SmokeMod {
+        type Capability = Arc<SmokeRes>;
+        type Error = TraitKitError;
+        fn build(kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            let factor = kit.config::<u32>().unwrap_or(1);
+            Ok(Arc::new(SmokeRes { val: 7 * factor }))
+        }
+    }
+    impl Lifecycle for SmokeMod {
+        fn on_ready(_kit: &Kit<Ready>) -> Result<(), TraitKitError> {
+            Ok(())
+        }
+        fn on_shutdown(_cap: &Arc<SmokeRes>) {}
+    }
+    impl HealthCheck for SmokeMod {
+        fn check(cap: &Arc<SmokeRes>) -> HealthStatus {
+            if cap.val > 0 {
+                HealthStatus::Healthy
+            } else {
+                HealthStatus::unhealthy("zero")
+            }
+        }
+    }
+
+    struct LazySmoke;
+    impl_module_meta!(LazySmoke, "smoke-lazy");
+    impl AutoBuilder for LazySmoke {
+        type Capability = Arc<SmokeRes>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            Ok(Arc::new(SmokeRes { val: 100 }))
+        }
+    }
+
+    struct MultiSmokeA;
+    impl_module_meta!(MultiSmokeA, "smoke-multi-a");
+    impl AutoBuilder for MultiSmokeA {
+        type Capability = Arc<u32>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            Ok(Arc::new(1))
+        }
+    }
+    struct MultiSmokeB;
+    impl_module_meta!(MultiSmokeB, "smoke-multi-b");
+    impl AutoBuilder for MultiSmokeB {
+        type Capability = Arc<u32>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            Ok(Arc::new(2))
+        }
+    }
+
+    trait Smoker: Send + Sync + 'static {
+        fn smoke(&self) -> bool;
+    }
+    struct SmokerImpl;
+    impl Smoker for SmokerImpl {
+        fn smoke(&self) -> bool {
+            true
+        }
+    }
+    struct SmokerModule;
+    impl_module_meta!(SmokerModule, "smoke-iface");
+    impl AutoBuilder for SmokerModule {
+        type Capability = Arc<SmokerImpl>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            Ok(Arc::new(SmokerImpl))
+        }
+    }
+    impl InterfaceBuilder for SmokerModule {
+        type Interface = dyn Smoker;
+        type Capability = Arc<SmokerImpl>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            Ok(Arc::new(SmokerImpl))
+        }
+        fn into_interface(cap: Self::Capability) -> Arc<Self::Interface> {
+            cap as Arc<Self::Interface>
+        }
+    }
+
+    struct CountingObs {
+        built: Arc<AtomicU32>,
+    }
+    impl BuildObserver for CountingObs {
+        fn on_module_built(&self, _: &'static str, _: Duration) {
+            self.built.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn e2e_all_features_single_kit_smoke() {
+        // ── 构建：toggle 门控注册 + config + observer + decorator +
+        //    lifecycle + health，一次 build 打通 ──
+        let mut kit = Kit::new();
+        kit.set_config(2u32);
+        kit.enable_toggle("smoke", true);
+        kit.register_if_toggle::<SmokeMod>("smoke").unwrap();
+        kit.register_lazy::<LazySmoke>().unwrap();
+        kit.register_multi::<MultiSmokeA>().unwrap();
+        kit.register_multi::<MultiSmokeB>().unwrap();
+        kit.register_as::<SmokerModule>().unwrap();
+        kit.register_lifecycle::<SmokeMod>();
+        kit.register_health_check::<SmokeMod>();
+
+        let built_count = Arc::new(AtomicU32::new(0));
+        kit.with_observer(Arc::new(CountingObs {
+            built: Arc::clone(&built_count),
+        }));
+        // 装饰器按能力类型（Arc<SmokeRes>）注册：eager 与 lazy 路径同键生效。
+        kit.decorate::<SmokeMod>(|cap: Arc<SmokeRes>| Arc::new(SmokeRes { val: cap.val * 10 }));
+
+        // ── 配置链（reload）+ 加密链（encryption）先于 build 注入 ──
+        kit.set_encrypted(
+            &EncSmoke {
+                token: "enc-smoke".into(),
+            },
+            &SMOKE_KEY,
+        )
+        .unwrap();
+
+        let ready = kit.build().unwrap();
+
+        // eager + decorator：7 * 2 * 10 = 140。
+        assert_eq!(ready.require::<SmokeMod>().unwrap().val, 140);
+        // lazy：首次 require 触发构建；装饰器按能力类型同样命中 lazy 路径。
+        assert_eq!(ready.require::<LazySmoke>().unwrap().val, 1000);
+        // multi：注册顺序聚合。
+        let multi = ready.require_all::<MultiSmokeA>().unwrap();
+        assert_eq!(*multi[0], 1);
+        assert_eq!(*multi[1], 2);
+        // interface：resolve 动态分派。
+        assert!(ready.resolve::<dyn Smoker>().unwrap().smoke());
+        // health：报告含已注册 checker 且健康。
+        assert!(ready.health_check::<SmokeMod>().unwrap().is_healthy());
+        // toggle：跨 build 保持。
+        assert!(ready.is_toggle_enabled("smoke"));
+        // observer：eager 构建路径回调已触发。
+        assert!(built_count.load(Ordering::SeqCst) >= 1);
+        // 加密读取。
+        assert_eq!(
+            ready.get_encrypted::<EncSmoke>(&SMOKE_KEY).unwrap().token,
+            "enc-smoke"
+        );
+        // scope：就绪 Kit 派生空作用域并独立构建（scope 路径无装饰器）。
+        let mut scope = ready.create_scope();
+        scope.register::<LazySmoke>().unwrap();
+        assert_eq!(scope.require::<LazySmoke>().unwrap().val, 100);
+
+        // shutdown 特性：协调器三阶段 + Kit 级关闭。
+        let coord = ShutdownCoordinator::new();
+        coord.register_hook(ShutdownPhase::CloseConnections, || {});
+        assert!(coord.shutdown().iter().all(|r| r.is_ok()));
+        ready.shutdown();
+
+        // ── async 面：AsyncKit 同烟囱最小打通 ──
+        let mut akit = AsyncKit::new();
+        akit.register::<AsyncSmoke>().unwrap();
+        let aready = block_on(akit.build()).unwrap();
+        assert_eq!(aready.require::<AsyncSmoke>().unwrap().val, 21);
+
+        // ── i18n：全局翻译便捷函数（默认 locale，不锁定语言）──
+        let mgr = I18nManager::init();
+        let msg = mgr.translate("trait-kit-error-already-registered", &[("module", "smoke")]);
+        assert!(msg.contains("smoke"));
+    }
+
+    #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct EncSmoke {
+        token: String,
+    }
+    impl ModuleConfig for EncSmoke {
+        const PATH: &'static str = "config/smoke-enc.toml";
+        fn default_value() -> Self {
+            Self {
+                token: std::env::var("TRAIT_KIT_TEST_API_KEY").unwrap_or_else(|_| "sample".into()),
+            }
+        }
+    }
+
+    struct AsyncSmoke;
+    impl_module_meta!(AsyncSmoke, "smoke-async");
+    impl AsyncAutoBuilder for AsyncSmoke {
+        type Capability = Arc<SmokeRes>;
+        type Error = TraitKitError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<Self::Capability, TraitKitError>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Ok(Arc::new(SmokeRes { val: 7 * 3 })) })
+        }
+    }
+
+    fn block_on<F: std::future::Future>(future: F) -> F::Output {
+        use std::task::{Context, Poll, Waker};
+        let waker = Waker::noop();
+        let mut cx = Context::from_waker(waker);
+        let mut future = std::pin::pin!(future);
+        loop {
+            match future.as_mut().poll(&mut cx) {
+                Poll::Ready(v) => return v,
+                Poll::Pending => std::hint::spin_loop(),
+            }
+        }
+    }
+
+    // 32 字节样例主密钥（测试夹具，非真实凭据）。
+    // pragma: allowlist secret
+    const SMOKE_KEY: [u8; 32] = *b"0123456789abcdef0123456789abcdef";
 }
