@@ -57,6 +57,8 @@ pub use config::Validatable;
 pub use config::ValidationError;
 #[cfg(feature = "confers")]
 pub use config::interpolate_json_value;
+#[cfg(feature = "confers")]
+pub use config::merge_json_deep;
 
 // NOTE: derive macros (ConfigInherit, SharedConfig) live in `trait-kit-derive`.
 // Users add `trait-kit-derive` as a dependency to use #[derive(ConfigInherit)]

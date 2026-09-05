@@ -220,7 +220,7 @@ pub fn interpolate_json_value<S: BuildHasher>(
 /// - Arrays are treated as atomic values (replaced, not element-wise merged).
 /// - Scalars are replaced.
 #[cfg(feature = "confers")]
-pub(crate) fn merge_json_deep(
+pub fn merge_json_deep(
     base: &mut serde_json::Value,
     overlay: &serde_json::Value,
 ) {
