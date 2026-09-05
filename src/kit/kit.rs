@@ -3069,7 +3069,8 @@ mod encryption_tests {
         let kit = Kit::new();
         let master_key = [0x42u8; 32];
         let config = SecretConfig {
-            api_key: "super-secret".into(),
+            api_key: std::env::var("TRAIT_KIT_TEST_API_KEY")
+                .unwrap_or_else(|_| "demo-value".into()),
         };
         kit.set_encrypted(&config, &master_key).unwrap();
         assert!(kit.contains_encrypted::<SecretConfig>());

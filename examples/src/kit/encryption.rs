@@ -24,7 +24,7 @@ impl ModuleConfig for SecretConfig {
     const PATH: &'static str = "config/secret.toml";
     fn default_value() -> Self {
         Self {
-            api_key: "default_key".to_string(),
+            api_key: std::env::var("TRAIT_KIT_TEST_API_KEY").unwrap_or_else(|_| "sample".into()),
             port: 8080,
         }
     }
@@ -37,7 +37,7 @@ const MASTER_KEY: [u8; 32] = *b"0123456789abcdef0123456789abcdef";
 fn main() {
     let kit = Kit::new();
     let original = SecretConfig {
-        api_key: "sk-12345".to_string(),
+        api_key: std::env::var("TRAIT_KIT_TEST_API_KEY").unwrap_or_else(|_| "demo-12345".into()),
         port: 5432,
     };
 
