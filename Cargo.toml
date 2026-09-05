@@ -70,5 +70,5 @@ i18n = ["dep:icu", "dep:writeable", "dep:sys-locale"]
 
 [workspace]
 resolver = "2"
-members = [".", "examples"]
+members = [".", "examples", "trait-kit-derive"]
 default-members = ["."]
