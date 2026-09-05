@@ -11,13 +11,20 @@ keywords = ["module", "trait", "capability", "kit", "interface"]
 categories = ["rust-patterns", "development-tools"]
 readme = "README.md"
 
+[lints]
+workspace = true
+
 [workspace.package]
 version = "0.5.0-rc.2"
 edition = "2024"
-rust-version = "1.91"
+rust-version = "1.97.1"
 authors = ["Kirky.X"]
 repository = "https://github.com/Kirky-X/trait-kit.git"
 license = "MIT"
+
+[workspace.lints.rust]
+
+[workspace.lints.clippy]
 
 [workspace.dependencies]
 confers = { version = "0.6.0-rc.2", path = "../confers", default-features = false }
@@ -37,7 +44,7 @@ thiserror = { version = "2.0", default-features = false }
 serial_test = "4.0"
 static_assertions = "1.1"
 trybuild = "1.0"
-trait-kit-derive = { path = "trait-kit-derive" }
+trait-kit-derive = { version = "0.5.0-rc.2", path = "trait-kit-derive" }
 
 [features]
 default = []
@@ -73,3 +80,12 @@ i18n = ["dep:icu", "dep:writeable", "dep:sys-locale"]
 resolver = "2"
 members = [".", "examples", "trait-kit-derive"]
 default-members = ["."]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+
+[profile.bench]
+inherits = "release"

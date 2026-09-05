@@ -98,7 +98,9 @@ mod health_e2e {
 
     struct HealthyMod;
     impl_module_meta!(HealthyMod, "healthy");
-    struct HCap { val: u64 }
+    struct HCap {
+        val: u64,
+    }
     impl AutoBuilder for HealthyMod {
         type Capability = Arc<HCap>;
         type Error = TraitKitError;
@@ -108,8 +110,13 @@ mod health_e2e {
     }
     impl HealthCheck for HealthyMod {
         fn check(cap: &Arc<HCap>) -> HealthStatus {
-            if cap.val > 0 { HealthStatus::Healthy }
-            else { HealthStatus::Unhealthy { detail: "zero".into() } }
+            if cap.val > 0 {
+                HealthStatus::Healthy
+            } else {
+                HealthStatus::Unhealthy {
+                    detail: "zero".into(),
+                }
+            }
         }
     }
 
@@ -125,7 +132,9 @@ mod health_e2e {
     }
     impl HealthCheck for UnhealthyMod {
         fn check(_cap: &Arc<UCap>) -> HealthStatus {
-            HealthStatus::Unhealthy { detail: "down".into() }
+            HealthStatus::Unhealthy {
+                detail: "down".into(),
+            }
         }
     }
 
@@ -205,7 +214,9 @@ mod observer_e2e {
         let count = Arc::new(AtomicU32::new(0));
         let mut kit = Kit::new();
         kit.register::<ObsMod>().unwrap();
-        kit.with_observer(Arc::new(CountingObserver { count: Arc::clone(&count) }));
+        kit.with_observer(Arc::new(CountingObserver {
+            count: Arc::clone(&count),
+        }));
         let _ready = kit.build().unwrap();
         assert!(count.load(Ordering::SeqCst) > 0);
     }
@@ -317,11 +328,14 @@ mod toggle_e2e {
     #[test]
     fn e2e_toggle_persists_after_build() {
         let mut kit = Kit::new();
-        struct TM; impl_module_meta!(TM, "tm");
+        struct TM;
+        impl_module_meta!(TM, "tm");
         impl AutoBuilder for TM {
             type Capability = Arc<()>;
             type Error = TraitKitError;
-            fn build(_: &Kit) -> Result<Arc<()>, TraitKitError> { Ok(Arc::new(())) }
+            fn build(_: &Kit) -> Result<Arc<()>, TraitKitError> {
+                Ok(Arc::new(()))
+            }
         }
         kit.register::<TM>().unwrap();
         kit.enable_toggle("feat-x", true);
@@ -334,7 +348,6 @@ mod toggle_e2e {
 
 #[cfg(feature = "shutdown")]
 mod shutdown_e2e {
-    use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use trait_kit::kit::ShutdownCoordinator;
     use trait_kit::kit::ShutdownPhase;
@@ -400,7 +413,10 @@ mod i18n_e2e {
 
     #[test]
     fn e2e_i18n_tr_global_function() {
-        let msg = trait_kit::i18n::tr("trait-kit-error-already-registered", &[("module", "test-mod")]);
+        let msg = trait_kit::i18n::tr(
+            "trait-kit-error-already-registered",
+            &[("module", "test-mod")],
+        );
         assert!(msg.contains("test-mod"));
     }
 }
@@ -420,7 +436,9 @@ mod interface_e2e {
 
     struct EnglishGreeter;
     impl Greeter for EnglishGreeter {
-        fn greet(&self) -> String { "Hello!".into() }
+        fn greet(&self) -> String {
+            "Hello!".into()
+        }
     }
 
     struct GreeterModule;
@@ -456,28 +474,46 @@ mod confers_e2e {
     use trait_kit::kit::ModuleConfig;
 
     #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-    struct E2eDbConfig { host: String, port: u16 }
+    struct E2eDbConfig {
+        host: String,
+        port: u16,
+    }
     impl Configurable for E2eDbConfig {
         fn load() -> Result<Self, Box<dyn Error + Send>> {
-            Ok(Self { host: "loaded".into(), port: 5432 })
+            Ok(Self {
+                host: "loaded".into(),
+                port: 5432,
+            })
         }
     }
     impl ModuleConfig for E2eDbConfig {
         const PATH: &'static str = "config/e2e_db.toml";
-        fn default_value() -> Self { Self { host: "localhost".into(), port: 3306 } }
+        fn default_value() -> Self {
+            Self {
+                host: "localhost".into(),
+                port: 3306,
+            }
+        }
     }
 
     #[test]
     fn e2e_confers_load_and_validate_ok() {
         #[derive(Clone, Debug)]
-        struct V { port: u16 }
+        struct V {
+            port: u16,
+        }
         impl Configurable for V {
-            fn load() -> Result<Self, Box<dyn Error + Send>> { Ok(Self { port: 8080 }) }
+            fn load() -> Result<Self, Box<dyn Error + Send>> {
+                Ok(Self { port: 8080 })
+            }
         }
         impl Validatable for V {
             fn validate(&self) -> Result<(), Vec<String>> {
-                if self.port > 0 && self.port < 65535 { Ok(()) }
-                else { Err(vec!["out of range".into()]) }
+                if self.port > 0 && self.port < 65535 {
+                    Ok(())
+                } else {
+                    Err(vec!["out of range".into()])
+                }
             }
         }
         let kit = Kit::new();
@@ -491,10 +527,14 @@ mod confers_e2e {
         #[derive(Clone, Debug)]
         struct Bad;
         impl Configurable for Bad {
-            fn load() -> Result<Self, Box<dyn Error + Send>> { Ok(Self) }
+            fn load() -> Result<Self, Box<dyn Error + Send>> {
+                Ok(Self)
+            }
         }
         impl Validatable for Bad {
-            fn validate(&self) -> Result<(), Vec<String>> { Err(vec!["bad".into()]) }
+            fn validate(&self) -> Result<(), Vec<String>> {
+                Err(vec!["bad".into()])
+            }
         }
         let kit = Kit::new();
         assert!(kit.load_and_validate::<Bad>().is_err());
@@ -503,9 +543,15 @@ mod confers_e2e {
     #[test]
     fn e2e_confers_snapshot_restore() {
         let kit = Kit::new();
-        kit.set_config(E2eDbConfig { host: "orig".into(), port: 3306 });
+        kit.set_config(E2eDbConfig {
+            host: "orig".into(),
+            port: 3306,
+        });
         kit.snapshot_config::<E2eDbConfig>();
-        kit.set_config(E2eDbConfig { host: "mod".into(), port: 5432 });
+        kit.set_config(E2eDbConfig {
+            host: "mod".into(),
+            port: 5432,
+        });
         kit.restore_config::<E2eDbConfig>().unwrap();
         let ready = kit.build().unwrap();
         let cfg: E2eDbConfig = ready.config().unwrap();
@@ -523,7 +569,10 @@ mod confers_e2e {
     #[test]
     fn e2e_confers_populate_defaults_noop() {
         let kit = Kit::new();
-        kit.set_config(E2eDbConfig { host: "custom".into(), port: 9999 });
+        kit.set_config(E2eDbConfig {
+            host: "custom".into(),
+            port: 9999,
+        });
         assert!(!kit.populate_defaults::<E2eDbConfig>());
         let ready = kit.build().unwrap();
         assert_eq!(ready.config::<E2eDbConfig>().unwrap().host, "custom");
@@ -542,9 +591,7 @@ mod confers_e2e {
     #[test]
     fn e2e_confers_load_config_with_interpolation() {
         let kit = Kit::new();
-        let vars = std::collections::HashMap::from([
-            ("H".into(), "interp-host".into()),
-        ]);
+        let vars = std::collections::HashMap::from([("H".into(), "interp-host".into())]);
         kit.load_config_with::<E2eDbConfig, _>(&vars).unwrap();
         let ready = kit.build().unwrap();
         let cfg: E2eDbConfig = ready.config().unwrap();
@@ -562,9 +609,13 @@ mod reload_e2e {
     use std::rc::Rc;
 
     #[derive(Clone, Debug, PartialEq)]
-    struct RCfg { v: u32 }
+    struct RCfg {
+        v: u32,
+    }
     impl Configurable for RCfg {
-        fn load() -> Result<Self, Box<dyn Error + Send>> { Ok(Self { v: 2 }) }
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
+            Ok(Self { v: 2 })
+        }
     }
 
     #[test]
@@ -573,7 +624,9 @@ mod reload_e2e {
         kit.set_config(RCfg { v: 1 });
         let notified = Rc::new(Cell::new(false));
         let n = Rc::clone(&notified);
-        kit.subscribe::<RCfg>(move || { n.set(true); });
+        kit.subscribe::<RCfg>(move || {
+            n.set(true);
+        });
         kit.reload_config::<RCfg>().unwrap();
         assert!(notified.get());
         let ready = kit.build().unwrap();
@@ -589,17 +642,27 @@ mod encryption_e2e {
     use trait_kit::kit::ModuleConfig;
 
     #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-    struct SCfg { key: String }
+    struct SCfg {
+        key: String,
+    }
     impl ModuleConfig for SCfg {
         const PATH: &'static str = "config/s.toml";
-        fn default_value() -> Self { Self { key: "def".into() } }
+        fn default_value() -> Self {
+            Self { key: "def".into() }
+        }
     }
     const KEY: [u8; 32] = *b"0123456789abcdef0123456789abcdef";
 
     #[test]
     fn e2e_encryption_roundtrip() {
         let kit = Kit::new();
-        kit.set_encrypted(&SCfg { key: "secret".into() }, &KEY).unwrap();
+        kit.set_encrypted(
+            &SCfg {
+                key: "secret".into(),
+            },
+            &KEY,
+        )
+        .unwrap();
         let ready = kit.build().unwrap();
         assert_eq!(ready.get_encrypted::<SCfg>(&KEY).unwrap().key, "secret");
     }
@@ -607,7 +670,10 @@ mod encryption_e2e {
     #[test]
     fn e2e_encryption_short_key_rejected() {
         let kit = Kit::new();
-        assert!(kit.set_encrypted(&SCfg { key: "x".into() }, &[0u8; 8]).is_err());
+        assert!(
+            kit.set_encrypted(&SCfg { key: "x".into() }, &[0u8; 8])
+                .is_err()
+        );
     }
 
     #[test]
@@ -645,7 +711,9 @@ mod lifecycle_health_e2e {
 
     struct LhMod;
     impl_module_meta!(LhMod, "lh-mod");
-    struct LhCap { val: u32 }
+    struct LhCap {
+        val: u32,
+    }
     impl AutoBuilder for LhMod {
         type Capability = Arc<LhCap>;
         type Error = TraitKitError;
@@ -662,8 +730,13 @@ mod lifecycle_health_e2e {
     }
     impl HealthCheck for LhMod {
         fn check(cap: &Arc<LhCap>) -> HealthStatus {
-            if cap.val > 0 { HealthStatus::Healthy }
-            else { HealthStatus::Unhealthy { detail: "zero".into() } }
+            if cap.val > 0 {
+                HealthStatus::Healthy
+            } else {
+                HealthStatus::Unhealthy {
+                    detail: "zero".into(),
+                }
+            }
         }
     }
 
@@ -687,9 +760,13 @@ mod confers_reload_e2e {
     use std::rc::Rc;
 
     #[derive(Clone, Debug, PartialEq)]
-    struct CrCfg { val: u32 }
+    struct CrCfg {
+        val: u32,
+    }
     impl Configurable for CrCfg {
-        fn load() -> Result<Self, Box<dyn Error + Send>> { Ok(Self { val: 100 }) }
+        fn load() -> Result<Self, Box<dyn Error + Send>> {
+            Ok(Self { val: 100 })
+        }
     }
 
     #[test]
@@ -698,7 +775,9 @@ mod confers_reload_e2e {
         kit.set_config(CrCfg { val: 1 });
         let counter = Rc::new(Cell::new(0u32));
         let c = Rc::clone(&counter);
-        kit.subscribe::<CrCfg>(move || { c.set(c.get() + 1); });
+        kit.subscribe::<CrCfg>(move || {
+            c.set(c.get() + 1);
+        });
         kit.reload_config::<CrCfg>().unwrap();
         assert_eq!(counter.get(), 1);
         let ready = kit.build().unwrap();
@@ -712,14 +791,25 @@ mod confers_encryption_e2e {
     use trait_kit::kit::ModuleConfig;
 
     #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-    struct CeCfg { secret: String, port: u16 }
+    struct CeCfg {
+        secret: String,
+        port: u16,
+    }
     impl ModuleConfig for CeCfg {
         const PATH: &'static str = "config/ce.toml";
-        fn default_value() -> Self { Self { secret: "def".into(), port: 8080 } }
+        fn default_value() -> Self {
+            Self {
+                secret: "def".into(),
+                port: 8080,
+            }
+        }
     }
     impl Configurable for CeCfg {
         fn load() -> Result<Self, Box<dyn std::error::Error + Send>> {
-            Ok(Self { secret: "loaded".into(), port: 9090 })
+            Ok(Self {
+                secret: "loaded".into(),
+                port: 9090,
+            })
         }
     }
     const KEY: [u8; 32] = *b"abcdefghijklmnopqrstuvwxyz012345";
@@ -727,11 +817,24 @@ mod confers_encryption_e2e {
     #[test]
     fn e2e_confers_plus_encryption() {
         let kit = Kit::new();
-        kit.set_config(CeCfg { secret: "plain".into(), port: 1111 });
-        kit.set_encrypted(&CeCfg { secret: "encrypted".into(), port: 2222 }, &KEY).unwrap();
+        kit.set_config(CeCfg {
+            secret: "plain".into(),
+            port: 1111,
+        });
+        kit.set_encrypted(
+            &CeCfg {
+                secret: "encrypted".into(),
+                port: 2222,
+            },
+            &KEY,
+        )
+        .unwrap();
         let ready = kit.build().unwrap();
         assert_eq!(ready.config::<CeCfg>().unwrap().secret, "plain");
-        assert_eq!(ready.get_encrypted::<CeCfg>(&KEY).unwrap().secret, "encrypted");
+        assert_eq!(
+            ready.get_encrypted::<CeCfg>(&KEY).unwrap().secret,
+            "encrypted"
+        );
     }
 }
 
@@ -747,9 +850,13 @@ mod observer_decorator_e2e {
     impl AutoBuilder for OdMod {
         type Capability = Arc<u32>;
         type Error = TraitKitError;
-        fn build(_kit: &Kit) -> Result<Arc<u32>, TraitKitError> { Ok(Arc::new(5)) }
+        fn build(_kit: &Kit) -> Result<Arc<u32>, TraitKitError> {
+            Ok(Arc::new(5))
+        }
     }
-    struct OdObs { count: Arc<AtomicU32> }
+    struct OdObs {
+        count: Arc<AtomicU32>,
+    }
     impl BuildObserver for OdObs {
         fn on_module_built(&self, _: &'static str, _: Duration) {
             self.count.fetch_add(1, Ordering::SeqCst);
@@ -761,7 +868,9 @@ mod observer_decorator_e2e {
         let count = Arc::new(AtomicU32::new(0));
         let mut kit = Kit::new();
         kit.register::<OdMod>().unwrap();
-        kit.with_observer(Arc::new(OdObs { count: Arc::clone(&count) }));
+        kit.with_observer(Arc::new(OdObs {
+            count: Arc::clone(&count),
+        }));
         kit.decorate::<OdMod>(|cap: Arc<u32>| Arc::new(*cap + 100));
         let ready = kit.build().unwrap();
         assert_eq!(*ready.require::<OdMod>().unwrap(), 105);
@@ -814,7 +923,9 @@ mod toggle_decorator_e2e {
     impl AutoBuilder for TdMod {
         type Capability = Arc<u32>;
         type Error = TraitKitError;
-        fn build(_kit: &Kit) -> Result<Arc<u32>, TraitKitError> { Ok(Arc::new(10)) }
+        fn build(_kit: &Kit) -> Result<Arc<u32>, TraitKitError> {
+            Ok(Arc::new(10))
+        }
     }
 
     #[test]

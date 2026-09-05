@@ -1,11 +1,14 @@
 [package]
-name = "trait-kit-example"
+name = "trait-kit-examples"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 publish = false
+
+[lints]
+workspace = true
 
 [dependencies]
 trait-kit = { workspace = true }

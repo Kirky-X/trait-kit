@@ -1320,7 +1320,7 @@ impl Kit {
 // ─── Config inheritance (confers feature) ─────────────────────────────────
 
 impl<S> Kit<S> {
-    /// Populate the config TypeMap with `C::default_value()` if no value of
+    /// Populate the config `TypeMap` with `C::default_value()` if no value of
     /// type `C` is present.
     ///
     /// Returns `true` if the default was populated, `false` if a value already
@@ -1344,6 +1344,9 @@ impl<S> Kit<S> {
     ///
     /// Requires the `confers` feature.
     #[cfg(feature = "confers")]
+    // 有意按值接收 Override(调用方构造临时对象后转移所有权,API 人体工学优先);
+    // 改为 `&C::Override` 属公共 API 破坏性变更,不在本次配置统一范围内。
+    #[allow(clippy::needless_pass_by_value)]
     pub fn merge_config<C: super::ConfigInherit>(&self, ovr: C::Override) {
         if let Ok(mut current) = self.config::<C>() {
             current.apply_override(&ovr);
@@ -1370,7 +1373,7 @@ impl<S> Kit<S> {
     /// Inject shared fields from the Kit's overlay into config `C`.
     ///
     /// Reads the current shared overlay and calls `C::inject_shared()`.
-    /// The updated config is written back to the TypeMap. If no config of
+    /// The updated config is written back to the `TypeMap`. If no config of
     /// type `C` exists, this is a no-op.
     ///
     /// Requires the `confers` feature.
@@ -3858,7 +3861,7 @@ mod config_inheritance_tests {
         type Override = TestDbConfigOverride;
         fn apply_override(&mut self, ovr: &Self::Override) {
             if let Some(ref h) = ovr.host {
-                self.host = h.clone();
+                self.host.clone_from(h);
             }
             if let Some(ref p) = ovr.port {
                 self.port = *p;
@@ -3888,15 +3891,15 @@ mod config_inheritance_tests {
             map
         }
         fn inject_shared(&mut self, shared: &serde_json::Map<String, serde_json::Value>) {
-            if let Some(v) = shared.get("host") {
-                if let Ok(s) = serde_json::from_value(v.clone()) {
-                    self.host = s;
-                }
+            if let Some(v) = shared.get("host")
+                && let Ok(s) = serde_json::from_value(v.clone())
+            {
+                self.host = s;
             }
-            if let Some(v) = shared.get("port") {
-                if let Ok(n) = serde_json::from_value(v.clone()) {
-                    self.port = n;
-                }
+            if let Some(v) = shared.get("port")
+                && let Ok(n) = serde_json::from_value(v.clone())
+            {
+                self.port = n;
             }
         }
     }
@@ -3917,15 +3920,15 @@ mod config_inheritance_tests {
             map
         }
         fn inject_shared(&mut self, shared: &serde_json::Map<String, serde_json::Value>) {
-            if let Some(v) = shared.get("host") {
-                if let Ok(s) = serde_json::from_value(v.clone()) {
-                    self.host = s;
-                }
+            if let Some(v) = shared.get("host")
+                && let Ok(s) = serde_json::from_value(v.clone())
+            {
+                self.host = s;
             }
-            if let Some(v) = shared.get("port") {
-                if let Ok(n) = serde_json::from_value(v.clone()) {
-                    self.port = n;
-                }
+            if let Some(v) = shared.get("port")
+                && let Ok(n) = serde_json::from_value(v.clone())
+            {
+                self.port = n;
             }
         }
     }

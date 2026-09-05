@@ -9,7 +9,7 @@ trim_trailing_whitespace = true
 indent_style = space
 indent_size = 2
 
-# 语言缩进覆盖（按社区惯例）
+# 语言缩进覆盖(按社区惯例)
 [*.{rs,go}]
 indent_size = 4
 

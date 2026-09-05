@@ -1,5 +1,6 @@
-# lefthook 配置。启用: brew install lefthook && lefthook install
-# 与 .pre-commit-config.yaml 功能等价，二选一即可。
+# lefthook 配置 — 7 仓库统一基线(见 base/CONFIG_BASELINE.md)
+# 启用: lefthook install(或 bash scripts/install-pre-commit.sh)
+# 与 .pre-commit-config.yaml 功能等价,二选一即可。
 pre-commit:
   parallel: true
   commands:
@@ -8,6 +9,7 @@ pre-commit:
       run: cargo fmt --all -- --check
     clippy:
       glob: "*.rs"
+      # CLIPPY_GATE 为本仓库零告警门槛 feature 组合(与 CI clippy job 一致)
       run: cargo clippy --all-targets --all-features -- -D warnings
     cargo-deny:
       run: cargo deny check

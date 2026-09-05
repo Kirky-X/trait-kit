@@ -790,7 +790,7 @@ impl AsyncKit<Ready> {
 // ─── Config inheritance (confers feature, async) ────────────────────────
 
 impl AsyncKit {
-    /// Populate the config TypeMap with `C::default_value()` if no value of
+    /// Populate the config `TypeMap` with `C::default_value()` if no value of
     /// type `C` is present.
     ///
     /// Returns `true` if the default was populated, `false` if a value already
@@ -802,6 +802,7 @@ impl AsyncKit {
     ///
     /// Panics if the `configs` [`RwLock`] is poisoned.
     #[cfg(feature = "confers")]
+    #[must_use]
     pub fn populate_defaults<C: super::ModuleConfig + Send + Sync>(&self) -> bool {
         if self.configs.contains::<C>() {
             return false;
@@ -832,7 +833,7 @@ impl AsyncKit {
         }
     }
 
-    /// Extract shared fields from config `C` into the AsyncKit's shared overlay.
+    /// Extract shared fields from config `C` into the `AsyncKit`'s shared overlay.
     ///
     /// Calls `C::extract_shared()` and merges the result into
     /// `self.shared_fields`. New values override same-named keys from
@@ -855,10 +856,10 @@ impl AsyncKit {
         }
     }
 
-    /// Inject shared fields from the AsyncKit's overlay into config `C`.
+    /// Inject shared fields from the `AsyncKit`'s overlay into config `C`.
     ///
     /// Reads the current shared overlay and calls `C::inject_shared()`.
-    /// The updated config is written back to the TypeMap. If no config of
+    /// The updated config is written back to the `TypeMap`. If no config of
     /// type `C` exists, this is a no-op.
     ///
     /// Requires the `confers` feature.
@@ -1984,7 +1985,7 @@ mod async_health_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "observer"))]
 mod async_observability_tests {
     use super::*;
     use crate::core::ModuleMeta;
@@ -2397,7 +2398,7 @@ mod async_config_inheritance_tests {
         type Override = AsyncDbConfigOverride;
         fn apply_override(&mut self, ovr: &Self::Override) {
             if let Some(ref h) = ovr.host {
-                self.host = h.clone();
+                self.host.clone_from(h);
             }
             if let Some(ref p) = ovr.port {
                 self.port = *p;
@@ -2427,15 +2428,15 @@ mod async_config_inheritance_tests {
             map
         }
         fn inject_shared(&mut self, shared: &serde_json::Map<String, serde_json::Value>) {
-            if let Some(v) = shared.get("host") {
-                if let Ok(s) = serde_json::from_value(v.clone()) {
-                    self.host = s;
-                }
+            if let Some(v) = shared.get("host")
+                && let Ok(s) = serde_json::from_value(v.clone())
+            {
+                self.host = s;
             }
-            if let Some(v) = shared.get("port") {
-                if let Ok(n) = serde_json::from_value(v.clone()) {
-                    self.port = n;
-                }
+            if let Some(v) = shared.get("port")
+                && let Ok(n) = serde_json::from_value(v.clone())
+            {
+                self.port = n;
             }
         }
     }
@@ -2455,15 +2456,15 @@ mod async_config_inheritance_tests {
             map
         }
         fn inject_shared(&mut self, shared: &serde_json::Map<String, serde_json::Value>) {
-            if let Some(v) = shared.get("host") {
-                if let Ok(s) = serde_json::from_value(v.clone()) {
-                    self.host = s;
-                }
+            if let Some(v) = shared.get("host")
+                && let Ok(s) = serde_json::from_value(v.clone())
+            {
+                self.host = s;
             }
-            if let Some(v) = shared.get("port") {
-                if let Ok(n) = serde_json::from_value(v.clone()) {
-                    self.port = n;
-                }
+            if let Some(v) = shared.get("port")
+                && let Ok(n) = serde_json::from_value(v.clone())
+            {
+                self.port = n;
             }
         }
     }

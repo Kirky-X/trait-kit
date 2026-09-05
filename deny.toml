@@ -1,28 +1,36 @@
-# cargo-deny 配置 — `cargo deny check` 按此校验 漏洞/许可证/禁用源/重复依赖。
+# cargo-deny 配置 — 7 仓库统一基线(见 base/CONFIG_BASELINE.md)
+# `cargo deny check` 校验 漏洞/许可证/禁用源/重复依赖。
 # 完整字段见: https://embarkstudios.github.io/cargo-deny/
+# 仓库特有豁免写在 [advisories].ignore 与 [[licenses.exceptions]],须附原因注释。
 
 [advisories]
 db-urls = ["https://github.com/RustSec/advisory-db"]
-yanked = "deny"
-# Transitive deps flagged as unmaintained — not vulnerabilities, no patched versions available.
-ignore = [
-    "RUSTSEC-2024-0436",  # paste — unmaintained, transitive dep
-    "RUSTSEC-2026-0173",  # proc-macro-error2 — unmaintained, transitive dep
-]
+yanked = "warn"
+# 按仓库填:传递依赖 RUSTSEC 豁免(每项须注释原因)。
+# 本仓当前依赖树无 RUSTSEC 命中(历史豁免 RUSTSEC-2024-0436 paste、
+# RUSTSEC-2026-0173 proc-macro-error2 对应的 crate 已不在树中,
+# 保留条目会触发 cargo-deny advisory-not-detected 告警,故移除;
+# 若未来传递依赖重新引入,请在此恢复并附原因注释)。
 
 [licenses]
-# 允许的宽松许可证；新增非宽松许可证需在此放行
+# 允许的宽松许可证;新增非宽松许可证需在此放行
+# (按本仓依赖图实际命中的许可证精简,未命中项保留会产生
+# unused-allowed-license 告警)
 allow = [
-    "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception",
-    "BSD-3-Clause", "BSD-2-Clause", "ISC",
-    "Unicode-3.0", "Unicode-DFS-2016",
-    "Zlib", "CC0-1.0", "MPL-2.0",
+    "MIT",
+    "Apache-2.0",
+    "Unicode-3.0",
 ]
 confidence-threshold = 0.8
+unused-allowed-license = "warn"
 
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+
+[[bans.deny]]
+name = "serde_yaml" # deprecated, use serde_yaml_ng
+wrappers = []
 
 [sources]
 unknown-registry = "deny"

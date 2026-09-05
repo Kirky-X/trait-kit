@@ -85,10 +85,10 @@ fn main() {
 
     // ── Step 5: Apply compile-time safe override (Layer 2: ConfigInherit) ──
     kit.merge_config::<DbConfig>(DbConfigOverride {
-        host: None,           // keep inherited value
-        port: Some(5432),     // override port
+        host: None,       // keep inherited value
+        port: Some(5432), // override port
         max_connections: Some(200),
-        database: None,       // keep default
+        database: None, // keep default
     });
 
     let db_final: DbConfig = kit.config().unwrap();

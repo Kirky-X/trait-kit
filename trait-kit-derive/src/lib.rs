@@ -9,7 +9,7 @@
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, Data, DeriveInput, Fields, Meta};
+use syn::{Data, DeriveInput, Fields, Meta, parse_macro_input};
 
 /// Derive `ConfigInherit` for a struct.
 ///
@@ -50,17 +50,17 @@ pub fn derive_config_inherit(input: TokenStream) -> TokenStream {
         }
         if let Ok(meta_list) = attr.meta.require_list() {
             let nested = meta_list
-                .parse_args_with(syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated)
+                .parse_args_with(
+                    syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
+                )
                 .expect("failed to parse config_inherit attributes");
             for meta in nested {
-                if let Meta::NameValue(nv) = meta {
-                    if nv.path.is_ident("name") {
-                        if let syn::Expr::Lit(lit) = &nv.value {
-                            if let syn::Lit::Str(s) = &lit.lit {
-                                override_name = format_ident!("{}", s.value());
-                            }
-                        }
-                    }
+                if let Meta::NameValue(nv) = meta
+                    && nv.path.is_ident("name")
+                    && let syn::Expr::Lit(lit) = &nv.value
+                    && let syn::Lit::Str(s) = &lit.lit
+                {
+                    override_name = format_ident!("{}", s.value());
                 }
             }
         }
@@ -87,9 +87,13 @@ pub fn derive_config_inherit(input: TokenStream) -> TokenStream {
             }
             if let Ok(meta_list) = attr.meta.require_list() {
                 let nested = meta_list
-                    .parse_args_with(syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated)
+                    .parse_args_with(
+                        syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
+                    )
                     .expect("failed to parse config_inherit field attributes");
-                nested.iter().any(|m| matches!(m, Meta::Path(p) if p.is_ident("nested")))
+                nested
+                    .iter()
+                    .any(|m| matches!(m, Meta::Path(p) if p.is_ident("nested")))
             } else {
                 false
             }
@@ -171,7 +175,9 @@ pub fn derive_shared_config(input: TokenStream) -> TokenStream {
             continue;
         }
         let nested = attr
-            .parse_args_with(syn::punctuated::Punctuated::<syn::Ident, syn::Token![,]>::parse_terminated)
+            .parse_args_with(
+                syn::punctuated::Punctuated::<syn::Ident, syn::Token![,]>::parse_terminated,
+            )
             .expect("expected #[shared(field1, field2, ...)]");
         shared_field_names.extend(nested);
     }
@@ -191,11 +197,7 @@ pub fn derive_shared_config(input: TokenStream) -> TokenStream {
     // Build a map from field name to field type for validation
     let field_map: std::collections::HashMap<String, &syn::Type> = fields
         .iter()
-        .filter_map(|f| {
-            f.ident
-                .as_ref()
-                .map(|ident| (ident.to_string(), &f.ty))
-        })
+        .filter_map(|f| f.ident.as_ref().map(|ident| (ident.to_string(), &f.ty)))
         .collect();
 
     // Validate that all shared field names exist in the struct

@@ -6,7 +6,7 @@
 
 [![CI][ci-badge]][ci-url] [![crates.io][crates-badge]][crates-url] [![docs.rs][docs-badge]][docs-url] [![downloads][downloads-badge]][downloads-url] [![MIT licensed][license-badge]][license-url] [![MSRV][msrv-badge]][msrv-url]
 
-中文 | [English](./README_EN.md)
+中文 | [English](https://github.com/Kirky-X/trait-kit/blob/main/./README_EN.md)
 
 </div>
 
@@ -486,16 +486,16 @@ cargo fmt --check
 ## 📚 文档
 
 - [API 文档 (docs.rs)][docs-url]
-- [架构文档](docs/ARCHITECTURE.md)
-- [API 参考](docs/API.md)
-- [更新日志](docs/CHANGELOG.md)
-- [贡献指南](docs/CONTRIBUTING.md)
+- [架构文档](https://github.com/Kirky-X/trait-kit/blob/main/docs/ARCHITECTURE.md)
+- [API 参考](https://github.com/Kirky-X/trait-kit/blob/main/docs/API.md)
+- [更新日志](https://github.com/Kirky-X/trait-kit/blob/main/docs/CHANGELOG.md)
+- [贡献指南](https://github.com/Kirky-X/trait-kit/blob/main/docs/CONTRIBUTING.md)
 
 ---
 
 ## 📋 更新日志
 
-详见 [CHANGELOG.md](docs/CHANGELOG.md)。
+详见 [CHANGELOG.md](https://github.com/Kirky-X/trait-kit/blob/main/docs/CHANGELOG.md)。
 
 ---
 

@@ -1,43 +1,57 @@
-# pre-commit 配置（pre-commit framework）。启用: uv tool install pre-commit && pre-commit install
-# 与 lefthook.yml 功能等价，二选一即可（切换前先卸载旧的）。
+# pre-commit 配置 — 7 仓库统一基线(见 base/CONFIG_BASELINE.md)
+# 安装: pip install pre-commit && pre-commit install --install-hooks
 repos:
-  # 通用质量 hooks（语言无关）
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-toml
-      - id: check-merge-conflict
       - id: check-added-large-files
-        args: ['--maxkb=1024']
+        args: ['--maxkb=1000']
       - id: detect-private-key
+      - id: check-merge-conflict
+        args: ['--assume-in-merge']
+      - id: no-commit-to-branch
+        args: ['--branch', 'main', '--branch', 'master']
 
-  # 拼写检查
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--exclude-files, tests/, --exclude-files, examples/]
+        exclude: '^Cargo\.lock$'
+
   - repo: https://github.com/crate-ci/typos
     rev: v1.28.0
     hooks:
       - id: typos
 
-  # Rust 专属（local，用本机 cargo）
   - repo: local
     hooks:
       - id: cargo-fmt
-        name: cargo fmt --check
-        entry: bash -c 'cargo fmt --all -- --check'
+        name: Format Rust code
+        description: Run rustfmt on Rust files
+        entry: cargo fmt --all -- --check
         language: system
         types: [rust]
         pass_filenames: false
+
+      - id: cargo-check
+        name: cargo check
+        entry: cargo check --all-features
+        language: system
+        types: [rust]
+        pass_filenames: false
+
       - id: cargo-clippy
-        name: cargo clippy (-D warnings)
-        entry: bash -c 'cargo clippy --all-targets --all-features -- -D warnings'
+        name: cargo clippy
+        entry: cargo clippy --all-targets --all-features -- -D warnings
         language: system
         types: [rust]
         pass_filenames: false
-      - id: cargo-deny
-        name: cargo deny check (license/advisory/ban)
-        entry: bash -c 'cargo deny check 2>/dev/null || { echo "→ 先运行: cargo install cargo-deny && cargo deny init"; exit 1; }'
-        language: system
-        files: 'Cargo\.(toml|lock)'
-        pass_filenames: false
+
+ci:
+  autoupdate_commit_msg: "chore: update pre-commit hooks"

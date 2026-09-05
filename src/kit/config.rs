@@ -220,10 +220,7 @@ pub fn interpolate_json_value<S: BuildHasher>(
 /// - Arrays are treated as atomic values (replaced, not element-wise merged).
 /// - Scalars are replaced.
 #[cfg(feature = "confers")]
-pub fn merge_json_deep(
-    base: &mut serde_json::Value,
-    overlay: &serde_json::Value,
-) {
+pub fn merge_json_deep(base: &mut serde_json::Value, overlay: &serde_json::Value) {
     match (base, overlay) {
         (serde_json::Value::Object(base_map), serde_json::Value::Object(overlay_map)) => {
             for (key, overlay_val) in overlay_map {

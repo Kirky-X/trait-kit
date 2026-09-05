@@ -10,6 +10,9 @@ description = "Derive macros for trait-kit config inheritance (ConfigInherit, Sh
 keywords = ["trait-kit", "derive", "config", "inheritance"]
 categories = ["rust-patterns", "development-tools"]
 
+[lints]
+workspace = true
+
 [lib]
 proc-macro = true
 
