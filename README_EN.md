@@ -1,16 +1,50 @@
 <div align="center">
 
-<p align="center">
-  <img src="docs/assets/trait-kit.svg" width="200" alt="trait-kit logo">
-</p>
+<img src="docs/assets/trait-kit.svg" alt="Trait-Kit Logo" width="200">
 
-[![CI][ci-badge]][ci-url] [![crates.io][crates-badge]][crates-url] [![docs.rs][docs-badge]][docs-url] [![downloads][downloads-badge]][downloads-url] [![MIT licensed][license-badge]][license-url] [![MSRV][msrv-badge]][msrv-url]
+[![CI Status](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml) [![Version](https://img.shields.io/crates/v/trait-kit.svg)](https://crates.io/crates/trait-kit) [![Docs.rs](https://docs.rs/trait-kit/badge.svg)](https://docs.rs/trait-kit) [![Downloads](https://img.shields.io/crates/d/trait-kit.svg)](https://crates.io/crates/trait-kit) [![License](https://img.shields.io/crates/l/trait-kit.svg)](LICENSE) [![Rust](https://img.shields.io/badge/rust-1.97.1%2B-orange.svg)](https://www.rust-lang.org/)
 
-[中文](./README.md) | English
+[中文](README.md) | **English**
+
+**A lightweight Rust library: standardized module interface + centralized capability & configuration management center (`Kit`)**
+
+[✨ Features](#-features) • [🚀 Quick Start](#-quick-start) • [📚 Documentation](#-documentation) • [💻 Examples](#-examples) • [🤝 Contributing](#-contributing)
 
 </div>
 
 **trait-kit** is a lightweight Rust library that provides a standardized module interface and a centralized capability & configuration management center (`Kit`). It uses a typestate pattern (`Kit<Unbuilt>` → `Kit<Ready>`) for build-time validation, with `RefCell`-based interior mutability for single-threaded, `!Sync` by design.
+
+---
+
+## 📋 Table of Contents
+
+<details open>
+<summary>Table of Contents</summary>
+
+- [✨ Features](#-features)
+- [🚀 Quick Start](#-quick-start)
+  - [📦 Installation](#-installation)
+  - [💡 Basic Usage](#-basic-usage)
+  - [⚙️ Module with Configuration](#️-module-with-configuration)
+  - [🔗 Module with Dependencies](#-module-with-dependencies)
+- [🎨 Feature Flags](#-feature-flags)
+- [📚 Documentation](#-documentation)
+- [💻 Examples](#-examples)
+- [🏗️ Architecture](#️-architecture)
+- [⚙️ Configuration: confers Integration](#️-configuration-confers-integration)
+- [💡 Why trait-kit?](#-why-trait-kit)
+- [🧪 Testing](#-testing)
+- [📊 Performance](#-performance)
+- [🔒 Security](#-security)
+- [🗺️ Roadmap](#️-roadmap)
+- [🤝 Contributing](#-contributing)
+- [📋 Changelog](#-changelog)
+- [📄 License](#-license)
+- [🙏 Acknowledgments](#-acknowledgments)
+- [📞 Contact & Support](#-contact--support)
+- [⭐ Star History](#-star-history)
+
+</details>
 
 ---
 
@@ -28,19 +62,17 @@
 
 ---
 
-## 📦 Quick Start
+## 🚀 Quick Start
 
-### MSRV
+### 📦 Installation
 
-Minimum Supported Rust Version: **1.91**
-
-### Installation
+Minimum Supported Rust Version (MSRV): **1.97.1**.
 
 ```sh
 cargo add trait-kit
 ```
 
-### Minimal Example
+### 💡 Basic Usage
 
 Define a logger module, register it, build the Kit, and retrieve the capability:
 
@@ -80,11 +112,7 @@ fn main() {
 }
 ```
 
----
-
-## 🔧 Usage
-
-### Module with Configuration
+### ⚙️ Module with Configuration
 
 Configs are typed values stored in the Kit's `TypeMap`. Modules retrieve them via `kit.config::<C>()` during build:
 
@@ -128,7 +156,7 @@ fn main() {
 }
 ```
 
-### Module with Dependencies
+### 🔗 Module with Dependencies
 
 Modules declare dependencies via `impl_module_meta!` macro. The Kit validates the dependency graph at build time and constructs modules in topological order:
 
@@ -178,56 +206,17 @@ fn main() {
 }
 ```
 
-### Kit API Overview
-
-| Method                              | Available on    | Description                                            |
-| ----------------------------------- | --------------- | ------------------------------------------------------ |
-| `Kit::new()`                        | —               | Create an empty `Kit<Unbuilt>`.                        |
-| `kit.register::<M>()`              | `Kit<Unbuilt>`  | Register a module for construction.                    |
-| `kit.register_lazy::<M>()`         | `Kit<Unbuilt>`  | Register for lazy construction on first `require()`.   |
-| `kit.register_multi::<M>()`        | `Kit<Unbuilt>`  | Register multi-binding (same capability type).         |
-| `kit.register_as::<M>()`           | `Kit<Unbuilt>`  | Register by interface type (`dyn Trait`).              |
-| `kit.register_if::<M>()`           | `Kit<Unbuilt>`  | Conditional registration (runtime predicate).          |
-| `kit.register_if_toggle::<M>()`    | `Kit<Unbuilt>`  | Conditional registration gated by `toggle` feature.    |
-| `kit.register_lifecycle::<M>()`    | `Kit<Unbuilt>`  | Register lifecycle hooks for a module.                 |
-| `kit.register_health_check::<M>()` | `Kit<Unbuilt>`  | Register health check for a module.                    |
-| `kit.with_observer(obs)`           | `Kit<Unbuilt>`  | Attach a `BuildObserver` for build callbacks.          |
-| `kit.decorate::<M>(f)`             | `Kit<Unbuilt>`  | Post-build capability wrapping/enhancement.            |
-| `kit.set_config::<C>(value)`       | Both            | Store a typed config value.                            |
-| `kit.config::<C>()`                | Both            | Retrieve a cloned config value.                        |
-| `kit.load_config::<C>()`           | `Kit<Unbuilt>` `confers` | Load config via `Configurable::load()`.        |
-| `kit.load_and_validate::<C>()`     | `Kit<Unbuilt>` `confers` | Load and validate config, don't store on failure. |
-| `kit.load_config_with::<C>(vars)`  | `Kit<Unbuilt>` `confers` | Load config with `${VAR}` substitution.         |
-| `kit.snapshot_config::<C>()`       | `Kit<Unbuilt>` `confers` | Snapshot current config (returns success bool). |
-| `kit.restore_config::<C>()`        | `Kit<Unbuilt>` `confers` | Restore config to the most recent snapshot.      |
-| `kit.has_snapshot::<C>()`          | `Kit<Unbuilt>` `confers` | Check if a snapshot exists for the given type.  |
-| `kit.subscribe::<C>(cb)`           | Both  `reload`          | Subscribe to config hot-reload callbacks.       |
-| `kit.reload_config::<C>()`         | Both  `reload`          | Reload config and notify subscribers.           |
-| `kit.set_encrypted(val, key)`      | `Kit<Unbuilt>` `encryption` | Encrypt and store config.                   |
-| `kit.enable_toggle(key, bool)`     | Both  `toggle`          | Set feature toggle state.                        |
-| `kit.is_toggle_enabled(key)`       | Both  `toggle`          | Query feature toggle state.                      |
-| `kit.build()`                       | `Kit<Unbuilt>`  | Validate graph and build all modules → `Kit<Ready>`.   |
-| `kit.require::<M>()`               | `Kit<Ready>`    | Retrieve a capability (errors if missing).             |
-| `kit.require_ref::<M>()`           | `Kit<Ready>`    | Zero-copy capability retrieval (`Ref<'_, Cap>`).      |
-| `kit.optional::<M>()`              | `Kit<Ready>`    | Retrieve a capability (returns `None` if missing).     |
-| `kit.require_all::<M>()`           | `Kit<Ready>`    | Return all multi-binding capabilities.                 |
-| `kit.resolve::<I>()`               | `Kit<Ready>`    | Retrieve by interface type (`Arc<I>`).                 |
-| `kit.contains::<M>()`              | `Kit<Ready>`    | Check if a capability was built.                       |
-| `kit.contains_config::<C>()`       | `Kit<Ready>`    | Check if a config value exists.                        |
-| `kit.get_encrypted::<C>(key)`      | `Kit<Ready>` `encryption` | Decrypt and retrieve config.                   |
-| `kit.health_check::<M>()`          | `Kit<Ready>`    | Run health check for a module.                         |
-| `kit.health_report()`              | `Kit<Ready>`    | Return health report for all modules.                  |
-| `kit.shutdown()`                   | `Kit<Ready>`    | Run `on_shutdown` in reverse topological order.        |
+For the complete `Kit<Unbuilt>` / `Kit<Ready>` method list (including feature gates), see the [📘 API Reference](docs/API_REFERENCE.md) and [docs.rs](https://docs.rs/trait-kit).
 
 ---
 
-## 🏷️ Feature Flags
+## 🎨 Feature Flags
 
 | Feature | Enables | Description |
 | --- | --- | --- |
 | `default` | — | No extra features, just core `Module` + `Kit`. |
 | `async` | — | `AsyncKit`: `Send + Sync` async capability management, no extra deps. |
-| `confers` | `dep:confers`, `dep:serde` | `Configurable` + `ModuleConfig` trait + `Config` derive re-export. |
+| `confers` | `dep:confers`, `dep:serde`, `dep:serde_json` | `Configurable` + `ModuleConfig` trait + `Config` derive re-export. |
 | `reload` | `confers`, `confers/watch` | `subscribe` / `reload_config` hot-reload API. |
 | `encryption` | `confers`, `confers/encryption` | `set_encrypted` / `get_encrypted` encrypted config storage. |
 | `interface` | — | Interface/implementation separation: `register_as` / `resolve` with `dyn Trait` type erasure. |
@@ -249,15 +238,123 @@ trait-kit = { version = "0.5", features = ["encryption"] }
 
 ---
 
+## 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| [📖 User Guide](docs/USER_GUIDE.md) | Complete tutorial from installation to advanced usage |
+| [📘 API Reference](docs/API_REFERENCE.md) | Detailed reference for all public APIs |
+| [🏗️ Architecture](docs/ARCHITECTURE.md) | Design philosophy and internals |
+| [🔒 Security](docs/SECURITY.md) | Security design and best practices |
+| [📋 Changelog](docs/CHANGELOG.md) | Release notes for every version |
+| [🤝 Contributing](docs/CONTRIBUTING.md) | How to participate in development |
+| [📦 Online API Docs](https://docs.rs/trait-kit) | Latest docs auto-generated by docs.rs |
+
+---
+
+## 💻 Examples
+
+`examples/` is a standalone workspace member `trait-kit-examples` covering every public API and feature gate. Run with:
+
+```sh
+cargo run -p trait-kit-examples --example <name> --features <feature>
+```
+
+| Example | Feature | Demonstrates |
+|---------|---------|--------------|
+| `default_basic` | — | `ModuleMeta` + `AutoBuilder` + basic `Kit` register/build/require flow |
+| `conditional` | — | `register_if::<M>(predicate)` runtime predicate-gated registration |
+| `factory` | — | `Kit<Ready>::factory::<M>()` per-call instance creation (vs singleton `require()`) |
+| `interface` | `interface` | `InterfaceBuilder` + `register_as` / `resolve::<dyn Trait>()` type-erased DI |
+| `lifecycle` | `lifecycle` | `Lifecycle` trait (`on_ready` + `on_shutdown`) + `Kit::shutdown()` |
+| `health_check` | `health` | `HealthCheck` trait + `HealthStatus` + `health_report` |
+| `observability` | `observer` | `BuildObserver` callbacks (`on_module_start` / `on_module_built`) |
+| `confers_loader` | `confers` | `#[derive(Config)]` + `Configurable` + `Kit::load_config` (env-var loading) |
+| `confers_macros` | `confers` | `ModuleConfig` trait (`PATH` + `default_value`) + consuming config in `build()` |
+| `validation` | `confers` | `Validatable` trait + `Kit::load_and_validate` config validation |
+| `snapshot_restore` | `confers` | `snapshot_config` / `restore_config` / `has_snapshot` snapshot & rollback |
+| `config_inheritance` | `confers` | Four-layer config inheritance (`merge_json_deep` → `ConfigInherit` → `SharedConfig` → `populate_defaults`) |
+| `hot_reload` | `reload` | `subscribe::<C>` + `reload_config::<C>` hot-reload subscriptions |
+| `encryption` | `encryption` | `set_encrypted` / `get_encrypted` roundtrip + wrong-key rejection |
+| `async_basic` | `async` | `AsyncAutoBuilder` + `AsyncKit` async register/build/require |
+| `scope_basic` | `scope` | `Scope` per-request instance isolation + lazy caching |
+| `toggle_basic` | `toggle` | `enable_toggle` / `is_toggle_enabled` / `register_if_toggle` runtime toggles |
+| `decorator` | `decorator` | `Kit::decorate::<M>(fn)` post-build capability wrapping |
+| `shutdown` | `shutdown` | `ShutdownCoordinator` phased graceful shutdown (`StopRequests` → `DrainQueue` → `CloseConnections`) + timeout control |
+| `i18n` | `i18n` | `I18nFormatter` locale-aware number/date/plural/collation formatting |
+
+See [examples/README.md](examples/README.md) for details.
+
+---
+
+## 🏗️ Architecture
+
+```mermaid
+graph TB
+    subgraph core["core — Core Interfaces"]
+        MM[ModuleMeta<br/>Name + Dependency Declaration]
+        AB[AutoBuilder<br/>Sync Build]
+        AAB[AsyncAutoBuilder<br/>Async Build]
+        LC[Lifecycle<br/>on_ready + on_shutdown]
+        HC[HealthCheck<br/>HealthStatus Reporting]
+        OBS[BuildObserver<br/>Build Callbacks]
+    end
+
+    subgraph kit["kit — Capability Management Center"]
+        K[Kit&lt;Unbuilt&gt; → Kit&lt;Ready&gt;]
+        DG[DependencyGraph<br/>Cycle Detection + Topological Sort]
+        TM[TypeMap<br/>TypeId Key-Value Store]
+        CFG[Config<br/>confers Integration]
+        SC[Scope<br/>Scope Isolation]
+    end
+
+    subgraph async_kit["async_kit — Async Capability Management"]
+        AK[AsyncKit&lt;Unbuilt&gt; → AsyncKit&lt;Ready&gt;]
+        ATM[AsyncTypeMap<br/>Arc&lt;RwLock&gt; Store]
+    end
+
+    subgraph i18n_mod["i18n — ICU4X Internationalization + Fluent Translation"]
+        I18N["Numbers / Dates / Plurals / Collation / tr()"]
+    end
+
+    MM --> K
+    AB --> K
+    AAB --> AK
+    LC --> K
+    HC --> K
+    OBS --> K
+    K --> DG
+    K --> TM
+    K --> CFG
+    K --> SC
+    AK --> ATM
+```
+
+**Core Design**:
+
+- **Typestate Pattern**: `Kit<Unbuilt>` → `Kit<Ready>`, build-time dependency graph validation, zero runtime overhead.
+- **Interior Mutability**: `RefCell`-based, single-threaded `!Sync` design, avoiding lock overhead. `AsyncKit` uses `Arc<RwLock>` for multi-threading.
+- **Three-Level Feature Inheritance** (confers integration):
+
+```mermaid
+graph LR
+    C[confers] --> R[reload]
+    R --> E[encryption]
+```
+
+For more design details (dependency graph validation, data flow, thread-safety model, directory layout), see the [Architecture document](docs/ARCHITECTURE.md).
+
+---
+
 ## ⚙️ Configuration: confers Integration
 
-trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.5 via three-level feature flags. Each level inherits from the previous, forming a layered capability system.
+trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.6 via three-level feature flags. Each level inherits from the previous, forming a layered capability system.
 
 ### confers Feature Flags
 
 | Feature               | Enables                                         | Description                                      |
 | --------------------- | ----------------------------------------------- | ------------------------------------------------ |
-| `confers`             | `dep:confers`, `dep:serde`                      | `Configurable` + `ModuleConfig` trait + `Config` derive re-export. |
+| `confers`             | `dep:confers`, `dep:serde`, `dep:serde_json`    | `Configurable` + `ModuleConfig` trait + `Config` derive re-export. |
 | `reload`  | `confers`, `confers/watch`               | `subscribe` / `reload_config` API.               |
 | `encryption`  | `confers`, `confers/encryption` | `set_encrypted` / `get_encrypted` API.    |
 
@@ -377,63 +474,6 @@ kit.merge_config::<DbConfig>(ovr);         // Compile-time safe field override
 
 ---
 
-## 🏗️ Architecture
-
-```mermaid
-graph TB
-    subgraph core["core — Core Interfaces"]
-        MM[ModuleMeta<br/>Name + Dependency Declaration]
-        AB[AutoBuilder<br/>Sync Build]
-        AAB[AsyncAutoBuilder<br/>Async Build]
-        LC[Lifecycle<br/>on_ready + on_shutdown]
-        HC[HealthCheck<br/>HealthStatus Reporting]
-        OBS[BuildObserver<br/>Build Callbacks]
-    end
-
-    subgraph kit["kit — Capability Management Center"]
-        K[Kit&lt;Unbuilt&gt; → Kit&lt;Ready&gt;]
-        DG[DependencyGraph<br/>Cycle Detection + Topological Sort]
-        TM[TypeMap<br/>TypeId Key-Value Store]
-        CFG[Config<br/>confers Integration]
-        SC[Scope<br/>Scope Isolation]
-    end
-
-    subgraph async_kit["async_kit — Async Capability Management"]
-        AK[AsyncKit&lt;Unbuilt&gt; → AsyncKit&lt;Ready&gt;]
-        ATM[AsyncTypeMap<br/>Arc&lt;RwLock&gt; Store]
-    end
-
-    subgraph i18n_mod["i18n — ICU4X Internationalization + Fluent Translation"]
-        I18N["Numbers / Dates / Plurals / Collation / tr()"]
-    end
-
-    MM --> K
-    AB --> K
-    AAB --> AK
-    LC --> K
-    HC --> K
-    OBS --> K
-    K --> DG
-    K --> TM
-    K --> CFG
-    K --> SC
-    AK --> ATM
-```
-
-**Core Design**:
-
-- **Typestate Pattern**: `Kit<Unbuilt>` → `Kit<Ready>`, build-time dependency graph validation, zero runtime overhead.
-- **Interior Mutability**: `RefCell`-based, single-threaded `!Sync` design, avoiding lock overhead. `AsyncKit` uses `Arc<RwLock>` for multi-threading.
-- **Three-Level Feature Inheritance** (confers integration):
-
-```mermaid
-graph LR
-    C[confers] --> R[reload]
-    R --> E[encryption]
-```
-
----
-
 ## 💡 Why trait-kit?
 
 trait-kit sits between "raw manual wiring" and "full DI framework":
@@ -448,11 +488,77 @@ trait-kit gives you the **standardization** of a DI framework with the **explici
 
 ---
 
+## 🧪 Testing
+
+### Test Categories
+
+| Type | Location | Description |
+|------|----------|-------------|
+| Unit tests | `src/` (`#[cfg(test)]`) | Module-internal logic |
+| Integration tests | `tests/` | `basic`, `e2e_advanced`, `e2e_feature_combinations`, `config_inheritance_e2e`, `config_inherit_derive`, `shared_config_derive`, etc. |
+| Compile-time UI tests | `tests/compile_fail.rs` + `tests/ui/` | trybuild-based: assert typestate misuse (e.g. require before build) fails to compile |
+| Example validation | `examples/` | Each example runs standalone; failed assertions panic |
+
+### Common Commands
+
+```sh
+# Run all tests (default features)
+cargo test
+
+# Run all tests (all features, same as CI)
+cargo test --all-features --lib
+
+# Run with a specific feature combination
+cargo test --features confers
+
+# Lint and format checks
+cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --all -- --check
+```
+
+---
+
+## 📊 Performance
+
+Performance comes from design-level considerations rather than runtime overhead:
+
+- **Build-time validation, zero runtime cost**: the typestate pattern moves dependency graph validation (cycle detection, missing deps) entirely into `build()`; capability retrieval on `Kit<Ready>` is just a `TypeId` lookup + clone.
+- **Lock-free single-threaded design**: the sync `Kit` uses `RefCell` interior mutability, avoiding mutex overhead; use `AsyncKit` (`Arc<RwLock>`) for multi-threaded scenarios.
+- **Continuous optimization**: 0.4.1 optimized `Kit::require()`, `reload_config()`, and `transfer_lazy_builders()`, and `find_cycle()` now uses a HashMap for O(1) stack position lookup (see the [CHANGELOG](docs/CHANGELOG.md)).
+
+Systematic performance benchmarks are being planned (see the [Roadmap](#️-roadmap)); no public benchmark data is available yet.
+
+---
+
+## 🔒 Security
+
+- **`#![deny(unsafe_code)]`**: no `unsafe` anywhere in the crate.
+- **Encrypted config storage**: the `encryption` feature provides XChaCha20-Poly1305 encryption with keys derived via HKDF from the master key and `ModuleConfig::PATH`; `EncryptedBlob`'s `Debug` implementation never leaks encrypted material.
+- **Explicit thread-safety model**: the sync `Kit` is `!Sync` (documented thread-safety boundary); `AsyncKit` is `Send + Sync`.
+- **CI security gates**: `cargo deny check` dependency audit + CodeQL static analysis.
+
+See the [Security document](docs/SECURITY.md) for details.
+
+---
+
+## 🗺️ Roadmap
+
+Material sourced from the workspace acceptance plan and the [CHANGELOG](docs/CHANGELOG.md):
+
+- [x] **0.5.0-rc.2** (2026-09-03) — docs & Kit API table sync, workspace dependency path localization (`path` + `version` dual specification).
+- [ ] **0.5.0 stable release** — after the minor version bump, sync the `path + version` dependency requirements of downstream crates (oxcache, dbnexus, inklog, limiteron, sdforge) per the workspace release plan.
+- [ ] **cfg gate completeness** — add missing `observer` cfg gates for the `--no-default-features --features async` combination (known low-priority item).
+- [ ] **Performance benchmarks** — establish criterion benchmarks and a `docs/PERFORMANCE.md` performance report (planned).
+
+---
+
 ## 🤝 Contributing
+
+Contributions are welcome! For full environment setup, the TDD workflow, and commit conventions, see the [Contributing Guide](docs/CONTRIBUTING.md).
 
 ### Build Requirements
 
-- Rust **1.91** or later (stable).
+- Rust **1.97.1** or later (stable).
 - No external tooling required (no protoc, no openssl, no system libraries).
 
 ### Development Commands
@@ -483,37 +589,45 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 
 ---
 
-## 📚 Documentation
-
-- [API Docs (docs.rs)][docs-url]
-- [Architecture](docs/ARCHITECTURE.md)
-- [API Reference](docs/API.md)
-- [Changelog](docs/CHANGELOG.md)
-- [Contributing](docs/CONTRIBUTING.md)
-
----
-
 ## 📋 Changelog
 
-See [CHANGELOG.md](docs/CHANGELOG.md).
+See [CHANGELOG.md](docs/CHANGELOG.md). Recent highlights:
+
+- **0.5.0-rc.2** (2026-09-03): docs version and Kit API table sync; `confers` dependency path localization (`path` + `version` dual specification).
+- **0.4.2** (2026-08-06): fixed the `AsyncKit::decorate()` storage-key bug (decorators previously never applied).
+- **0.4.1** (2026-08-06): i18n enhancements (`tr()` / `I18nManager` no longer require the `i18n` feature); `EncryptedBlob` Debug no longer leaks encrypted material; new config extension API docs and examples.
 
 ---
 
 ## 📄 License
 
-MIT License, Copyright (c) 2026 Kirky.X
+This project is licensed under the [MIT License](LICENSE).
 
-See [LICENSE](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE).
+Copyright (c) 2026 Kirky.X
 
-[ci-badge]: https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml/badge.svg
-[ci-url]: https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml
-[crates-badge]: https://img.shields.io/crates/v/trait-kit?style=flat-square
-[crates-url]: https://crates.io/crates/trait-kit
-[docs-badge]: https://img.shields.io/docsrs/trait-kit?style=flat-square
-[docs-url]: https://docs.rs/trait-kit
-[downloads-badge]: https://img.shields.io/crates/d/trait-kit?style=flat-square
-[downloads-url]: https://crates.io/crates/trait-kit
-[license-badge]: https://img.shields.io/badge/license-MIT-blue?style=flat-square
-[license-url]: https://github.com/Kirky-X/trait-kit/blob/main/LICENSE
-[msrv-badge]: https://img.shields.io/badge/MSRV-1.91-orange?style=flat-square
-[msrv-url]: https://github.com/Kirky-X/trait-kit
+---
+
+## 🙏 Acknowledgments
+
+- [`confers`](https://crates.io/crates/confers) — the underlying config loading, hot-reload, and encrypted storage capabilities.
+- [ICU4X](https://github.com/unicode-org/icu4x) — internationalization formatting (number/date/plural/collation).
+- [Project Fluent](https://projectfluent.org/) — the Fluent FTL message localization approach.
+- [The Rust Community](https://www.rust-lang.org/community) — for the excellent language ecosystem and tooling.
+
+---
+
+## 📞 Contact & Support
+
+- **Bugs & feature requests**: [GitHub Issues](https://github.com/Kirky-X/trait-kit/issues)
+- **Security vulnerabilities**: do not report via public issues; see the vulnerability reporting process in the [Security document](docs/SECURITY.md).
+- **Maintainer**: Kirky.X
+
+---
+
+## ⭐ Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Kirky-X/trait-kit&type=Date)](https://star-history.com/#Kirky-X/trait-kit&Date)
+
+### 💝 Support the Project
+
+If you find this project useful, please consider giving it a ⭐️!
