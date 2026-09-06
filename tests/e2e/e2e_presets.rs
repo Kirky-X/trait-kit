@@ -246,9 +246,7 @@ fn prs06_examples_manifest_required_features_structure() {
         if in_features && t.starts_with('[') {
             break;
         }
-        if in_features
-            && let Some((name, _)) = t.split_once('=')
-        {
+        if in_features && let Some((name, _)) = t.split_once('=') {
             ex_features.push(name.trim().to_string());
         }
     }

@@ -123,8 +123,5 @@ fn e2e_factory_success_path_produces_fresh_instances() {
     let b = produce().unwrap();
     assert_eq!(*a, 2);
     assert_eq!(*b, 2);
-    assert!(
-        !Arc::ptr_eq(&a, &b),
-        "factory 每次应产出新实例而非共享单例"
-    );
+    assert!(!Arc::ptr_eq(&a, &b), "factory 每次应产出新实例而非共享单例");
 }
