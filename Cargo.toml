@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
-license.workspace = true
+license-file.workspace = true
 description = "Module Standard Interface and Capability Management Center — A lightweight Rust library that provides a standard interface for module definition and Kit capability management."
 keywords = ["module", "trait", "capability", "kit", "interface"]
 categories = ["rust-patterns", "development-tools"]
@@ -20,7 +20,7 @@ edition = "2024"
 rust-version = "1.97.1"
 authors = ["Kirky.X"]
 repository = "https://github.com/Kirky-X/trait-kit.git"
-license = "MIT"
+license-file = "LICENSE"
 
 [workspace.lints.rust]
 

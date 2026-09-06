@@ -601,7 +601,7 @@ See [CHANGELOG.md](docs/CHANGELOG.md). Recent highlights:
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the MIT + Commons Clause License. Commercial use requires separate authorization. See [LICENSE](LICENSE).
 
 Copyright (c) 2026 Kirky.X
 
