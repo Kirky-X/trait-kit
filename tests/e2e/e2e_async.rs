@@ -6,6 +6,7 @@
 // 覆盖场景 ID（docs/TEST_SCENARIOS.md §2.16 / §2.12）：
 // - ASK-13 异步取消：build future 被 drop 后状态不半更新，重试 build 可成功
 // - DEC-08 `AsyncKit::decorate`：async 构建路径装饰行为与 sync 一致
+// - HLT-09 async 面健康检查报告口径与 sync 同构（见文件尾部）
 
 #![cfg(feature = "async")]
 
@@ -142,4 +143,118 @@ fn e2e_async_kit_decorate_matches_sync_semantics() {
         800,
         "async 构建路径应按注册顺序装饰（7+1)*100"
     );
+}
+
+// ─── HLT-09：async 面健康检查与 sync 同构 ──────────────────────
+
+#[cfg(feature = "health")]
+mod async_health_isomorphism_e2e {
+    use super::block_on;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Arc;
+    use trait_kit::core::health::{AsyncHealthCheck, HealthStatus};
+    use trait_kit::impl_module_meta;
+    use trait_kit::prelude::*;
+
+    struct IsoAsyncMod;
+    impl_module_meta!(IsoAsyncMod, "iso-async-mod");
+    impl AsyncAutoBuilder for IsoAsyncMod {
+        type Capability = Arc<u32>;
+        type Error = TraitKitError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(Arc::new(9u32)) })
+        }
+    }
+    impl AsyncHealthCheck for IsoAsyncMod {
+        fn check(cap: &Arc<u32>) -> HealthStatus {
+            if **cap > 0 {
+                HealthStatus::Healthy
+            } else {
+                HealthStatus::Unhealthy {
+                    detail: "zero value".into(),
+                }
+            }
+        }
+    }
+
+    struct IsoSyncMod;
+    impl_module_meta!(IsoSyncMod, "iso-sync-mod");
+    impl AutoBuilder for IsoSyncMod {
+        type Capability = Arc<u32>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            Ok(Arc::new(9u32))
+        }
+    }
+    impl trait_kit::core::HealthCheck for IsoSyncMod {
+        fn check(cap: &Arc<u32>) -> HealthStatus {
+            if **cap > 0 {
+                HealthStatus::Healthy
+            } else {
+                HealthStatus::Unhealthy {
+                    detail: "zero value".into(),
+                }
+            }
+        }
+    }
+
+    struct GhostAsyncMod;
+    impl_module_meta!(GhostAsyncMod, "ghost-async-mod");
+    impl AsyncAutoBuilder for GhostAsyncMod {
+        type Capability = Arc<u32>;
+        type Error = TraitKitError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(Arc::new(1u32)) })
+        }
+    }
+    impl AsyncHealthCheck for GhostAsyncMod {
+        fn check(_cap: &Arc<u32>) -> HealthStatus {
+            HealthStatus::Healthy
+        }
+    }
+
+    /// HLT-09：同逻辑 checker 在 sync/async 两条产品线上产出同型报告；
+    /// 未注册 checker 的错误口径同型（MissingConfig{key=NAME}）。
+    #[test]
+    fn e2e_async_health_report_isomorphic_to_sync() {
+        // sync 侧（同逻辑 checker）。
+        let mut sk = Kit::new();
+        sk.register::<IsoSyncMod>().unwrap();
+        sk.register_health_check::<IsoSyncMod>();
+        let skr = sk.build().unwrap();
+        let sync_report = skr.health_report();
+
+        // async 侧。
+        let mut ak = AsyncKit::new();
+        ak.register::<IsoAsyncMod>().unwrap();
+        ak.register_health_check::<IsoAsyncMod>();
+        let akr = block_on(ak.build()).expect("async build 应成功");
+        let async_report = akr.health_report();
+
+        // 同构断言：报告形状与状态判定一致（模块名不同）。
+        assert_eq!(sync_report.len(), 1);
+        assert_eq!(async_report.len(), 1);
+        assert_eq!(
+            sync_report[0].1.is_healthy(),
+            async_report[0].1.is_healthy(),
+            "同逻辑 checker 在两条产品线上应产出同型判定"
+        );
+        assert!(async_report[0].1.is_healthy());
+
+        // 未注册 checker 错误口径：与 sync 侧同型（MissingConfig）。
+        let err = akr
+            .health_check::<GhostAsyncMod>()
+            .expect_err("未注册 checker 应返回错误");
+        match err {
+            TraitKitError::MissingConfig { key } => assert_eq!(key, "ghost-async-mod"),
+            other => panic!("expected MissingConfig, got: {other}"),
+        }
+    }
 }
