@@ -661,8 +661,12 @@ impl Kit {
         // Call lifecycle on_ready callbacks in topological order
         #[cfg(feature = "lifecycle")]
         {
-            for (_type_id, callback) in &ready_callbacks {
-                callback(&kit)?;
+            let mut callbacks: std::collections::HashMap<TypeId, ReadyCallback> =
+                ready_callbacks.into_iter().collect();
+            for type_id in &sorted {
+                if let Some(callback) = callbacks.remove(type_id) {
+                    callback(&kit)?;
+                }
             }
         }
 
@@ -1485,7 +1489,9 @@ impl Kit<Ready> {
     /// Shut down all lifecycle modules in reverse topological order.
     ///
     /// Calls `on_shutdown` for each module registered via `register_lifecycle`.
-    /// A failed shutdown does not prevent other modules from shutting down.
+    /// A failed shutdown does not prevent other modules from shutting down
+    /// (a panicking `on_shutdown` is isolated; the remaining callbacks still
+    /// run).
     ///
     /// Requires the `lifecycle` feature.
     #[cfg(feature = "lifecycle")]
@@ -1494,7 +1500,10 @@ impl Kit<Ready> {
             self.shutdown_callbacks.borrow_mut().drain(..).collect();
         // Reverse order: last built → first shut down
         for (_type_id, callback) in callbacks.iter().rev() {
-            callback(&self.capabilities);
+            // Contract: a failed shutdown does not block other modules.
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                callback(&self.capabilities);
+            }));
         }
     }
 
