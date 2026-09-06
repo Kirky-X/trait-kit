@@ -12,7 +12,7 @@
 
 ## 环境准备
 
-- **Rust 1.91+**（`Cargo.toml` 中 `rust-version = "1.91"`，edition 2024）
+- **Rust 1.97.1+**（`Cargo.toml` 中 `rust-version = "1.97.1"`，edition 2024）
 - **cargo**、**rustfmt**、**clippy**（随 rustup 安装）
 - **cargo-deny**：`cargo install cargo-deny`（pre-commit 与 CI 依赖审计需要）
 - **pre-commit**（与 `lefthook.yml` 功能等价，二选一）：
@@ -45,7 +45,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
 cargo deny check
 
 # MSRV 验证
-cargo +1.91 check
+cargo +1.97.1 check
 ```
 
 ## 开发工作流（TDD）
