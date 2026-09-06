@@ -76,6 +76,62 @@ shutdown = []
 # Without this feature, `tr()` and `I18nManager` still work (lightweight FTL translation).
 i18n = ["dep:icu", "dep:writeable", "dep:sys-locale"]
 
+# E2E 测试源文件位于 tests/e2e/（Cargo 不自动发现子目录文件），显式注册：
+# 目标二进制名保持 e2e_*（`cargo test --test e2e_core` 等命令不变）；
+# i18n zh/en 双文件依赖独立进程隔离（I18nManager 为进程级单例），
+# 故不聚合为单 main.rs；文件级 #![cfg] 门控保证任意 feature 组合可编译。
+[[test]]
+name = "e2e_advanced"
+path = "tests/e2e/e2e_advanced.rs"
+
+[[test]]
+name = "e2e_async"
+path = "tests/e2e/e2e_async.rs"
+
+[[test]]
+name = "e2e_concurrency"
+path = "tests/e2e/e2e_concurrency.rs"
+
+[[test]]
+name = "e2e_config"
+path = "tests/e2e/e2e_config.rs"
+
+[[test]]
+name = "e2e_core"
+path = "tests/e2e/e2e_core.rs"
+
+[[test]]
+name = "e2e_encryption"
+path = "tests/e2e/e2e_encryption.rs"
+
+[[test]]
+name = "e2e_feature_combinations"
+path = "tests/e2e/e2e_feature_combinations.rs"
+
+[[test]]
+name = "e2e_features"
+path = "tests/e2e/e2e_features.rs"
+
+[[test]]
+name = "e2e_hooks"
+path = "tests/e2e/e2e_hooks.rs"
+
+[[test]]
+name = "e2e_i18n"
+path = "tests/e2e/e2e_i18n.rs"
+
+[[test]]
+name = "e2e_i18n_en"
+path = "tests/e2e/e2e_i18n_en.rs"
+
+[[test]]
+name = "e2e_presets"
+path = "tests/e2e/e2e_presets.rs"
+
+[[test]]
+name = "e2e_runtime"
+path = "tests/e2e/e2e_runtime.rs"
+
 [workspace]
 resolver = "2"
 members = [".", "examples", "trait-kit-derive"]
