@@ -19,7 +19,7 @@ use trait_kit::prelude::*;
 
 fn block_on<F: Future>(future: F) -> F::Output {
     let waker = task::Waker::noop();
-    let mut cx = task::Context::from_waker(&waker);
+    let mut cx = task::Context::from_waker(waker);
     let mut future = std::pin::pin!(future);
     loop {
         match future.as_mut().poll(&mut cx) {
