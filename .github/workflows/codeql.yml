@@ -5,15 +5,15 @@ name: CodeQL
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, develop]
   pull_request:
-    branches: [main, master]
+    branches: [main, develop]
   schedule:
     - cron: "37 4 * * 2" # 每周二 04:37 UTC（避开整点）
 
 permissions:
   contents: read
-  security-events: write # 上传 SARIF 到 Security 标签页
+  security-events: write
 
 concurrency:
   group: codeql-${{ github.ref }}
@@ -23,6 +23,7 @@ jobs:
   analyze:
     name: Analyze
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       security-events: write
       actions: read
@@ -30,16 +31,17 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
-      # 不传 languages → CodeQL 自动检测仓库语言
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@v4.37.8
+        with:
+          languages: rust
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+        uses: github/codeql-action/autobuild@v4.37.8
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@v4.37.8
         with:
-          category: "/language:autodetect"
+          category: "/language:rust"
