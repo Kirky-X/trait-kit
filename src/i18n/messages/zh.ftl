@@ -20,9 +20,9 @@ trait-kit-error-config-validation-failed = `{ $context }` 配置验证失败: { 
 
 trait-kit-error-no-snapshot = 未找到 `{ $key }` 的配置快照
 
-i18n-error-invalid-locale = 无效的区域设置 '{ $input }': { $reason }
+i18n-error-invalid-locale = 无效的区域设置 `{ $input }`: { $reason }
 
-i18n-error-invalid-number = 无效的数字 '{ $input }': { $reason }
+i18n-error-invalid-number = 无效的数字 `{ $input }`: { $reason }
 
 i18n-error-date = 日期错误: { $detail }
 

@@ -1764,7 +1764,9 @@ mod interface_scenarios {
             .expect("first register_as");
         match kit.register_as::<FileLoggerModule>() {
             Err(TraitKitError::AlreadyRegistered { module }) => {
-                assert_eq!(module, "iface-file-logger");
+                // graph.add() 报告冲突方：返回**已注册**的名字（console），
+                // 而非被拒绝的新条目名（file）。
+                assert_eq!(module, "iface-console-logger");
             }
             Ok(_) => panic!("expected AlreadyRegistered, got Ok"),
             Err(e) => panic!("expected AlreadyRegistered, got: {e:?}"),

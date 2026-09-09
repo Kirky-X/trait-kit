@@ -258,3 +258,65 @@ mod async_health_isomorphism_e2e {
         }
     }
 }
+
+// ─── LCY-ASYNC：shutdown_async 真正执行 async on_shutdown ──────────────
+
+#[cfg(feature = "lifecycle")]
+mod async_shutdown_e2e {
+    use super::block_on;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use trait_kit::core::lifecycle::AsyncLifecycle;
+    use trait_kit::impl_module_meta;
+    use trait_kit::prelude::*;
+
+    static E2E_ASYNC_SHUTDOWN_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    struct ShutdownE2eMod;
+    impl_module_meta!(ShutdownE2eMod, "shutdown-e2e-mod");
+    impl AsyncAutoBuilder for ShutdownE2eMod {
+        type Capability = Arc<u32>;
+        type Error = TraitKitError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(Arc::new(1u32)) })
+        }
+    }
+    impl AsyncLifecycle for ShutdownE2eMod {
+        fn on_shutdown<'a>(_cap: &'a Arc<u32>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+            Box::pin(async {
+                E2E_ASYNC_SHUTDOWN_COUNT.fetch_add(1, Ordering::SeqCst);
+            })
+        }
+    }
+
+    /// 端到端契约：`shutdown_async()` 恰好执行一次 async `on_shutdown`
+    /// （计数 +1），且为 one-shot——二次调用 no-op。`AsyncKit` 无 sync
+    /// `shutdown()`，async 清理必须 await `shutdown_async()`。
+    #[test]
+    fn e2e_async_shutdown_async_runs_on_shutdown_hook() {
+        let before = E2E_ASYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst);
+        let mut kit = AsyncKit::new();
+        kit.register::<ShutdownE2eMod>().unwrap();
+        kit.register_lifecycle::<ShutdownE2eMod>();
+        let ready = block_on(kit.build()).expect("build 应成功");
+
+        block_on(ready.shutdown_async());
+        assert_eq!(
+            E2E_ASYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst),
+            before + 1,
+            "shutdown_async() 应恰好执行一次 async on_shutdown"
+        );
+
+        block_on(ready.shutdown_async());
+        assert_eq!(
+            E2E_ASYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst),
+            before + 1,
+            "shutdown_async() 应为 one-shot（二次调用 no-op）"
+        );
+    }
+}

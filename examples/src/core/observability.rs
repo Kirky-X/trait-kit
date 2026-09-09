@@ -18,18 +18,18 @@ use trait_kit::prelude::*;
 // ─── Observer implementation ───────────────────────────────────────────────
 
 struct LoggingObserver {
-    start_count: Arc<AtomicUsize>,
-    built_count: Arc<AtomicUsize>,
+    start_count: AtomicUsize,
+    built_count: AtomicUsize,
 }
 
 impl BuildObserver for LoggingObserver {
     fn on_module_start(&self, module_name: &'static str) {
-        self.start_count.fetch_add(1, Ordering::SeqCst);
+        self.start_count.fetch_add(1, Ordering::Relaxed);
         println!("  [observer] building: {module_name}");
     }
 
     fn on_module_built(&self, module_name: &'static str, elapsed: Duration) {
-        self.built_count.fetch_add(1, Ordering::SeqCst);
+        self.built_count.fetch_add(1, Ordering::Relaxed);
         println!(
             "  [observer] built: {module_name} in {}µs",
             elapsed.as_micros()
@@ -65,14 +65,17 @@ impl AutoBuilder for LoggerModule {
 }
 
 fn main() {
-    let start_count = Arc::new(AtomicUsize::new(0));
-    let built_count = Arc::new(AtomicUsize::new(0));
+    // The Kit already holds the observer in an `Arc<dyn BuildObserver>`, so a
+    // single Arc around the whole observer suffices — no per-field Arc needed.
+    let observer = Arc::new(LoggingObserver {
+        start_count: AtomicUsize::new(0),
+        built_count: AtomicUsize::new(0),
+    });
 
     let mut kit = Kit::new();
-    kit.with_observer(Arc::new(LoggingObserver {
-        start_count: Arc::clone(&start_count),
-        built_count: Arc::clone(&built_count),
-    }));
+    // Method-call `.clone()` (not the `Arc::clone` free function) so the
+    // unsized coercion to `Arc<dyn BuildObserver>` applies at the argument.
+    kit.with_observer(observer.clone());
     kit.register::<LoggerModule>()
         .expect("register LoggerModule");
 
@@ -80,11 +83,11 @@ fn main() {
     let _ = kit.require::<LoggerModule>().expect("require LoggerModule");
 
     assert!(
-        start_count.load(Ordering::SeqCst) >= 1,
+        observer.start_count.load(Ordering::Relaxed) >= 1,
         "observer should have seen at least 1 start"
     );
     assert!(
-        built_count.load(Ordering::SeqCst) >= 1,
+        observer.built_count.load(Ordering::Relaxed) >= 1,
         "observer should have seen at least 1 built"
     );
 

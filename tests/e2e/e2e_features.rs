@@ -76,21 +76,28 @@ impl AutoBuilder for MultiDecoB {
     }
 }
 
+// 以下 Gate 系列仅被 interface 路径测试使用，整体随 interface feature 门控。
+#[cfg(feature = "interface")]
 trait Gate: Send + Sync + 'static {
     fn open(&self) -> bool;
 }
 
+#[cfg(feature = "interface")]
 struct GateCap {
     open: bool,
 }
+#[cfg(feature = "interface")]
 impl Gate for GateCap {
     fn open(&self) -> bool {
         self.open
     }
 }
 
+#[cfg(feature = "interface")]
 struct GateModule;
+#[cfg(feature = "interface")]
 impl_module_meta!(GateModule, "gate-mod");
+#[cfg(feature = "interface")]
 impl AutoBuilder for GateModule {
     type Capability = Arc<GateCap>;
     type Error = TraitKitError;
@@ -98,6 +105,7 @@ impl AutoBuilder for GateModule {
         Ok(Arc::new(GateCap { open: false }))
     }
 }
+#[cfg(feature = "interface")]
 impl trait_kit::core::InterfaceBuilder for GateModule {
     type Interface = dyn Gate;
     type Capability = Arc<GateCap>;

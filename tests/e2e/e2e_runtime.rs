@@ -11,7 +11,7 @@
 #![cfg(feature = "shutdown")]
 
 use std::time::Duration;
-use trait_kit::kit::{ShutdownCoordinator, ShutdownPhase, ShutdownResult};
+use trait_kit::kit::{ShutdownCoordinator, ShutdownPhase};
 use trait_kit::prelude::*;
 
 /// 真实超时路径：阶段内慢钩子耗尽超时预算 → 剩余钩子被跳过 →
@@ -27,11 +27,11 @@ fn e2e_shutdown_timed_out_into_result_and_display() {
         panic!("超时后剩余钩子不应执行");
     });
 
-    let results = coord.shutdown();
-    assert!(!results[0].is_ok(), "StopRequests 应标记 timed_out");
-    assert!(results[1].is_ok() && results[2].is_ok());
+    let result = coord.shutdown();
+    assert!(!result.phases[0].is_ok(), "StopRequests 应标记 timed_out");
+    assert!(result.phases[1].is_ok() && result.phases[2].is_ok());
 
-    let err = ShutdownResult { phases: results }
+    let err = result
         .into_result()
         .expect_err("存在超时阶段时应返回 Err");
     match &err {
@@ -58,11 +58,11 @@ fn e2e_shutdown_global_timeout_display_contains_all_phases() {
         panic!("全局超时后钩子不应执行");
     });
 
-    let results = coord.shutdown();
-    assert_eq!(results.len(), 3);
-    assert!(results.iter().all(|r| !r.is_ok()), "三阶段应全部超时");
+    let result = coord.shutdown();
+    assert_eq!(result.len(), 3);
+    assert!(!result.is_ok(), "三阶段应全部超时");
 
-    let err = ShutdownResult { phases: results }
+    let err = result
         .into_result()
         .expect_err("全部超时应返回 Err");
     let msg = err.to_string();

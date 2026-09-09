@@ -64,10 +64,21 @@ pub trait HealthCheck: crate::core::AutoBuilder {
 
 /// Async health check for a module in async context.
 ///
+/// The `check` method is **intentionally synchronous** — it has exactly the
+/// same signature as the sync [`HealthCheck::check`] and is not an async
+/// operation. This trait exists to give modules built in the
+/// [`AsyncAutoBuilder`](crate::core::AsyncAutoBuilder) context (i.e. modules
+/// whose `build` is async) a health-check attachment point for
+/// `AsyncKit::register_health_check()` / `AsyncKit::health_check()`; it does
+/// **not** provide asynchronous checking.
+///
 /// Requires both `health` and `async` features.
 #[cfg(all(feature = "health", feature = "async"))]
 pub trait AsyncHealthCheck: crate::core::AsyncAutoBuilder {
     /// Check the health of the async module given its built capability.
+    ///
+    /// Intentionally synchronous: see the trait docs for why this is not an
+    /// async method.
     fn check(cap: &Self::Capability) -> HealthStatus;
 }
 
@@ -113,6 +124,38 @@ mod tests {
     }
 
     impl HealthCheck for TestModule {
+        fn check(cap: &Arc<TestCap>) -> HealthStatus {
+            if cap.value > 0 {
+                HealthStatus::Healthy
+            } else {
+                HealthStatus::Unhealthy {
+                    detail: "value is zero".to_string(),
+                }
+            }
+        }
+    }
+
+    /// Second module whose build produces a zero value, so the end-to-end
+    /// `build()` → `health_check()` path can be exercised for `Unhealthy`.
+    struct ZeroTestModule;
+
+    impl ModuleMeta for ZeroTestModule {
+        const NAME: &'static str = "zero-health";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            &[]
+        }
+    }
+
+    impl AutoBuilder for ZeroTestModule {
+        type Capability = Arc<TestCap>;
+        type Error = TestError;
+
+        fn build(_kit: &Kit) -> Result<Arc<TestCap>, TestError> {
+            Ok(Arc::new(TestCap { value: 0 }))
+        }
+    }
+
+    impl HealthCheck for ZeroTestModule {
         fn check(cap: &Arc<TestCap>) -> HealthStatus {
             if cap.value > 0 {
                 HealthStatus::Healthy
@@ -200,6 +243,21 @@ mod tests {
         let built = kit.build().unwrap();
         let status = built.health_check::<TestModule>().unwrap();
         assert_eq!(status, HealthStatus::Healthy);
+    }
+
+    #[test]
+    fn health_zero_test_module_build_and_check_unhealthy() {
+        // End-to-end unhealthy path: build produces value: 0, and the kit's
+        // health_check() must report Unhealthy for it.
+        let mut kit = Kit::new();
+        kit.register::<ZeroTestModule>().unwrap();
+        kit.register_health_check::<ZeroTestModule>();
+        let built = kit.build().unwrap();
+        let status = built.health_check::<ZeroTestModule>().unwrap();
+        assert!(
+            matches!(status, HealthStatus::Unhealthy { ref detail } if detail == "value is zero"),
+            "build→health_check end-to-end should report Unhealthy, got {status:?}"
+        );
     }
 
     #[test]

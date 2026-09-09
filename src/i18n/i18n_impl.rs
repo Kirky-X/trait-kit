@@ -9,7 +9,7 @@ use icu::collator::Collator;
 use icu::collator::options::CollatorOptions;
 use icu::datetime::DateTimeFormatter;
 use icu::datetime::fieldsets::YMD;
-use icu::datetime::input::{Date, DateTime, Time};
+use icu::datetime::input::Date;
 use icu::decimal::DecimalFormatter;
 use icu::decimal::input::Decimal;
 use icu::decimal::options::DecimalFormatterOptions;
@@ -32,14 +32,16 @@ impl I18nFormatter {
         })?;
 
         let decimal_formatter =
-            DecimalFormatter::try_new(parsed.clone().into(), DecimalFormatterOptions::default())
+            DecimalFormatter::try_new((&parsed).into(), DecimalFormatterOptions::default())
                 .map_err(|e| I18nError::FormatError(e.to_string()))?;
 
-        let plural_rules =
-            PluralRules::try_new(parsed.clone().into(), PluralRulesOptions::default())
-                .map_err(|e| I18nError::FormatError(e.to_string()))?;
+        let plural_rules = PluralRules::try_new((&parsed).into(), PluralRulesOptions::default())
+            .map_err(|e| I18nError::FormatError(e.to_string()))?;
 
-        let collator = Collator::try_new(parsed.clone().into(), CollatorOptions::default())
+        let collator = Collator::try_new((&parsed).into(), CollatorOptions::default())
+            .map_err(|e| I18nError::FormatError(e.to_string()))?;
+
+        let date_formatter = DateTimeFormatter::try_new((&parsed).into(), YMD::medium())
             .map_err(|e| I18nError::FormatError(e.to_string()))?;
 
         Ok(Self {
@@ -47,6 +49,7 @@ impl I18nFormatter {
             decimal_formatter,
             plural_rules,
             collator,
+            date_formatter,
         })
     }
 
@@ -63,19 +66,17 @@ impl I18nFormatter {
                 reason: "value is not finite (NaN or Infinity)".into(),
             });
         }
-        // Use fixed-point notation to avoid scientific notation (e.g. "1e-10")
-        // which Decimal::from_str cannot parse. 20 decimal places cover the
-        // full precision of f64.
-        let repr = format!("{value:.20}");
-        // Trim trailing zeros after decimal point, but keep at least one digit
-        let repr = repr.trim_end_matches('0');
-        let repr = repr.trim_end_matches('.');
-        let decimal = Decimal::from_str(repr).map_err(|e| I18nError::InvalidNumber {
-            input: repr.to_string(),
+        // f64 的 `Display` 输出最短往返（shortest round-trip）的定点表示：
+        // 0.3 → "0.3"（不泄漏二进制展开），且定点表示永不产生科学计数法
+        // （`{:e}` 才会），因此 `Decimal::from_str` 可直接解析；最短表示
+        // 本身无尾零，无需修剪。
+        let repr = format!("{value}");
+        let decimal = Decimal::from_str(&repr).map_err(|e| I18nError::InvalidNumber {
+            input: repr.clone(),
             reason: e.to_string(),
         })?;
         let formatted = self.decimal_formatter.format(&decimal);
-        Ok(formatted.write_to_string().to_string())
+        Ok(formatted.write_to_string().into_owned())
     }
 
     /// Format an ISO calendar date (year / month / day) using a medium
@@ -87,13 +88,11 @@ impl I18nFormatter {
     pub fn format_date(&self, year: i32, month: u8, day: u8) -> Result<String, I18nError> {
         let date =
             Date::try_new_iso(year, month, day).map_err(|e| I18nError::DateError(e.to_string()))?;
-        let time = Time::try_new(0, 0, 0, 0).map_err(|e| I18nError::DateError(e.to_string()))?;
-        let datetime = DateTime { date, time };
 
-        let dtf = DateTimeFormatter::try_new(self.locale.clone().into(), YMD::medium())
-            .map_err(|e| I18nError::FormatError(e.to_string()))?;
-        let formatted = dtf.format(&datetime);
-        Ok(formatted.write_to_string().to_string())
+        // YMD 为 date-only fieldset，可直接格式化 Date，无需包装午夜 Time。
+        // formatter 在 `new()` 中 eagerly 创建（与文档承诺一致）。
+        let formatted = self.date_formatter.format(&date);
+        Ok(formatted.write_to_string().into_owned())
     }
 
     /// Return the plural category for `count` in the formatter's locale.
@@ -112,5 +111,50 @@ impl I18nFormatter {
     /// consistency with the other formatting methods.
     pub fn compare(&self, a: &str, b: &str) -> Result<Ordering, I18nError> {
         Ok(self.collator.compare(a, b))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_number_shortest_roundtrip_no_binary_noise() {
+        // 旧实现 `format!("{value:.20}")` 会泄漏 f64 二进制展开
+        // （0.3 → "0.2999999999999999889..."）；Display 为最短往返表示。
+        let fmt = I18nFormatter::new("en-US").expect("en-US locale");
+        let result = fmt.format_number(0.3).expect("format 0.3");
+        assert_eq!(result, "0.3", "0.3 must format as shortest round-trip repr");
+        assert!(
+            !result.contains("2999"),
+            "binary expansion must not leak: got '{result}'"
+        );
+    }
+
+    #[test]
+    fn format_number_tiny_value_does_not_collapse_to_zero() {
+        // 旧实现对 1e-300 级小值经 ".20" 截断 + 尾零修剪后输出 "0"；
+        // Display 定点展开保留全部有效位（en-US 分组只作用于整数部分）。
+        let fmt = I18nFormatter::new("en-US").expect("en-US locale");
+        let result = fmt.format_number(1e-30).expect("format 1e-30");
+        assert_ne!(result, "0", "1e-30 must not collapse to 0: got '{result}'");
+        assert!(
+            result.starts_with("0."),
+            "fixed-point output must not use scientific notation: got '{result}'"
+        );
+        assert!(
+            result.ends_with('1'),
+            "least significant digit must survive: got '{result}'"
+        );
+    }
+
+    #[test]
+    fn format_number_exact_grouping_and_decimals() {
+        let fmt = I18nFormatter::new("en-US").expect("en-US locale");
+        assert_eq!(
+            fmt.format_number(1_234_567.89).expect("format 1234567.89"),
+            "1,234,567.89"
+        );
+        assert_eq!(fmt.format_number(42.0).expect("format 42.0"), "42");
     }
 }

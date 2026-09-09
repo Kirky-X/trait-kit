@@ -273,8 +273,8 @@
 | SCP-05 | 双作用域互不泄漏：A 注册的模块在 B 中不可见 | 边界 | scope | 无 | `src/kit/scope.rs::scope_registrations_do_not_leak_across_scopes`、`tests/e2e_feature_combinations.rs::e2e_scope_isolation` | tests/e2e/e2e_runtime.rs |
 | SCP-06 | `Scope` drop 后资源清空（`scope_drop_clears_resources`） | 边界 | scope | 无 | `src/kit/scope.rs::scope_drop_clears_resources` | tests/e2e/e2e_runtime.rs |
 | SCP-07 | `Kit<Ready>::create_scope()` 返回空作用域，与 Kit 能力互相独立 | 正常 | scope | 无 | `src/kit/kit.rs::create_scope_returns_empty_scope`、`tests/e2e_feature_combinations.rs::e2e_scope_create_empty` | tests/e2e/e2e_runtime.rs |
-| SCP-08 | `AsyncScope`（scope+async）：register/require/insert 全链路 | 正常 | scope,async | 无 | `src/kit/scope.rs::async_scope_register_then_contains`、`async_scope_module_build_and_require`、`src/kit/async_kit.rs::async_create_scope_returns_empty` | tests/e2e/e2e_async.rs |
-| SCP-09 | `AsyncScope` 异常面：重复注册报错、缺失 require 报错 | 异常 | scope,async | 无 | `src/kit/scope.rs::async_scope_register_duplicate_returns_error`、`async_scope_require_missing_returns_error` | tests/e2e/e2e_async.rs |
+| SCP-08 | `AsyncScope`（scope+async）：insert/require/contains 全链路 | 正常 | scope,async | 无 | `src/kit/scope.rs::async_scope_insert_then_contains`、`async_scope_insert_and_require`、`src/kit/async_kit.rs::async_create_scope_returns_empty` | tests/e2e/e2e_async.rs |
+| SCP-09 | `AsyncScope` 异常面：重复 insert 覆盖旧值、缺失 require 报错 | 异常 | scope,async | 无 | `src/kit/scope.rs::async_scope_insert_twice_replaces_value`、`async_scope_require_missing_returns_error` | tests/e2e/e2e_async.rs |
 | SCP-10 | scope+lifecycle 组合：作用域实例参与（或不参与）Kit 级 shutdown，语义固化 | 边界 | scope,lifecycle | 无 | `tests/e2e_feature_combinations.rs::e2e_scope_plus_lifecycle` | tests/e2e/e2e_feature_combinations.rs |
 
 ### 2.14 特性开关（TGL，9 条）

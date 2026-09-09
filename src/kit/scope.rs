@@ -7,10 +7,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use crate::core::{AutoBuilder, BuildFn};
+use crate::core::AutoBuilder;
 use crate::error::TraitKitError;
 
-use super::kit::LazySlot;
+use super::kit::{LazyBuildFn, LazySlot};
 
 /// Scoped dependency container for per-request instance isolation.
 ///
@@ -56,7 +56,7 @@ impl Scope {
             return Err(TraitKitError::AlreadyRegistered { module: M::NAME });
         }
 
-        let build_fn: BuildFn = Box::new(|kit| {
+        let build_fn: LazyBuildFn = Box::new(|kit| {
             let cap = M::build(kit)
                 .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?;
             Ok(Box::new(cap) as Box<dyn std::any::Any>)
@@ -114,10 +114,23 @@ impl Scope {
         if let Some(builder) = builder {
             // Create a minimal empty Kit for the build callback.
             let temp_kit = crate::kit::Kit::new();
-            let boxed = (builder)(&temp_kit).map_err(|e| TraitKitError::BuildFailed {
-                context: M::NAME.to_string(),
-                source: e,
-            })?;
+            // `LazyBuildFn` is an `Fn` closure: the call only borrows it, so
+            // the same builder remains available for the failure path below.
+            let boxed = match builder(&temp_kit) {
+                Ok(boxed) => boxed,
+                Err(e) => {
+                    // Restore the builder so the slot stays retryable: a
+                    // failed build must not degrade later require() calls
+                    // into a permanent MissingCapability.
+                    if let Some(slot) = self.lazy_slots.borrow_mut().get_mut(&type_id) {
+                        slot.builder = Some(builder);
+                    }
+                    return Err(TraitKitError::BuildFailed {
+                        context: M::NAME.to_string(),
+                        source: e,
+                    });
+                }
+            };
             if let Some(slot) = self.lazy_slots.borrow().get(&type_id) {
                 // If the cell is already set (e.g. from a re-entrant call),
                 // the existing value is kept.
@@ -154,21 +167,15 @@ impl Default for Scope {
     }
 }
 
-#[cfg(feature = "scope")]
-impl Drop for Scope {
-    fn drop(&mut self) {
-        // Explicitly clear all stored lazy slots.
-        self.lazy_slots.borrow_mut().clear();
-    }
-}
+// NOTE: `Scope` needs no `Drop` impl — `lazy_slots` is a plain
+// `RefCell<HashMap>` that frees itself on drop; an explicit `clear()` would
+// be redundant.
 
 // ─── AsyncScope ─────────────────────────────────────────────────────────────
 
 #[cfg(all(feature = "scope", feature = "async"))]
 mod async_scope {
     use std::any::TypeId;
-    use std::collections::HashSet;
-    use std::sync::{Arc, RwLock};
 
     use crate::core::AsyncAutoBuilder;
     use crate::error::TraitKitError;
@@ -176,8 +183,8 @@ mod async_scope {
 
     /// Async scoped dependency container (`Send + Sync`).
     ///
-    /// Multi-threaded counterpart to [`super::Scope`]. Uses `Arc<RwLock>` for
-    /// interior mutability.
+    /// Multi-threaded counterpart to [`super::Scope`]. Uses [`AsyncTypeMap`]
+    /// for interior mutability.
     ///
     /// # Design differences from `Scope`
     ///
@@ -185,11 +192,11 @@ mod async_scope {
     /// `require()`), `AsyncScope` does **not** store async build functions or
     /// perform lazy construction. This is because `AsyncAutoBuilder::build`
     /// returns a `Future` whose lifetime is bound to the `AsyncKit` reference,
-    /// making it impossible to store in the scope. Instead, use `insert()` to
-    /// populate pre-built capabilities and `require()` to retrieve them.
+    /// making it impossible to store in the scope. `insert()` is therefore the
+    /// single entry point: it stores a pre-built capability, `contains()`
+    /// reports exactly what was inserted, and `require()` retrieves it.
     pub struct AsyncScope {
         capabilities: AsyncTypeMap,
-        builders: Arc<RwLock<HashSet<TypeId>>>,
     }
 
     impl AsyncScope {
@@ -198,37 +205,15 @@ mod async_scope {
         pub fn new() -> Self {
             AsyncScope {
                 capabilities: AsyncTypeMap::new(),
-                builders: Arc::new(RwLock::new(HashSet::new())),
             }
-        }
-
-        /// Register a module factory in this async scope.
-        ///
-        /// # Errors
-        ///
-        /// Returns `TraitKitError::AlreadyRegistered` if the module was
-        /// already registered.
-        ///
-        /// # Panics
-        ///
-        /// Panics if the internal `RwLock` is poisoned.
-        pub fn register<M: AsyncAutoBuilder>(&mut self) -> Result<(), TraitKitError> {
-            let type_id = TypeId::of::<M>();
-            // Perform check + insert atomically under a single write lock
-            // to prevent TOCTOU race between read-check and write-insert.
-            let mut guard = self.builders.write().expect("lock poisoned");
-            if guard.contains(&type_id) {
-                return Err(TraitKitError::AlreadyRegistered { module: M::NAME });
-            }
-            guard.insert(type_id);
-            Ok(())
         }
 
         /// Insert a pre-built capability into this scope.
         ///
-        /// Use this to populate the scope with capabilities built externally
-        /// (e.g. from an `AsyncKit` or a manual async build). The `require()`
-        /// method retrieves these pre-built values.
+        /// This is the only way to populate the scope: capabilities are built
+        /// externally (e.g. from an `AsyncKit` or a manual async build) and
+        /// stored here. The `require()` method retrieves these values.
+        /// Inserting the same module type again replaces the stored value.
         ///
         /// # Example
         ///
@@ -256,10 +241,6 @@ mod async_scope {
         ///
         /// Returns `TraitKitError::MissingCapability` if the capability was
         /// not inserted into this scope.
-        ///
-        /// # Panics
-        ///
-        /// Panics if the internal `RwLock` is poisoned.
         pub fn require<M: AsyncAutoBuilder>(&self) -> Result<M::Capability, TraitKitError>
         where
             M::Capability: Clone + Send + Sync + 'static,
@@ -272,20 +253,15 @@ mod async_scope {
                 })
         }
 
-        /// Check if a module type is registered in this scope.
+        /// Check if a capability for this module type was inserted into this
+        /// scope.
         ///
-        /// # Panics
-        ///
-        /// Panics if the internal `RwLock` is poisoned.
+        /// `contains` reflects exactly the `insert()` history: `true` if and
+        /// only if `insert::<M>()` has been called (and `require::<M>()` will
+        /// then succeed).
         #[must_use]
         pub fn contains<M: AsyncAutoBuilder>(&self) -> bool {
-            let type_id = TypeId::of::<M>();
-            self.capabilities.contains_by_type_id(type_id)
-                || self
-                    .builders
-                    .read()
-                    .expect("lock poisoned")
-                    .contains(&type_id)
+            self.capabilities.contains_by_type_id(TypeId::of::<M>())
         }
     }
 
@@ -360,8 +336,14 @@ mod tests {
         let cap = scope
             .require::<ScopeModule>()
             .expect("require should succeed");
-        // 验证返回了有效实例（id 值由共享计数器决定，不检查具体值）
-        assert!(cap.id < usize::MAX);
+        // 有意义断言：每个 Scope 各自构建出独立实例。id 来自进程内单调
+        // 递增的共享计数器（并行测试会并发递增，不能断言绝对值），两个
+        // Scope 各 require 一次得到两个 id 互不相同的实例，即证明构建了
+        // 真实的独立实例而非占位值。
+        let mut scope2 = Scope::new();
+        scope2.register::<ScopeModule>().expect("register 2");
+        let cap2 = scope2.require::<ScopeModule>().expect("require 2");
+        assert_ne!(cap.id, cap2.id, "each scope builds its own instance");
     }
 
     #[test]
@@ -398,6 +380,101 @@ mod tests {
                 ref key
             } if key == "scope-module"
         ));
+    }
+
+    /// 构建失败的 builder 必须被放回槽位：第二次 require 重新执行
+    /// builder，返回同样的 BuildFailed（错误信息一致），而不是永久
+    /// MissingCapability，原始错误也不丢失。
+    #[test]
+    fn scope_require_build_failure_is_retryable() {
+        struct ScopeFailModule;
+        impl ModuleMeta for ScopeFailModule {
+            const NAME: &'static str = "scope-fail";
+            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                &[]
+            }
+        }
+        impl AutoBuilder for ScopeFailModule {
+            type Capability = Arc<ScopeCap>;
+            type Error = ScopeTestError;
+            fn build(_kit: &crate::kit::Kit) -> Result<Arc<ScopeCap>, ScopeTestError> {
+                Err(ScopeTestError)
+            }
+        }
+
+        let mut scope = Scope::new();
+        scope.register::<ScopeFailModule>().expect("register");
+        let err1 = scope.require::<ScopeFailModule>().unwrap_err();
+        assert!(matches!(err1, TraitKitError::BuildFailed { .. }));
+
+        let err2 = scope.require::<ScopeFailModule>().unwrap_err();
+        assert!(
+            matches!(err2, TraitKitError::BuildFailed { .. }),
+            "第二次 require 应重试 builder 并返回 BuildFailed，got {err2:?}"
+        );
+        assert!(
+            !matches!(err2, TraitKitError::MissingCapability { .. }),
+            "第二次 require 不得退化为 MissingCapability"
+        );
+        assert_eq!(
+            err1.to_string(),
+            err2.to_string(),
+            "两次 require 的错误信息应一致"
+        );
+    }
+
+    /// 循环依赖的可观测行为：M 的构建内调 `kit.require::<N>()`，N 的
+    /// 构建内调 `kit.require::<M>()`。Scope 的构建回调拿到的是临时空
+    /// Kit，内层 require 得到 MissingCapability，向上包装为外层
+    /// `require` 的 `BuildFailed` —— 外层返回 Err 而非 panic / 死循环。
+    /// 注意：这是当前循环依赖的可观测行为；更精确的循环依赖诊断
+    /// （如 CycleDetected）是未来工作。
+    #[test]
+    fn scope_circular_dependency_returns_error_not_panic() {
+        struct CycM;
+        impl ModuleMeta for CycM {
+            const NAME: &'static str = "cyc-m";
+            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                &[]
+            }
+        }
+        impl AutoBuilder for CycM {
+            type Capability = Arc<ScopeCap>;
+            type Error = ScopeTestError;
+            fn build(kit: &crate::kit::Kit) -> Result<Arc<ScopeCap>, ScopeTestError> {
+                // 循环的一侧：构建 M 时请求 N（空临时 Kit 上必然失败）。
+                kit.require::<CycN>().map_err(|_| ScopeTestError)?;
+                Ok(Arc::new(ScopeCap { id: 0 }))
+            }
+        }
+
+        struct CycN;
+        impl ModuleMeta for CycN {
+            const NAME: &'static str = "cyc-n";
+            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                &[]
+            }
+        }
+        impl AutoBuilder for CycN {
+            type Capability = Arc<ScopeCap>;
+            type Error = ScopeTestError;
+            fn build(kit: &crate::kit::Kit) -> Result<Arc<ScopeCap>, ScopeTestError> {
+                // 循环的另一侧：构建 N 时请求 M，构成完整循环。
+                kit.require::<CycM>().map_err(|_| ScopeTestError)?;
+                Ok(Arc::new(ScopeCap { id: 0 }))
+            }
+        }
+
+        let mut scope = Scope::new();
+        scope.register::<CycM>().expect("register cyc-m");
+        let err = scope.require::<CycM>().unwrap_err();
+        assert!(
+            matches!(
+                err,
+                TraitKitError::BuildFailed { ref context, .. } if context == "cyc-m"
+            ),
+            "外层 require 应返回 BuildFailed（内层为 MissingCapability），got {err:?}"
+        );
     }
 
     #[test]
@@ -506,25 +583,29 @@ mod async_tests {
     }
 
     #[test]
-    fn async_scope_register_then_contains() {
-        let mut scope = AsyncScope::new();
-        scope.register::<AsyncScopeModule>().expect("register");
+    fn async_scope_insert_then_contains() {
+        let scope = AsyncScope::new();
+        // contains 只反映 insert 后的事实：insert 前 false，insert 后 true，
+        // 且此时 require 必然成功（不再存在"注册了但 require 失败"的陷阱）。
+        assert!(!scope.contains::<AsyncScopeModule>());
+        scope.insert::<AsyncScopeModule>(Arc::new(AsyncScopeCap { value: 7 }));
         assert!(scope.contains::<AsyncScopeModule>());
+        let retrieved = scope
+            .require::<AsyncScopeModule>()
+            .expect("require after insert");
+        assert_eq!(retrieved.value, 7);
     }
 
     #[test]
-    fn async_scope_register_duplicate_returns_error() {
-        let mut scope = AsyncScope::new();
-        scope
-            .register::<AsyncScopeModule>()
-            .expect("first register");
-        let err = scope.register::<AsyncScopeModule>().unwrap_err();
-        assert!(matches!(
-            err,
-            TraitKitError::AlreadyRegistered {
-                module: "async-scope-module"
-            }
-        ));
+    fn async_scope_insert_twice_replaces_value() {
+        let scope = AsyncScope::new();
+        scope.insert::<AsyncScopeModule>(Arc::new(AsyncScopeCap { value: 1 }));
+        scope.insert::<AsyncScopeModule>(Arc::new(AsyncScopeCap { value: 2 }));
+        assert!(scope.contains::<AsyncScopeModule>());
+        let retrieved = scope
+            .require::<AsyncScopeModule>()
+            .expect("require after re-insert");
+        assert_eq!(retrieved.value, 2, "re-insert must replace the value");
     }
 
     #[test]
@@ -534,11 +615,8 @@ mod async_tests {
     }
 
     #[test]
-    fn async_scope_module_build_and_require() {
-        let mut scope = AsyncScope::new();
-        scope.register::<AsyncScopeModule>().expect("register");
-        assert!(scope.contains::<AsyncScopeModule>());
-        // Insert a pre-built capability and retrieve it via require()
+    fn async_scope_insert_and_require() {
+        let scope = AsyncScope::new();
         let cap = Arc::new(AsyncScopeCap { value: 42 });
         scope.insert::<AsyncScopeModule>(cap.clone());
         let retrieved = scope

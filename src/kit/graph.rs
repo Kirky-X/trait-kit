@@ -37,10 +37,14 @@ impl DependencyGraph {
     ///
     /// # Errors
     ///
-    /// Returns the module's name if it is already registered.
+    /// Returns the name of the **already registered** module if the given
+    /// entry's `TypeId` is a duplicate (i.e. the conflicting party, so
+    /// callers can locate the source of the conflict), not the new entry's
+    /// name.
     pub fn add(&mut self, entry: ModuleEntry) -> Result<(), &'static str> {
-        if self.index.contains_key(&entry.type_id) {
-            return Err(entry.name);
+        if let Some(&existing_idx) = self.index.get(&entry.type_id) {
+            // 报告冲突方：返回已注册条目的名字，而非本次被拒绝的新条目名。
+            return Err(self.entries[existing_idx].name);
         }
         let idx = self.entries.len();
         self.index.insert(entry.type_id, idx);
@@ -228,12 +232,17 @@ impl DependencyGraph {
         let mut out = String::from("digraph {\n");
         // Nodes
         for entry in &self.entries {
-            let _ = writeln!(out, "    \"{}\";", entry.name);
+            let _ = writeln!(out, "    \"{}\";", escape_label(entry.name));
         }
         // Edges: dependency → dependent
         for entry in &self.entries {
             for (dep_name, _) in &entry.dependencies {
-                let _ = writeln!(out, "    \"{}\" -> \"{}\";", dep_name, entry.name);
+                let _ = writeln!(
+                    out,
+                    "    \"{}\" -> \"{}\";",
+                    escape_label(dep_name),
+                    escape_label(entry.name)
+                );
             }
         }
         out.push('}');
@@ -253,28 +262,52 @@ impl DependencyGraph {
         // Use index-based node IDs to avoid collisions when names contain
         // hyphens or other special characters (e.g. 'my-module' vs 'my_module').
         for (idx, entry) in self.entries.iter().enumerate() {
-            for (dep_name, _) in &entry.dependencies {
-                // Find the index of the dependency entry for its node ID
-                let dep_idx = self
-                    .entries
-                    .iter()
-                    .position(|e| e.name == *dep_name)
-                    .unwrap_or(idx);
+            for (dep_name, dep_id) in &entry.dependencies {
+                // O(1) index lookup instead of a linear scan by name.
+                // When the dependency is not registered, skip the edge:
+                // missing dependencies are `validate()`'s job
+                // (`DependencyMissing`), so we must not emit a misleading
+                // self-loop here.
+                let Some(dep_idx) = self.index.get(dep_id).copied() else {
+                    continue;
+                };
                 let _ = writeln!(
                     out,
-                    "    n{dep_idx}[\"{dep_name}\"] --> n{idx}[\"{}\"]",
-                    entry.name
+                    "    n{dep_idx}[\"{}\"] --> n{idx}[\"{}\"]",
+                    escape_label(dep_name),
+                    escape_label(entry.name)
                 );
             }
         }
         // Ensure nodes with no dependencies still appear
         for (idx, entry) in self.entries.iter().enumerate() {
             if entry.dependencies.is_empty() {
-                let _ = writeln!(out, "    n{idx}[\"{}\"]", entry.name);
+                let _ = writeln!(out, "    n{idx}[\"{}\"]", escape_label(entry.name));
             }
         }
         out
     }
+}
+
+/// Escape a module name for use inside a DOT/Mermaid double-quoted label.
+///
+/// Follows DOT string-literal semantics:
+/// - `\` → `\\`
+/// - `"` → `\"`
+/// - newline → `\n` (literal backslash + `n`, the DOT line-break escape)
+///
+/// Mermaid accepts the same escapes inside its double-quoted node labels.
+fn escape_label(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for ch in name.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 impl Default for DependencyGraph {
@@ -294,6 +327,21 @@ pub enum GraphError {
     /// A dependency cycle was detected.
     CycleDetected { cycle: Vec<&'static str> },
 }
+
+impl std::fmt::Display for GraphError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DependencyMissing { module, missing } => {
+                write!(f, "module `{module}` depends on unregistered module `{missing}`")
+            }
+            Self::CycleDetected { cycle } => {
+                write!(f, "dependency cycle detected: {}", cycle.join(" -> "))
+            }
+        }
+    }
+}
+
+impl std::error::Error for GraphError {}
 
 #[cfg(test)]
 mod tests {
@@ -335,8 +383,10 @@ mod tests {
     fn graph_add_duplicate_returns_err() {
         let mut g = DependencyGraph::new();
         g.add(typed_entry::<types::A>("a", vec![])).unwrap();
+        // 语义：Err 携带**已注册（冲突方）**的名字 "a"，而非被拒绝的新条目名
+        // "a2"，便于调用方定位冲突来源（kit.rs 将其映射为 AlreadyRegistered）。
         let err = g.add(typed_entry::<types::A>("a2", vec![])).unwrap_err();
-        assert_eq!(err, "a2");
+        assert_eq!(err, "a");
     }
 
     #[test]
@@ -531,6 +581,125 @@ mod tests {
         // Original names (with hyphens) are preserved in display labels
         assert!(mermaid.contains("my-module"));
         assert!(mermaid.contains("my-dep"));
+    }
+
+    #[test]
+    fn graph_to_mermaid_unregistered_dependency_no_self_loop() {
+        // "a" 依赖未注册的 "ghost"（TypeId 属于未入图的 types::B）。
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>(
+            "a",
+            vec![("ghost", TypeId::of::<types::B>())],
+        ))
+        .unwrap();
+        let mermaid = g.to_mermaid();
+        // 缺失依赖由 validate() 负责（DependencyMissing），导出不得伪造自环；
+        // 唯一的边被跳过后 "a" 不再出现在导出中（图本身非法，属可接受行为）。
+        assert!(
+            !mermaid.contains("-->"),
+            "unregistered dependency must be skipped, got: {mermaid}"
+        );
+        assert!(
+            !mermaid.contains("n0 --> n0"),
+            "self-loop must not appear, got: {mermaid}"
+        );
+    }
+
+    /// 校验导出文本的转义合法性：引号成对（忽略 `\"` 转义引号）、
+    /// 反斜杠只出现在 `\\`、`\"`、`\n` 三种转义序列中。
+    fn assert_label_escapes_valid(output: &str) {
+        let mut escaped = false;
+        let mut unescaped_quotes = 0usize;
+        for c in output.chars() {
+            if escaped {
+                assert!(
+                    matches!(c, '\\' | '"' | 'n'),
+                    "bare backslash escape \\{c} in output: {output}"
+                );
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                unescaped_quotes += 1;
+            }
+        }
+        assert!(!escaped, "trailing backslash in output: {output}");
+        assert_eq!(
+            unescaped_quotes % 2,
+            0,
+            "unpaired quotes in output: {output}"
+        );
+    }
+
+    #[test]
+    fn graph_to_mermaid_unregistered_and_registered_dependencies_mixed() {
+        let mut g = DependencyGraph::new();
+        // "b" 同时依赖已注册的 "a" 与未注册的 "ghost"。
+        g.add(typed_entry::<types::A>("a", vec![])).unwrap();
+        g.add(typed_entry::<types::B>(
+            "b",
+            vec![
+                ("a", TypeId::of::<types::A>()),
+                ("ghost", TypeId::of::<types::C>()),
+            ],
+        ))
+        .unwrap();
+        let mermaid = g.to_mermaid();
+        // 已注册依赖的边正常输出
+        assert!(mermaid.contains("n0[\"a\"] --> n1[\"b\"]"));
+        // 未注册依赖的边被跳过，且绝无自环
+        assert_eq!(mermaid.matches("-->").count(), 1, "got: {mermaid}");
+        assert!(!mermaid.contains("n1 --> n1"));
+    }
+
+    #[test]
+    fn graph_to_dot_escapes_special_characters() {
+        // 名字含双引号、反斜杠与换行
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>("we\"ird\\name", vec![]))
+            .unwrap();
+        g.add(typed_entry::<types::B>(
+            "line\nbreak",
+            vec![("we\"ird\\name", TypeId::of::<types::A>())],
+        ))
+        .unwrap();
+        let dot = g.to_dot();
+
+        // 引号被转义为 \"，节点行形如 "we\"ird\\name";
+        assert!(dot.contains("\"we\\\"ird\\\\name\""), "got: {dot}");
+        // 换行被转义为字面 \n（反斜杠 + n），不再是真实换行符
+        assert!(dot.contains("\"line\\nbreak\""), "got: {dot}");
+        // 整份输出仍是合法 DOT：引号成对、反斜杠均为合法转义序列
+        assert_label_escapes_valid(&dot);
+    }
+
+    #[test]
+    fn graph_to_mermaid_escapes_special_characters() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>("q\"uote", vec![])).unwrap();
+        let mermaid = g.to_mermaid();
+        assert!(mermaid.contains("n0[\"q\\\"uote\"]"), "got: {mermaid}");
+        assert_label_escapes_valid(&mermaid);
+    }
+
+    #[test]
+    fn graph_error_display_and_std_error() {
+        let err = GraphError::DependencyMissing {
+            module: "a",
+            missing: "b",
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains('a') && msg.contains('b'), "got: {msg}");
+
+        let cycle = GraphError::CycleDetected {
+            cycle: vec!["a", "b", "a"],
+        };
+        let cycle_msg = format!("{cycle}");
+        assert!(cycle_msg.contains("a -> b"), "got: {cycle_msg}");
+
+        // 可作为 `dyn std::error::Error` 使用（错误处理生态兼容）
+        let dyn_err: &dyn std::error::Error = &err;
+        assert!(dyn_err.to_string().contains("unregistered"));
     }
 
     #[test]

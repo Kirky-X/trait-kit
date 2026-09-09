@@ -181,12 +181,26 @@ mod tests {
     #[test]
     fn cycle_detected_display_contains_modules() {
         let err = TraitKitError::CycleDetected {
-            cycle: vec!["A", "B", "C"],
+            cycle: vec!["alpha", "beta", "gamma"],
         };
         let msg = format!("{err}");
-        assert!(msg.contains('A'), "should contain module A: got '{msg}'");
-        assert!(msg.contains('B'), "should contain module B: got '{msg}'");
-        assert!(msg.contains('C'), "should contain module C: got '{msg}'");
+        assert!(
+            msg.contains("alpha"),
+            "should contain module alpha: got '{msg}'"
+        );
+        assert!(
+            msg.contains("beta"),
+            "should contain module beta: got '{msg}'"
+        );
+        assert!(
+            msg.contains("gamma"),
+            "should contain module gamma: got '{msg}'"
+        );
+        // Modules appear in cycle order, joined by the arrow separator.
+        assert!(
+            msg.contains("alpha → beta → gamma"),
+            "should contain the full cycle chain: got '{msg}'"
+        );
     }
 
     #[test]
@@ -286,6 +300,65 @@ mod tests {
             source: Box::new(std::io::Error::other("fail")),
         };
         assert!(std::error::Error::source(&err).is_some());
+    }
+
+    #[test]
+    fn error_source_returns_none_for_other_simple_variants() {
+        let cycle = TraitKitError::CycleDetected {
+            cycle: vec!["alpha", "beta"],
+        };
+        let missing = TraitKitError::DependencyMissing {
+            module: "mod-a",
+            missing: "mod-b",
+        };
+        let registered = TraitKitError::AlreadyRegistered {
+            module: "my-module",
+        };
+        let cap = TraitKitError::MissingCapability { key: "cap".into() };
+        assert!(std::error::Error::source(&cycle).is_none());
+        assert!(std::error::Error::source(&missing).is_none());
+        assert!(std::error::Error::source(&registered).is_none());
+        assert!(std::error::Error::source(&cap).is_none());
+    }
+
+    #[cfg(feature = "shutdown")]
+    #[test]
+    fn error_source_returns_none_for_shutdown_timed_out() {
+        let err = TraitKitError::ShutdownTimedOut {
+            phases: vec![crate::kit::shutdown::ShutdownPhase::DrainQueue],
+        };
+        assert!(std::error::Error::source(&err).is_none());
+    }
+
+    #[cfg(feature = "shutdown")]
+    #[test]
+    fn shutdown_timed_out_display_contains_phases_and_timeout() {
+        let err = TraitKitError::ShutdownTimedOut {
+            phases: vec![
+                crate::kit::shutdown::ShutdownPhase::DrainQueue,
+                crate::kit::shutdown::ShutdownPhase::CloseConnections,
+            ],
+        };
+        let msg = format!("{err}");
+        // Phase names are embedded verbatim (locale-independent).
+        assert!(
+            msg.contains("drain_queue"),
+            "should contain phase name drain_queue: got '{msg}'"
+        );
+        assert!(
+            msg.contains("close_connections"),
+            "should contain phase name close_connections: got '{msg}'"
+        );
+        // Phases appear as a comma-separated list in declaration order.
+        assert!(
+            msg.contains("drain_queue, close_connections"),
+            "should contain the joined phase list: got '{msg}'"
+        );
+        // Timeout wording is locale-dependent (en / zh message catalogs).
+        assert!(
+            msg.contains("timed out") || msg.contains("超时"),
+            "should contain timeout info: got '{msg}'"
+        );
     }
 
     #[test]

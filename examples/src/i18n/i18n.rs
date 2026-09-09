@@ -28,7 +28,7 @@ fn main() {
     println!("翻译结果: {msg}");
 
     // ─── 指定 locale 翻译 ────────────────────────────────────────────────
-    // 注意：全局实例已初始化，init_with_locale 会返回错误（已初始化）
+    // 注意：全局实例已初始化，init_with_locale 会直接返回现有实例；
     // 这里演示通过 I18nManager 实例直接翻译
     let en_msg = mgr.translate(
         "trait-kit-error-missing-capability",

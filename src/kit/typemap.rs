@@ -95,11 +95,11 @@ impl TypeMap {
     /// Returns a `Ref` guard that keeps the `RefCell` read-borrowed.
     /// The downcast reference is valid as long as the guard is alive.
     ///
-    /// Note: this method performs a second `HashMap` lookup internally to
-    /// satisfy the borrow checker (the `Ref` guard must outlive the
-    /// downcast reference). For the clone-based variant see
+    /// Single lookup + single downcast; the guard and the reference are
+    /// returned together. For the clone-based variant see
     /// [`get_cloned_by_type_id`](Self::get_cloned_by_type_id).
     #[cfg(any(feature = "lifecycle", feature = "health"))]
+    #[allow(unsafe_code, reason = "lifetime re-anchoring of the downcast reference")]
     #[allow(
         clippy::type_complexity,
         reason = "return type bundles the RefCell guard with the downcast reference"
@@ -109,17 +109,19 @@ impl TypeMap {
         type_id: TypeId,
     ) -> Option<(Ref<'_, HashMap<TypeId, Box<dyn Any>>>, &T)> {
         let guard = self.inner.borrow();
-        if guard.get(&type_id)?.downcast_ref::<T>().is_some() {
-            // SAFETY: we just verified the downcast succeeds; re-access
-            // through the same guard is sound.
-            #[allow(unsafe_code, clippy::transmute_ptr_to_ptr)]
-            Some(unsafe {
-                let ptr: *const T = guard.get(&type_id).unwrap().downcast_ref::<T>().unwrap();
-                (guard, &*ptr)
-            })
-        } else {
-            None
-        }
+        let value = guard.get(&type_id)?;
+        let typed = value.downcast_ref::<T>()?;
+        // 先生成裸指针：`typed` 在此之后不再使用，其对 `guard` 的借用结束，
+        // 随后的 `guard` 移动才为借用检查器所允许。
+        let typed_ptr: *const T = std::ptr::from_ref(typed);
+        // SAFETY: `typed_ptr` points to the value stored in the lock-protected
+        // map. `guard` is returned as part of the tuple and keeps the
+        // `RefCell` immutably borrowed for as long as the returned reference
+        // lives, so the value cannot be dropped or mutably borrowed in that
+        // period and stays valid. The raw-pointer round-trip only re-anchors
+        // the lifetime from the intermediate `value` borrow to the returned
+        // tuple; no transmute and no type change is involved.
+        Some((guard, unsafe { &*typed_ptr }))
     }
 }
 

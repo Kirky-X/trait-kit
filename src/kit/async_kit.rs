@@ -3,9 +3,27 @@
 //! `AsyncKit` — the async capability and configuration management center.
 //!
 //! Typestate `AsyncKit<Unbuilt>` → `AsyncKit<Ready>` with `Arc<RwLock>`
-//! interior mutability (multi-threaded, `Send + Sync`). Mirrors the
-//! synchronous [`super::kit::Kit`] but swaps `RefCell` for `RwLock` and
-//! stores async build functions returning `Pin<Box<dyn Future + Send>>`.
+//! interior mutability (multi-threaded, `Send + Sync`). A parallel of the
+//! synchronous [`super::kit::Kit`] — same typestate flow (register, config,
+//! build, require, lifecycle, health, factory, decorator) with `RwLock`
+//! instead of `RefCell` and async build functions returning
+//! `Pin<Box<dyn Future + Send>>`. Sync-only surfaces (lazy, multi-binding,
+//! interface, override, toggle, reload, encryption, snapshot) live on `Kit`.
+//!
+//! # Sync/Async 行为对照清单
+//! 修改任一侧时同步核对另一侧（sync 侧为 `kit.rs`）：
+//! 1. build：模块按拓扑序构建；`on_ready` 回调按拓扑序执行。
+//! 2. `register_lifecycle`：幂等——重复注册同一模块为 no-op（未注册模块的
+//!    钩子：sync 侧静默跳过 / async 侧垫底执行——两侧均应在注册后再
+//!    `register_lifecycle`）。
+//! 3. lazy require：n/a（async 侧没有 lazy 槽位，构建失败即返回
+//!    `BuildFailed`；"builder 放回槽位可重试"仅存在于 sync 侧 `Kit`）。
+//! 4. `shutdown_async()`：async `on_shutdown` 钩子 drain（one-shot，二次调用
+//!    no-op）且按逆拓扑序执行（依赖者先于被依赖者）；`AsyncKit` 无 sync
+//!    `shutdown()`——async 清理必须 await `shutdown_async()`。
+//! 5. decorator：按 `decorator_module_to_cap` 映射应用（async 侧全部在
+//!    `build()` 时应用，无 lazy 路径）。
+//! 6. factory：typestate cast + 编译期 size/align 布局断言。
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -22,7 +40,9 @@ use super::AsyncTypeMap;
 use super::{DependencyGraph, GraphError, ModuleEntry};
 
 #[cfg(feature = "lifecycle")]
-type AsyncShutdownCallback = Box<dyn Fn(&AsyncTypeMap) + Send + Sync>;
+type AsyncShutdownHookFn = Box<
+    dyn for<'a> Fn(&'a AsyncTypeMap) -> Pin<Box<dyn Future<Output = ()> + 'a>> + Send + Sync,
+>;
 #[cfg(feature = "lifecycle")]
 type AsyncReadyCallback = Box<
     dyn for<'a> Fn(
@@ -33,12 +53,59 @@ type AsyncReadyCallback = Box<
 >;
 #[cfg(feature = "health")]
 type AsyncHealthCheckerFn =
-    Box<dyn Fn(&AsyncTypeMap) -> crate::core::health::HealthStatus + Send + Sync>;
+    Arc<dyn Fn(&AsyncTypeMap) -> crate::core::health::HealthStatus + Send + Sync>;
 #[cfg(feature = "observer")]
 type AsyncObserverRef = Arc<dyn crate::core::observer::BuildObserver>;
 #[cfg(feature = "decorator")]
 type AsyncDecoratorFn =
     Box<dyn Fn(Box<dyn Any + Send + Sync>) -> Box<dyn Any + Send + Sync> + Send + Sync>;
+
+// ─── Feature-gated field groups ────────────────────────────────────────────
+//
+// 按 feature 聚合的字段子结构：新增 feature 时扩展对应子结构即可，不要在
+// `AsyncKit` 上平铺新字段（否则字段声明、`new()`、`build()` 搬移等多个位点
+// 都要逐字段散弹式修改）。各子结构内部字段类型与聚合前完全一致，外部行为
+// 零变化；`Arc<RwLock<T: Default>>` 的空态由 `derive(Default)` 提供，
+// `AsyncKit::new()` 直接以 `XxxFields::default()` 构造。
+
+/// Fields gated behind the `lifecycle` feature.
+#[cfg(feature = "lifecycle")]
+#[derive(Default)]
+struct LifecycleFields {
+    async_shutdown_callbacks: Arc<RwLock<Vec<(TypeId, AsyncShutdownHookFn)>>>,
+    ready_callbacks: Arc<RwLock<Vec<(TypeId, AsyncReadyCallback)>>>,
+}
+
+/// Fields gated behind the `health` feature.
+#[cfg(feature = "health")]
+#[derive(Default)]
+struct HealthFields {
+    health_checkers: Arc<RwLock<HashMap<TypeId, (&'static str, AsyncHealthCheckerFn)>>>,
+}
+
+/// Fields gated behind the `observer` feature.
+#[cfg(feature = "observer")]
+#[derive(Default)]
+struct ObserverFields {
+    observers: Arc<RwLock<Vec<AsyncObserverRef>>>,
+}
+
+/// Fields gated behind the `decorator` feature.
+#[cfg(feature = "decorator")]
+#[derive(Default)]
+struct DecoratorFields {
+    decorators: Arc<RwLock<HashMap<TypeId, Vec<AsyncDecoratorFn>>>>,
+    decorator_module_to_cap: Arc<RwLock<HashMap<TypeId, TypeId>>>,
+}
+
+/// Fields gated behind the `confers` feature.
+#[cfg(feature = "confers")]
+#[derive(Default)]
+struct ConfersFields {
+    /// Shared field overlay for cross-type config inheritance (async counterpart).
+    /// Values are `serde_json::Value` to preserve type information.
+    shared_fields: Arc<RwLock<serde_json::Map<String, serde_json::Value>>>,
+}
 
 /// Marker type for the unbuilt state.
 pub struct Unbuilt;
@@ -97,21 +164,15 @@ pub struct AsyncKit<S = Unbuilt> {
     configs: AsyncTypeMap,
     capabilities: AsyncTypeMap,
     #[cfg(feature = "lifecycle")]
-    shutdown_callbacks: Arc<RwLock<Vec<(TypeId, AsyncShutdownCallback)>>>,
-    #[cfg(feature = "lifecycle")]
-    ready_callbacks: Arc<RwLock<Vec<(TypeId, AsyncReadyCallback)>>>,
+    lifecycle: LifecycleFields,
     #[cfg(feature = "health")]
-    health_checkers: Arc<RwLock<HashMap<TypeId, (&'static str, AsyncHealthCheckerFn)>>>,
+    health: HealthFields,
     #[cfg(feature = "observer")]
-    observers: Arc<RwLock<Vec<AsyncObserverRef>>>,
+    observer: ObserverFields,
     #[cfg(feature = "decorator")]
-    decorators: Arc<RwLock<HashMap<TypeId, Vec<AsyncDecoratorFn>>>>,
-    #[cfg(feature = "decorator")]
-    decorator_module_to_cap: Arc<RwLock<HashMap<TypeId, TypeId>>>,
-    /// Shared field overlay for cross-type config inheritance (async counterpart).
-    /// Values are `serde_json::Value` to preserve type information.
+    decorator: DecoratorFields,
     #[cfg(feature = "confers")]
-    shared_fields: Arc<RwLock<serde_json::Map<String, serde_json::Value>>>,
+    confers: ConfersFields,
     _state: PhantomData<S>,
 }
 
@@ -128,19 +189,15 @@ impl AsyncKit {
             configs: AsyncTypeMap::new(),
             capabilities: AsyncTypeMap::new(),
             #[cfg(feature = "lifecycle")]
-            shutdown_callbacks: Arc::new(RwLock::new(Vec::new())),
-            #[cfg(feature = "lifecycle")]
-            ready_callbacks: Arc::new(RwLock::new(Vec::new())),
+            lifecycle: LifecycleFields::default(),
             #[cfg(feature = "health")]
-            health_checkers: Arc::new(RwLock::new(HashMap::new())),
+            health: HealthFields::default(),
             #[cfg(feature = "observer")]
-            observers: Arc::new(RwLock::new(Vec::new())),
+            observer: ObserverFields::default(),
             #[cfg(feature = "decorator")]
-            decorators: Arc::new(RwLock::new(HashMap::new())),
-            #[cfg(feature = "decorator")]
-            decorator_module_to_cap: Arc::new(RwLock::new(HashMap::new())),
+            decorator: DecoratorFields::default(),
             #[cfg(feature = "confers")]
-            shared_fields: Arc::new(RwLock::new(serde_json::Map::new())),
+            confers: ConfersFields::default(),
             _state: PhantomData,
         }
     }
@@ -243,6 +300,10 @@ impl AsyncKit {
     /// - [`TraitKitError::MissingCapability`] if a topologically-sorted module has
     ///   no stored build function (internal invariant violation).
     /// - [`TraitKitError::BuildFailed`] if a module's `build` callback returns `Err`.
+    /// - [`TraitKitError::LifecycleFailed`] if any `on_ready` callback fails. The
+    ///   built `AsyncKit<Ready>` is dropped wholesale: already-built capabilities
+    ///   become unreachable, and the `on_shutdown` hooks registered so far are
+    ///   **not** executed (mirroring the sync `Kit::build` behavior).
     ///
     /// # Panics
     ///
@@ -290,7 +351,7 @@ impl AsyncKit {
             let start_instant = std::time::Instant::now();
             #[cfg(feature = "observer")]
             {
-                let observers = self.observers.read().expect("lock poisoned");
+                let observers = self.observer.observers.read().expect("lock poisoned");
                 for obs in observers.iter() {
                     obs.on_module_start(module_name);
                 }
@@ -302,10 +363,17 @@ impl AsyncKit {
             let fut = build_fn(&self);
             match fut.await {
                 Ok(boxed) => {
+                    // `elapsed` is taken before decorators run, matching the
+                    // sync `Kit::build_eager_modules` sampling point (kit.rs):
+                    // decorator + insert time is not attributed to the
+                    // module's build duration.
+                    #[cfg(feature = "observer")]
+                    let elapsed = start_instant.elapsed();
                     // Apply decorators (keyed by capability TypeId)
                     #[cfg(feature = "decorator")]
                     let boxed = {
                         let cap_type_id = self
+                            .decorator
                             .decorator_module_to_cap
                             .read()
                             .expect("lock poisoned")
@@ -317,8 +385,7 @@ impl AsyncKit {
                     self.capabilities.insert_boxed(*type_id, boxed);
                     #[cfg(feature = "observer")]
                     {
-                        let elapsed = start_instant.elapsed();
-                        let observers = self.observers.read().expect("lock poisoned");
+                        let observers = self.observer.observers.read().expect("lock poisoned");
                         for obs in observers.iter() {
                             obs.on_module_built(module_name, elapsed);
                         }
@@ -331,7 +398,7 @@ impl AsyncKit {
                     };
                     #[cfg(feature = "observer")]
                     {
-                        let observers = self.observers.read().expect("lock poisoned");
+                        let observers = self.observer.observers.read().expect("lock poisoned");
                         for obs in observers.iter() {
                             obs.on_build_error(module_name, &err);
                         }
@@ -345,12 +412,35 @@ impl AsyncKit {
         //    `builders` was drained (not moved) above; the empty map is reused.
         #[cfg(feature = "lifecycle")]
         let ready_callbacks: Vec<(TypeId, AsyncReadyCallback)> = {
-            self.ready_callbacks
+            self.lifecycle
+                .ready_callbacks
                 .write()
                 .expect("lock poisoned")
                 .drain(..)
                 .collect()
         };
+
+        // Sort the async shutdown hooks by topological index (stable sort):
+        // the reverse-order drain in `shutdown_async` then executes them in
+        // reverse topological order — dependents shut down before the
+        // modules they depend on, matching the documented contract. Modules
+        // absent from the dependency graph keep registration order at the
+        // tail (`usize::MAX`), mirroring the on_ready sort below.
+        #[cfg(feature = "lifecycle")]
+        {
+            let topo_index: HashMap<TypeId, usize> = sorted
+                .iter()
+                .enumerate()
+                .map(|(idx, id)| (*id, idx))
+                .collect();
+            self.lifecycle
+                .async_shutdown_callbacks
+                .write()
+                .expect("lock poisoned")
+                .sort_by_key(|(type_id, _)| {
+                    topo_index.get(type_id).copied().unwrap_or(usize::MAX)
+                });
+        }
 
         let kit = AsyncKit {
             builders: self.builders,
@@ -358,26 +448,36 @@ impl AsyncKit {
             configs: self.configs,
             capabilities: self.capabilities,
             #[cfg(feature = "lifecycle")]
-            shutdown_callbacks: self.shutdown_callbacks,
-            #[cfg(feature = "lifecycle")]
-            ready_callbacks: Arc::new(RwLock::new(Vec::new())),
+            lifecycle: LifecycleFields {
+                async_shutdown_callbacks: self.lifecycle.async_shutdown_callbacks,
+                ready_callbacks: Arc::new(RwLock::new(Vec::new())),
+            },
             #[cfg(feature = "health")]
-            health_checkers: self.health_checkers,
+            health: self.health,
             #[cfg(feature = "observer")]
-            observers: self.observers,
+            observer: self.observer,
             #[cfg(feature = "decorator")]
-            decorators: self.decorators,
-            #[cfg(feature = "decorator")]
-            decorator_module_to_cap: self.decorator_module_to_cap,
+            decorator: self.decorator,
             #[cfg(feature = "confers")]
-            shared_fields: self.shared_fields,
+            confers: self.confers,
             _state: PhantomData::<Ready>,
         };
 
-        // Call lifecycle on_ready callbacks in topological order
+        // Call lifecycle on_ready callbacks in topological order (matching the
+        // synchronous `Kit::build`). Stable sort preserves registration order
+        // for modules absent from the dependency graph.
         #[cfg(feature = "lifecycle")]
         {
-            for (_type_id, callback) in &ready_callbacks {
+            let topo_index: HashMap<TypeId, usize> = sorted
+                .iter()
+                .enumerate()
+                .map(|(idx, id)| (*id, idx))
+                .collect();
+            let mut on_ready: Vec<(TypeId, AsyncReadyCallback)> = ready_callbacks;
+            on_ready.sort_by_key(|(type_id, _)| {
+                topo_index.get(type_id).copied().unwrap_or(usize::MAX)
+            });
+            for (_type_id, callback) in &on_ready {
                 callback(&kit).await?;
             }
         }
@@ -385,27 +485,27 @@ impl AsyncKit {
         Ok(kit)
     }
 
-    /// Look up a module's diagnostic name by `TypeId` (mirrors `Kit::module_name`).
-    #[allow(dead_code, reason = "used in tests and available for diagnostics")]
-    fn module_name(&self, type_id: TypeId) -> &'static str {
-        self.graph.name_of(type_id).unwrap_or("<unknown>")
-    }
-
     // ─── Lifecycle ─────────────────────────────────────────────────────
 
     /// Register lifecycle hooks for an async module.
     ///
-    /// Requires the `lifecycle` feature.
+    /// Requires the `lifecycle` feature. Idempotent: registering the same
+    /// module twice is a no-op.
     ///
-    /// # Limitations
+    /// The module must first be registered via [`AsyncKit::register`]: hooks of
+    /// a module that never entered the dependency graph are not ordered by
+    /// dependencies — they run last (stable registration order among
+    /// themselves), after every graph module. Always call `register::<M>()`
+    /// before `register_lifecycle::<M>()`.
     ///
-    /// `AsyncLifecycle::on_ready` is fully supported and called during `build()`.
-    /// However, `AsyncLifecycle::on_shutdown` is **not** called by the synchronous
-    /// `shutdown()` method, because sync callbacks cannot await async futures.
-    /// Async cleanup logic in `on_shutdown` will be silently skipped.
-    ///
-    /// For async shutdown, use `AsyncKit::shutdown_async()` (when available) or
-    /// manually invoke `M::on_shutdown(&cap)` for each module that needs async cleanup.
+    /// Both `AsyncLifecycle::on_ready` and `AsyncLifecycle::on_shutdown` are
+    /// supported: `on_ready` runs during `build()` in topological order;
+    /// `on_shutdown` is registered as an async hook and executed by
+    /// [`AsyncKit::shutdown_async`] in reverse topological order (dependents
+    /// shut down before their dependencies) — async cleanup must await
+    /// `shutdown_async()`. If `on_ready` fails during `build()`, the built kit
+    /// is dropped and no `on_shutdown` hook runs; see [`AsyncKit::build`]'s
+    /// `# Errors` section for the failure semantics.
     ///
     /// # Panics
     ///
@@ -416,20 +516,35 @@ impl AsyncKit {
         M: crate::core::lifecycle::AsyncLifecycle + 'static,
         M::Capability: Send + Sync + 'static,
     {
-        let shutdown_cb: AsyncShutdownCallback = Box::new(|caps: &AsyncTypeMap| {
+        // Idempotent: re-registering the same module must not duplicate its
+        // on_ready / on_shutdown hooks.
+        let module_type_id = TypeId::of::<M>();
+        if self
+            .lifecycle
+            .ready_callbacks
+            .read()
+            .expect("lock poisoned")
+            .iter()
+            .any(|(id, _)| *id == module_type_id)
+        {
+            return;
+        }
+
+        let async_shutdown_hook: AsyncShutdownHookFn = Box::new(|caps: &AsyncTypeMap| {
             let type_id = TypeId::of::<M>();
-            if let Some((_guard, cap_ref)) = caps.read_by_type_id::<M::Capability>(type_id) {
-                // NOTE: AsyncLifecycle::on_shutdown returns a Future and cannot
-                // be called from a sync closure. The async shutdown is intentionally
-                // skipped here — users must invoke it manually or via an async
-                // shutdown method. See register_lifecycle() docs for details.
-                let _ = cap_ref;
-            }
+            Box::pin(async move {
+                // The read guard and the capability reference are bundled in an
+                // `AsyncTypeMapReadGuard`, so the read lock stays held (and the
+                // capability stays valid) until `on_shutdown` completes.
+                if let Some(cap_guard) = caps.read_by_type_id::<M::Capability>(type_id) {
+                    M::on_shutdown(&cap_guard).await;
+                }
+            })
         });
-        self.shutdown_callbacks
+        self.lifecycle.async_shutdown_callbacks
             .write()
             .expect("lock poisoned")
-            .push((TypeId::of::<M>(), shutdown_cb));
+            .push((TypeId::of::<M>(), async_shutdown_hook));
 
         let ready_cb: AsyncReadyCallback = Box::new(|kit: &AsyncKit<Ready>| {
             let fut = M::on_ready(kit);
@@ -440,7 +555,7 @@ impl AsyncKit {
                 })
             })
         });
-        self.ready_callbacks
+        self.lifecycle.ready_callbacks
             .write()
             .expect("lock poisoned")
             .push((TypeId::of::<M>(), ready_cb));
@@ -461,16 +576,16 @@ impl AsyncKit {
         M: crate::core::health::AsyncHealthCheck + 'static,
         M::Capability: Send + Sync + 'static,
     {
-        let checker: AsyncHealthCheckerFn = Box::new(|caps: &AsyncTypeMap| {
+        let checker: AsyncHealthCheckerFn = Arc::new(|caps: &AsyncTypeMap| {
             let type_id = TypeId::of::<M>();
             match caps.read_by_type_id::<M::Capability>(type_id) {
-                Some((_guard, cap_ref)) => M::check(cap_ref),
+                Some(cap_guard) => M::check(&cap_guard),
                 None => crate::core::health::HealthStatus::Unhealthy {
                     detail: "capability not found".to_string(),
                 },
             }
         });
-        self.health_checkers
+        self.health.health_checkers
             .write()
             .expect("lock poisoned")
             .insert(TypeId::of::<M>(), (M::NAME, checker));
@@ -505,7 +620,7 @@ impl AsyncKit {
     /// Panics if the internal `RwLock` is poisoned.
     #[cfg(feature = "observer")]
     pub fn with_observer(&mut self, observer: Arc<dyn crate::core::observer::BuildObserver>) {
-        self.observers
+        self.observer.observers
             .write()
             .expect("lock poisoned")
             .push(observer);
@@ -536,7 +651,7 @@ impl AsyncKit {
             let decorated = decorator(*cap);
             Box::new(decorated) as Box<dyn Any + Send + Sync>
         });
-        self.decorators
+        self.decorator.decorators
             .write()
             .expect("lock poisoned")
             .entry(TypeId::of::<M::Capability>())
@@ -544,7 +659,7 @@ impl AsyncKit {
             .push(wrapper);
         // Record module TypeId → capability TypeId mapping so
         // `build()` can look up decorators by module TypeId.
-        self.decorator_module_to_cap
+        self.decorator.decorator_module_to_cap
             .write()
             .expect("lock poisoned")
             .insert(TypeId::of::<M>(), TypeId::of::<M::Capability>());
@@ -559,7 +674,7 @@ impl<S> AsyncKit<S> {
         cap_type_id: TypeId,
         boxed: Box<dyn Any + Send + Sync>,
     ) -> Box<dyn Any + Send + Sync> {
-        let decorators = self.decorators.read().expect("lock poisoned");
+        let decorators = self.decorator.decorators.read().expect("lock poisoned");
         let Some(dec_list) = decorators.get(&cap_type_id) else {
             return boxed;
         };
@@ -656,25 +771,42 @@ impl AsyncKit<Ready> {
 
     // ─── Lifecycle: shutdown ───────────────────────────────────────────
 
-    /// Shut down all lifecycle modules in reverse topological order.
+    /// Shut down all lifecycle modules, awaiting the async `on_shutdown` hooks.
     ///
     /// Requires the `lifecycle` feature.
+    ///
+    /// This method is **one-shot**: the hook registry is drained, so a second
+    /// call finds no hooks and is a no-op. Hooks run in **reverse topological
+    /// order** — dependent modules shut down before the modules they depend
+    /// on — and each `AsyncLifecycle::on_shutdown` hook is awaited to
+    /// completion one at a time, with no concurrent join, keeping the
+    /// shutdown order predictable. Hooks of modules absent from the dependency
+    /// graph keep registration order at the tail.
+    ///
+    /// The returned future is intentionally `!Send`: each hook holds the
+    /// capability's `AsyncTypeMapReadGuard` across its `await` (required
+    /// for soundness with the `std::sync::RwLock`-backed map, since that
+    /// guard is `!Send`). Await `shutdown_async` in place (e.g. in your
+    /// async `main` or via a `block_on` helper) instead of spawning it on a
+    /// multi-threaded runtime.
     ///
     /// # Panics
     ///
     /// Panics if the internal `RwLock` is poisoned.
     #[cfg(feature = "lifecycle")]
-    pub fn shutdown(&self) {
-        let callbacks: Vec<(TypeId, AsyncShutdownCallback)> = {
-            self.shutdown_callbacks
+    pub async fn shutdown_async(&self) {
+        let async_hooks: Vec<(TypeId, AsyncShutdownHookFn)> = {
+            self.lifecycle.async_shutdown_callbacks
                 .write()
                 .expect("lock poisoned")
                 .drain(..)
                 .collect()
         };
-        // Reverse order
-        for (_type_id, callback) in callbacks.iter().rev() {
-            callback(&self.capabilities);
+        // Reverse order = reverse topological order (hooks were stable-sorted
+        // by topological index in `build()`): dependents complete before the
+        // modules they depend on. Each hook is awaited before the next starts.
+        for (_type_id, hook) in async_hooks.iter().rev() {
+            hook(&self.capabilities).await;
         }
     }
 
@@ -697,10 +829,17 @@ impl AsyncKit<Ready> {
         &self,
     ) -> Result<crate::core::health::HealthStatus, TraitKitError> {
         let type_id = TypeId::of::<M>();
-        let checkers = self.health_checkers.read().expect("lock poisoned");
-        let (_name, checker) = checkers.get(&type_id).ok_or(TraitKitError::MissingConfig {
-            key: M::NAME.to_string(),
-        })?;
+        // Collect an owned `Arc` clone of the checker inside the lock, then
+        // release the lock before invoking it: the checker callback may run
+        // arbitrary user code and must not run while holding the internal
+        // `RwLock` read guard.
+        let checker: AsyncHealthCheckerFn = {
+            let checkers = self.health.health_checkers.read().expect("lock poisoned");
+            let (_name, checker) = checkers.get(&type_id).ok_or(TraitKitError::MissingConfig {
+                key: M::NAME.to_string(),
+            })?;
+            Arc::clone(checker)
+        };
         Ok(checker(&self.capabilities))
     }
 
@@ -714,10 +853,18 @@ impl AsyncKit<Ready> {
     #[cfg(feature = "health")]
     #[must_use]
     pub fn health_report(&self) -> Vec<(&'static str, crate::core::health::HealthStatus)> {
-        let checkers = self.health_checkers.read().expect("lock poisoned");
+        // Same lock discipline as `health_check`: clone the checker `Arc`s out
+        // of the lock, drop the guard, then run each checker outside the lock.
+        let checkers: Vec<(&'static str, AsyncHealthCheckerFn)> = {
+            let guard = self.health.health_checkers.read().expect("lock poisoned");
+            guard
+                .values()
+                .map(|(name, checker)| (*name, Arc::clone(checker)))
+                .collect()
+        };
         checkers
-            .values()
-            .map(|(name, checker)| (*name, checker(&self.capabilities)))
+            .into_iter()
+            .map(|(name, checker)| (name, checker(&self.capabilities)))
             .collect()
     }
 
@@ -735,21 +882,26 @@ impl AsyncKit<Ready> {
     + Send
     + Sync
     + '_ {
-        // Store self's address as usize so the closure is Send+Sync.
-        // SAFETY: AsyncKit<Ready> and AsyncKit<Unbuilt> have identical layout.
-        // The pointer remains valid for the lifetime bound `'_`.
-        //
-        // Compile-time layout assertion: if any field depending on `S` is
-        // added to `AsyncKit`, this will fail at compile time.
+        // Compile-time layout assertions: if any field depending on `S` is
+        // added to `AsyncKit`, these will fail at compile time.
         const _: () = assert!(
             std::mem::size_of::<AsyncKit<Ready>>() == std::mem::size_of::<AsyncKit>(),
-            "AsyncKit layout changed; unsafe cast is no longer sound"
+            "AsyncKit size changed; unsafe cast is no longer sound"
         );
-        let addr: usize = std::ptr::from_ref::<AsyncKit<Ready>>(self) as usize;
+        const _: () = assert!(
+            std::mem::align_of::<AsyncKit<Ready>>() == std::mem::align_of::<AsyncKit>(),
+            "AsyncKit alignment changed; unsafe cast is no longer sound"
+        );
 
         move || {
+            // SAFETY: `AsyncKit<Ready>` and `AsyncKit` (= `AsyncKit<Unbuilt>`)
+            // share identical memory layout — `S` appears only in
+            // `PhantomData<S>`, guaranteed by the const size/align assertions
+            // above. The closure is bounded by `'_`, keeping `self` (and the
+            // kit it points to) alive for every call.
             #[allow(unsafe_code)]
-            let kit_ref: &AsyncKit = unsafe { &*(addr as *const AsyncKit) };
+            let kit_ref: &AsyncKit =
+                unsafe { &*std::ptr::from_ref::<AsyncKit<Ready>>(self).cast::<AsyncKit>() };
             let fut = M::build(kit_ref);
             Box::pin(async move {
                 fut.await.map_err(|e| TraitKitError::BuildFailed {
@@ -836,7 +988,7 @@ impl AsyncKit {
     /// Extract shared fields from config `C` into the `AsyncKit`'s shared overlay.
     ///
     /// Calls `C::extract_shared()` and merges the result into
-    /// `self.shared_fields`. New values override same-named keys from
+    /// `self.confers.shared_fields`. New values override same-named keys from
     /// previous extractions. If no config of type `C` exists, this is a
     /// no-op.
     ///
@@ -849,7 +1001,7 @@ impl AsyncKit {
     pub fn extract_shared<C: super::SharedConfig + Send + Sync>(&self) {
         if let Ok(config) = self.config::<C>() {
             let fields = config.extract_shared();
-            self.shared_fields
+            self.confers.shared_fields
                 .write()
                 .expect("shared_fields lock poisoned")
                 .extend(fields);
@@ -871,6 +1023,7 @@ impl AsyncKit {
     pub fn inject_shared<C: super::SharedConfig + Send + Sync>(&self) {
         if let Ok(mut config) = self.config::<C>() {
             let overlay = self
+                .confers
                 .shared_fields
                 .read()
                 .expect("shared_fields lock poisoned")
@@ -1903,13 +2056,196 @@ mod async_lifecycle_tests {
         );
     }
 
+    // --- async shutdown: `shutdown_async` runs `AsyncLifecycle::on_shutdown` ---
+
+    static ASYNC_LC_SHUTDOWN: AtomicUsize = AtomicUsize::new(0);
+
+    struct AsyncShutdownLcModule;
+    impl ModuleMeta for AsyncShutdownLcModule {
+        const NAME: &'static str = "async-shutdown-lc";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
+    }
+    impl AsyncAutoBuilder for AsyncShutdownLcModule {
+        type Capability = Arc<()>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+            Box::pin(async move { Ok(Arc::new(())) })
+        }
+    }
+    impl AsyncLifecycle for AsyncShutdownLcModule {
+        fn on_shutdown<'a>(
+            _cap: &'a Arc<()>,
+        ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+            Box::pin(async {
+                ASYNC_LC_SHUTDOWN.fetch_add(1, Ordering::SeqCst);
+            })
+        }
+    }
+
+    /// FIX 回归钉子：此前注册的 shutdown 回调是同步闭包，`on_shutdown`
+    /// 返回的 Future 从未被执行（async 清理被静默跳过），且全库无 async
+    /// shutdown API。现在 `shutdown_async()` 逐个 await 异步钩子（计数恰好
+    /// +1）。
     #[test]
-    fn async_shutdown_does_not_panic() {
+    fn async_shutdown_async_runs_on_shutdown_hook() {
+        let before = ASYNC_LC_SHUTDOWN.load(Ordering::SeqCst);
         let mut kit = AsyncKit::new();
-        kit.register::<AsyncLcModule>().unwrap();
-        kit.register_lifecycle::<AsyncLcModule>();
+        kit.register::<AsyncShutdownLcModule>().unwrap();
+        kit.register_lifecycle::<AsyncShutdownLcModule>();
         let built = block_on(kit.build()).unwrap();
-        built.shutdown();
+
+        block_on(built.shutdown_async());
+        assert_eq!(
+            ASYNC_LC_SHUTDOWN.load(Ordering::SeqCst),
+            before + 1,
+            "shutdown_async() 应恰好执行一次 async on_shutdown"
+        );
+    }
+
+    // ── 逆拓扑关闭顺序的回归钉子见文件后部 `async_shutdown_async_runs_in_
+    //    reverse_topological_order`（MED-004）。──
+
+    /// `shutdown_async()` 是 one-shot：async hook registry 被 drain，二次调用
+    /// 为 no-op，`on_shutdown` 恰好执行一次。（原测试直插私有字段
+    /// `shutdown_callbacks` 钉 sync `shutdown()` 的 one-shot 行为；sync 入口
+    /// 已随 MED-003 删除——async 清理唯一入口是 `shutdown_async()`。）
+    #[test]
+    fn async_shutdown_async_is_one_shot_second_call_is_noop() {
+        // 测试内专用计数器：避免共享 static 计数器受其他测试干扰，
+        // "恰好一次"断言才能成立。
+        static ONE_SHOT_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+        struct OneShotModule;
+        impl ModuleMeta for OneShotModule {
+            const NAME: &'static str = "async-shutdown-one-shot";
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                &[]
+            }
+        }
+        impl AsyncAutoBuilder for OneShotModule {
+            type Capability = Arc<()>;
+            type Error = MockError;
+            fn build<'a>(
+                _kit: &'a AsyncKit,
+            ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+                Box::pin(async move { Ok(Arc::new(())) })
+            }
+        }
+        impl AsyncLifecycle for OneShotModule {
+            fn on_shutdown<'a>(
+                _cap: &'a Arc<()>,
+            ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+                Box::pin(async {
+                    ONE_SHOT_COUNT.fetch_add(1, Ordering::SeqCst);
+                })
+            }
+        }
+
+        let mut kit = AsyncKit::new();
+        kit.register::<OneShotModule>().unwrap();
+        kit.register_lifecycle::<OneShotModule>();
+        let built = block_on(kit.build()).unwrap();
+
+        block_on(built.shutdown_async());
+        block_on(built.shutdown_async());
+        assert_eq!(
+            ONE_SHOT_COUNT.load(Ordering::SeqCst),
+            1,
+            "第二次 shutdown_async() 必须 no-op（钩子已 drain），on_shutdown 恰好执行一次"
+        );
+    }
+
+    /// MED-004 回归钉子：钩子在 `build()` 时按依赖图拓扑索引稳定排序，
+    /// `shutdown_async()` 逆序 drain 后依赖者（dependent）先于被依赖者
+    /// （dep）关闭——文档承诺的 "reverse topological order" 由此为真。
+    #[test]
+    fn async_shutdown_async_runs_in_reverse_topological_order() {
+        use std::sync::Mutex;
+
+        static SHUTDOWN_ORDER: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+
+        struct OrderDepModule;
+        impl ModuleMeta for OrderDepModule {
+            const NAME: &'static str = "shutdown-order-dep";
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                &[]
+            }
+        }
+        impl AsyncAutoBuilder for OrderDepModule {
+            type Capability = Arc<()>;
+            type Error = MockError;
+            fn build<'a>(
+                _kit: &'a AsyncKit,
+            ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+                Box::pin(async move { Ok(Arc::new(())) })
+            }
+        }
+        impl AsyncLifecycle for OrderDepModule {
+            fn on_shutdown<'a>(
+                _cap: &'a Arc<()>,
+            ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+                Box::pin(async {
+                    SHUTDOWN_ORDER
+                        .lock()
+                        .expect("lock poisoned")
+                        .push("dep");
+                })
+            }
+        }
+
+        /// 依赖 `OrderDepModule` 的模块（依赖者）。
+        struct OrderDependentModule;
+        impl ModuleMeta for OrderDependentModule {
+            const NAME: &'static str = "shutdown-order-dependent";
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                static DEPS: &[(&str, TypeId)] =
+                    &[("shutdown-order-dep", TypeId::of::<OrderDepModule>())];
+                DEPS
+            }
+        }
+        impl AsyncAutoBuilder for OrderDependentModule {
+            type Capability = Arc<()>;
+            type Error = MockError;
+            fn build<'a>(
+                _kit: &'a AsyncKit,
+            ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+                Box::pin(async move { Ok(Arc::new(())) })
+            }
+        }
+        impl AsyncLifecycle for OrderDependentModule {
+            fn on_shutdown<'a>(
+                _cap: &'a Arc<()>,
+            ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+                Box::pin(async {
+                    SHUTDOWN_ORDER
+                        .lock()
+                        .expect("lock poisoned")
+                        .push("dependent");
+                })
+            }
+        }
+
+        SHUTDOWN_ORDER.lock().expect("lock poisoned").clear();
+        let mut kit = AsyncKit::new();
+        kit.register::<OrderDepModule>().unwrap();
+        kit.register::<OrderDependentModule>().unwrap();
+        // 注册顺序故意与拓扑序相反（dependent 先、dep 后）：若实现仍是
+        // 旧的"逆注册序"，结果为 [dep, dependent]，本测试失败。
+        kit.register_lifecycle::<OrderDependentModule>();
+        kit.register_lifecycle::<OrderDepModule>();
+        let built = block_on(kit.build()).unwrap();
+        block_on(built.shutdown_async());
+
+        let order = SHUTDOWN_ORDER.lock().expect("lock poisoned").clone();
+        assert_eq!(
+            order,
+            vec!["dependent", "dep"],
+            "依赖者（dependent）必须先于被依赖者（dep）执行 on_shutdown（逆拓扑序）"
+        );
     }
 }
 
@@ -2547,7 +2883,7 @@ mod async_config_inheritance_tests {
         let built = block_on(kit.build()).unwrap();
 
         // shared_fields should be accessible on Ready kit
-        let overlay = built.shared_fields.read().unwrap().clone();
+        let overlay = built.confers.shared_fields.read().unwrap().clone();
         assert_eq!(
             overlay.get("host"),
             Some(&serde_json::Value::String("prod-db".into()))
@@ -2570,19 +2906,19 @@ mod async_config_inheritance_tests {
     fn async_extract_shared_noop_when_config_missing() {
         let kit = AsyncKit::new();
         kit.extract_shared::<AsyncDbConfig>();
-        let overlay = kit.shared_fields.read().unwrap();
+        let overlay = kit.confers.shared_fields.read().unwrap();
         assert!(overlay.is_empty());
     }
 
     #[test]
     fn async_inject_shared_noop_when_config_missing() {
         let kit = AsyncKit::new();
-        kit.shared_fields
+        kit.confers.shared_fields
             .write()
             .unwrap()
             .insert("host".into(), serde_json::json!("some-host"));
         kit.inject_shared::<AsyncDbConfig>();
-        assert_eq!(kit.shared_fields.read().unwrap().len(), 1);
+        assert_eq!(kit.confers.shared_fields.read().unwrap().len(), 1);
     }
 
     // ── concurrent safety test ──
@@ -2620,7 +2956,7 @@ mod async_config_inheritance_tests {
         h2.join().unwrap();
 
         // Both extractions should have completed without panic
-        let overlay = kit.shared_fields.read().unwrap();
+        let overlay = kit.confers.shared_fields.read().unwrap();
         assert!(overlay.contains_key("host"));
         assert!(overlay.contains_key("port"));
     }

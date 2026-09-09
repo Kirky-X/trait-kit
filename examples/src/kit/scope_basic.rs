@@ -34,13 +34,13 @@ impl AutoBuilder for RequestModule {
     type Error = TraitKitError;
 
     fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
-        let id = BUILD_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let id = BUILD_COUNTER.fetch_add(1, Ordering::Relaxed);
         Ok(Arc::new(RequestCap { id }))
     }
 }
 
 fn main() {
-    BUILD_COUNTER.store(0, Ordering::SeqCst);
+    BUILD_COUNTER.store(0, Ordering::Relaxed);
 
     // Scope 1 — simulates request 1
     let mut scope1 = Scope::new();

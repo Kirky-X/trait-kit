@@ -43,6 +43,7 @@ macro_rules! impl_module_meta {
             const NAME: &'static str = $name;
 
             fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                // 静态项中省略的生命周期默认即为 'static。
                 static DEPS: &[(&str, std::any::TypeId)] = &[
                     $( (<$dep as $crate::core::ModuleMeta>::NAME, std::any::TypeId::of::<$dep>()), )*
                 ];
@@ -197,6 +198,7 @@ mod tests {
     impl ModuleMeta for HandWrittenWithDeps {
         const NAME: &'static str = "macro-with-deps";
         fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            // 静态项中省略的生命周期默认即为 'static。
             static DEPS: &[(&str, std::any::TypeId)] = &[
                 (<Dep1 as ModuleMeta>::NAME, std::any::TypeId::of::<Dep1>()),
                 (<Dep2 as ModuleMeta>::NAME, std::any::TypeId::of::<Dep2>()),

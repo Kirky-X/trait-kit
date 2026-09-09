@@ -23,27 +23,27 @@ fn main() {
 
     // ─── 阶段 1：停止接收新请求 ─────────────────────────────
     coord.register_hook(ShutdownPhase::StopRequests, || {
-        HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
         println!("  [phase 1] 停止接收新请求 — 关闭 HTTP listener");
     });
     coord.register_hook(ShutdownPhase::StopRequests, || {
-        HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
         println!("  [phase 1] 标记为 draining 状态");
     });
 
     // ─── 阶段 2：排空队列 ──────────────────────────────────
     coord.register_hook(ShutdownPhase::DrainQueue, || {
-        HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
         println!("  [phase 2] 排空消息队列中的待处理任务");
     });
 
     // ─── 阶段 3：关闭连接池 ─────────────────────────────────
     coord.register_hook(ShutdownPhase::CloseConnections, || {
-        HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
         println!("  [phase 3] 关闭数据库连接池");
     });
     coord.register_hook(ShutdownPhase::CloseConnections, || {
-        HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
         println!("  [phase 3] 关闭 Redis 连接");
     });
 
@@ -56,7 +56,7 @@ fn main() {
     let results = coord.shutdown();
 
     println!("\n--- 关闭结果 ---");
-    for r in &results {
+    for r in &results.phases {
         let status = if r.is_ok() {
             "✓ 完成"
         } else {
@@ -72,9 +72,9 @@ fn main() {
     }
 
     // ─── 验证 ──────────────────────────────────────────────
-    let total_hooks = HOOK_COUNTER.load(Ordering::SeqCst);
+    let total_hooks = HOOK_COUNTER.load(Ordering::Relaxed);
     assert_eq!(total_hooks, 5, "所有 5 个钩子应被执行");
-    assert!(results.iter().all(|r| r.is_ok()), "所有阶段应正常完成");
+    assert!(results.is_ok(), "所有阶段应正常完成");
 
     println!("\nshutdown: OK (共执行 {total_hooks} 个钩子)");
 }

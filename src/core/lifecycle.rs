@@ -67,7 +67,9 @@ pub trait AsyncLifecycle: crate::core::AsyncAutoBuilder {
         Box::pin(async { Ok(()) })
     }
 
-    /// Async version of `on_shutdown`. Called during `AsyncKit::shutdown()`.
+    /// Async version of `on_shutdown`. Called during `AsyncKit::shutdown_async()`.
+    /// The synchronous `AsyncKit::shutdown()` does **not** invoke async
+    /// `on_shutdown` hooks.
     #[allow(
         clippy::type_complexity,
         reason = "Pin<Box<dyn Future>> is the canonical dyn-compatible async dispatch type"
@@ -84,6 +86,7 @@ mod tests {
     use super::*;
     use crate::core::{AutoBuilder, ModuleMeta};
     use crate::kit::Kit;
+    use serial_test::serial;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -120,9 +123,11 @@ mod tests {
     }
 
     static SHUTDOWN_COUNTER: AtomicUsize = AtomicUsize::new(0);
+    static READY_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     impl Lifecycle for TestModule {
         fn on_ready(_kit: &Kit<crate::kit::Ready>) -> Result<(), TestError> {
+            READY_COUNTER.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
 
@@ -159,11 +164,15 @@ mod tests {
         kit.register::<DefaultModule>().unwrap();
         kit.register_lifecycle::<DefaultModule>();
         let built = kit.build().unwrap();
-        // on_ready was called during build() and returned Ok(())
-        drop(built);
+        // build() succeeding already proves the default on_ready returned Ok
+        // (a failure would surface as TraitKitError::LifecycleFailed). Assert
+        // the default impl's return value directly as well.
+        let result = DefaultModule::on_ready(&built);
+        assert!(result.is_ok(), "default on_ready should return Ok(())");
     }
 
     #[test]
+    #[serial(shutdown_counter)]
     fn lifecycle_trait_has_default_on_shutdown() {
         // Default on_shutdown is a no-op — call through a module that
         // does NOT override on_shutdown to exercise the default impl.
@@ -196,10 +205,22 @@ mod tests {
         kit.register::<DefaultShutdownModule>().unwrap();
         kit.register_lifecycle::<DefaultShutdownModule>();
         let built = kit.build().unwrap();
-        built.shutdown(); // exercises default on_shutdown
+        // Default on_shutdown is a no-op: invoking it directly and through the
+        // kit's shutdown path must not panic and must not touch shared state.
+        let before = SHUTDOWN_COUNTER.load(Ordering::Relaxed);
+        let cap = Arc::new(TestCap);
+        DefaultShutdownModule::on_shutdown(&cap);
+        built.shutdown(); // exercises default on_shutdown via the registered callback
+        let after = SHUTDOWN_COUNTER.load(Ordering::Relaxed);
+        assert_eq!(
+            after, before,
+            "default on_shutdown is a no-op and must not modify shared state"
+        );
+        built.shutdown(); // callbacks are drained; a second shutdown stays a safe no-op
     }
 
     #[test]
+    #[serial(shutdown_counter)]
     fn lifecycle_shutdown_counter_increments() {
         let before = SHUTDOWN_COUNTER.load(Ordering::Relaxed);
         let cap = Arc::new(TestCap);
@@ -209,12 +230,25 @@ mod tests {
     }
 
     #[test]
+    #[serial(shutdown_counter)]
     fn lifecycle_test_module_full_kit_integration() {
+        let ready_before = READY_COUNTER.load(Ordering::Relaxed);
+        let shutdown_before = SHUTDOWN_COUNTER.load(Ordering::Relaxed);
         let mut kit = Kit::new();
         kit.register::<TestModule>().unwrap();
         kit.register_lifecycle::<TestModule>();
         let built = kit.build().unwrap();
+        assert_eq!(
+            READY_COUNTER.load(Ordering::Relaxed),
+            ready_before + 1,
+            "on_ready should be called exactly once during build()"
+        );
         built.shutdown();
+        assert_eq!(
+            SHUTDOWN_COUNTER.load(Ordering::Relaxed),
+            shutdown_before + 1,
+            "on_shutdown should be called exactly once during shutdown()"
+        );
     }
 
     #[test]
@@ -231,6 +265,7 @@ mod async_tests {
     use crate::kit::AsyncKit;
     use crate::test_helpers::block_on;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[derive(Debug, Clone)]
     struct AsyncTestCap;
@@ -269,6 +304,48 @@ mod async_tests {
 
     impl AsyncLifecycle for AsyncTestModule {}
 
+    /// Module with counting lifecycle overrides, used to verify the full kit
+    /// integration (`on_ready` during build; `on_shutdown` skipped by sync shutdown).
+    struct CountingAsyncModule;
+
+    impl ModuleMeta for CountingAsyncModule {
+        const NAME: &'static str = "async-lifecycle-counting";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            &[]
+        }
+    }
+
+    impl AsyncAutoBuilder for CountingAsyncModule {
+        type Capability = Arc<AsyncTestCap>;
+        type Error = AsyncTestError;
+
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<AsyncTestCap>, AsyncTestError>> + Send + 'a>>
+        {
+            Box::pin(async move { Ok(Arc::new(AsyncTestCap)) })
+        }
+    }
+
+    static ASYNC_READY_COUNTER: AtomicUsize = AtomicUsize::new(0);
+    static ASYNC_SHUTDOWN_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    impl AsyncLifecycle for CountingAsyncModule {
+        fn on_ready<'a>(
+            _kit: &'a AsyncKit<crate::kit::async_kit::Ready>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), AsyncTestError>> + Send + 'a>> {
+            ASYNC_READY_COUNTER.fetch_add(1, Ordering::Relaxed);
+            Box::pin(async { Ok(()) })
+        }
+
+        fn on_shutdown<'a>(
+            _cap: &'a Arc<AsyncTestCap>,
+        ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+            ASYNC_SHUTDOWN_COUNTER.fetch_add(1, Ordering::Relaxed);
+            Box::pin(async {})
+        }
+    }
+
     #[test]
     fn async_lifecycle_default_on_ready_returns_ok() {
         let kit = AsyncKit::new();
@@ -292,11 +369,29 @@ mod async_tests {
 
     #[test]
     fn async_lifecycle_test_module_full_kit_integration() {
+        let ready_before = ASYNC_READY_COUNTER.load(Ordering::Relaxed);
+        let shutdown_before = ASYNC_SHUTDOWN_COUNTER.load(Ordering::Relaxed);
         let mut kit = AsyncKit::new();
-        kit.register::<AsyncTestModule>().unwrap();
-        kit.register_lifecycle::<AsyncTestModule>();
+        kit.register::<CountingAsyncModule>().unwrap();
+        kit.register_lifecycle::<CountingAsyncModule>();
         let built = block_on(kit.build()).unwrap();
-        built.shutdown();
+        assert_eq!(
+            ASYNC_READY_COUNTER.load(Ordering::Relaxed),
+            ready_before + 1,
+            "async on_ready should be called exactly once during build()"
+        );
+        // `AsyncKit` 没有 sync `shutdown()`：async `on_shutdown` 必须显式
+        // await（经由 `shutdown_async()` 或直接调用钩子）。此处手动 await
+        // 以验证钩子路径恰好执行一次。`built` 保持存活以模拟真实用法
+        // （能力随 Kit 生命周期存续）。
+        let cap = Arc::new(AsyncTestCap);
+        block_on(CountingAsyncModule::on_shutdown(&cap));
+        assert_eq!(
+            ASYNC_SHUTDOWN_COUNTER.load(Ordering::Relaxed),
+            shutdown_before + 1,
+            "manually awaited on_shutdown should run exactly once"
+        );
+        drop(built);
     }
 
     #[test]

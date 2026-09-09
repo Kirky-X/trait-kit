@@ -7,7 +7,8 @@
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::ops::Deref;
+use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 /// A type-keyed map for storing async capabilities and configs.
 ///
@@ -16,6 +17,31 @@ use std::sync::{Arc, RwLock};
 /// stays `!Sync` for single-threaded performance.
 pub struct AsyncTypeMap {
     inner: Arc<RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>,
+}
+
+/// A read guard bundling [`AsyncTypeMap`]'s read lock with the downcast
+/// value reference.
+///
+/// The lock guard and the `&T` are packaged together so they cannot be
+/// separated: the value is only reachable through [`Deref`] while the guard
+/// is alive, and the guard cannot be dropped while a reference derived from
+/// it is still borrowed. This makes it impossible to release the read lock
+/// and then trigger a release of the referenced value (e.g. via `insert`)
+/// while still holding `&T`.
+pub struct AsyncTypeMapReadGuard<'a, T> {
+    /// Holds the read lock; never read directly — kept alive so its `Drop`
+    /// releases the lock only after the borrowed `value` is no longer used.
+    #[allow(dead_code, reason = "field exists to hold the read lock until Drop")]
+    guard: RwLockReadGuard<'a, HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
+    value: &'a T,
+}
+
+impl<T> Deref for AsyncTypeMapReadGuard<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self.value
+    }
 }
 
 impl AsyncTypeMap {
@@ -131,45 +157,36 @@ impl AsyncTypeMap {
         guard.len()
     }
 
-    /// Acquire a read guard and return a reference to the stored value
-    /// downcast to `T`.
+    /// Acquire a read guard and return it bundled with a reference to the
+    /// stored value downcast to `T`.
     ///
-    /// The returned `RwLockReadGuard` keeps the lock held; the reference
-    /// is valid as long as the guard is alive.
+    /// The returned [`AsyncTypeMapReadGuard`] keeps the read lock held; the
+    /// value is reachable only through the guard (`Deref`), so guard and
+    /// reference share one lifetime and cannot be separated. Dropping the
+    /// guard releases the lock.
     ///
     /// # Panics
     ///
     /// Panics if the inner `RwLock` is poisoned.
     #[must_use]
-    #[allow(
-        clippy::type_complexity,
-        reason = "return type bundles the RwLock guard with the downcast reference"
-    )]
-    pub fn read_by_type_id<T: 'static>(
-        &self,
+    pub fn read_by_type_id<'a, T: 'static>(
+        &'a self,
         type_id: TypeId,
-    ) -> Option<(
-        std::sync::RwLockReadGuard<'_, HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
-        &T,
-    )> {
+    ) -> Option<AsyncTypeMapReadGuard<'a, T>> {
         let guard = self
             .inner
             .read()
             .expect("AsyncTypeMap poisoned: another thread panicked while holding the lock");
-        // We need to return the RwLockReadGuard alongside a &T reference
-        // borrowed from it. This requires unsafe because the borrow checker
-        // cannot express that the guard keeps the data alive.
-        //
-        // SAFETY: We verify the downcast succeeds, then re-access through
-        // the same guard. The guard is moved into the return tuple, keeping
-        // the read lock held for the lifetime of the returned &T. The data
-        // cannot be mutated while the read guard is active.
-        guard.get(&type_id)?.downcast_ref::<T>()?;
         #[allow(unsafe_code)]
-        Some(unsafe {
-            let ptr: *const T = guard.get(&type_id).unwrap().downcast_ref::<T>().unwrap();
-            (guard, &*ptr)
-        })
+        // SAFETY: `value` points into the value stored inside the
+        // lock-protected map. The returned wrapper holds the read guard alive
+        // until `'a`, so the map cannot be mutated while `value` is reachable
+        // and the reference stays valid for as long as the wrapper is alive.
+        unsafe {
+            let ptr: *const T = std::ptr::from_ref(guard.get(&type_id)?.downcast_ref::<T>()?);
+            let value: &'a T = &*ptr;
+            Some(AsyncTypeMapReadGuard { guard, value })
+        }
     }
 }
 
@@ -313,8 +330,8 @@ mod tests {
         let i32_id = std::any::TypeId::of::<i32>();
         let result = map.read_by_type_id::<i32>(i32_id);
         assert!(result.is_some());
-        let (_guard, val) = result.unwrap();
-        assert_eq!(*val, 42);
+        let guard = result.unwrap();
+        assert_eq!(*guard, 42);
     }
 
     #[test]
@@ -333,6 +350,29 @@ mod tests {
         // Request as u64 — downcast should fail
         let result = map.read_by_type_id::<u64>(i32_id);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn read_guard_and_reference_are_inseparable() {
+        // 回归钉子：read_by_type_id 现返回守卫包装类型，&T 与读锁 guard 绑定
+        // 在同一结构上 —— 引用只能经 Deref 获取，且 guard 在引用存活期间无法
+        // 被 drop。旧 API 返回 (guard, &T) 二元组，允许先 drop guard 释放读锁、
+        // 再经 &self 的内部锁 insert 触发旧值释放，导致 &T 悬垂（可读出垃圾值）。
+        let map = AsyncTypeMap::new();
+        map.insert(42i32);
+        let tid = std::any::TypeId::of::<i32>();
+
+        let guard = map.read_by_type_id::<i32>(tid).unwrap();
+        assert_eq!(*guard, 42);
+
+        // 引用派生自 guard：引用存续期间 guard 必然存活（编译期保证）。
+        let val_ref: &i32 = &guard;
+        assert_eq!(*val_ref, 42);
+
+        // 只有放弃引用之后才能 drop guard，读锁随之释放。
+        drop(guard);
+        map.insert(7i32); // 锁可重新获取；此时已无引用存留
+        assert_eq!(map.get_cloned::<i32>(), Some(7));
     }
 
     #[test]

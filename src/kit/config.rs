@@ -110,6 +110,22 @@ pub struct ValidationError {
 }
 
 #[cfg(feature = "confers")]
+impl ValidationError {
+    /// Create a `ValidationError` from a list of validation failure messages.
+    #[must_use]
+    pub fn new(errors: Vec<String>) -> Self {
+        Self { errors }
+    }
+}
+
+#[cfg(feature = "confers")]
+impl From<Vec<String>> for ValidationError {
+    fn from(errors: Vec<String>) -> Self {
+        Self { errors }
+    }
+}
+
+#[cfg(feature = "confers")]
 impl std::fmt::Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "validation failed: {}", self.errors.join("; "))
@@ -176,7 +192,15 @@ pub trait SharedConfig: Clone + 'static {
 
     /// Inject shared fields from a JSON map into `self`.
     ///
-    /// Fields with type-mismatched values are silently skipped (no panic).
+    /// # Contract (implementors)
+    ///
+    /// Implementors MUST silently skip keys whose value type does not match
+    /// the target field type, and MUST NOT panic on any input — including
+    /// unknown keys, mismatched types, and malformed values. Unknown keys are
+    /// ignored; mismatched values leave the corresponding field unchanged.
+    /// This mirrors the behavior of `#[derive(SharedConfig)]` (see the
+    /// `derive_shared_config_inject_skips_type_mismatch` test in
+    /// `tests/shared_config_derive.rs`).
     fn inject_shared(&mut self, shared: &serde_json::Map<String, serde_json::Value>);
 }
 
@@ -187,7 +211,8 @@ use std::hash::BuildHasher;
 ///
 /// Recursively walks the JSON structure, replacing patterns in String values
 /// only. Object keys and non-String variants are left unchanged. Unknown
-/// variables without a default are preserved as-is.
+/// variables without a default are preserved as-is. `$$` escapes to a literal
+/// `$` (see `interpolate_string`).
 #[cfg(feature = "confers")]
 pub fn interpolate_json_value<S: BuildHasher>(
     value: &mut serde_json::Value,
@@ -238,12 +263,20 @@ pub fn merge_json_deep(base: &mut serde_json::Value, overlay: &serde_json::Value
 }
 
 /// Replace `${VAR}` and `${VAR:-default}` patterns in a single string.
+///
+/// `$$` is an escape sequence for a literal `$`: `$$` collapses to `$`, so
+/// `$${VAR}` yields the literal text `${VAR}` without interpolation. A single
+/// `$` not followed by `{` is emitted as-is.
 #[cfg(feature = "confers")]
 fn interpolate_string<S: BuildHasher>(s: &str, vars: &HashMap<String, String, S>) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     while let Some(ch) = chars.next() {
-        if ch == '$' && chars.peek() == Some(&'{') {
+        if ch == '$' && chars.peek() == Some(&'$') {
+            // `$$` escapes to a literal `$` (so `$${VAR}` is not interpolated).
+            chars.next(); // consume second '$'
+            result.push('$');
+        } else if ch == '$' && chars.peek() == Some(&'{') {
             chars.next(); // consume '{'
             let mut var_name = String::new();
             let mut found_close = false;
@@ -469,5 +502,66 @@ mod merge_json_tests {
         let overlay = json!({"a": null});
         merge_json_deep(&mut base, &overlay);
         assert_eq!(base, json!({"a": null}));
+    }
+}
+
+#[cfg(all(test, feature = "confers"))]
+mod interpolate_string_tests {
+    use super::interpolate_string;
+    use std::collections::HashMap;
+
+    fn vars(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn double_dollar_yields_literal_brace_pattern() {
+        let v = vars(&[]);
+        assert_eq!(interpolate_string("$${foo}", &v), "${foo}");
+    }
+
+    #[test]
+    fn double_dollar_is_not_interpolated_even_when_var_defined() {
+        let v = vars(&[("foo", "bar")]);
+        assert_eq!(interpolate_string("$${foo}", &v), "${foo}");
+    }
+
+    #[test]
+    fn double_dollar_collapses_to_single_dollar() {
+        let v = vars(&[]);
+        assert_eq!(interpolate_string("price: 5$$", &v), "price: 5$");
+        assert_eq!(interpolate_string("$$$", &v), "$$");
+        assert_eq!(interpolate_string("$$$$", &v), "$$");
+    }
+
+    #[test]
+    fn single_dollar_without_brace_stays_literal() {
+        let v = vars(&[("foo", "bar")]);
+        assert_eq!(interpolate_string("cost $5", &v), "cost $5");
+        assert_eq!(interpolate_string("$foo", &v), "$foo");
+    }
+
+    #[test]
+    fn escaped_and_interpolated_patterns_mix() {
+        let v = vars(&[("name", "kit")]);
+        assert_eq!(
+            interpolate_string("hello ${name}, literal $${name}", &v),
+            "hello kit, literal ${name}"
+        );
+    }
+
+    #[test]
+    fn escaped_dollar_before_default_pattern() {
+        let v = vars(&[]);
+        assert_eq!(interpolate_string("$${X:-y}", &v), "${X:-y}");
+    }
+
+    #[test]
+    fn interpolation_still_works_after_escape() {
+        let v = vars(&[("A", "1")]);
+        assert_eq!(interpolate_string("$${A}${A}", &v), "${A}1");
     }
 }

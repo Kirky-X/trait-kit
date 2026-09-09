@@ -261,6 +261,7 @@ mod interface_builder_tests {
     }
 
     /// Concrete implementation of Logger.
+    #[derive(Debug)]
     struct ConsoleLogger {
         counter: AtomicUsize,
     }
@@ -321,9 +322,16 @@ mod interface_builder_tests {
     fn interface_builder_into_interface_produces_trait_object() {
         let kit = Kit::new();
         let cap = ConsoleLoggerModule::build(&kit).expect("build succeeds");
-        let iface: Arc<dyn Logger> = ConsoleLoggerModule::into_interface(cap);
+        // Keep the concrete handle so we can observe the shared counter after
+        // type erasure (dyn Logger does not expose the field).
+        let iface: Arc<dyn Logger> = ConsoleLoggerModule::into_interface(Arc::clone(&cap));
         iface.log("hello");
         iface.log("world");
+        assert_eq!(
+            cap.counter.load(Ordering::Relaxed),
+            2,
+            "both log calls must hit the same underlying ConsoleLogger"
+        );
     }
 
     #[test]

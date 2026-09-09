@@ -15,7 +15,7 @@ use trait_kit::prelude::*;
 
 static INSTANCE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct ConnectionCap {
     id: usize,
 }
@@ -34,13 +34,13 @@ impl AutoBuilder for ConnectionModule {
     type Error = TraitKitError;
 
     fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
-        let id = INSTANCE_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let id = INSTANCE_COUNTER.fetch_add(1, Ordering::Relaxed);
         Ok(Arc::new(ConnectionCap { id }))
     }
 }
 
 fn main() {
-    INSTANCE_COUNTER.store(0, Ordering::SeqCst);
+    INSTANCE_COUNTER.store(0, Ordering::Relaxed);
 
     let mut kit = Kit::new();
     kit.register::<ConnectionModule>()

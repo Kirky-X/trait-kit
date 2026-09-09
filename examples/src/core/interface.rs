@@ -28,7 +28,7 @@ struct ConsoleLogger {
 
 impl Logger for ConsoleLogger {
     fn log(&self, msg: &str) {
-        let n = self.counter.fetch_add(1, Ordering::SeqCst);
+        let n = self.counter.fetch_add(1, Ordering::Relaxed);
         println!("  [log #{n}] {msg}");
     }
 }

@@ -377,10 +377,10 @@ mod shutdown_e2e {
             CALLED.fetch_add(1, Ordering::SeqCst);
         });
 
-        let results = coord.shutdown();
+        let result = coord.shutdown();
         assert_eq!(CALLED.load(Ordering::SeqCst), 3);
-        assert_eq!(results.len(), 3);
-        assert!(results.iter().all(|r| !r.timed_out));
+        assert_eq!(result.phases.len(), 3);
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -394,9 +394,9 @@ mod shutdown_e2e {
     #[test]
     fn e2e_shutdown_empty_phases_succeed() {
         let coord = ShutdownCoordinator::new();
-        let results = coord.shutdown();
-        assert_eq!(results.len(), 3);
-        assert!(results.iter().all(|r| !r.timed_out));
+        let result = coord.shutdown();
+        assert_eq!(result.phases.len(), 3);
+        assert!(result.is_ok());
     }
 }
 
@@ -1062,9 +1062,9 @@ mod shutdown_decorator_e2e {
             drop(observed);
 
             // 协调器三阶段先行，随后 Kit 级 on_shutdown 观察到最外层 val=40。
-            let results = coord.shutdown();
-            assert_eq!(results.len(), 3);
-            assert!(results.iter().all(|r| r.is_ok()));
+            let result = coord.shutdown();
+            assert_eq!(result.phases.len(), 3);
+            assert!(result.is_ok());
             ready.shutdown();
             log
         };
@@ -1426,7 +1426,8 @@ mod all_features_smoke_e2e {
         kit.with_observer(Arc::new(CountingObs {
             built: Arc::clone(&built_count),
         }));
-        // 装饰器按能力类型（Arc<SmokeRes>）注册：eager 与 lazy 路径同键生效。
+        // 装饰器按模块→能力映射注册：仅 SmokeMod 被装饰。LazySmoke 与 SmokeMod 共享
+        // Arc<SmokeRes> 能力类型，但未出现在映射中，不会被连带装饰（eager=140，lazy=100）。
         kit.decorate::<SmokeMod>(|cap: Arc<SmokeRes>| Arc::new(SmokeRes { val: cap.val * 10 }));
 
         // ── 配置链（reload）+ 加密链（encryption）先于 build 注入 ──
@@ -1442,8 +1443,9 @@ mod all_features_smoke_e2e {
 
         // eager + decorator：7 * 2 * 10 = 140。
         assert_eq!(ready.require::<SmokeMod>().unwrap().val, 140);
-        // lazy：首次 require 触发构建；装饰器按能力类型同样命中 lazy 路径。
-        assert_eq!(ready.require::<LazySmoke>().unwrap().val, 1000);
+        // lazy：首次 require 触发构建；LazySmoke 未被装饰（未出现在模块→能力映射中），
+        // 与下方 scope 路径期望一致。
+        assert_eq!(ready.require::<LazySmoke>().unwrap().val, 100);
         // multi：注册顺序聚合。
         let multi = ready.require_all::<MultiSmokeA>().unwrap();
         assert_eq!(*multi[0], 1);
@@ -1469,7 +1471,7 @@ mod all_features_smoke_e2e {
         // shutdown 特性：协调器三阶段 + Kit 级关闭。
         let coord = ShutdownCoordinator::new();
         coord.register_hook(ShutdownPhase::CloseConnections, || {});
-        assert!(coord.shutdown().iter().all(|r| r.is_ok()));
+        assert!(coord.shutdown().is_ok());
         ready.shutdown();
 
         // ── async 面：AsyncKit 同烟囱最小打通 ──

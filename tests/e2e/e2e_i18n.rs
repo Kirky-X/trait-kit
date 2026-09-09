@@ -18,8 +18,10 @@ use trait_kit::i18n::I18nManager;
 ///
 /// 所有测试首行调用：OnceLock 竞争双方都写入同一 locale，胜者恒为
 /// zh-CN，因此无需 serial 门控。
+// 调用方均位于 shutdown 门控模块内，仅启用 i18n 时本函数编译期闲置。
+#[allow(dead_code)]
 fn ensure_zh() {
-    let _ = I18nManager::init_with_locale("zh-CN");
+    I18nManager::init_with_locale("zh-CN");
 }
 
 #[cfg(feature = "shutdown")]
@@ -27,7 +29,7 @@ mod i18n_shutdown_e2e {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
     use trait_kit::i18n::I18nManager;
-    use trait_kit::kit::{ShutdownCoordinator, ShutdownPhase, ShutdownResult};
+    use trait_kit::kit::{ShutdownCoordinator, ShutdownPhase};
 
     use super::ensure_zh;
 
@@ -36,7 +38,8 @@ mod i18n_shutdown_e2e {
     #[test]
     fn e2e_i18n_shutdown_timed_out_display_localized_zh() {
         ensure_zh();
-        assert_eq!(I18nManager::global().unwrap().locale_tag(), "zh-CN");
+        // locale_tag 存储小写化后的标签（build() 统一 normalize）。
+        assert_eq!(I18nManager::global().unwrap().locale_tag(), "zh-cn");
 
         // 真实路径：阶段超时 → ShutdownPhaseResult(timed_out) →
         // ShutdownResult::into_result → Err(ShutdownTimedOut)。
@@ -53,18 +56,18 @@ mod i18n_shutdown_e2e {
             SKIPPED.store(true, Ordering::SeqCst);
         });
         coord.register_hook(ShutdownPhase::DrainQueue, || {});
-        let results = coord.shutdown();
+        let result = coord.shutdown();
         assert!(
-            !results[0].is_ok(),
+            !result.phases[0].is_ok(),
             "StopRequests 累计耗时超过 1ms 阶段超时，应标记 timed_out"
         );
         assert!(
             !SKIPPED.load(Ordering::SeqCst),
             "超时后本阶段剩余钩子应被跳过"
         );
-        assert!(results[1].is_ok(), "DrainQueue 无钩子应正常完成");
+        assert!(result.phases[1].is_ok(), "DrainQueue 无钩子应正常完成");
 
-        let err = ShutdownResult { phases: results }
+        let err = result
             .into_result()
             .expect_err("存在超时阶段时应返回 ShutdownTimedOut");
         let msg = err.to_string();

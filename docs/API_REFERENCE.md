@@ -428,10 +428,9 @@ pub trait BuildObserver: Send + Sync + 'static {
 | 方法 | 说明 |
 |---|---|
 | `AsyncScope::new()` | 创建空异步作用域 |
-| `register::<M>()` | 注册模块 |
-| `insert::<M>(cap)` | 插入预构建能力 |
+| `insert::<M>(cap)` | 插入预构建能力（唯一入口；重复 insert 覆盖旧值） |
 | `require::<M>()` | 检索能力 |
-| `contains::<M>()` | 检查是否已注册 |
+| `contains::<M>()` | 检查能力是否已插入 |
 
 ### 其他方法级门控速查
 

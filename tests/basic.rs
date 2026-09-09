@@ -745,9 +745,15 @@ mod graph_coverage {
     use std::any::TypeId;
     use trait_kit::kit::{DependencyGraph, GraphError, ModuleEntry};
 
-    fn entry(name: &'static str, deps: Vec<(&'static str, TypeId)>) -> ModuleEntry {
+    /// Build a `ModuleEntry` for graph tests.
+    ///
+    /// `type_id` is an explicit parameter on purpose: every entry added to the
+    /// same `DependencyGraph` MUST be given a distinct `TypeId` (e.g.
+    /// `TypeId::of::<A>()` for a dedicated placeholder type). Reusing a single
+    /// `TypeId` across entries would make registration collide.
+    fn entry(name: &'static str, type_id: TypeId, deps: Vec<(&'static str, TypeId)>) -> ModuleEntry {
         ModuleEntry {
-            type_id: TypeId::of::<()>(),
+            type_id,
             name,
             dependencies: deps,
         }
@@ -833,7 +839,8 @@ mod graph_coverage {
                 dependencies: vec![],
             })
             .unwrap_err();
-        assert_eq!(err, "a_dup");
+        // Err 携带已注册（冲突方）的名字 "a"，而非被拒绝的新条目名 "a_dup"
+        assert_eq!(err, "a");
     }
 
     #[test]
@@ -908,7 +915,7 @@ mod graph_coverage {
     // Suppress unused warning for the helper.
     #[test]
     fn entry_helper_compiles() {
-        let _ = entry("x", vec![]);
+        let _ = entry("x", TypeId::of::<()>(), vec![]);
     }
 }
 

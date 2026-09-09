@@ -13,23 +13,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Get tag name
         id: get_tag
+        env:
+          # 通过 env 传入而非 ${{ }} 内插，防止 tag 名注入 shell 脚本。
+          REF_NAME: ${{ github.event.ref }}
         run: |
-          TAG_NAME="${{ github.event.ref }}"
+          TAG_NAME="$REF_NAME"
           VERSION="${TAG_NAME#v}"
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Delete GitHub Release
+        env:
+          TAG_NAME: ${{ steps.get_tag.outputs.tag_name }}
+          # token 经 env 传入而非 ${{ }} 内插，与同文件注入加固保持一致。
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME="${{ steps.get_tag.outputs.tag_name }}"
-
           # 查找对应的 release
           RELEASE_ID=$(curl -s \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG_NAME" \
             | jq -r '.id')
@@ -37,7 +42,7 @@ jobs:
           if [ "$RELEASE_ID" != "null" ] && [ -n "$RELEASE_ID" ]; then
             echo "Deleting release $RELEASE_ID for tag $TAG_NAME"
             curl -X DELETE \
-              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID"
             echo "✅ GitHub Release deleted successfully"
@@ -46,18 +51,20 @@ jobs:
           fi
 
       - name: Warning about crates.io
+        env:
+          VERSION: ${{ steps.get_tag.outputs.version }}
         run: |
-          cat << 'EOF'
+          cat <<EOF
 
           ⚠️  IMPORTANT: crates.io Limitation
           =====================================
 
           crates.io does NOT support deleting published versions.
-          The version ${{ steps.get_tag.outputs.version }} will remain published.
+          The version $VERSION will remain published.
 
           Options:
           1. Yank the version (marks it as not recommended):
-             cargo yank --version ${{ steps.get_tag.outputs.version }} <crate-name>
+             cargo yank --version $VERSION <crate-name>
 
           2. Contact crates.io support for exceptional circumstances:
              https://crates.io/policies

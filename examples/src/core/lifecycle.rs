@@ -47,7 +47,7 @@ impl Lifecycle for DatabaseModule {
     }
 
     fn on_shutdown(_cap: &Arc<DatabaseCap>) {
-        SHUTDOWN_CALLED.store(true, Ordering::SeqCst);
+        SHUTDOWN_CALLED.store(true, Ordering::Relaxed);
         println!("  [lifecycle] database on_shutdown: closing connection");
     }
 }
@@ -69,7 +69,7 @@ fn main() {
     // Shutdown in reverse topological order
     kit.shutdown();
     assert!(
-        SHUTDOWN_CALLED.load(Ordering::SeqCst),
+        SHUTDOWN_CALLED.load(Ordering::Relaxed),
         "on_shutdown should have been called"
     );
 

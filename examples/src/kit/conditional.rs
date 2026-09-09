@@ -40,7 +40,7 @@ impl AutoBuilder for MetricsModule {
 }
 
 /// Config that controls whether metrics should be enabled.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct FeatureFlags {
     enable_metrics: bool,
 }

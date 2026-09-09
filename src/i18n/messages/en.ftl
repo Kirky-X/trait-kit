@@ -20,9 +20,9 @@ trait-kit-error-config-validation-failed = config validation failed for `{ $cont
 
 trait-kit-error-no-snapshot = no snapshot found for `{ $key }`
 
-i18n-error-invalid-locale = invalid locale '{ $input }': { $reason }
+i18n-error-invalid-locale = invalid locale `{ $input }`: { $reason }
 
-i18n-error-invalid-number = invalid number '{ $input }': { $reason }
+i18n-error-invalid-number = invalid number `{ $input }`: { $reason }
 
 i18n-error-date = date error: { $detail }
 

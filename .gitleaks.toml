@@ -1,0 +1,12 @@
+# gitleaks 配置：扩展默认规则集，仅对已核实的高熵误报降噪。
+# 背景：tests/e2e/e2e_advanced.rs 注释中的加密算法名 "XChaCha20-Poly1305"
+# 会被 generic-api-key 规则按熵值误判为 API key（tiangang 扫描已裁决为 FP）。
+[extend]
+useDefault = true
+
+[allowlist]
+description = "算法名与已核实的非凭据字符串（非密钥）"
+paths = ['''tests/e2e/''']
+regexes = [
+    '''XChaCha20-Poly1305''',
+]

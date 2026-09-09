@@ -24,7 +24,7 @@ use trait_kit::i18n::I18nManager;
 ///
 /// OnceLock 竞争双方都写入同一 locale，胜者恒为 en，无需 serial 门控。
 fn ensure_en() {
-    let _ = I18nManager::init_with_locale("en");
+    I18nManager::init_with_locale("en");
 }
 
 fn sample_source() -> Box<dyn std::error::Error + Send + 'static> {
@@ -96,16 +96,21 @@ fn e2e_error_display_all_variants_english() {
     );
 
     // ERR-06：LifecycleFailed 含 context 与 source。
-    let msg = TraitKitError::LifecycleFailed {
-        context: "hook".into(),
-        source: sample_source(),
+    // 该变体由 `lifecycle` feature 门控（error.rs 中 #[cfg]），未启用时
+    // 编译期跳过本段（仅 `--features i18n` 等组合下）。
+    #[cfg(feature = "lifecycle")]
+    {
+        let msg = TraitKitError::LifecycleFailed {
+            context: "hook".into(),
+            source: sample_source(),
+        }
+        .to_string();
+        assert!(msg.contains("lifecycle hook failed"), "got '{msg}'");
+        assert!(
+            msg.contains("hook") && msg.contains("inner boom"),
+            "got '{msg}'"
+        );
     }
-    .to_string();
-    assert!(msg.contains("lifecycle hook failed"), "got '{msg}'");
-    assert!(
-        msg.contains("hook") && msg.contains("inner boom"),
-        "got '{msg}'"
-    );
 }
 
 /// ERR-09 补充：ShutdownTimedOut 的 en 文本（shutdown 门控变体）。

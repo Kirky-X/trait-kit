@@ -17,14 +17,33 @@ use trait_kit::prelude::*;
 
 // ─── Minimal block_on executor (mirrors trait-kit's internal test helper) ───
 
+/// Minimal single-threaded `Future` executor (no extra deps).
+///
+/// # Panics
+///
+/// Panics if the future does not complete within `MAX_POLLS` iterations,
+/// preventing an infinite loop from hanging the example forever.
 fn block_on<F: Future>(future: F) -> F::Output {
+    /// Maximum number of poll iterations before panicking.
+    /// Generous enough for any reasonable example future.
+    const MAX_POLLS: u32 = 1_000_000;
+
     let waker = task::Waker::noop();
     let mut cx = task::Context::from_waker(waker);
     let mut future = std::pin::pin!(future);
+    let mut polls = 0u32;
     loop {
         match future.as_mut().poll(&mut cx) {
             Poll::Ready(v) => return v,
-            Poll::Pending => std::hint::spin_loop(),
+            Poll::Pending => {
+                polls += 1;
+                assert!(
+                    polls < MAX_POLLS,
+                    "block_on: future did not complete within \
+                     {MAX_POLLS} poll iterations (possible infinite loop)"
+                );
+                std::hint::spin_loop();
+            }
         }
     }
 }
