@@ -2024,6 +2024,22 @@ impl Kit<Ready> {
         super::scope::Scope::new()
     }
 
+    /// Create a scope bound to this Kit as its parent context (T206).
+    ///
+    /// The scope can resolve this Kit's capabilities read-only via
+    /// `scope.parent::<M>()` (per-request modules plus shared parent
+    /// singletons). The scope holds a `Weak` back-reference only, so dropping
+    /// the parent invalidates parent queries instead of creating a retain
+    /// cycle — cycle protection by construction.
+    ///
+    /// Requires the `scope` feature. `Kit` is `!Sync`, so the `Rc` here is a
+    /// single-threaded owner — consistent with the sync thread model.
+    #[cfg(feature = "scope")]
+    #[must_use]
+    pub fn create_scope_from(self: &std::rc::Rc<Self>) -> super::scope::Scope {
+        super::scope::Scope::with_parent(std::rc::Rc::downgrade(self))
+    }
+
     // ─── Graph Visualization ───────────────────────────────────────────
 
     /// Export the dependency graph as a Graphviz DOT string.

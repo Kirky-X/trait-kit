@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 use crate::core::AutoBuilder;
 use crate::error::TraitKitError;
 
-use super::kit::{LazyBuildFn, LazySlot};
+use super::kit::{Kit, LazyBuildFn, LazySlot, Ready};
 
 /// Scoped dependency container for per-request instance isolation.
 ///
@@ -18,6 +18,17 @@ use super::kit::{LazyBuildFn, LazySlot};
 /// modules and build them independently from the main `Kit`. Each scope
 /// creates its own instances — useful for per-request isolation in web
 /// servers, where each request gets its own scope with fresh instances.
+///
+/// # Parent context (T206)
+///
+/// A `Scope` can optionally hold a **read-only** handle to a parent
+/// `Kit<Ready>` (created via
+/// [`Kit::create_scope_from`](crate::kit::Kit::create_scope_from)). The handle
+/// is a `Weak` reference: a scope never keeps its parent alive, which is the
+/// cycle guard — a parent that owns scopes cannot be retained by them past
+/// its own lifetime. `scope.parent::<M>()` resolves capabilities from the
+/// parent without cloning them into the scope; it returns `None` once the
+/// parent is gone (or when the module is absent there).
 ///
 /// # Thread safety
 ///
@@ -29,6 +40,9 @@ use super::kit::{LazyBuildFn, LazySlot};
 #[cfg(feature = "scope")]
 pub struct Scope {
     lazy_slots: RefCell<HashMap<TypeId, LazySlot>>,
+    /// Optional parent context: `Weak` on purpose (cycle guard — the scope
+    /// never prolongs the parent Kit's lifetime).
+    parent: Option<std::rc::Weak<Kit<Ready>>>,
 }
 
 #[cfg(feature = "scope")]
@@ -38,7 +52,36 @@ impl Scope {
     pub fn new() -> Self {
         Scope {
             lazy_slots: RefCell::new(HashMap::new()),
+            parent: None,
         }
+    }
+
+    /// Create a new empty scope with a parent context.
+    ///
+    /// Only holds a `Weak` reference to the parent: dropping the parent Kit
+    /// invalidates [`parent`](Scope::parent) queries (returns `None`) instead
+    /// of panicking or keeping the parent alive — this is the cycle guard.
+    #[must_use]
+    pub fn with_parent(parent: std::rc::Weak<Kit<Ready>>) -> Self {
+        Scope {
+            lazy_slots: RefCell::new(HashMap::new()),
+            parent: Some(parent),
+        }
+    }
+
+    /// Read-only query into the parent context (T206).
+    ///
+    /// Resolves `M`'s capability from the parent `Kit<Ready>` if one exists.
+    /// The scope never caches or mutates parent state. Returns `None` when:
+    /// the scope has no parent, the parent has been dropped (weak reference
+    /// expired — cycle guard), or the parent has no capability for `M`.
+    ///
+    /// Scoped modules themselves still build against a self-contained empty
+    /// `Kit`; use this method to *explicitly* pull in parent singletons.
+    #[must_use]
+    pub fn parent<M: AutoBuilder>(&self) -> Option<M::Capability> {
+        let kit = self.parent.as_ref()?.upgrade()?;
+        kit.optional::<M>()
     }
 
     /// Register a module factory in this scope.
@@ -522,6 +565,77 @@ mod tests {
     fn scope_test_error_display() {
         let e = ScopeTestError;
         assert_eq!(format!("{e}"), "scope error");
+    }
+
+    // ─── Parent context (T206) ─────────────────────────────────────────
+
+    #[test]
+    fn parent_query_resolves_parent_capability_and_shares_singleton() {
+        use std::rc::Rc;
+        let kit = Rc::new(crate::kit::Kit::new().build().expect("build ok"));
+        // Inject a parent singleton via override-like registration:
+        // use a built kit with a registered module.
+        let mut unbuilt = crate::kit::Kit::new();
+        unbuilt.register::<ScopeModule>().expect("register");
+        let kit = Rc::new(unbuilt.build().expect("build ok"));
+
+        let scope_a = kit.create_scope_from();
+        let scope_b = kit.create_scope_from();
+
+        let from_a = scope_a.parent::<ScopeModule>().expect("parent has module");
+        let from_b = scope_b.parent::<ScopeModule>().expect("parent has module");
+        // Read-only query returns the parent's shared singleton (same Arc).
+        assert!(
+            Arc::ptr_eq(&from_a, &from_b),
+            "parent query must resolve the parent singleton, not fresh instances"
+        );
+
+        // Scope-local instances remain independent from the parent's.
+        let mut scoped = Scope::new();
+        scoped.register::<ScopeModule>().expect("register scoped");
+        let local = scoped.require::<ScopeModule>().expect("require scoped");
+        assert!(
+            !Arc::ptr_eq(&from_a, &local),
+            "scope-local build must not alias the parent singleton"
+        );
+    }
+
+    #[test]
+    fn parent_query_none_without_parent_or_missing_module() {
+        let scope = Scope::new();
+        assert!(
+            scope.parent::<ScopeModule>().is_none(),
+            "scope without parent → None"
+        );
+
+        use std::rc::Rc;
+        let kit = Rc::new(crate::kit::Kit::new().build().expect("build ok"));
+        let scope = kit.create_scope_from();
+        assert!(
+            scope.parent::<ScopeModule>().is_none(),
+            "parent exists but module absent → None"
+        );
+    }
+
+    #[test]
+    fn parent_query_is_cycle_guarded_weak_reference() {
+        use std::rc::Rc;
+        let mut unbuilt = crate::kit::Kit::new();
+        unbuilt.register::<ScopeModule>().expect("register");
+        let scope;
+        {
+            let kit = Rc::new(unbuilt.build().expect("build ok"));
+            scope = kit.create_scope_from();
+            assert!(
+                scope.parent::<ScopeModule>().is_some(),
+                "parent alive → query resolves"
+            );
+            // Parent dropped here; the scope must not keep it alive (Weak).
+        }
+        assert!(
+            scope.parent::<ScopeModule>().is_none(),
+            "dropped parent → None (weak cycle guard), no panic, no retain"
+        );
     }
 
     #[test]
