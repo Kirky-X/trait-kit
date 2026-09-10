@@ -139,6 +139,16 @@ impl_module_meta!(MyModule, "my-module", deps = [DepA, DepB]);
 impl_auto_builder!(MyModule, Arc<Cap>, MyError, |kit| Ok(Arc::new(Cap { ... })));
 ```
 
+### 依赖图导出
+
+| API | 说明 |
+| --- | --- |
+| `DependencyGraph` | 依赖图容器（Kahn 拓扑排序 + DFS 环检测） |
+| `GraphError` / `ModuleEntry` | 图校验错误与模块图节点 |
+| `Kit<Ready>::graph_dot()` / `graph_mermaid()` | 依赖图文本导出 |
+| `Kit<Ready>::module_count()` | 已注册模块数 |
+| `Kit<Ready>::build_report()` `report` | 结构化构建报告（JSON） |
+
 ### 国际化
 
 `tr()` 与 `I18nManager` 在默认特性下即可用（轻量 Fluent FTL 翻译）；`I18nFormatter` 的 ICU4X 区域感知格式化需启用 `i18n` feature。
