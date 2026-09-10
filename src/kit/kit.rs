@@ -2395,6 +2395,11 @@ impl Kit<Ready> {
     pub fn graph_mermaid(&self) -> String {
         self.graph.to_mermaid()
     }
+    /// Number of modules registered in the dependency graph.
+    #[must_use]
+    pub fn module_count(&self) -> usize {
+        self.graph.entries().len()
+    }
 
     /// Structured, machine-readable build report (T202).
     ///

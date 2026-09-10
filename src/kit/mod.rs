@@ -23,6 +23,9 @@ pub mod config;
 #[cfg(feature = "presets")]
 pub mod presets;
 
+#[cfg(feature = "compose")]
+pub mod sub_kit;
+
 pub use graph::{DependencyGraph, GraphError, ModuleEntry};
 pub use kit::{Kit, Ready, Unbuilt};
 pub(crate) use typemap::TypeMap;
@@ -72,6 +75,9 @@ pub use config::merge_json_deep;
 pub use presets::{
     register_confers_config, ConfersConfigHandle, ConfersConfigModule, PresetError, Presets,
 };
+
+#[cfg(feature = "compose")]
+pub use sub_kit::{SubKitHandle, SubKitModule, SubKitSpec};
 
 // NOTE: derive macros (ConfigInherit, SharedConfig) live in `trait-kit-derive`.
 // Users add `trait-kit-derive` as a dependency to use #[derive(ConfigInherit)]
