@@ -31,6 +31,7 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
+use std::task::{Context, Poll};
 
 use crate::core::AsyncAutoBuilder;
 use crate::error::TraitKitError;
@@ -178,6 +179,119 @@ pub(crate) type AsyncBuildFn = Box<
         + Sync,
 >;
 
+/// A queued module-build future (borrowed from the kit for the layer's drive).
+type AsyncBuildFut<'a> = Pin<
+    Box<
+        dyn Future<
+                Output = Result<
+                    Box<dyn Any + Send + Sync>,
+                    Box<dyn std::error::Error + Send + 'static>,
+                >,
+            > + Send
+            + 'a,
+    >,
+>;
+
+/// A completed item of a [`BatchJoin`]: item id plus its future output.
+type BatchOutput<T> = (T, Result<Box<dyn Any + Send + Sync>, Box<dyn std::error::Error + Send + 'static>>);
+
+/// Dependency-free concurrency-limited join driver (T218).
+///
+/// Polls at most `limit` queued futures at a time; as futures complete, new
+/// ones are admitted from the queue. Children are polled with the *caller's*
+/// context, so waking is correct on any executor. Output is in completion
+/// order.
+struct BatchJoin<T, F: Future> {
+    queued: std::collections::VecDeque<(T, F)>,
+    active: Vec<Option<(T, F)>>,
+    limit: usize,
+    completed: Vec<(T, F::Output)>,
+}
+
+impl<T: Copy + Unpin, F: Future + Unpin> Future for BatchJoin<T, F>
+where
+    F::Output: Unpin,
+{
+    type Output = Vec<(T, F::Output)>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        loop {
+            // Admit queued futures into free active slots.
+            while this.active.len() < this.limit {
+                match this.queued.pop_front() {
+                    Some((t, f)) => this.active.push(Some((t, f))),
+                    None => break,
+                }
+            }
+            if this.active.is_empty() {
+                return Poll::Ready(std::mem::take(&mut this.completed));
+            }
+
+            let mut completed_any = false;
+            let mut idx = 0;
+            while idx < this.active.len() {
+                let Some(slot) = this.active[idx].as_mut() else {
+                    idx += 1;
+                    continue;
+                };
+                let (t, f) = slot;
+                match Pin::new(f).poll(cx) {
+                    Poll::Ready(out) => {
+                        let (slot_t, _) = this.active.remove(idx).expect("slot occupied");
+                        this.completed.push((slot_t, out));
+                        completed_any = true;
+                        // Do not advance: elements shifted left.
+                    }
+                    Poll::Pending => {
+                        idx += 1;
+                    }
+                }
+            }
+
+            if !completed_any {
+                return Poll::Pending;
+            }
+            // Some futures completed: loop to admit newly queued ones.
+        }
+    }
+}
+
+/// Split a validated topological order into dependency levels (T218).
+///
+/// Level 0 = modules without dependencies; level N = modules whose longest
+/// dependency chain has N+1 nodes. Within a level no module depends on
+/// another, so they can build concurrently.
+fn topo_layers(graph: &DependencyGraph, sorted: &[TypeId]) -> Vec<Vec<TypeId>> {
+    let mut level_of: HashMap<TypeId, usize> = HashMap::new();
+    for id in sorted {
+        let level = graph
+            .entries()
+            .iter()
+            .find(|entry| entry.type_id == *id)
+            .map(|entry| {
+                entry
+                    .dependencies
+                    .iter()
+                    .filter_map(|(_, dep)| level_of.get(dep).copied())
+                    .max()
+                    .unwrap_or(0)
+                    + 1
+            })
+            .unwrap_or(0);
+        level_of.insert(*id, level);
+    }
+    let mut buckets: Vec<Vec<TypeId>> = Vec::new();
+    for id in sorted {
+        let level = level_of[id];
+        if buckets.len() <= level {
+            buckets.resize(level + 1, Vec::new());
+        }
+        buckets[level].push(*id);
+    }
+    buckets
+}
+
 /// The async capability and configuration management center.
 ///
 /// Multi-threaded (`Send + Sync`) counterpart to [`super::kit::Kit`]. Uses
@@ -203,6 +317,8 @@ pub struct AsyncKit<S = Unbuilt> {
     #[cfg(feature = "encryption")]
     encryption: EncryptionFields,
     ports: PortsFields,
+    /// Max concurrently-polled module builds per topological layer (T218).
+    max_concurrency: usize,
     _state: PhantomData<S>,
 }
 
@@ -233,6 +349,7 @@ impl AsyncKit {
             #[cfg(feature = "encryption")]
             encryption: EncryptionFields::default(),
             ports: PortsFields::default(),
+            max_concurrency: usize::MAX,
             _state: PhantomData,
         }
     }
@@ -406,86 +523,110 @@ impl AsyncKit {
             guard.drain().collect()
         };
 
-        // 3. Invoke each module's AsyncBuildFn in topological order.
-        // T208: per-module timestamps are only taken when a bus is injected.
+        // 3. Build modules topological-layer by topological-layer (T218):
+        //    modules whose dependencies are all satisfied (same level) run
+        //    concurrently, bounded by `max_concurrency`. Within a layer,
+        //    results are processed in completion order; observer callbacks
+        //    fire per module as its result is processed.
         let event_bus_present = {
             self.ports.event_bus.read().expect("lock poisoned").is_some()
         };
-        for type_id in &sorted {
-            let module_name = self.graph.name_of(*type_id).unwrap_or("<unknown>");
-            let build_fn =
-                builders
-                    .remove(type_id)
-                    .ok_or_else(|| TraitKitError::MissingCapability {
-                        key: module_name.to_string(),
-                    })?;
-
-            // Observer: notify build start
-            #[cfg(feature = "observer")]
-            let start_instant = std::time::Instant::now();
-            #[cfg(feature = "observer")]
-            {
-                let observers = self.observer.observers.read().expect("lock poisoned");
-                for obs in observers.iter() {
-                    obs.on_module_start(module_name);
+        // Per-module wall timing is taken only when a consumer exists.
+        #[allow(unused_mut, unused_assignments)]
+        let mut timing_enabled = event_bus_present;
+        #[cfg(feature = "observer")]
+        {
+            timing_enabled = true;
+        }
+        let layers = topo_layers(&self.graph, &sorted);
+        for layer in layers {
+            // Materialize the layer's futures up front (lazy — nothing runs
+            // until the driver polls them).
+            let mut queued: std::collections::VecDeque<
+                ((TypeId, &'static str, Option<std::time::Instant>), AsyncBuildFut),
+            > = std::collections::VecDeque::new();
+            for type_id in layer {
+                let module_name = self.graph.name_of(type_id).unwrap_or("<unknown>");
+                let build_fn =
+                    builders
+                        .remove(&type_id)
+                        .ok_or_else(|| TraitKitError::MissingCapability {
+                            key: module_name.to_string(),
+                        })?;
+                // Observer: notify build start when the future is queued.
+                #[cfg(feature = "observer")]
+                {
+                    let observers = self.observer.observers.read().expect("lock poisoned");
+                    for obs in observers.iter() {
+                        obs.on_module_start(module_name);
+                    }
                 }
+                let started_at = if timing_enabled {
+                    Some(std::time::Instant::now())
+                } else {
+                    None
+                };
+                queued.push_back(((type_id, module_name, started_at), build_fn(&self)));
             }
 
-            // `build_fn(&self)` returns `Pin<Box<dyn Future + Send + 'a>>`
-            // where `'a` is tied to the borrow of `self`. Awaiting consumes
-            // the future, releasing the borrow before the next statement.
-            let fut = build_fn(&self);
-            let event_start = event_bus_present.then(std::time::Instant::now);
-            match fut.await {
-                Ok(boxed) => {
-                    // `elapsed` is taken before decorators run, matching the
-                    // sync `Kit::build_eager_modules` sampling point (kit.rs):
-                    // decorator + insert time is not attributed to the
-                    // module's build duration.
-                    #[cfg(feature = "observer")]
-                    let elapsed = start_instant.elapsed();
-                    // Apply decorators (keyed by capability TypeId)
-                    #[cfg(feature = "decorator")]
-                    let boxed = {
-                        let cap_type_id = self
-                            .decorator
-                            .decorator_module_to_cap
-                            .read()
-                            .expect("lock poisoned")
-                            .get(type_id)
-                            .copied()
-                            .unwrap_or(*type_id);
-                        self.apply_decorators(cap_type_id, boxed)
-                    };
-                    self.capabilities.insert_boxed(*type_id, boxed);
-                    #[cfg(feature = "observer")]
-                    {
-                        let observers = self.observer.observers.read().expect("lock poisoned");
-                        for obs in observers.iter() {
-                            obs.on_module_built(module_name, elapsed);
+            let batch = BatchJoin {
+                queued,
+                active: Vec::new(),
+                limit: self.max_concurrency.max(1),
+                completed: Vec::new(),
+            };
+            let results = batch.await;
+
+            for ((type_id, module_name, started_at), outcome) in results {
+                match outcome {
+                    Ok(boxed) => {
+                        // Apply decorators (keyed by capability TypeId)
+                        #[cfg(feature = "decorator")]
+                        let boxed = {
+                            let cap_type_id = self
+                                .decorator
+                                .decorator_module_to_cap
+                                .read()
+                                .expect("lock poisoned")
+                                .get(&type_id)
+                                .copied()
+                                .unwrap_or(type_id);
+                            self.apply_decorators(cap_type_id, boxed)
+                        };
+                        self.capabilities.insert_boxed(type_id, boxed);
+                        #[cfg(feature = "observer")]
+                        {
+                            let observers = self.observer.observers.read().expect("lock poisoned");
+                            for obs in observers.iter() {
+                                // Completion-order callback within the layer.
+                                obs.on_module_built(
+                                    module_name,
+                                    started_at.map_or(std::time::Duration::ZERO, |t| t.elapsed()),
+                                );
+                            }
+                        }
+                        if event_bus_present {
+                            self.publish_event(super::events::KitEvent::ModuleBuilt {
+                                module: module_name,
+                                elapsed_us: started_at
+                                    .map_or(0, |t| t.elapsed().as_micros() as u64),
+                            });
                         }
                     }
-                    if let Some(event_start) = event_start {
-                        let elapsed_us = event_start.elapsed().as_micros() as u64;
-                        self.publish_event(super::events::KitEvent::ModuleBuilt {
-                            module: module_name,
-                            elapsed_us,
-                        });
-                    }
-                }
-                Err(e) => {
-                    let err = TraitKitError::BuildFailed {
-                        context: module_name.to_string(),
-                        source: e,
-                    };
-                    #[cfg(feature = "observer")]
-                    {
-                        let observers = self.observer.observers.read().expect("lock poisoned");
-                        for obs in observers.iter() {
-                            obs.on_build_error(module_name, &err);
+                    Err(e) => {
+                        let err = TraitKitError::BuildFailed {
+                            context: module_name.to_string(),
+                            source: e,
+                        };
+                        #[cfg(feature = "observer")]
+                        {
+                            let observers = self.observer.observers.read().expect("lock poisoned");
+                            for obs in observers.iter() {
+                                obs.on_build_error(module_name, &err);
+                            }
                         }
+                        return Err(err);
                     }
-                    return Err(err);
                 }
             }
         }
@@ -547,6 +688,7 @@ impl AsyncKit {
             #[cfg(feature = "encryption")]
             encryption: self.encryption,
             ports: self.ports,
+            max_concurrency: self.max_concurrency,
             _state: PhantomData::<Ready>,
         };
 
@@ -745,6 +887,15 @@ impl AsyncKit {
     /// Default is `None` (= no-op): publishing costs one `Option` check.
     pub fn with_event_bus(&mut self, bus: impl Into<super::events::OptionalEventBus>) {
         *self.ports.event_bus.write().expect("lock poisoned") = bus.into();
+    }
+
+    /// Configure the per-layer build concurrency limit (T218).
+    ///
+    /// `AsyncKit::build()` groups modules into topological layers and drives
+    /// the futures of each layer concurrently, with at most `limit` module
+    /// builds in flight. Default: unlimited. Values are clamped to >= 1.
+    pub fn with_max_concurrency(&mut self, limit: usize) {
+        self.max_concurrency = limit.max(1);
     }
 
     /// Retrieve the injected event bus, if any (T208).
@@ -1637,6 +1788,7 @@ mod tests {
 
     impl AsyncAutoBuilder for MockCounterModule {
         type Capability = Arc<()>;
+
         type Error = MockError;
 
         fn build<'a>(
@@ -3461,5 +3613,223 @@ mod async_config_inheritance_tests {
         let overlay = kit.confers.shared_fields.read().unwrap();
         assert!(overlay.contains_key("host"));
         assert!(overlay.contains_key("port"));
+    }
+}
+
+#[cfg(all(test, feature = "async"))]
+mod concurrency_tests {
+    use super::{AsyncKit, BatchJoin};
+    use crate::core::{AsyncAutoBuilder, ModuleMeta};
+    use crate::error::TraitKitError;
+    use crate::test_helpers::block_on;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    /// Future that stays Pending once (simulating an async I/O step), so the
+    /// driver must interleave other futures around it.
+    struct YieldOnce {
+        yielded: bool,
+    }
+    impl Future for YieldOnce {
+        type Output = ();
+        fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {
+            if self.yielded {
+                std::task::Poll::Ready(())
+            } else {
+                self.yielded = true;
+                cx.waker().wake_by_ref();
+                std::task::Poll::Pending
+            }
+        }
+    }
+
+    /// Module whose build reports its concurrency window into shared state.
+    struct SlowModule {
+        active: Arc<AtomicUsize>,
+        max_active: Arc<AtomicUsize>,
+    }
+    impl ModuleMeta for SlowModule {
+        const NAME: &'static str = "slow-module";
+    }
+    impl AsyncAutoBuilder for SlowModule {
+        type Capability = Arc<Mutex<u32>>;
+        type Error = TraitKitError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+        {
+            // Per-instance state is impossible through the static trait — the
+            // shared atomics are cloned in before registration (see test).
+            unreachable!("use build_with via Clone; provided for trait completeness")
+        }
+    }
+
+    #[test]
+    fn batch_join_respects_concurrency_limit() {
+        // Drive 4 pending-once futures with limit 2: max observed in-flight = 2.
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+        let mut queued = std::collections::VecDeque::new();
+        for i in 0u64..4 {
+            let a = Arc::clone(&active);
+            let m = Arc::clone(&max_active);
+            queued.push_back((i, Box::pin(async move {
+                let now = a.fetch_add(1, Ordering::SeqCst) + 1;
+                m.fetch_max(now, Ordering::SeqCst);
+                YieldOnce { yielded: false }.await;
+                a.fetch_sub(1, Ordering::SeqCst);
+            }) as Pin<Box<dyn Future<Output = ()> + Send>>));
+        }
+        let batch = BatchJoin {
+            queued,
+            active: Vec::new(),
+            limit: 2,
+            completed: Vec::new(),
+        };
+        let results = block_on(batch);
+        assert_eq!(results.len(), 4);
+        assert_eq!(
+            max_active.load(Ordering::SeqCst),
+            2,
+            "no more than `limit` futures in flight"
+        );
+    }
+
+    #[test]
+    fn batch_join_unlimited_runs_all_concurrently() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+        let mut queued = std::collections::VecDeque::new();
+        for i in 0u64..4 {
+            let a = Arc::clone(&active);
+            let m = Arc::clone(&max_active);
+            queued.push_back((i, Box::pin(async move {
+                let now = a.fetch_add(1, Ordering::SeqCst) + 1;
+                m.fetch_max(now, Ordering::SeqCst);
+                YieldOnce { yielded: false }.await;
+                a.fetch_sub(1, Ordering::SeqCst);
+            }) as Pin<Box<dyn Future<Output = ()> + Send>>));
+        }
+        let batch = BatchJoin {
+            queued,
+            active: Vec::new(),
+            limit: usize::MAX,
+            completed: Vec::new(),
+        };
+        let results = block_on(batch);
+        assert_eq!(results.len(), 4);
+        assert_eq!(max_active.load(Ordering::SeqCst), 4, "all four in flight");
+    }
+
+    #[test]
+    fn async_kit_builds_independency_modules_concurrently() {
+        // Three dependency-free modules with real (pending-once) build
+        // futures sharing a global max-in-flight counter. With the default
+        // unlimited limit all three overlap.
+        static ACTIVE: AtomicUsize = AtomicUsize::new(0);
+        static MAX_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+
+        macro_rules! make_concurrent_module {
+            ($modname:ident) => {
+                struct $modname;
+                impl ModuleMeta for $modname {
+                    const NAME: &'static str = stringify!($modname);
+                }
+                impl AsyncAutoBuilder for $modname {
+                    type Capability = Arc<SlowCap>;
+                    type Error = TraitKitError;
+                    fn build<'a>(
+                        _kit: &'a AsyncKit,
+                    ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+                    {
+                        Box::pin(async move {
+                            let now = ACTIVE.fetch_add(1, Ordering::SeqCst) + 1;
+                            MAX_ACTIVE.fetch_max(now, Ordering::SeqCst);
+                            YieldOnce { yielded: false }.await;
+                            ACTIVE.fetch_sub(1, Ordering::SeqCst);
+                            Ok(Arc::new(SlowCap))
+                        })
+                    }
+                }
+            };
+        }
+        make_concurrent_module!(ConcA);
+        make_concurrent_module!(ConcB);
+        make_concurrent_module!(ConcC);
+
+        let mut kit = AsyncKit::new();
+        kit.register::<ConcA>().expect("a");
+        kit.register::<ConcB>().expect("b");
+        kit.register::<ConcC>().expect("c");
+        let ready = block_on(kit.build()).expect("build ok");
+        assert!(ready.contains::<ConcA>() && ready.contains::<ConcB>() && ready.contains::<ConcC>());
+        assert_eq!(
+            MAX_ACTIVE.load(Ordering::SeqCst),
+            3,
+            "dependency-free modules build concurrently (all 3 overlapped)"
+        );
+    }
+
+    #[derive(Debug)]
+    struct SlowCap;
+
+    #[test]
+    fn dependent_modules_still_build_in_dependency_order() {
+        static ORDER: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+
+        struct DepLeaf;
+        impl ModuleMeta for DepLeaf {
+            const NAME: &'static str = "dep-leaf";
+        }
+        impl AsyncAutoBuilder for DepLeaf {
+            type Capability = Arc<SlowCap>;
+            type Error = TraitKitError;
+            fn build<'a>(
+                _kit: &'a AsyncKit,
+            ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+            {
+                Box::pin(async move {
+                    ORDER.lock().unwrap().push("dep-leaf");
+                    Ok(Arc::new(SlowCap))
+                })
+            }
+        }
+        struct DepTop;
+        impl ModuleMeta for DepTop {
+            const NAME: &'static str = "dep-top";
+            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                static DEPS: &[(&str, std::any::TypeId)] =
+                    &[(<DepLeaf as ModuleMeta>::NAME, std::any::TypeId::of::<DepLeaf>())];
+                DEPS
+            }
+        }
+        impl AsyncAutoBuilder for DepTop {
+            type Capability = Arc<SlowCap>;
+            type Error = TraitKitError;
+            fn build<'a>(
+                kit: &'a AsyncKit,
+            ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+            {
+                Box::pin(async move {
+                    kit.require::<DepLeaf>().map_err(|e| {
+                        TraitKitError::BuildFailed { context: "dep-top".into(), source: Box::new(e) }
+                    })?;
+                    ORDER.lock().unwrap().push("dep-top");
+                    Ok(Arc::new(SlowCap))
+                })
+            }
+        }
+
+        let mut kit = AsyncKit::new();
+        kit.register::<DepTop>().expect("top");
+        kit.register::<DepLeaf>().expect("leaf");
+        let ready = block_on(kit.build()).expect("build ok");
+        assert!(ready.contains::<DepTop>());
+        let order = ORDER.lock().unwrap();
+        let leaf_pos = order.iter().position(|n| *n == "dep-leaf").expect("leaf ran");
+        let top_pos = order.iter().position(|n| *n == "dep-top").expect("top ran");
+        assert!(leaf_pos < top_pos, "dependency must complete first: {order:?}");
     }
 }
