@@ -38,6 +38,69 @@ pub trait ModuleMeta: 'static {
     fn i18n_ftl() -> &'static [(&'static str, &'static str)] {
         &[]
     }
+
+    /// This module's capability version (T221), used for dependency
+    /// negotiation at `build()` time. Defaults to `"0.0.0"`, which signals
+    /// "version not declared" — a consumer requiring a minimum version of an
+    /// undeclared provider fails the build.
+    const VERSION: &'static str = "0.0.0";
+
+    /// Minimum capability versions this module requires from its
+    /// dependencies (T221): `(module_name, min_version)` pairs. Checked at
+    /// `build()` with semver compatibility (same major, provider >= minimum).
+    /// Defaults to empty.
+    #[must_use]
+    fn required_versions() -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+}
+
+/// Semver compatibility check (T221): `provided` satisfies `required` iff
+/// they share the same major version and `provided >= required` on the
+/// `(major, minor, patch)` tuple. Pre-release/build suffixes (`-rc.1`,
+/// `+meta`) are stripped before comparison; missing components default to 0.
+#[must_use]
+pub fn semver_compatible(provided: &str, required: &str) -> bool {
+    let (provided, provided_pre) = parse_semver(provided);
+    let (required, required_pre) = parse_semver(required);
+    if provided.0 != required.0 {
+        return false;
+    }
+    // Semver ordering: a pre-release sorts below the bare release.
+    if provided_pre && !required_pre {
+        return false;
+    }
+    provided >= required
+}
+
+fn parse_semver(v: &str) -> ((u64, u64, u64), bool) {
+    let has_prerelease = v.contains('-');
+    let base = v.split(['-', '+']).next().unwrap_or(v);
+    let mut parts = base.split('.');
+    let major = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+    let minor = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+    let patch = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+    ((major, minor, patch), has_prerelease)
+}
+
+#[cfg(test)]
+mod semver_tests {
+    use super::semver_compatible as compat;
+
+    #[test]
+    fn same_major_and_gte_is_compatible() {
+        assert!(compat("1.2.0", "1.1.0"));
+        assert!(compat("1.2.3", "1.2.3"));
+        assert!(compat("1.10.0", "1.9.0"));
+        assert!(compat("1.2", "1.1.5"));
+    }
+
+    #[test]
+    fn major_mismatch_or_older_is_incompatible() {
+        assert!(!compat("2.0.0", "1.9.9"), "major bump breaks compat");
+        assert!(!compat("1.1.0", "1.2.0"), "older provider");
+        assert!(!compat("1.1.0-rc.1", "1.1.0"), "prerelease sorts below release");
+    }
 }
 
 /// Builder trait for module construction.

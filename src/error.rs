@@ -41,6 +41,18 @@ pub enum TraitKitError {
         module: &'static str,
     },
 
+    /// 依赖能力版本不满足要求（T221：semver 兼容校验失败）。
+    VersionIncompatible {
+        /// 发起依赖的模块。
+        module: &'static str,
+        /// 提供能力的依赖模块。
+        dependency: &'static str,
+        /// 要求的最低版本。
+        required: &'static str,
+        /// 实际提供的版本。
+        provided: &'static str,
+    },
+
     /// 模块构建失败。
     BuildFailed {
         /// 构建失败的上下文描述（支持 i18n 翻译后的文本）。
@@ -121,6 +133,16 @@ impl fmt::Display for TraitKitError {
                 f,
                 "decorator target module `{module}` is not registered \
                  (checked at registration time)",
+            ),
+            Self::VersionIncompatible {
+                module,
+                dependency,
+                required,
+                provided,
+            } => write!(
+                f,
+                "module `{module}` requires capability `{dependency}` >= {required}, \
+                 but the provider declares {provided}"
             ),
             Self::BuildFailed { context, source } => {
                 let source_str = source.to_string();
@@ -237,7 +259,8 @@ impl TraitKitError {
             Self::CycleDetected { .. }
             | Self::DependencyMissing { .. }
             | Self::AlreadyRegistered { .. }
-            | Self::DecoratorTargetMissing { .. } => ErrorKind::Other,
+            | Self::DecoratorTargetMissing { .. }
+            | Self::VersionIncompatible { .. } => ErrorKind::Other,
             #[cfg(feature = "shutdown")]
             Self::ShutdownTimedOut { .. } => ErrorKind::Other,
         }

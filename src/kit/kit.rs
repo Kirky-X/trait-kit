@@ -244,6 +244,16 @@ struct DecoratorFields {
     decorator_module_to_cap: RefCell<HashMap<TypeId, TypeId>>,
 }
 
+/// Fields gated behind the `negotiate` feature (T221).
+#[cfg(feature = "negotiate")]
+#[derive(Default)]
+struct NegotiateFields {
+    /// Module name → declared capability version.
+    versions: RefCell<HashMap<&'static str, &'static str>>,
+    /// `(consumer, dependency, min_version)` requirements.
+    requirements: RefCell<Vec<(&'static str, &'static str, &'static str)>>,
+}
+
 /// Fields gated behind the `i18n` feature (T207).
 #[cfg(feature = "i18n")]
 #[derive(Default)]
@@ -314,6 +324,8 @@ pub struct Kit<S = Unbuilt> {
     observer: ObserverFields,
     #[cfg(feature = "decorator")]
     decorator: DecoratorFields,
+    #[cfg(feature = "negotiate")]
+    negotiate: NegotiateFields,
     #[cfg(feature = "i18n")]
     i18n: I18nFields,
     #[cfg(feature = "report")]
@@ -356,6 +368,8 @@ impl Kit {
             observer: ObserverFields::default(),
             #[cfg(feature = "decorator")]
             decorator: DecoratorFields::default(),
+            #[cfg(feature = "negotiate")]
+            negotiate: NegotiateFields::default(),
             #[cfg(feature = "i18n")]
             i18n: I18nFields::default(),
             #[cfg(feature = "report")]
@@ -391,6 +405,7 @@ impl Kit {
             .borrow_mut()
             .insert(TypeId::of::<M>(), build_fn);
         self.record_module_i18n::<M>();
+        self.record_module_versions::<M>();
         Ok(())
     }
 
@@ -844,6 +859,11 @@ impl Kit {
         #[cfg(feature = "report")]
         let report_build_start = std::time::Instant::now();
 
+        // T221: semver-compat negotiation between declared requirements and
+        // provider versions, before any module builds.
+        #[cfg(feature = "negotiate")]
+        self.validate_version_requirements()?;
+
         // Phase 1: Build eager modules (overrides + build_fn in topo order)
         self.build_eager_modules(&sorted)?;
 
@@ -937,6 +957,8 @@ impl Kit {
             observer: self.observer,
             #[cfg(feature = "decorator")]
             decorator: self.decorator,
+            #[cfg(feature = "negotiate")]
+            negotiate: self.negotiate,
             #[cfg(feature = "i18n")]
             i18n: self.i18n,
             #[cfg(feature = "report")]
@@ -1375,6 +1397,52 @@ impl Kit {
     #[cfg(not(feature = "i18n"))]
     #[allow(clippy::unused_self, dead_code)] // signature parity with the i18n arm
     fn record_module_i18n<M: crate::core::ModuleMeta>(&self) {}
+
+    /// Record `M`'s declared version and its minimum-version requirements
+    /// (T221). Zero code without the `negotiate` feature.
+    #[cfg(feature = "negotiate")]
+    fn record_module_versions<M: crate::core::ModuleMeta>(&self) {
+        self.negotiate
+            .versions
+            .borrow_mut()
+            .insert(M::NAME, M::VERSION);
+        self.negotiate
+            .requirements
+            .borrow_mut()
+            .extend(
+                M::required_versions()
+                    .iter()
+                    .map(|(dep, min)| (M::NAME, *dep, *min)),
+            );
+    }
+
+    #[cfg(not(feature = "negotiate"))]
+    #[allow(clippy::unused_self, dead_code)] // signature parity with the negotiate arm
+    fn record_module_versions<M: crate::core::ModuleMeta>(&self) {}
+
+    /// Semver-compat validation pass (T221): every declared requirement must
+    /// be satisfied by the provider's declared version.
+    #[cfg(feature = "negotiate")]
+    fn validate_version_requirements(&self) -> Result<(), TraitKitError> {
+        let requirements = self.negotiate.requirements.borrow();
+        let versions = self.negotiate.versions.borrow();
+        for (consumer, dep, min) in requirements.iter() {
+            // Absent dependencies are the graph's job (DependencyMissing);
+            // here we only negotiate against declared providers.
+            let Some(provided) = versions.get(*dep) else {
+                continue;
+            };
+            if !crate::core::semver_compatible(provided, min) {
+                return Err(TraitKitError::VersionIncompatible {
+                    module: consumer,
+                    dependency: dep,
+                    required: min,
+                    provided,
+                });
+            }
+        }
+        Ok(())
+    }
 
     /// Register a build observer that receives callbacks during `build()`.
     ///
@@ -3462,5 +3530,137 @@ mod key_rotation_tests {
             .rotate_master_key::<RotationConfig>(&[1u8; 32], &[3u8; 8])
             .expect_err("short new key");
         assert!(err.to_string().contains("at least 16"));
+    }
+}
+
+#[cfg(all(test, feature = "negotiate"))]
+mod negotiate_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::error::ErrorKind;
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct VerCap;
+
+    #[derive(Debug)]
+    struct VerError;
+    impl std::fmt::Display for VerError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "ver error")
+        }
+    }
+    impl std::error::Error for VerError {}
+
+    struct ProviderModule;
+    impl ModuleMeta for ProviderModule {
+        const NAME: &'static str = "ver-provider";
+        const VERSION: &'static str = "1.2.0";
+    }
+    impl AutoBuilder for ProviderModule {
+        type Capability = Arc<VerCap>;
+        type Error = VerError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(VerCap))
+        }
+    }
+
+    struct SatisfiedConsumer;
+    impl ModuleMeta for SatisfiedConsumer {
+        const NAME: &'static str = "ver-consumer-ok";
+        fn required_versions() -> &'static [(&'static str, &'static str)] {
+            &[("ver-provider", "1.1.0")]
+        }
+    }
+    impl AutoBuilder for SatisfiedConsumer {
+        type Capability = Arc<VerCap>;
+        type Error = VerError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(VerCap))
+        }
+    }
+
+    struct GreedyConsumer;
+    impl ModuleMeta for GreedyConsumer {
+        const NAME: &'static str = "ver-consumer-greedy";
+        fn required_versions() -> &'static [(&'static str, &'static str)] {
+            &[("ver-provider", "2.0.0")]
+        }
+    }
+    impl AutoBuilder for GreedyConsumer {
+        type Capability = Arc<VerCap>;
+        type Error = VerError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(VerCap))
+        }
+    }
+
+    #[test]
+    fn satisfied_requirement_builds() {
+        let mut kit = Kit::new();
+        kit.register::<ProviderModule>().expect("provider");
+        kit.register::<SatisfiedConsumer>().expect("consumer");
+        kit.build().expect("1.2.0 satisfies >= 1.1.0");
+    }
+
+    #[test]
+    fn unsatisfied_requirement_fails_build_with_both_versions() {
+        let mut kit = Kit::new();
+        kit.register::<ProviderModule>().expect("provider");
+        kit.register::<GreedyConsumer>().expect("consumer");
+        let err = kit.build().expect_err("2.0.0 required but 1.2.0 provided");
+        assert!(
+            matches!(
+                err,
+                crate::TraitKitError::VersionIncompatible {
+                    module: "ver-consumer-greedy",
+                    dependency: "ver-provider",
+                    required: "2.0.0",
+                    provided: "1.2.0"
+                }
+            ),
+            "got: {err:?}"
+        );
+        assert_eq!(err.kind(), ErrorKind::Other);
+    }
+
+    #[test]
+    fn default_version_fails_any_requirement() {
+        struct UndeclaredProvider;
+        impl ModuleMeta for UndeclaredProvider {
+            const NAME: &'static str = "undeclared";
+        }
+        impl AutoBuilder for UndeclaredProvider {
+            type Capability = Arc<VerCap>;
+            type Error = VerError;
+            fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+                Ok(Arc::new(VerCap))
+            }
+        }
+        struct ConsumerOfUndeclared;
+        impl ModuleMeta for ConsumerOfUndeclared {
+            const NAME: &'static str = "consumer-undeclared";
+            fn required_versions() -> &'static [(&'static str, &'static str)] {
+                &[("undeclared", "0.0.1")]
+            }
+        }
+        impl AutoBuilder for ConsumerOfUndeclared {
+            type Capability = Arc<VerCap>;
+            type Error = VerError;
+            fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+                Ok(Arc::new(VerCap))
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.register::<UndeclaredProvider>().expect("provider");
+        kit.register::<ConsumerOfUndeclared>().expect("consumer");
+        let err = kit.build().expect_err("default 0.0.0 version fails negotiation");
+        assert!(matches!(err, crate::TraitKitError::VersionIncompatible { .. }));
+
+        // Without any requirements there is no behavior change.
+        let mut kit = Kit::new();
+        kit.register::<UndeclaredProvider>().expect("provider");
+        kit.build().expect("no requirements → no negotiation");
     }
 }
