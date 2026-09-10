@@ -155,7 +155,7 @@ pub struct I18nFormatter {
 /// - 不含 `=` 的行被直接忽略；
 /// - 含 `=` 的续行会被误当作独立消息，解析出一个假 key。
 #[derive(Debug)]
-struct MessageCatalog {
+pub(crate) struct MessageCatalog {
     messages: HashMap<String, String>,
 }
 
@@ -167,7 +167,7 @@ impl MessageCatalog {
     /// - 空行（忽略）
     /// - `message-id = 消息文本`（解析为 key-value）
     /// - 不含 `=` 的行（静默丢弃）
-    fn parse(ftl: &str) -> Self {
+    pub(crate) fn parse(ftl: &str) -> Self {
         let mut messages = HashMap::new();
         for line in ftl.lines() {
             let line = line.trim();
@@ -192,7 +192,7 @@ impl MessageCatalog {
     /// `$key` 形式或无配对 `}` 的花括号均按字面保留。
     ///
     /// 如果消息 key 不存在，返回 key 本身作为 fallback。
-    fn translate(&self, message_id: &str, args: &[(&str, &str)]) -> String {
+    pub(crate) fn translate(&self, message_id: &str, args: &[(&str, &str)]) -> String {
         let Some(template) = self.messages.get(message_id) else {
             return message_id.to_string();
         };

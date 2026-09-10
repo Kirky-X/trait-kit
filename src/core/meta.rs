@@ -22,6 +22,22 @@ pub trait ModuleMeta: 'static {
     fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
         &[]
     }
+
+    /// Module-owned Fluent (`.ftl`) resource fragments (T207).
+    ///
+    /// Returns `(locale, ftl_source)` pairs. `Kit` collects fragments from
+    /// every registered module and merges the ones matching the active
+    /// locale into a kit-local translation overlay at `build()` time, so
+    /// modules can carry their own messages instead of editing the global
+    /// catalogs. Defaults to empty — modules without translations need no
+    /// override.
+    ///
+    /// Requires the `i18n` feature.
+    #[cfg(feature = "i18n")]
+    #[must_use]
+    fn i18n_ftl() -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
 }
 
 /// Builder trait for module construction.

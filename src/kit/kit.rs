@@ -216,6 +216,17 @@ struct DecoratorFields {
     decorator_module_to_cap: RefCell<HashMap<TypeId, TypeId>>,
 }
 
+/// Fields gated behind the `i18n` feature (T207).
+#[cfg(feature = "i18n")]
+#[derive(Default)]
+struct I18nFields {
+    /// Module-owned FTL fragments collected at registration: `(locale, source)`.
+    module_ftl: RefCell<Vec<(&'static str, &'static str)>>,
+    /// Kit-local overlay catalog merged at `build()` from the fragments that
+    /// match the active locale (`None` before build or with no fragments).
+    module_catalog: RefCell<Option<crate::i18n::MessageCatalog>>,
+}
+
 /// The capability and configuration management center.
 ///
 /// # Thread safety
@@ -275,6 +286,8 @@ pub struct Kit<S = Unbuilt> {
     observer: ObserverFields,
     #[cfg(feature = "decorator")]
     decorator: DecoratorFields,
+    #[cfg(feature = "i18n")]
+    i18n: I18nFields,
     #[cfg(feature = "report")]
     report: super::report::ReportFields,
     ports: PortsFields,
@@ -315,6 +328,8 @@ impl Kit {
             observer: ObserverFields::default(),
             #[cfg(feature = "decorator")]
             decorator: DecoratorFields::default(),
+            #[cfg(feature = "i18n")]
+            i18n: I18nFields::default(),
             #[cfg(feature = "report")]
             report: super::report::ReportFields::default(),
             ports: PortsFields::default(),
@@ -347,6 +362,7 @@ impl Kit {
         self.builders
             .borrow_mut()
             .insert(TypeId::of::<M>(), build_fn);
+        self.record_module_i18n::<M>();
         Ok(())
     }
 
@@ -389,6 +405,7 @@ impl Kit {
         self.lazy_builders
             .borrow_mut()
             .insert(TypeId::of::<M>(), build_fn);
+        self.record_module_i18n::<M>();
         Ok(())
     }
 
@@ -441,6 +458,7 @@ impl Kit {
             .entry(cap_id)
             .or_default()
             .push(build_fn);
+        self.record_module_i18n::<M>();
         Ok(())
     }
 
@@ -802,6 +820,28 @@ impl Kit {
         self.report
             .set_total_elapsed_us(report_build_start.elapsed().as_micros() as u64);
 
+        // T207: merge module-owned FTL fragments matching the active locale
+        // into the kit-local overlay catalog (must happen before `self.i18n`
+        // is moved into the ready Kit below).
+        #[cfg(feature = "i18n")]
+        {
+            let locale = crate::i18n::I18nManager::init().locale_tag().to_lowercase();
+            let want_zh = locale.starts_with("zh");
+            let fragments = self.i18n.module_ftl.borrow();
+            let merged = fragments
+                .iter()
+                .filter(|(loc, _)| loc.to_lowercase().starts_with("zh") == want_zh)
+                .map(|(_, ftl)| *ftl)
+                .collect::<Vec<_>>()
+                .join("\n");
+            drop(fragments);
+            *self.i18n.module_catalog.borrow_mut() = if merged.is_empty() {
+                None
+            } else {
+                Some(crate::i18n::MessageCatalog::parse(&merged))
+            };
+        }
+
         let kit = Kit {
             builders: self.builders,
             overrides: self.overrides,
@@ -833,6 +873,8 @@ impl Kit {
             observer: self.observer,
             #[cfg(feature = "decorator")]
             decorator: self.decorator,
+            #[cfg(feature = "i18n")]
+            i18n: self.i18n,
             #[cfg(feature = "report")]
             report: self.report,
             ports: self.ports,
@@ -1245,6 +1287,20 @@ impl Kit {
     }
 
     // ─── Observability ─────────────────────────────────────────────────
+
+    /// Collect `M`'s FTL fragments into the kit-local i18n store (T207).
+    /// Zero code without the `i18n` feature (call sites are cfg-gated too).
+    #[cfg(feature = "i18n")]
+    fn record_module_i18n<M: crate::core::ModuleMeta>(&self) {
+        self.i18n
+            .module_ftl
+            .borrow_mut()
+            .extend(M::i18n_ftl().iter().copied());
+    }
+
+    #[cfg(not(feature = "i18n"))]
+    #[allow(clippy::unused_self, dead_code)] // signature parity with the i18n arm
+    fn record_module_i18n<M: crate::core::ModuleMeta>(&self) {}
 
     /// Register a build observer that receives callbacks during `build()`.
     ///
@@ -2040,6 +2096,38 @@ impl Kit<Ready> {
         super::scope::Scope::with_parent(std::rc::Rc::downgrade(self))
     }
 
+    // ─── i18n: module-owned translations (T207) ────────────────────────
+
+    /// Raw module-owned FTL fragments collected at registration time
+    /// (`(locale, ftl_source)` pairs, registration order).
+    ///
+    /// Requires the `i18n` feature.
+    #[cfg(feature = "i18n")]
+    #[must_use]
+    pub fn i18n_module_ftl(&self) -> Vec<(&'static str, &'static str)> {
+        self.i18n.module_ftl.borrow().clone()
+    }
+
+    /// Translate a message preferring the kit-local module overlay (T207).
+    ///
+    /// Lookup order: (1) the overlay catalog merged at `build()` from module
+    /// fragments matching the active locale, (2) the global `tr()` catalog.
+    /// Before `build()` — or when no module contributed fragments — this is
+    /// exactly the global `tr()`.
+    ///
+    /// Requires the `i18n` feature.
+    #[cfg(feature = "i18n")]
+    #[must_use]
+    pub fn module_tr(&self, message_id: &str, args: &[(&str, &str)]) -> String {
+        if let Some(catalog) = self.i18n.module_catalog.borrow().as_ref() {
+            let translated = catalog.translate(message_id, args);
+            if translated != message_id {
+                return translated;
+            }
+        }
+        crate::i18n::tr(message_id, args)
+    }
+
     // ─── Graph Visualization ───────────────────────────────────────────
 
     /// Export the dependency graph as a Graphviz DOT string.
@@ -2183,3 +2271,116 @@ impl std::fmt::Debug for Kit<Ready> {
 #[cfg(test)]
 #[path = "kit_tests.rs"]
 mod kit_tests;
+
+#[cfg(all(test, feature = "i18n"))]
+mod i18n_module_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct I18nCap;
+
+    #[derive(Debug)]
+    struct I18nTestError;
+
+    impl std::fmt::Display for I18nTestError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "i18n test error")
+        }
+    }
+    impl std::error::Error for I18nTestError {}
+
+    /// Module carrying its own FTL fragment for both locale buckets.
+    struct I18nGreetingModule;
+    impl ModuleMeta for I18nGreetingModule {
+        const NAME: &'static str = "i18n-greeting";
+        fn i18n_ftl() -> &'static [(&'static str, &'static str)] {
+            &[
+                (
+                    "zh-CN",
+                    "greet-hello = 你好，{ $name }！\ngreet-only = 模块私有消息",
+                ),
+                ("en-US", "greet-hello = Hello, { $name }!\ngreet-only = module-private message"),
+            ]
+        }
+    }
+    impl AutoBuilder for I18nGreetingModule {
+        type Capability = Arc<I18nCap>;
+        type Error = I18nTestError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(I18nCap))
+        }
+    }
+
+    /// Second module contributing an additional fragment.
+    struct I18nFarewellModule;
+    impl ModuleMeta for I18nFarewellModule {
+        const NAME: &'static str = "i18n-farewell";
+        fn i18n_ftl() -> &'static [(&'static str, &'static str)] {
+            &[("en-US", "greet-bye = Goodbye")]
+        }
+    }
+    impl AutoBuilder for I18nFarewellModule {
+        type Capability = Arc<I18nCap>;
+        type Error = I18nTestError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(I18nCap))
+        }
+    }
+
+    #[test]
+    fn module_ftl_fragments_collected_at_registration() {
+        let mut kit = Kit::new();
+        kit.register::<I18nGreetingModule>().expect("register");
+        kit.register_lazy::<I18nFarewellModule>().expect("register");
+        let ready = kit.build().expect("build ok");
+
+        let fragments = ready.i18n_module_ftl();
+        assert_eq!(fragments.len(), 3, "1 zh + 2 en fragments");
+        assert!(fragments.iter().any(|(l, _)| *l == "zh-CN"));
+        assert!(fragments.iter().any(|(l, _)| *l == "en-US"));
+    }
+
+    #[test]
+    fn module_tr_resolves_module_private_keys_via_overlay() {
+        let mut kit = Kit::new();
+        kit.register::<I18nGreetingModule>().expect("register");
+        let ready = kit.build().expect("build ok");
+
+        // Placeholder substitution through the merged overlay.
+        let hello = ready.module_tr("greet-hello", &[("name", "Kit")]);
+        assert!(
+            hello.contains("Kit") && hello != "greet-hello",
+            "module overlay must resolve its own key: {hello}"
+        );
+    }
+
+    #[test]
+    fn module_tr_falls_back_to_global_catalog() {
+        let mut kit = Kit::new();
+        kit.register::<I18nGreetingModule>().expect("register");
+        let ready = kit.build().expect("build ok");
+
+        // Built-in catalog key resolved through the fallback path.
+        let msg = ready.module_tr(
+            "trait-kit-error-missing-capability",
+            &[("key", "some-key")],
+        );
+        assert!(
+            msg.contains("some-key") && msg != "trait-kit-error-missing-capability",
+            "fallback must reach the global catalog: {msg}"
+        );
+        // Unknown key everywhere → returned verbatim.
+        assert_eq!(ready.module_tr("no-such-key-anywhere", &[]), "no-such-key-anywhere");
+    }
+
+    #[test]
+    fn default_i18n_ftl_is_empty() {
+        struct Plain;
+        impl ModuleMeta for Plain {
+            const NAME: &'static str = "plain";
+        }
+        assert!(<Plain as ModuleMeta>::i18n_ftl().is_empty());
+    }
+}
