@@ -27,7 +27,7 @@ license = "MIT"
 [workspace.lints.clippy]
 
 [workspace.dependencies]
-confers = { version = "0.6.0-rc.4", default-features = false }
+confers = { version = "0.6.0-rc.3", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 trait-kit = { path = ".", default-features = false }
