@@ -1438,6 +1438,38 @@ impl Kit {
             .borrow_mut()
             .insert(TypeId::of::<M>(), TypeId::of::<M::Capability>());
     }
+
+    /// Decorate a module with **registration-time contract validation** (T217).
+    ///
+    /// Unlike [`decorate`](Kit::decorate) — which panics at build time when the
+    /// target was never registered — this checked variant validates the target
+    /// contract up front and returns an error immediately:
+    ///
+    /// - `M` must already be registered in the dependency graph
+    ///   (else [`TraitKitError::DecoratorTargetMissing`]);
+    /// - the decorator's type parameter pins `M::Capability` at compile time,
+    ///   so the remaining (historically panicky) downcast cannot mismatch for
+    ///   this API.
+    ///
+    /// Requires the `decorator` feature.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::DecoratorTargetMissing` when `M` is not registered.
+    #[cfg(feature = "decorator")]
+    pub fn try_decorate<M: AutoBuilder>(
+        &mut self,
+        decorator: impl Fn(M::Capability) -> M::Capability + 'static,
+    ) -> Result<(), TraitKitError>
+    where
+        M::Capability: 'static,
+    {
+        if self.graph.name_of(TypeId::of::<M>()).is_none() {
+            return Err(TraitKitError::DecoratorTargetMissing { module: M::NAME });
+        }
+        self.decorate::<M>(decorator);
+        Ok(())
+    }
 }
 
 impl<S> Kit<S> {
@@ -3063,5 +3095,73 @@ mod config_audit_event_tests {
             entries.iter().any(|s| s == "reload"),
             "reload audit published: {entries:?}"
         );
+    }
+}
+
+#[cfg(all(test, feature = "decorator"))]
+mod try_decorate_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct PlainCap(u32);
+
+    #[derive(Debug)]
+    struct DecError;
+    impl std::fmt::Display for DecError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "dec error")
+        }
+    }
+    impl std::error::Error for DecError {}
+
+    struct DecModule;
+    impl ModuleMeta for DecModule {
+        const NAME: &'static str = "dec-module";
+    }
+    impl AutoBuilder for DecModule {
+        type Capability = Arc<PlainCap>;
+        type Error = DecError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(PlainCap(1)))
+        }
+    }
+
+    #[test]
+    fn try_decorate_rejects_unregistered_target_immediately() {
+        let mut kit = Kit::new();
+        let err = kit
+            .try_decorate::<DecModule>(|cap| Arc::new(PlainCap(cap.0 + 100)))
+            .expect_err("unregistered target must fail at registration time");
+        assert!(
+            matches!(err, crate::TraitKitError::DecoratorTargetMissing { module: "dec-module" }),
+            "got: {err:?}"
+        );
+        assert_eq!(err.kind(), crate::ErrorKind::Other);
+    }
+
+    #[test]
+    fn try_decorate_registered_target_applies_on_build() {
+        let mut kit = Kit::new();
+        kit.register::<DecModule>().expect("register");
+        kit.try_decorate::<DecModule>(|cap| Arc::new(PlainCap(cap.0 + 100)))
+            .expect("checked decorate ok");
+        let ready = kit.build().expect("build ok");
+
+        let cap = ready.require::<DecModule>().expect("require");
+        assert_eq!(cap.0, 101, "decorator applied on build");
+    }
+
+    #[test]
+    fn try_decorate_type_pinning_is_compile_time() {
+        // A decorator that returns a different capability type simply does not
+        // compile (the closure type is pinned to M::Capability) — verified
+        // here indirectly by a no-op round trip through the checked API.
+        let mut kit = Kit::new();
+        kit.register::<DecModule>().expect("register");
+        kit.try_decorate::<DecModule>(|cap| cap).expect("identity");
+        let ready = kit.build().expect("build ok");
+        assert_eq!(ready.require::<DecModule>().expect("require").0, 1);
     }
 }

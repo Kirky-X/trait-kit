@@ -35,6 +35,12 @@ pub enum TraitKitError {
         module: &'static str,
     },
 
+    /// 装饰器目标模块未注册（T217：契约前移到注册时）。
+    DecoratorTargetMissing {
+        /// 被装饰的模块名。
+        module: &'static str,
+    },
+
     /// 模块构建失败。
     BuildFailed {
         /// 构建失败的上下文描述（支持 i18n 翻译后的文本）。
@@ -111,6 +117,11 @@ impl fmt::Display for TraitKitError {
                     tr("trait-kit-error-already-registered", &[("module", *module)]),
                 )
             }
+            Self::DecoratorTargetMissing { module } => write!(
+                f,
+                "decorator target module `{module}` is not registered \
+                 (checked at registration time)",
+            ),
             Self::BuildFailed { context, source } => {
                 let source_str = source.to_string();
                 write!(
@@ -225,7 +236,8 @@ impl TraitKitError {
             Self::LifecycleFailed { .. } => ErrorKind::InitFailed,
             Self::CycleDetected { .. }
             | Self::DependencyMissing { .. }
-            | Self::AlreadyRegistered { .. } => ErrorKind::Other,
+            | Self::AlreadyRegistered { .. }
+            | Self::DecoratorTargetMissing { .. } => ErrorKind::Other,
             #[cfg(feature = "shutdown")]
             Self::ShutdownTimedOut { .. } => ErrorKind::Other,
         }
