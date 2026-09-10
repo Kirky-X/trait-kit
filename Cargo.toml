@@ -90,6 +90,9 @@ i18n = ["dep:icu", "dep:writeable", "dep:sys-locale"]
 # Structured build report (build_report JSON), health aggregate JSON export,
 # and contract manifest export. Pulls serde + serde_json.
 report = ["dep:serde", "dep:serde_json"]
+# Preset module packages: ConfersConfigModule (confers ConfigProvider as a Kit
+# module) + common composition builder.
+presets = ["confers"]
 
 # E2E 测试源文件位于 tests/e2e/（Cargo 不自动发现子目录文件），显式注册：
 # 目标二进制名保持 e2e_*（`cargo test --test e2e_core` 等命令不变）；

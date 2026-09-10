@@ -18,6 +18,9 @@ pub mod async_typemap;
 #[cfg(feature = "confers")]
 pub mod config;
 
+#[cfg(feature = "presets")]
+pub mod presets;
+
 pub use graph::{DependencyGraph, GraphError, ModuleEntry};
 pub use kit::{Kit, Ready, Unbuilt};
 pub(crate) use typemap::TypeMap;
@@ -62,6 +65,11 @@ pub use config::ValidationError;
 pub use config::interpolate_json_value;
 #[cfg(feature = "confers")]
 pub use config::merge_json_deep;
+
+#[cfg(feature = "presets")]
+pub use presets::{
+    register_confers_config, ConfersConfigHandle, ConfersConfigModule, PresetError, Presets,
+};
 
 // NOTE: derive macros (ConfigInherit, SharedConfig) live in `trait-kit-derive`.
 // Users add `trait-kit-derive` as a dependency to use #[derive(ConfigInherit)]
