@@ -115,6 +115,21 @@ impl HealthAggregate {
     }
 }
 
+/// One ring-buffer sample of a module's health (T213).
+///
+/// Produced by `Kit<Ready>::record_health_history()`; queried via
+/// `health_history()`. Requires the `health` feature.
+#[cfg(feature = "health")]
+#[derive(Debug, Clone)]
+pub struct HealthSample {
+    /// When the sample was taken (monotonic clock).
+    pub sampled_at: std::time::Instant,
+    /// Module name.
+    pub module: &'static str,
+    /// Sampled status.
+    pub status: HealthStatus,
+}
+
 /// Synchronous health check for a module.
 ///
 /// Implement this trait on a module type to enable health reporting.
@@ -525,5 +540,72 @@ mod aggregate_tests {
         assert!(agg.healthy);
         assert!(agg.modules.is_empty());
         assert!(kit.health_json().contains("\"healthy\""));
+    }
+}
+
+#[cfg(all(test, feature = "health"))]
+mod history_tests {
+    use super::*;
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct HistCap;
+
+    #[derive(Debug)]
+    struct HistError;
+    impl std::fmt::Display for HistError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "hist error")
+        }
+    }
+    impl std::error::Error for HistError {}
+
+    struct HistModule;
+    impl ModuleMeta for HistModule {
+        const NAME: &'static str = "hist-module";
+    }
+    impl AutoBuilder for HistModule {
+        type Capability = Arc<HistCap>;
+        type Error = HistError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(HistCap))
+        }
+    }
+    impl HealthCheck for HistModule {
+        fn check(_cap: &Self::Capability) -> HealthStatus {
+            HealthStatus::degraded("sampled")
+        }
+    }
+
+    #[test]
+    fn history_ring_respects_capacity_and_order() {
+        let mut kit = Kit::new();
+        kit.register::<HistModule>().expect("register");
+        kit.register_health_check::<HistModule>();
+        let ready = kit.build().expect("build ok");
+
+        ready.set_health_history_capacity(3);
+        for _ in 0..5 {
+            ready.record_health_history();
+        }
+
+        let history = ready.health_history();
+        assert_eq!(history.len(), 3, "ring retains only the newest samples");
+        assert!(
+            history.windows(2).all(|w| w[0].sampled_at <= w[1].sampled_at),
+            "history is oldest-first"
+        );
+        assert_eq!(history[0].module, "hist-module");
+        assert_eq!(history[0].status, HealthStatus::degraded("sampled"));
+    }
+
+    #[test]
+    fn empty_history_before_sampling() {
+        let kit = Kit::new().build().expect("build ok");
+        assert!(kit.health_history().is_empty());
+        kit.record_health_history();
+        assert!(kit.health_history().is_empty(), "no checkers → no samples");
     }
 }

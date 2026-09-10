@@ -186,9 +186,23 @@ struct LifecycleFields {
 
 /// Fields gated behind the `health` feature.
 #[cfg(feature = "health")]
-#[derive(Default)]
 struct HealthFields {
     health_checkers: RefCell<HashMap<TypeId, (/* module_name */ &'static str, HealthCheckerFn)>>,
+    /// Ring buffer of recent health samples (T213). Oldest first.
+    history: RefCell<std::collections::VecDeque<crate::core::health::HealthSample>>,
+    /// Ring capacity (default 32, configurable).
+    history_capacity: std::cell::Cell<usize>,
+}
+
+#[cfg(feature = "health")]
+impl Default for HealthFields {
+    fn default() -> Self {
+        Self {
+            health_checkers: RefCell::new(HashMap::new()),
+            history: RefCell::new(std::collections::VecDeque::new()),
+            history_capacity: std::cell::Cell::new(32),
+        }
+    }
 }
 
 /// Fields gated behind the `observer` feature.
@@ -1822,9 +1836,6 @@ impl Kit {
     ///
     /// # Errors
     ///
-    /// Returns `TraitKitError::BuildFailed` if serialization, key derivation, or
-    /// encryption fails.
-    #[cfg(feature = "encryption")]
     /// Encrypt and store a config value using an injected [`KeyProvider`]
     /// (T212) — the key is pulled from the provider at call time, never
     /// hardcoded at the call site.
@@ -1849,6 +1860,9 @@ impl Kit {
         self.set_encrypted::<C>(value, key.expose())
     }
 
+    /// Returns `TraitKitError::BuildFailed` if serialization, key derivation, or
+    /// encryption fails.
+    #[cfg(feature = "encryption")]
     pub fn set_encrypted<C>(&self, value: &C, master_key: &[u8]) -> Result<(), TraitKitError>
     where
         C: super::ModuleConfig + serde::Serialize,
@@ -2180,6 +2194,55 @@ impl Kit<Ready> {
             }
         }
         report
+    }
+    // ─── Health history ring buffer (T213) ─────────────────────────────
+
+    /// Configure the health-history ring capacity (default 32). Shrinking
+    /// drops the oldest samples immediately.
+    #[cfg(feature = "health")]
+    pub fn set_health_history_capacity(&self, capacity: usize) {
+        self.health.history_capacity.set(capacity);
+        let mut history = self.health.history.borrow_mut();
+        while history.len() > capacity {
+            history.pop_front();
+        }
+    }
+
+    /// Sample every registered health checker once and append the results to
+    /// the ring history (T213). The library never spawns timers — drive this
+    /// from your own interval/scheduler.
+    #[cfg(feature = "health")]
+    pub fn record_health_history(&self) {
+        let now = std::time::Instant::now();
+        let report = {
+            let checkers = self.health.health_checkers.borrow();
+            checkers
+                .values()
+                .map(|(name, checker)| (*name, checker(&self.capabilities)))
+                .collect::<Vec<_>>()
+        };
+        let mut history = self.health.history.borrow_mut();
+        let capacity = self.health.history_capacity.get();
+        for (name, status) in report {
+            if capacity == 0 {
+                break;
+            }
+            while history.len() >= capacity {
+                history.pop_front();
+            }
+            history.push_back(crate::core::health::HealthSample {
+                sampled_at: now,
+                module: name,
+                status,
+            });
+        }
+    }
+
+    /// Query the ring history, oldest first (T213).
+    #[cfg(feature = "health")]
+    #[must_use]
+    pub fn health_history(&self) -> Vec<crate::core::health::HealthSample> {
+        self.health.history.borrow().iter().cloned().collect()
     }
 
     /// Aggregate the health of all registered checkers into a structured
