@@ -1429,6 +1429,52 @@ impl<S> Kit<S> {
         }
     }
 
+    /// Retrieve an `Arc`-typed capability without cloning the payload (T211).
+    ///
+    /// For modules whose `Capability = Arc<C>` this is the first-class cheap
+    /// sharing path: the returned `Arc` clone only bumps a reference counter
+    /// (whereas `require` documents a full `Clone` of the capability type).
+    ///
+    /// Looks in eager capabilities first, then in the lazy-slot cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::CapabilityTypeMismatch` when a capability
+    /// exists but is not an `Arc<T>` (or not an `Arc` at all), and
+    /// `TraitKitError::MissingCapability` when the module has no capability
+    /// yet.
+    pub fn get_arc<M, T>(&self) -> Result<std::sync::Arc<T>, TraitKitError>
+    where
+        M: AutoBuilder<Capability = std::sync::Arc<T>>,
+        T: ?Sized + 'static,
+    {
+        let type_id = TypeId::of::<M>();
+
+        if let Some(arc) = self.capabilities.get_cloned_by_type_id::<std::sync::Arc<T>>(type_id) {
+            return Ok(arc);
+        }
+
+        if let Some(slot) = self.lazy_slots.borrow().get(&type_id) {
+            if let Some(boxed) = slot.cell.get() {
+                if let Some(arc) = boxed.downcast_ref::<std::sync::Arc<T>>().cloned() {
+                    return Ok(arc);
+                }
+                return Err(TraitKitError::CapabilityTypeMismatch {
+                    key: M::NAME.to_string(),
+                });
+            }
+        }
+
+        if self.capabilities.contains_by_type_id(type_id) {
+            return Err(TraitKitError::CapabilityTypeMismatch {
+                key: M::NAME.to_string(),
+            });
+        }
+        Err(TraitKitError::MissingCapability {
+            key: M::NAME.to_string(),
+        })
+    }
+
     /// Retrieve a capability by its module type.
     ///
     /// Available on both `Kit<Unbuilt>` (inside `AutoBuilder::build` callbacks)
@@ -2662,5 +2708,79 @@ mod require_error_kind_tests {
         assert_eq!(mismatch.kind(), ErrorKind::TypeMismatch);
         assert_eq!(build.kind(), ErrorKind::InitFailed);
         assert_eq!(reg.kind(), ErrorKind::Other);
+    }
+}
+
+#[cfg(test)]
+mod get_arc_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct ArcCap {
+        value: u32,
+    }
+
+    #[derive(Debug)]
+    struct ArcError;
+
+    impl std::fmt::Display for ArcError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "arc error")
+        }
+    }
+    impl std::error::Error for ArcError {}
+
+    struct ArcModule;
+    impl ModuleMeta for ArcModule {
+        const NAME: &'static str = "arc-module";
+    }
+    impl AutoBuilder for ArcModule {
+        type Capability = Arc<ArcCap>;
+        type Error = ArcError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(ArcCap { value: 7 }))
+        }
+    }
+
+    #[test]
+    fn get_arc_returns_same_pointer_without_deep_clone() {
+        let mut kit = Kit::new();
+        kit.register::<ArcModule>().expect("register");
+        let ready = kit.build().expect("build ok");
+
+        let a = ready.get_arc::<ArcModule, ArcCap>().expect("get_arc");
+        let b = ready.get_arc::<ArcModule, ArcCap>().expect("get_arc");
+        assert!(Arc::ptr_eq(&a, &b), "get_arc must return the same Arc");
+
+        let via_require = ready.require::<ArcModule>().expect("require");
+        assert!(
+            Arc::ptr_eq(&a, &via_require),
+            "get_arc and require must alias the same singleton"
+        );
+        assert_eq!(a.value, 7);
+    }
+
+    #[test]
+    fn get_arc_missing_module_returns_missing() {
+        let kit = Kit::new().build().expect("build ok");
+        let err = kit.get_arc::<ArcModule, ArcCap>().unwrap_err();
+        assert!(matches!(err, crate::TraitKitError::MissingCapability { .. }));
+        assert_eq!(err.kind(), crate::ErrorKind::Missing);
+    }
+
+    #[test]
+    fn get_arc_non_arc_capability_reports_type_mismatch() {
+        // Store a non-Arc capability under the module's TypeId (broken
+        // invariant simulation via crate-internal TypeMap).
+        let mut kit = Kit::new();
+        kit.register::<ArcModule>().expect("register");
+        let ready = kit.build().expect("build ok");
+        ready
+            .capabilities
+            .insert_boxed(std::any::TypeId::of::<ArcModule>(), Box::new(ArcCap { value: 1 }));
+        let err = ready.get_arc::<ArcModule, ArcCap>().unwrap_err();
+        assert_eq!(err.kind(), crate::ErrorKind::TypeMismatch);
     }
 }
