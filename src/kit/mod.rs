@@ -78,7 +78,7 @@ pub use presets::{
 // and #[derive(SharedConfig)]. The traits are re-exported above.
 
 #[cfg(feature = "encryption")]
-pub use config::EncryptedBlob;
+pub use config::{ConfersKeyProvider, EncryptedBlob, KeyBytes, KeyProvider};
 #[cfg(feature = "encryption")]
 pub(crate) use config::XChaCha20Crypto;
 

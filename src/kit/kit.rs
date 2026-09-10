@@ -1825,6 +1825,30 @@ impl Kit {
     /// Returns `TraitKitError::BuildFailed` if serialization, key derivation, or
     /// encryption fails.
     #[cfg(feature = "encryption")]
+    /// Encrypt and store a config value using an injected [`KeyProvider`]
+    /// (T212) — the key is pulled from the provider at call time, never
+    /// hardcoded at the call site.
+    ///
+    /// Requires the `encryption` feature.
+    ///
+    /// # Errors
+    ///
+    /// Returns the provider's error if key retrieval fails (fail closed), or
+    /// the usual `set_encrypted` errors for short keys / serialization issues.
+    #[cfg(feature = "encryption")]
+    pub fn set_encrypted_with_key_provider<C, P>(
+        &self,
+        value: &C,
+        provider: &P,
+    ) -> Result<(), TraitKitError>
+    where
+        C: super::ModuleConfig + serde::Serialize,
+        P: super::config::KeyProvider,
+    {
+        let key = provider.master_key()?;
+        self.set_encrypted::<C>(value, key.expose())
+    }
+
     pub fn set_encrypted<C>(&self, value: &C, master_key: &[u8]) -> Result<(), TraitKitError>
     where
         C: super::ModuleConfig + serde::Serialize,

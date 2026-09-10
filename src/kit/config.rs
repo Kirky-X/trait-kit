@@ -565,3 +565,207 @@ mod interpolate_string_tests {
         assert_eq!(interpolate_string("$${A}${A}", &v), "${A}1");
     }
 }
+
+// ─── KeyProvider port (T212, `encryption` feature) ──────────────────────────
+
+/// Zeroizing master-key container.
+///
+/// Owns the key bytes and volatile-zeroes them on drop, so a provider's key
+/// does not linger in freed memory. Access via [`KeyBytes::expose`].
+#[cfg(feature = "encryption")]
+pub struct KeyBytes {
+    buf: Vec<u8>,
+}
+
+#[cfg(feature = "encryption")]
+impl KeyBytes {
+    /// Borrow the key bytes (use and drop promptly).
+    #[must_use]
+    pub fn expose(&self) -> &[u8] {
+        &self.buf
+    }
+
+    /// Length of the key in bytes.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.buf.len()
+    }
+
+    /// Whether the key is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.buf.is_empty()
+    }
+}
+
+#[cfg(feature = "encryption")]
+impl From<Vec<u8>> for KeyBytes {
+    fn from(buf: Vec<u8>) -> Self {
+        Self { buf }
+    }
+}
+
+#[cfg(feature = "encryption")]
+impl std::fmt::Debug for KeyBytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Never leak key material through Debug.
+        write!(f, "KeyBytes(***)")
+    }
+}
+
+#[cfg(feature = "encryption")]
+impl Drop for KeyBytes {
+    fn drop(&mut self) {
+        // Volatile zeroize (same crate-internal helper the encrypted-config
+        // path uses): the compiler must not elide the write.
+        super::kit::zeroize_bytes(&mut self.buf);
+    }
+}
+
+/// Master-key provider port (T212).
+///
+/// Decouples encrypted-config storage from hardcoded key material: callers
+/// inject a provider (env, file, KMS, ...) and `Kit::set_encrypted_with_key_provider`
+/// pulls the key at call time. Requires the `encryption` feature.
+#[cfg(feature = "encryption")]
+pub trait KeyProvider: Send + Sync {
+    /// Provide the master key. Called once per encryption operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `TraitKitError` if the key cannot be retrieved (missing env
+    /// var, locked keystore, wrong length, ...). Fail closed — never return a
+    /// fallback key.
+    fn master_key(&self) -> Result<KeyBytes, crate::error::TraitKitError>;
+
+    /// Provider type name for diagnostics (e.g. `"env"`, `"confers-secret"`).
+    fn provider_type(&self) -> &'static str {
+        "custom"
+    }
+}
+
+/// Adapter: any confers [`SecretKeyProvider`](confers::secret::SecretKeyProvider)
+/// becomes a trait-kit [`KeyProvider`] (T212).
+///
+/// This is the bridge that lets downstream crates reuse the confers key
+/// ecosystem (env/file/KMS providers) inside trait-kit's encrypted config.
+#[cfg(feature = "encryption")]
+pub struct ConfersKeyProvider<P> {
+    inner: P,
+}
+
+#[cfg(feature = "encryption")]
+impl<P> ConfersKeyProvider<P> {
+    /// Wrap a confers secret-key provider.
+    #[must_use]
+    pub fn new(inner: P) -> Self {
+        Self { inner }
+    }
+}
+
+#[cfg(feature = "encryption")]
+impl<P> KeyProvider for ConfersKeyProvider<P>
+where
+    P: confers::secret::SecretKeyProvider,
+{
+    fn master_key(&self) -> Result<KeyBytes, crate::error::TraitKitError> {
+        let secret = self.inner.get_key().map_err(|e| {
+            crate::error::TraitKitError::BuildFailed {
+                context: format!("key provider ({})", self.inner.provider_type()),
+                source: Box::new(e),
+            }
+        })?;
+        Ok(KeyBytes::from(secret.as_slice().to_vec()))
+    }
+
+    fn provider_type(&self) -> &'static str {
+        self.inner.provider_type()
+    }
+}
+
+#[cfg(all(test, feature = "encryption"))]
+mod key_provider_tests {
+    use super::*;
+    use crate::error::TraitKitError;
+    use crate::kit::Kit;
+
+    #[derive(Clone, serde::Serialize, serde::Deserialize)]
+    struct SecretConfig {
+        password: String,
+    }
+
+    impl ModuleConfig for SecretConfig {
+        const PATH: &'static str = "test/key-provider";
+        fn default_value() -> Self {
+            Self {
+                password: String::new(),
+            }
+        }
+    }
+
+    /// Fixed 32-byte confers provider mock (no env mutation needed).
+    struct FixedConfersProvider;
+    impl confers::secret::SecretKeyProvider for FixedConfersProvider {
+        fn get_key(
+            &self,
+        ) -> Result<confers::SecretBytes, confers::CryptoError> {
+            Ok(confers::SecretBytes::new(vec![7u8; 32]))
+        }
+        fn provider_type(&self) -> &'static str {
+            "fixed-test"
+        }
+    }
+
+    /// Key provider that fails closed.
+    struct BrokenProvider;
+    impl KeyProvider for BrokenProvider {
+        fn master_key(&self) -> Result<KeyBytes, TraitKitError> {
+            Err(TraitKitError::BuildFailed {
+                context: "broken".into(),
+                source: Box::new(std::io::Error::other("no key")),
+            })
+        }
+    }
+
+    #[test]
+    fn confers_adapter_round_trips_encrypted_config() {
+        let kit = Kit::new();
+        let provider = ConfersKeyProvider::new(FixedConfersProvider);
+
+        kit.set_encrypted_with_key_provider(
+            &SecretConfig {
+                password: "hunter2".into(),
+            },
+            &provider,
+        )
+        .expect("encrypt with provider");
+
+        // Same key material round-trips (`get_encrypted` lives on Kit<Ready>).
+        let ready = kit.build().expect("build ok");
+        let plain: SecretConfig = ready
+            .get_encrypted(provider.master_key().expect("key").expose())
+            .expect("decrypt");
+        assert_eq!(plain.password, "hunter2");
+        assert_eq!(provider.provider_type(), "fixed-test");
+    }
+
+    #[test]
+    fn failing_provider_fails_closed() {
+        let kit = Kit::new();
+        let err = kit
+            .set_encrypted_with_key_provider(&SecretConfig {
+                password: "x".into(),
+            }, &BrokenProvider)
+            .expect_err("must fail closed");
+        assert_eq!(err.kind(), crate::ErrorKind::InitFailed);
+        let ready = kit.build().expect("build ok");
+        assert!(ready.get_encrypted::<SecretConfig>(&[7u8; 32]).is_err());
+    }
+
+    #[test]
+    fn key_bytes_debug_redacts() {
+        let key = KeyBytes::from(vec![1, 2, 3]);
+        assert_eq!(format!("{key:?}"), "KeyBytes(***)");
+        assert_eq!(key.len(), 3);
+    }
+}
