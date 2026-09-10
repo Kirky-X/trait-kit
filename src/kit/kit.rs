@@ -275,6 +275,8 @@ pub struct Kit<S = Unbuilt> {
     observer: ObserverFields,
     #[cfg(feature = "decorator")]
     decorator: DecoratorFields,
+    #[cfg(feature = "report")]
+    report: super::report::ReportFields,
     ports: PortsFields,
     _state: std::marker::PhantomData<S>,
 }
@@ -313,6 +315,8 @@ impl Kit {
             observer: ObserverFields::default(),
             #[cfg(feature = "decorator")]
             decorator: DecoratorFields::default(),
+            #[cfg(feature = "report")]
+            report: super::report::ReportFields::default(),
             ports: PortsFields::default(),
             _state: std::marker::PhantomData,
         }
@@ -532,6 +536,11 @@ impl Kit {
         self.overrides
             .borrow_mut()
             .insert(TypeId::of::<M>(), Box::new(capability));
+        #[cfg(feature = "report")]
+        self.report.push_override_record(super::report::OverrideRecord {
+            module: M::NAME,
+            source: "override_module",
+        });
     }
 
     /// Override a module's capability with a pre-built value, but still
@@ -567,6 +576,11 @@ impl Kit {
         self.overrides
             .borrow_mut()
             .insert(TypeId::of::<M>(), Box::new(capability));
+        #[cfg(feature = "report")]
+        self.report.push_override_record(super::report::OverrideRecord {
+            module: M::NAME,
+            source: "override_module_strict",
+        });
         Ok(())
     }
 
@@ -740,6 +754,14 @@ impl Kit {
             }
         };
 
+        // Report: capture validated topological order (module names) and the
+        // overall build start time. Zero code exists without `report`.
+        #[cfg(feature = "report")]
+        self.report
+            .set_topo_order(sorted.iter().map(|id| self.module_name(*id)).collect());
+        #[cfg(feature = "report")]
+        let report_build_start = std::time::Instant::now();
+
         // Phase 1: Build eager modules (overrides + build_fn in topo order)
         self.build_eager_modules(&sorted)?;
 
@@ -774,6 +796,12 @@ impl Kit {
             callbacks
         };
 
+        // Structural build time stops here (lifecycle on_ready callbacks are
+        // excluded from the report's total).
+        #[cfg(feature = "report")]
+        self.report
+            .set_total_elapsed_us(report_build_start.elapsed().as_micros() as u64);
+
         let kit = Kit {
             builders: self.builders,
             overrides: self.overrides,
@@ -805,6 +833,8 @@ impl Kit {
             observer: self.observer,
             #[cfg(feature = "decorator")]
             decorator: self.decorator,
+            #[cfg(feature = "report")]
+            report: self.report,
             ports: self.ports,
             _state: std::marker::PhantomData,
         };
@@ -835,14 +865,22 @@ impl Kit {
         for type_id in sorted {
             let module_name = self.module_name(*type_id);
 
+            // Report: dependency names for this module (cheap Vec, report only).
+            #[cfg(feature = "report")]
+            let report_deps = self.graph.dependency_names(*type_id);
+
             // [Override] Priority 1: check overrides map first.
             if let Some(boxed) = self.overrides.borrow_mut().remove(type_id) {
                 self.capabilities.insert_boxed(*type_id, boxed);
+                #[cfg(feature = "report")]
+                self.report.push_overridden(module_name, report_deps);
                 continue;
             }
 
             // [Lazy] Skip lazy-registered modules — deferred to first require().
             if self.lazy_builders.borrow().contains_key(type_id) {
+                #[cfg(feature = "report")]
+                self.report.push_lazy(module_name, report_deps);
                 continue;
             }
 
@@ -859,6 +897,8 @@ impl Kit {
             let observers = self.observers_snapshot();
             #[cfg(feature = "observer")]
             let start_instant = std::time::Instant::now();
+            #[cfg(feature = "report")]
+            let report_start = std::time::Instant::now();
             Self::notify_module_start(&observers, module_name);
 
             match (build_fn)(self) {
@@ -881,6 +921,12 @@ impl Kit {
                     self.capabilities.insert_boxed(*type_id, boxed);
                     #[cfg(feature = "observer")]
                     Self::notify_module_built(&observers, module_name, elapsed);
+                    #[cfg(feature = "report")]
+                    self.report.push_built(
+                        module_name,
+                        report_start.elapsed().as_micros() as u64,
+                        report_deps,
+                    );
                 }
                 Err(e) => {
                     let err = TraitKitError::BuildFailed {
@@ -1945,6 +1991,21 @@ impl Kit<Ready> {
     #[must_use]
     pub fn graph_mermaid(&self) -> String {
         self.graph.to_mermaid()
+    }
+
+    /// Structured, machine-readable build report (T202).
+    ///
+    /// Companion to the human-oriented `graph_dot()` / `graph_mermaid()`
+    /// exports: module list with build states (built / lazy / overridden),
+    /// validated topological order, per-module construction time, override
+    /// sources, and the total structural build time.
+    ///
+    /// Requires the `report` feature. Serialize with
+    /// [`BuildReport::to_json`](crate::kit::report::BuildReport::to_json).
+    #[cfg(feature = "report")]
+    #[must_use]
+    pub fn build_report(&self) -> super::report::BuildReport {
+        self.report.snapshot()
     }
 
     /// Retrieve and decrypt a configuration value.

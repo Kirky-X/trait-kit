@@ -6,6 +6,8 @@ pub mod graph;
 #[allow(clippy::module_inception)]
 pub mod kit;
 pub mod ports;
+#[cfg(feature = "report")]
+pub mod report;
 pub(crate) mod typemap;
 
 #[cfg(feature = "async")]
@@ -79,3 +81,6 @@ pub use ports::{
 pub use toggle::{MemoryToggle, ToggleBackend, ToggleBackendType, ToggleValue};
 #[cfg(all(feature = "toggle", feature = "confers"))]
 pub use toggle::ConfersToggle;
+
+#[cfg(feature = "report")]
+pub use report::{BuildReport, ModuleBuildState, ModuleReportEntry, OverrideRecord};
