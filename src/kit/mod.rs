@@ -76,6 +76,11 @@ pub use presets::{
     register_confers_config, ConfersConfigHandle, ConfersConfigModule, PresetError, Presets,
 };
 
+#[cfg(feature = "presets-remote")]
+pub use presets::remote::{
+    register_confers_remote_config, ConfersRemoteConfigModule, RemoteConfigProvider,
+};
+
 #[cfg(feature = "compose")]
 pub use sub_kit::{SubKitHandle, SubKitModule, SubKitSpec};
 

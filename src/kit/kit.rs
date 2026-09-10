@@ -1511,6 +1511,13 @@ impl<S> Kit<S> {
         }
     }
 
+    /// Publish a custom event to the injected bus (T208 public escape hatch):
+    /// lets module builders feed their own lifecycle events into the same
+    /// channel. No-op when no bus is injected.
+    pub fn emit_event(&self, event: super::events::KitEvent) {
+        self.publish_event(event);
+    }
+
     /// Retrieve an `Arc`-typed capability without cloning the payload (T211).
     ///
     /// For modules whose `Capability = Arc<C>` this is the first-class cheap

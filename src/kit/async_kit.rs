@@ -235,7 +235,7 @@ where
                     idx += 1;
                     continue;
                 };
-                let (t, f) = slot;
+                let (_t, f) = slot;
                 match Pin::new(f).poll(cx) {
                     Poll::Ready(out) => {
                         let (slot_t, _) = this.active.remove(idx).expect("slot occupied");
@@ -953,6 +953,13 @@ impl<S> AsyncKit<S> {
         if let Some(bus) = self.ports.event_bus.read().expect("lock poisoned").as_ref() {
             bus.publish(event);
         }
+    }
+
+    /// Publish a custom event to the injected bus (T208 public escape hatch):
+    /// lets module builders feed their own lifecycle events into the same
+    /// channel. No-op when no bus is injected.
+    pub fn emit_event(&self, event: super::events::KitEvent) {
+        self.publish_event(event);
     }
 
     /// Apply registered decorators for a capability (keyed by capability `TypeId`).

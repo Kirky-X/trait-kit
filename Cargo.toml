@@ -48,6 +48,8 @@ trybuild = "1.0"
 criterion = { version = "0.7", default-features = false, features = [
     "cargo_bench_support",
 ] }
+async-trait = "0.1"
+serde_json = { workspace = true }
 trait-kit-derive = { version = "0.5.0-rc.2", path = "trait-kit-derive" }
 
 [[bench]]
@@ -96,6 +98,9 @@ presets = ["confers"]
 # Sub-Kit composition: register a child Kit as a single parent module
 # (namespaced capabilities, cross-Kit dependency validation).
 compose = []
+# Remote configuration bridge: ConfersConfigModule over confers remote
+# AsyncSource (AsyncKit only; pulls confers/remote).
+presets-remote = ["presets", "confers/remote"]
 
 # E2E 测试源文件位于 tests/e2e/（Cargo 不自动发现子目录文件），显式注册：
 # 目标二进制名保持 e2e_*（`cargo test --test e2e_core` 等命令不变）；

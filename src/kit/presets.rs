@@ -128,6 +128,12 @@ pub enum PresetError {
     /// first — use [`register_confers_config`] instead of plain
     /// `kit.register::<ConfersConfigModule>()`.
     ProviderNotInjected,
+    /// A remote source failed to load (T219).
+    #[cfg(feature = "presets-remote")]
+    RemoteLoad {
+        /// Error message from the source.
+        message: String,
+    },
 }
 
 impl std::fmt::Display for PresetError {
@@ -138,6 +144,8 @@ impl std::fmt::Display for PresetError {
                 "ConfersConfigModule built without a provider; call \
                  register_confers_config(kit, provider) first"
             ),
+            #[cfg(feature = "presets-remote")]
+            Self::RemoteLoad { message } => write!(f, "remote config source failed: {message}"),
         }
     }
 }
@@ -296,5 +304,248 @@ mod tests {
         let ready = kit.build().expect("build ok");
         let cfg = ready.require::<ConfersConfigModule>().expect("require");
         assert_eq!(cfg.get_string("k").as_deref(), Some("v"));
+    }
+}
+
+// ─── Remote source bridge (T219, `presets-remote` feature) ─────────────────
+
+/// Bridge confers remote/`AsyncSource` configuration into an `AsyncKit` (T219).
+///
+/// The remote module loads the source once during `AsyncKit::build()`, wraps
+/// the snapshot in a dot-path [`RemoteConfigProvider`], and publishes a
+/// `ConfigChanged` audit event on the kit's event bus. Requires the
+/// `presets-remote` feature (implies `presets` and confers `remote`).
+#[cfg(feature = "presets-remote")]
+pub mod remote {
+    use super::{ConfersConfigHandle, PresetError};
+    use confers::{AnnotatedValue, ConfigProvider, ConfigValue};
+    use crate::core::{AsyncAutoBuilder, ModuleMeta};
+    use crate::error::TraitKitError;
+    use crate::kit::AsyncKit;
+    use std::sync::Arc;
+
+    /// Config slot carrying the remote source into the module build.
+    struct RemoteSourceSlot(Arc<dyn confers::interface::AsyncSource>);
+
+    impl Clone for RemoteSourceSlot {
+        fn clone(&self) -> Self {
+            Self(Arc::clone(&self.0))
+        }
+    }
+
+    /// A [`ConfigProvider`] view over one loaded remote snapshot.
+    ///
+    /// Resolves dot-notation paths (`"db.host"`) by walking the snapshot's
+    /// map structure; the root value itself is addressable via its own path.
+    pub struct RemoteConfigProvider {
+        root: Arc<AnnotatedValue>,
+    }
+
+    impl RemoteConfigProvider {
+        /// Wrap a loaded snapshot.
+        #[must_use]
+        pub fn new(root: AnnotatedValue) -> Self {
+            Self {
+                root: Arc::new(root),
+            }
+        }
+
+        fn resolve<'a>(&'a self, key: &str) -> Option<&'a AnnotatedValue> {
+            if key == self.root.path.as_ref() {
+                return Some(&self.root);
+            }
+            // Walk the map structure; every reference derives from
+            // `&'a self.root`, so the final borrow is lifetime-safe without
+            // any unsafe code.
+            let mut node: &'a AnnotatedValue = &self.root;
+            for segment in key.split('.') {
+                let ConfigValue::Map(map) = &node.inner else {
+                    return None;
+                };
+                node = map.get(segment)?;
+            }
+            Some(node)
+        }
+
+        fn collect_keys(node: &AnnotatedValue, prefix: &str, out: &mut Vec<String>) {
+            if let ConfigValue::Map(map) = &node.inner {
+                for (k, v) in map.iter() {
+                    let path = if prefix.is_empty() {
+                        k.to_string()
+                    } else {
+                        format!("{prefix}.{k}")
+                    };
+                    if let ConfigValue::Map(_) = &v.inner {
+                        Self::collect_keys(v, &path, out);
+                    } else {
+                        out.push(path);
+                    }
+                }
+            }
+        }
+    }
+
+    impl ConfigProvider for RemoteConfigProvider {
+        fn get_raw(&self, key: &str) -> Option<&AnnotatedValue> {
+            self.resolve(key)
+        }
+
+        fn keys(&self) -> Vec<String> {
+            let mut out = Vec::new();
+            Self::collect_keys(&self.root, "", &mut out);
+            out
+        }
+    }
+
+    /// AsyncKit module exposing a remote configuration snapshot (T219).
+    ///
+    /// Capability: [`ConfersConfigHandle`](super::ConfersConfigHandle) — the
+    /// same handle type as the local preset, so downstream modules are source
+    /// agnostic.
+    pub struct ConfersRemoteConfigModule;
+
+    impl ModuleMeta for ConfersRemoteConfigModule {
+        const NAME: &'static str = "confers-config-remote";
+    }
+
+    impl AsyncAutoBuilder for ConfersRemoteConfigModule {
+        type Capability = ConfersConfigHandle;
+        type Error = PresetError;
+
+        fn build<'a>(
+            kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn std::future::Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
+            Box::pin(async move {
+                let slot = kit
+                    .config::<RemoteSourceSlot>()
+                    .map_err(|_| PresetError::ProviderNotInjected)?;
+                let source_name = slot.0.name().to_string();
+                let snapshot = slot.0.load().await.map_err(|e| PresetError::RemoteLoad {
+                    message: e.to_string(),
+                })?;
+                let provider = Arc::new(RemoteConfigProvider::new(snapshot));
+                // Audit: surface the remote load on the kit event bus (T208).
+                kit.emit_event(crate::kit::events::KitEvent::ConfigChanged {
+                    key: "confers-config-remote".to_string(),
+                    summary: format!("remote load from {source_name}"),
+                });
+                Ok(ConfersConfigHandle { provider })
+            })
+        }
+    }
+
+    use std::pin::Pin;
+
+    /// Inject a remote source and register [`ConfersRemoteConfigModule`] (T219).
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::AlreadyRegistered` if the module was already
+    /// registered in this `AsyncKit`.
+    pub fn register_confers_remote_config(
+        kit: &mut AsyncKit,
+        source: Arc<dyn confers::interface::AsyncSource>,
+    ) -> Result<(), TraitKitError> {
+        kit.set_config(RemoteSourceSlot(source));
+        kit.register::<ConfersRemoteConfigModule>()
+    }
+
+    #[cfg(all(test, feature = "async"))]
+    mod tests {
+        use super::*;
+        use crate::kit::events::{KitEvent, MemoryEventBus};
+        use crate::test_helpers::block_on;
+        use async_trait::async_trait;
+        use std::sync::Mutex;
+
+        struct MockRemoteSource {
+            json: serde_json::Value,
+            id: confers::SourceId,
+        }
+
+        #[async_trait]
+        impl confers::interface::AsyncSource for MockRemoteSource {
+            async fn load(&self) -> confers::ConfigResult<AnnotatedValue> {
+                Ok(AnnotatedValue::new(
+                    ConfigValue::from_json_value(self.json.clone()),
+                    self.id.clone(),
+                    "remote-root",
+                ))
+            }
+            fn source_id(&self) -> &confers::SourceId {
+                &self.id
+            }
+            fn name(&self) -> &str {
+                "mock-remote"
+            }
+        }
+
+        #[test]
+        fn remote_module_loads_snapshot_and_publishes_audit() {
+            let source = Arc::new(MockRemoteSource {
+                json: serde_json::json!({"db": {"host": "remote-db", "port": 5432}}),
+                id: confers::SourceId::default(),
+            });
+
+            let bus = Arc::new(MemoryEventBus::new());
+            let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+            let sink = Arc::clone(&seen);
+            bus.subscribe(move |event| {
+                if let KitEvent::ConfigChanged { summary, .. } = event {
+                    sink.lock().unwrap().push(summary.clone());
+                }
+            });
+
+            let mut kit = AsyncKit::new();
+            kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>));
+            register_confers_remote_config(&mut kit, source).expect("register remote preset");
+            let ready = block_on(kit.build()).expect("build ok");
+
+            let cfg = ready
+                .require::<ConfersRemoteConfigModule>()
+                .expect("remote capability available");
+            assert_eq!(cfg.get_string("db.host").as_deref(), Some("remote-db"));
+            assert_eq!(cfg.get_int("db.port"), Some(5432));
+            assert!(
+                cfg.contains("db.host") && !cfg.contains("db.absent"),
+                "dot-path resolution works"
+            );
+            let audits = seen.lock().unwrap();
+            assert!(
+                audits.iter().any(|s| s.contains("mock-remote")),
+                "remote load published an audit event: {audits:?}"
+            );
+        }
+
+        #[test]
+        fn remote_source_failure_fails_build() {
+            struct FailingSource;
+            #[async_trait]
+            impl confers::interface::AsyncSource for FailingSource {
+                async fn load(&self) -> confers::ConfigResult<AnnotatedValue> {
+                    Err(confers::ConfigError::FileNotFound {
+                        filename: std::path::PathBuf::from("mock-remote-source"),
+                        source: None,
+                    })
+                }
+                fn source_id(&self) -> &confers::SourceId {
+                    static ID: std::sync::OnceLock<confers::SourceId> = std::sync::OnceLock::new();
+                    ID.get_or_init(confers::SourceId::default)
+                }
+                fn name(&self) -> &str {
+                    "failing"
+                }
+            }
+
+            let mut kit = AsyncKit::new();
+            register_confers_remote_config(&mut kit, Arc::new(FailingSource))
+                .expect("register");
+            let err = block_on(kit.build()).expect_err("remote failure fails build");
+            assert!(
+                err.to_string().contains("mock-remote-source"),
+                "source error surfaces: {err}"
+            );
+        }
     }
 }
