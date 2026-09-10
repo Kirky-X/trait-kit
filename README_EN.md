@@ -217,7 +217,7 @@ For the complete `Kit<Unbuilt>` / `Kit<Ready>` method list (including feature ga
 | `default` | — | No extra features, just core `Module` + `Kit`. |
 | `async` | — | `AsyncKit`: `Send + Sync` async capability management, no extra deps. |
 | `confers` | `dep:confers`, `dep:serde`, `dep:serde_json` | `Configurable` + `ModuleConfig` trait + `Config` derive re-export. |
-| `reload` | `confers`, `confers/watch` | `subscribe` / `reload_config` hot-reload API. |
+| `reload` | `confers` | `subscribe` / `reload_config` hot-reload API. |
 | `encryption` | `confers`, `confers/encryption` | `set_encrypted` / `get_encrypted` encrypted config storage. |
 | `interface` | — | Interface/implementation separation: `register_as` / `resolve` with `dyn Trait` type erasure. |
 | `lifecycle` | — | Lifecycle hooks: `on_ready` (after build) + `on_shutdown` (cleanup). |
@@ -355,7 +355,7 @@ trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.6 via 
 | Feature               | Enables                                         | Description                                      |
 | --------------------- | ----------------------------------------------- | ------------------------------------------------ |
 | `confers`             | `dep:confers`, `dep:serde`, `dep:serde_json`    | `Configurable` + `ModuleConfig` trait + `Config` derive re-export. |
-| `reload`  | `confers`, `confers/watch`               | `subscribe` / `reload_config` API.               |
+| `reload`  | `confers`               | `subscribe` / `reload_config` API.               |
 | `encryption`  | `confers`, `confers/encryption` | `set_encrypted` / `get_encrypted` API.    |
 
 ### Three-Tier Inheritance System

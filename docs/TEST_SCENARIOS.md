@@ -41,7 +41,7 @@
 | 3 | 能力获取 | CAP | — | `Kit::require / optional / require_ref / require_all / contains / contains_config / factory` |
 | 4 | 依赖图 | DEP | — | `kit::{DependencyGraph, GraphError, ModuleEntry}`、`graph_dot / graph_mermaid` |
 | 5 | 配置中心 | CFG | confers | `Configurable / ModuleConfig / Validatable / ValidationError / ConfigInherit / SharedConfig`、`set_config / config / load_config / load_and_validate / load_config_with / load_config_or_default / snapshot_config / restore_config / has_snapshot / populate_defaults / merge_config / extract_shared / inject_shared`、自由函数 `interpolate_json_value / merge_json_deep`、派生宏 `ConfigInherit / SharedConfig`（trait-kit-derive） |
-| 6 | 热重载 | RLD | reload（→confers→confers/watch） | `Kit::subscribe / reload_config` |
+| 6 | 热重载 | RLD | reload（→confers，Kit 自有 SubscriberMap） | `Kit::subscribe / reload_config` |
 | 7 | 加密存储 | ENC | encryption（→confers→confers/encryption） | `Kit::set_encrypted / get_encrypted / contains_encrypted`、`EncryptedBlob`、再导出 `XChaCha20Crypto / derive_field_key` |
 | 8 | 接口/实现分离 | ITF | interface | `register_as / resolve`、`core::{Interface, InterfaceBuilder}` |
 | 9 | 生命周期 | LCY | lifecycle（×async） | `core::{Lifecycle, AsyncLifecycle}`、`register_lifecycle / shutdown` |
@@ -174,7 +174,7 @@
 | RLD-05 | 无订阅者时 `reload_config` 成功 no-op | 边界 | reload | 无 | `tests/basic.rs::subscribe_and_reload_with_no_subscribers_succeeds` | tests/e2e/e2e_config.rs |
 | RLD-06 | 订阅者 panic 语义固化：新值已存储、剩余订阅者被跳过（panic 穿透 `reload_config`，文档化行为） | 异常 | reload | 无 | 无→需新增 | tests/e2e/e2e_config.rs |
 | RLD-07 | `require_ref` 借用存活期间调用 `reload_config`。**真实行为核正**（落地阶段核实）：`configs` 与 `capabilities` 为两个独立 `TypeMap`（`src/kit/kit.rs`），借用存活期间 `reload_config` 写配置不触能力借用、正常工作，无 borrow 冲突；同时固化 `set_config` 为 Unbuilt 态方法（Ready 态写配置唯一路径为 `reload_config`）——防未来合并两 TypeMap 引入隐蔽 panic | 边界 | reload | 无 | `src/kit/typemap.rs::inner_ref_panics_if_mutably_borrowed`（TypeMap 层既有） | tests/e2e/e2e_config.rs::e2e_require_ref_borrow_survives_reload_and_set_config + tests/e2e/e2e_concurrency.rs |
-| RLD-08 | feature 链映射：`reload` 自动启用 `confers` + `confers/watch`，`subscribe/reload_config` 与 confers watch 生态可桥接 | 正常 | reload | 无 | `Cargo.toml` 声明核对 + `tests/e2e_feature_combinations.rs::e2e_confers_plus_reload` | tests/e2e/e2e_feature_combinations.rs |
+| RLD-08 | feature 链映射：`reload` 自动启用 `confers`（已剪除 `confers/watch` 死链），`subscribe/reload_config` 经 Kit 自有 SubscriberMap 工作 | 正常 | reload | 无 | `Cargo.toml` 声明核对 + `tests/e2e_feature_combinations.rs::e2e_confers_plus_reload` | tests/e2e/e2e_feature_combinations.rs |
 | RLD-09 | examples/hot_reload 运行验收：改值 → reload → 回调打印新值 | 正常 | reload | 无 | examples/hot_reload（运行验收） | tests/e2e/e2e_feature_combinations.rs（引用示例） |
 
 ### 2.7 加密存储（ENC，13 条）
@@ -386,7 +386,7 @@
 | CMP-10 | shutdown+decorator：被装饰能力的关闭次序（装饰层与核心层）语义固化 | 边界 | shutdown,decorator | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
 | CMP-11 | toggle+scope：开关门控 `create_scope` 后的作用域内注册 | 边界 | toggle,scope | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
 | CMP-12 | interface+decorator：装饰器按 interface TypeId 应用于 `register_as` 构建路径（`build_interface_modules` 内 `apply_decorators(interface_id, …)`） | 边界 | interface,decorator | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
-| CMP-13 | encryption+reload 双链共存：`encryption` 与 `reload` 同时开启时（confers 双引擎 confers/encryption + confers/watch）全部 API 可编译可用 | 异常 | encryption,reload | 无 | 无→需新增（编译级 + 行为级） | tests/e2e/e2e_feature_combinations.rs |
+| CMP-13 | encryption+reload 双链共存：`encryption` 与 `reload` 同时开启时（confers 双引擎 confers/encryption + Kit SubscriberMap）全部 API 可编译可用 | 异常 | encryption,reload | 无 | 无→需新增（编译级 + 行为级） | tests/e2e/e2e_feature_combinations.rs |
 | CMP-14 | i18n+shutdown：`ShutdownTimedOut` 错误消息走 `tr()` 翻译链（zh locale 下错误文本本地化） | 边界 | shutdown,i18n | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
 | CMP-15 | 全 feature 烟囱：`--all-features` 编译通过（已实测 exit 0）+ 全功能行为级一次打通（register/lazy/multi/interface/config/reload/encrypt/lifecycle/health/observer/decorator/scope/toggle/shutdown/i18n 同 Kit） | 正常 | 全部 13 项 | 无 | `cargo check --all-features`（本次编写时实测）→行为级需新增 | tests/e2e/e2e_feature_combinations.rs |
 
@@ -409,7 +409,7 @@
 | PRS-01 | `cargo check`（无 feature，default=[]）全库编译 + no-feature 测试组通过（`e2e_no_feature_*`） | 边界 | — | 无 | `tests/e2e_feature_combinations.rs::e2e_no_feature_basic_build`、`e2e_no_feature_graph_export` | tests/e2e/e2e_presets.rs |
 | PRS-02 | 13 个 feature 逐一单开（`--features async` 等）各自 `cargo check` 通过，导出面按门控正确伸缩（如仅 async 时无 `Lifecycle` 导出） | 边界 | 全部单 feature | 无 | 无→需新增（循环脚本） | tests/e2e/e2e_presets.rs |
 | PRS-03 | `--all-features`（13 项全开）`cargo check` + 全部测试通过 | 边界 | 全部 | 无 | 本次编写时实测 `cargo check --all-features` exit 0 →固化为 CI 门禁需新增 | tests/e2e/e2e_presets.rs |
-| PRS-04 | 依赖链自动生效：`--features reload` 隐式启用 `confers` 与 `confers/watch`，`Configurable` 面 API 可用 | 边界 | reload | 无 | `Cargo.toml` 声明核对 + `tests/e2e_feature_combinations.rs::e2e_confers_plus_reload` | tests/e2e/e2e_presets.rs |
+| PRS-04 | 依赖链自动生效：`--features reload` 隐式启用 `confers`（已剪除 `confers/watch`），`Configurable` 面 API 可用 | 边界 | reload | 无 | `Cargo.toml` 声明核对 + `tests/e2e_feature_combinations.rs::e2e_confers_plus_reload` | tests/e2e/e2e_presets.rs |
 | PRS-05 | 依赖链自动生效：`--features encryption` 隐式启用 `confers` 与 `confers/encryption`，XChaCha20 原语经 trait-kit 再导出可用 | 边界 | encryption | 无 | `Cargo.toml` 声明核对 + `tests/e2e_feature_combinations.rs::e2e_confers_plus_encryption` | tests/e2e/e2e_presets.rs |
 | PRS-06 | examples crate 20 个示例按各自 `required-features` 门控编译（每个示例对应 feature 单独 check 通过） | 边界 | 全部 | 无 | 无→需新增（`cargo check -p trait-kit-examples --features <逐个>` 脚本） | tests/e2e/e2e_presets.rs |
 
@@ -420,7 +420,7 @@
 ### 3.1 依赖链（由 Cargo.toml `[features]` 固化，组合测试无需单独验证的部分）
 
 ```
-reload     → confers, confers/watch
+reload     → confers（已剪除 confers/watch 死链）
 encryption → confers, confers/encryption
 confers    → dep:confers, dep:serde, dep:serde_json
 i18n       → dep:icu, dep:writeable, dep:sys-locale

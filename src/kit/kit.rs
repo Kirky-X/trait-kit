@@ -32,6 +32,8 @@ use crate::i18n::tr;
 use super::EncryptedBlob;
 use super::TypeMap;
 use super::{DependencyGraph, GraphError, ModuleEntry};
+#[cfg(feature = "toggle")]
+use super::toggle::ToggleBackend;
 
 #[cfg(feature = "lifecycle")]
 type ShutdownCallback = Box<dyn Fn(&TypeMap)>;
@@ -61,7 +63,7 @@ const KEY_DERIVATION_VERSION: &str = "v1";
 
 /// Derive a per-field encryption key, mapping HKDF failures to `TraitKitError`.
 #[cfg(feature = "encryption")]
-fn derive_kit_field_key(
+pub(crate) fn derive_kit_field_key(
     master_key: &[u8],
     path: &'static str,
     context: &'static str,
@@ -170,9 +172,8 @@ struct ConfersFields {
 
 /// Fields gated behind the `toggle` feature.
 #[cfg(feature = "toggle")]
-#[derive(Default)]
 struct ToggleFields {
-    toggles: RefCell<HashMap<String, bool>>,
+    backend: RefCell<super::toggle::ToggleBackendType>,
 }
 
 /// Fields gated behind the `lifecycle` feature.
@@ -195,6 +196,13 @@ struct HealthFields {
 #[derive(Default)]
 struct ObserverFields {
     observers: RefCell<Vec<ObserverRef>>,
+}
+
+/// Fields for observation ports (always present, no feature gate).
+#[derive(Default)]
+struct PortsFields {
+    metrics_port: RefCell<super::ports::OptionalMetricsPort>,
+    log_port: RefCell<super::ports::OptionalLogPort>,
 }
 
 /// Fields gated behind the `decorator` feature.
@@ -267,6 +275,7 @@ pub struct Kit<S = Unbuilt> {
     observer: ObserverFields,
     #[cfg(feature = "decorator")]
     decorator: DecoratorFields,
+    ports: PortsFields,
     _state: std::marker::PhantomData<S>,
 }
 
@@ -293,7 +302,9 @@ impl Kit {
             #[cfg(feature = "confers")]
             confers: ConfersFields::default(),
             #[cfg(feature = "toggle")]
-            toggle: ToggleFields::default(),
+            toggle: ToggleFields {
+                backend: RefCell::new(super::toggle::ToggleBackendType::new()),
+            },
             #[cfg(feature = "lifecycle")]
             lifecycle: LifecycleFields::default(),
             #[cfg(feature = "health")]
@@ -302,6 +313,7 @@ impl Kit {
             observer: ObserverFields::default(),
             #[cfg(feature = "decorator")]
             decorator: DecoratorFields::default(),
+            ports: PortsFields::default(),
             _state: std::marker::PhantomData,
         }
     }
@@ -793,6 +805,7 @@ impl Kit {
             observer: self.observer,
             #[cfg(feature = "decorator")]
             decorator: self.decorator,
+            ports: self.ports,
             _state: std::marker::PhantomData,
         };
 
@@ -1114,21 +1127,57 @@ impl Kit {
 
     // ─── Feature Toggle ────────────────────────────────────────────────
 
-    /// Enable or disable a feature toggle.
+    /// Enable or disable a boolean feature toggle.
     ///
-    /// Requires the `toggle` feature. The toggle state is stored as a
-    /// `HashMap<String, bool>` and can be queried via `is_toggle_enabled`.
+    /// Requires the `toggle` feature. Delegates to the toggle backend
+    /// (confers registry when `confers` feature is enabled, memory otherwise).
     #[cfg(feature = "toggle")]
     pub fn enable_toggle(&self, key: impl Into<String>, enabled: bool) {
-        self.toggle.toggles.borrow_mut().insert(key.into(), enabled);
+        let key = key.into();
+        self.toggle
+            .backend
+            .borrow_mut()
+            .set(key, super::toggle::ToggleValue::Bool(enabled));
     }
 
     /// Check if a feature toggle is enabled.
     ///
-    /// Returns `false` for unknown keys.
+    /// Returns `false` for unknown keys or non-boolean toggle values.
     #[cfg(feature = "toggle")]
     pub fn is_toggle_enabled(&self, key: &str) -> bool {
-        self.toggle.toggles.borrow().get(key).copied().unwrap_or(false)
+        matches!(
+            self.toggle.backend.borrow().get(key),
+            Some(super::toggle::ToggleValue::Bool(true))
+        )
+    }
+
+    /// Set a typed toggle value.
+    ///
+    /// Accepts any [`ToggleValue`](super::toggle::ToggleValue) variant
+    /// (Bool/Int/Float/Str). For boolean-only toggles, prefer `enable_toggle`.
+    #[cfg(feature = "toggle")]
+    pub fn set_toggle(&self, key: impl Into<String>, value: super::toggle::ToggleValue) {
+        self.toggle.backend.borrow_mut().set(key.into(), value);
+    }
+
+    /// Get a typed toggle value.
+    ///
+    /// Returns `None` if the key does not exist.
+    #[cfg(feature = "toggle")]
+    pub fn get_toggle(&self, key: &str) -> Option<super::toggle::ToggleValue> {
+        self.toggle.backend.borrow().get(key)
+    }
+
+    /// Remove a toggle. Returns the previous value if it existed.
+    #[cfg(feature = "toggle")]
+    pub fn remove_toggle(&self, key: &str) -> Option<super::toggle::ToggleValue> {
+        self.toggle.backend.borrow_mut().remove(key)
+    }
+
+    /// List all toggles as `(key, value)` pairs.
+    #[cfg(feature = "toggle")]
+    pub fn list_toggles(&self) -> Vec<(String, super::toggle::ToggleValue)> {
+        self.toggle.backend.borrow().list()
     }
 
     /// Conditionally register a module based on a feature toggle.
@@ -1160,6 +1209,30 @@ impl Kit {
         observer: std::sync::Arc<dyn crate::core::observer::BuildObserver>,
     ) {
         self.observer.observers.borrow_mut().push(observer);
+    }
+
+    // ─── Observation Ports ─────────────────────────────────────────────
+
+    /// Inject a [`MetricsPort`] for recording counters/gauges/histograms.
+    ///
+    /// The port is stored as `Option<Arc<dyn MetricsPort>>`. Pass `None` to
+    /// explicitly disable metrics, or omit this call entirely (default is `None`).
+    pub fn with_metrics_port(
+        &mut self,
+        port: impl Into<super::ports::OptionalMetricsPort>,
+    ) {
+        *self.ports.metrics_port.borrow_mut() = port.into();
+    }
+
+    /// Inject a [`LogPort`] for structured log recording.
+    ///
+    /// The port is stored as `Option<Arc<dyn LogPort>>`. Pass `None` to
+    /// explicitly disable logging, or omit this call entirely (default is `None`).
+    pub fn with_log_port(
+        &mut self,
+        port: impl Into<super::ports::OptionalLogPort>,
+    ) {
+        *self.ports.log_port.borrow_mut() = port.into();
     }
 
     // ─── Decorator ─────────────────────────────────────────────────────
@@ -1720,13 +1793,38 @@ impl Kit<Ready> {
     /// Check if a feature toggle is enabled (available after build).
     #[cfg(feature = "toggle")]
     pub fn is_toggle_enabled(&self, key: &str) -> bool {
-        self.toggle.toggles.borrow().get(key).copied().unwrap_or(false)
+        matches!(
+            self.toggle.backend.borrow().get(key),
+            Some(super::toggle::ToggleValue::Bool(true))
+        )
     }
 
     /// Enable or disable a feature toggle (available after build).
     #[cfg(feature = "toggle")]
     pub fn enable_toggle(&self, key: impl Into<String>, enabled: bool) {
-        self.toggle.toggles.borrow_mut().insert(key.into(), enabled);
+        let key = key.into();
+        self.toggle
+            .backend
+            .borrow_mut()
+            .set(key, super::toggle::ToggleValue::Bool(enabled));
+    }
+
+    /// Get a typed toggle value (available after build).
+    #[cfg(feature = "toggle")]
+    pub fn get_toggle(&self, key: &str) -> Option<super::toggle::ToggleValue> {
+        self.toggle.backend.borrow().get(key)
+    }
+
+    /// Set a typed toggle value (available after build).
+    #[cfg(feature = "toggle")]
+    pub fn set_toggle(&self, key: impl Into<String>, value: super::toggle::ToggleValue) {
+        self.toggle.backend.borrow_mut().set(key.into(), value);
+    }
+
+    /// List all toggles (available after build).
+    #[cfg(feature = "toggle")]
+    pub fn list_toggles(&self) -> Vec<(String, super::toggle::ToggleValue)> {
+        self.toggle.backend.borrow().list()
     }
 
     // ─── Lifecycle: shutdown ───────────────────────────────────────────
@@ -1919,6 +2017,20 @@ impl Kit<Ready> {
             context: "get_encrypted".into(),
             source: Box::new(e),
         })
+    }
+
+    // ─── Observation Port Accessors ────────────────────────────────────
+
+    /// Retrieve the injected [`MetricsPort`], if any.
+    #[must_use]
+    pub fn metrics_port(&self) -> super::ports::OptionalMetricsPort {
+        self.ports.metrics_port.borrow().clone()
+    }
+
+    /// Retrieve the injected [`LogPort`], if any.
+    #[must_use]
+    pub fn log_port(&self) -> super::ports::OptionalLogPort {
+        self.ports.log_port.borrow().clone()
     }
 }
 

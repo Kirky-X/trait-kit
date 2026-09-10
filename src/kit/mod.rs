@@ -5,6 +5,7 @@
 pub mod graph;
 #[allow(clippy::module_inception)]
 pub mod kit;
+pub mod ports;
 pub(crate) mod typemap;
 
 #[cfg(feature = "async")]
@@ -68,3 +69,13 @@ pub use config::merge_json_deep;
 pub use config::EncryptedBlob;
 #[cfg(feature = "encryption")]
 pub(crate) use config::XChaCha20Crypto;
+
+pub use ports::{
+    LogPort, LogLevel, MetricsPort, NoOpLogPort, NoOpMetricsPort, OptionalLogPort,
+    OptionalMetricsPort,
+};
+
+#[cfg(feature = "toggle")]
+pub use toggle::{MemoryToggle, ToggleBackend, ToggleBackendType, ToggleValue};
+#[cfg(all(feature = "toggle", feature = "confers"))]
+pub use toggle::ConfersToggle;

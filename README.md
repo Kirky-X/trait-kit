@@ -217,7 +217,7 @@ fn main() {
 | `default` | — | 无额外特性，仅核心 `Module` + `Kit`。 |
 | `async` | — | `AsyncKit`：`Send + Sync` 异步能力管理，无需额外依赖。 |
 | `confers` | `dep:confers`, `dep:serde`, `dep:serde_json` | `Configurable` + `ModuleConfig` trait + `Config` derive 宏再导出。 |
-| `reload` | `confers`, `confers/watch` | `subscribe` / `reload_config` 热重载 API。 |
+| `reload` | `confers` | `subscribe` / `reload_config` 热重载 API。 |
 | `encryption` | `confers`, `confers/encryption` | `set_encrypted` / `get_encrypted` 加密配置存储。 |
 | `interface` | — | 接口/实现分离：`register_as` / `resolve` 支持 `dyn Trait` 类型擦除注册与检索。 |
 | `lifecycle` | — | 生命周期钩子：`on_ready`（构建后）+ `on_shutdown`（清理）。 |
@@ -355,7 +355,7 @@ trait-kit 通过三级 feature flag 集成 [`confers`](https://crates.io/crates/
 | Feature               | 启用                                            | 说明                                           |
 | --------------------- | ----------------------------------------------- | ---------------------------------------------- |
 | `confers`             | `dep:confers`, `dep:serde`, `dep:serde_json`    | `Configurable` + `ModuleConfig` trait + `Config` derive 宏再导出。 |
-| `reload`  | `confers`, `confers/watch`               | `subscribe` / `reload_config` API。             |
+| `reload`  | `confers`               | `subscribe` / `reload_config` API。             |
 | `encryption`  | `confers`, `confers/encryption` | `set_encrypted` / `get_encrypted` API。  |
 
 ### 三级继承体系

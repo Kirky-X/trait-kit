@@ -15,7 +15,7 @@ readme = "README.md"
 workspace = true
 
 [workspace.package]
-version = "0.5.0-rc.2"
+version = "0.5.0-rc.3"
 edition = "2024"
 rust-version = "1.97.1"
 authors = ["Kirky.X"]
@@ -27,7 +27,7 @@ license = "MIT"
 [workspace.lints.clippy]
 
 [workspace.dependencies]
-confers = { version = "0.6.0-rc.2", default-features = false }
+confers = { version = "0.6.0-rc.3", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 trait-kit = { path = ".", default-features = false }
@@ -52,9 +52,9 @@ default = []
 # AsyncKit: Send + Sync async capability management (no extra deps, Rust native async).
 async = []
 # Config integration: Store + ModuleConfig trait + derive macro re-export.
-confers = ["dep:confers", "dep:serde", "dep:serde_json"]
-# Hot-reload subscription (maps to confers `watch` feature).
-reload = ["confers", "confers/watch"]
+confers = ["dep:confers", "dep:serde", "dep:serde_json", "confers/feature-toggle"]
+# Hot-reload subscription (Kit 自有 SubscriberMap，不再拉入 confers/watch 的 notify-debouncer-full)。
+reload = ["confers"]
 # Encrypted config storage (maps to confers `encryption` feature).
 encryption = ["confers", "confers/encryption"]
 # Interface/implementation separation: register_as / resolve behind a feature gate.
@@ -146,3 +146,6 @@ strip = true
 
 [profile.bench]
 inherits = "release"
+
+[patch.crates-io]
+confers = { path = "../confers" }

@@ -1240,7 +1240,7 @@ mod encryption_reload_e2e {
     fn e2e_encryption_plus_reload_dual_chain() {
         let kit = Kit::new();
 
-        // reload 链（confers/watch）：明文配置订阅 + 重载。
+        // reload 链（Kit 自有 SubscriberMap）：明文配置订阅 + 重载。
         kit.set_config(ErRuntimeCfg { v: 1 });
         let hits = Rc::new(Cell::new(0u32));
         let h = Rc::clone(&hits);
@@ -1533,4 +1533,95 @@ mod all_features_smoke_e2e {
     // 32 字节样例主密钥（测试夹具，非真实凭据）。
     // pragma: allowlist secret
     const SMOKE_KEY: [u8; 32] = *b"0123456789abcdef0123456789abcdef";
+}
+
+// ─── CMP-16：kit + observer 组合（BuildObserver 在 kit feature 下可用）──
+//
+// 防止 dbnexus/inklog 类编译盲区在本仓复发：断言 observer 回调在
+// Kit 构建路径中被触发，且 Kit<Ready> 保留完整能力表。
+
+#[cfg(all(feature = "observer"))]
+mod kit_observer_e2e {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Mutex;
+    use std::time::Duration;
+    use trait_kit::core::observer::BuildObserver;
+
+    struct KoModA;
+    impl_module_meta!(KoModA, "ko-a");
+    impl AutoBuilder for KoModA {
+        type Capability = Arc<u32>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<u32>, TraitKitError> {
+            Ok(Arc::new(10))
+        }
+    }
+
+    struct KoModB;
+    impl_module_meta!(KoModB, "ko-b");
+    impl AutoBuilder for KoModB {
+        type Capability = Arc<String>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<String>, TraitKitError> {
+            Ok(Arc::new("hello".into()))
+        }
+    }
+
+    struct TrackingObserver {
+        built_modules: Arc<Mutex<Vec<String>>>,
+        build_count: Arc<AtomicU32>,
+    }
+    impl BuildObserver for TrackingObserver {
+        fn on_module_start(&self, name: &'static str) {
+            self.built_modules.lock().unwrap().push(format!("start:{name}"));
+        }
+        fn on_module_built(&self, name: &'static str, _elapsed: Duration) {
+            self.built_modules.lock().unwrap().push(format!("built:{name}"));
+            self.build_count.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn e2e_kit_observer_receives_all_module_events() {
+        let modules_log = Arc::new(Mutex::new(Vec::new()));
+        let count = Arc::new(AtomicU32::new(0));
+
+        let mut kit = Kit::new();
+        kit.register::<KoModA>().unwrap();
+        kit.register::<KoModB>().unwrap();
+        kit.with_observer(Arc::new(TrackingObserver {
+            built_modules: Arc::clone(&modules_log),
+            build_count: Arc::clone(&count),
+        }));
+        let ready = kit.build().unwrap();
+
+        // Both modules built: observer notified twice
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+
+        // Capabilities available after build
+        assert_eq!(*ready.require::<KoModA>().unwrap(), 10);
+        assert_eq!(*ready.require::<KoModB>().unwrap(), "hello");
+
+        // Log contains start+built events for both modules
+        let log = modules_log.lock().unwrap();
+        assert!(log.iter().any(|e| e == "start:ko-a"));
+        assert!(log.iter().any(|e| e == "start:ko-b"));
+        assert!(log.iter().any(|e| e == "built:ko-a"));
+        assert!(log.iter().any(|e| e == "built:ko-b"));
+    }
+
+    #[test]
+    fn e2e_kit_observer_no_modules_no_callback() {
+        let count = Arc::new(AtomicU32::new(0));
+        let kit = Kit::new();
+        // No modules registered, observer still created but never called
+        let mut kit = kit;
+        kit.with_observer(Arc::new(TrackingObserver {
+            built_modules: Arc::new(Mutex::new(Vec::new())),
+            build_count: Arc::clone(&count),
+        }));
+        let _ready = kit.build().unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+    }
 }

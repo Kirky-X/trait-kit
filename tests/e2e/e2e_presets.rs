@@ -132,14 +132,18 @@ fn prs02_feature_table_lists_all_thirteen() {
     );
 }
 
-/// PRS-04：依赖链自动生效——`reload` 展开含 `confers` 与 `confers/watch`。
+/// PRS-04：依赖链自动生效——`reload` 展开含 `confers`（已剪除 `confers/watch` 死链）。
 #[test]
 fn prs04_reload_chain_expansion() {
     let features = parse_features();
     let reload = features.get("reload").expect("reload feature 应存在");
     assert!(
-        reload.contains(&"confers".to_string()) && reload.contains(&"confers/watch".to_string()),
-        "reload 应展开为 confers + confers/watch：got {reload:?}"
+        reload.contains(&"confers".to_string()),
+        "reload 应展开为 confers：got {reload:?}"
+    );
+    assert!(
+        !reload.contains(&"confers/watch".to_string()),
+        "reload 不应再含 confers/watch（已剪除死链）：got {reload:?}"
     );
 }
 
@@ -270,24 +274,29 @@ fn prs06_examples_manifest_required_features_structure() {
     assert!(examples.iter().any(|(n, _)| n == "default_basic"));
 }
 
-/// TGL-09 结构核对：`src/kit/toggle.rs` 为 doc-only 模块（无独立运行时），
-/// toggle 能力是 `Kit`/`Kit<Ready>` 上的方法（enable_toggle 等）。
-/// 防止未来误判 API 面或误增独立注册表。
+/// TGL-09 结构核对：`src/kit/toggle.rs` 为完整开关句柄模块（T013 落地后），
+/// 包含 `ToggleBackend` trait、`ToggleValue` 枚举、`MemoryToggle` 实现，
+/// 以及 `ConfersToggle`（confers feature 启用时）。
 #[test]
-fn tgl09_toggle_module_is_doc_only() {
+fn tgl09_toggle_module_is_implemented() {
     let toggle_src = include_str!("../../src/kit/toggle.rs");
-    let line_count = toggle_src.lines().count();
+    // Must contain the core trait and types
     assert!(
-        line_count <= 40,
-        "toggle.rs 应保持 doc-only 规模（当前 {line_count} 行）"
+        toggle_src.contains("pub trait ToggleBackend"),
+        "toggle.rs 应包含 ToggleBackend trait"
     );
     assert!(
-        !toggle_src.contains("pub fn "),
-        "toggle.rs 不得引入独立运行时 API（doc-only 契约）"
+        toggle_src.contains("pub enum ToggleValue"),
+        "toggle.rs 应包含 ToggleValue 枚举"
     );
     assert!(
-        !toggle_src.contains("pub struct") && !toggle_src.contains("pub enum"),
-        "toggle.rs 不得引入独立类型（doc-only 契约）"
+        toggle_src.contains("pub struct MemoryToggle"),
+        "toggle.rs 应包含 MemoryToggle 实现"
+    );
+    // ConfersToggle present when confers feature is enabled
+    assert!(
+        toggle_src.contains("pub struct ConfersToggle"),
+        "toggle.rs 应包含 ConfersToggle（confers 后端）"
     );
 }
 

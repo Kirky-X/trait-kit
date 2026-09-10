@@ -105,6 +105,30 @@ struct ConfersFields {
     /// Shared field overlay for cross-type config inheritance (async counterpart).
     /// Values are `serde_json::Value` to preserve type information.
     shared_fields: Arc<RwLock<serde_json::Map<String, serde_json::Value>>>,
+    /// Config snapshots for save/restore (async counterpart of Kit's RefCell<HashMap>).
+    config_snapshots: Arc<RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>,
+}
+
+/// Fields gated behind the `reload` feature (async counterpart).
+#[cfg(feature = "reload")]
+#[derive(Default)]
+struct ReloadFields {
+    /// Thread-safe subscriber map: `Arc<dyn Fn() + Send + Sync>` instead of `Rc<dyn Fn()>`.
+    subscribers: Arc<RwLock<HashMap<TypeId, Vec<Arc<dyn Fn() + Send + Sync>>>>>,
+}
+
+/// Fields gated behind the `encryption` feature (async counterpart).
+#[cfg(feature = "encryption")]
+#[derive(Default)]
+struct EncryptionFields {
+    encrypted_configs: Arc<RwLock<HashMap<TypeId, super::EncryptedBlob>>>,
+}
+
+/// Fields for observation ports (always present, no feature gate).
+#[derive(Default)]
+struct PortsFields {
+    metrics_port: Arc<RwLock<super::ports::OptionalMetricsPort>>,
+    log_port: Arc<RwLock<super::ports::OptionalLogPort>>,
 }
 
 /// Marker type for the unbuilt state.
@@ -173,6 +197,11 @@ pub struct AsyncKit<S = Unbuilt> {
     decorator: DecoratorFields,
     #[cfg(feature = "confers")]
     confers: ConfersFields,
+    #[cfg(feature = "reload")]
+    reload: ReloadFields,
+    #[cfg(feature = "encryption")]
+    encryption: EncryptionFields,
+    ports: PortsFields,
     _state: PhantomData<S>,
 }
 
@@ -198,6 +227,11 @@ impl AsyncKit {
             decorator: DecoratorFields::default(),
             #[cfg(feature = "confers")]
             confers: ConfersFields::default(),
+            #[cfg(feature = "reload")]
+            reload: ReloadFields::default(),
+            #[cfg(feature = "encryption")]
+            encryption: EncryptionFields::default(),
+            ports: PortsFields::default(),
             _state: PhantomData,
         }
     }
@@ -460,6 +494,11 @@ impl AsyncKit {
             decorator: self.decorator,
             #[cfg(feature = "confers")]
             confers: self.confers,
+            #[cfg(feature = "reload")]
+            reload: self.reload,
+            #[cfg(feature = "encryption")]
+            encryption: self.encryption,
+            ports: self.ports,
             _state: PhantomData::<Ready>,
         };
 
@@ -624,6 +663,32 @@ impl AsyncKit {
             .write()
             .expect("lock poisoned")
             .push(observer);
+    }
+
+    // ─── Observation Ports ─────────────────────────────────────────────
+
+    /// Inject a [`MetricsPort`] for recording counters/gauges/histograms.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned.
+    pub fn with_metrics_port(
+        &mut self,
+        port: impl Into<super::ports::OptionalMetricsPort>,
+    ) {
+        *self.ports.metrics_port.write().expect("lock poisoned") = port.into();
+    }
+
+    /// Inject a [`LogPort`] for structured log recording.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned.
+    pub fn with_log_port(
+        &mut self,
+        port: impl Into<super::ports::OptionalLogPort>,
+    ) {
+        *self.ports.log_port.write().expect("lock poisoned") = port.into();
     }
 
     // ─── Decorator ─────────────────────────────────────────────────────
@@ -1031,6 +1096,360 @@ impl AsyncKit {
             config.inject_shared(&overlay);
             self.set_config(config);
         }
+    }
+}
+
+// ─── T011: AsyncKit 配置能力对称 — load_config / snapshot / reload / encryption ───
+
+impl AsyncKit {
+    /// Load a configuration via its `Configurable` implementation and store it.
+    ///
+    /// Requires the `confers` feature. Async counterpart of `Kit::load_config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::BuildFailed` if `Configurable::load` fails.
+    #[cfg(feature = "confers")]
+    pub fn load_config<C: super::Configurable + Send + Sync + 'static>(
+        &self,
+    ) -> Result<(), TraitKitError> {
+        let config = C::load().map_err(|e| TraitKitError::BuildFailed {
+            context: "load_config".into(),
+            source: e,
+        })?;
+        self.set_config(config);
+        Ok(())
+    }
+
+    /// Load a configuration and validate it before storing.
+    ///
+    /// Requires the `confers` feature. Async counterpart of `Kit::load_and_validate`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::BuildFailed` if loading or validation fails.
+    #[cfg(feature = "confers")]
+    pub fn load_and_validate<C>(&self) -> Result<(), TraitKitError>
+    where
+        C: super::Configurable + super::Validatable + Send + Sync + 'static,
+    {
+        let config = C::load().map_err(|e| TraitKitError::BuildFailed {
+            context: "load_and_validate".into(),
+            source: e,
+        })?;
+        match config.validate() {
+            Ok(()) => {
+                self.set_config(config);
+                Ok(())
+            }
+            Err(errors) => Err(TraitKitError::BuildFailed {
+                context: "load_and_validate".into(),
+                source: Box::new(super::ValidationError { errors }),
+            }),
+        }
+    }
+
+    /// Snapshot the current configuration of type `C`.
+    ///
+    /// Requires the `confers` feature. Returns `false` if no config of type `C` is present.
+    #[cfg(feature = "confers")]
+    pub fn snapshot_config<C: Clone + Send + Sync + 'static>(&self) -> bool {
+        if let Some(config) = self.configs.get_cloned::<C>() {
+            self.confers
+                .config_snapshots
+                .write()
+                .expect("config_snapshots lock poisoned")
+                .insert(TypeId::of::<C>(), Box::new(config));
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Restore a configuration from its snapshot.
+    ///
+    /// Requires the `confers` feature.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::MissingConfig` if no snapshot exists for `C`.
+    #[cfg(feature = "confers")]
+    pub fn restore_config<C: Clone + Send + Sync + 'static>(&self) -> Result<(), TraitKitError> {
+        let snapshots = self
+            .confers
+            .config_snapshots
+            .read()
+            .expect("config_snapshots lock poisoned");
+        let boxed = snapshots
+            .get(&TypeId::of::<C>())
+            .ok_or_else(|| TraitKitError::MissingConfig {
+                key: format!("{} (snapshot)", std::any::type_name::<C>()),
+            })?;
+        let config = boxed
+            .downcast_ref::<C>()
+            .cloned()
+            .ok_or_else(|| TraitKitError::MissingConfig {
+                key: format!("{} (snapshot downcast)", std::any::type_name::<C>()),
+            })?;
+        drop(snapshots);
+        self.set_config(config);
+        Ok(())
+    }
+
+    /// Check if a snapshot exists for configuration type `C`.
+    #[cfg(feature = "confers")]
+    pub fn has_snapshot<C: 'static>(&self) -> bool {
+        self.confers
+            .config_snapshots
+            .read()
+            .expect("config_snapshots lock poisoned")
+            .contains_key(&TypeId::of::<C>())
+    }
+
+    /// Load a configuration with variable interpolation.
+    ///
+    /// Requires the `confers` feature. Async counterpart of `Kit::load_config_with`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::BuildFailed` if loading, serialization, or
+    /// deserialization fails.
+    #[cfg(feature = "confers")]
+    pub fn load_config_with<C, S: std::hash::BuildHasher>(
+        &self,
+        vars: &std::collections::HashMap<String, String, S>,
+    ) -> Result<(), TraitKitError>
+    where
+        C: super::Configurable + serde::Serialize + serde::de::DeserializeOwned + Send + Sync,
+    {
+        let config = C::load().map_err(|e| TraitKitError::BuildFailed {
+            context: "load_config_with".into(),
+            source: e,
+        })?;
+        let mut json_value =
+            serde_json::to_value(&config).map_err(|e| TraitKitError::BuildFailed {
+                context: "load_config_with (serialize)".into(),
+                source: Box::new(e),
+            })?;
+        super::config::interpolate_json_value(&mut json_value, vars);
+        let interpolated: C =
+            serde_json::from_value(json_value).map_err(|e| TraitKitError::BuildFailed {
+                context: "load_config_with (deserialize)".into(),
+                source: Box::new(e),
+            })?;
+        self.set_config(interpolated);
+        Ok(())
+    }
+
+    /// Load a configuration via `Configurable::load`, falling back to
+    /// `ModuleConfig::default_value` if loading fails.
+    ///
+    /// Requires the `confers` feature. Returns `true` if `C::load()` succeeded.
+    #[cfg(feature = "confers")]
+    pub fn load_config_or_default<C>(&self) -> Result<bool, TraitKitError>
+    where
+        C: super::Configurable + super::ModuleConfig + Send + Sync,
+    {
+        match C::load() {
+            Ok(value) => {
+                self.set_config(value);
+                Ok(true)
+            }
+            Err(_e) => {
+                self.set_config(C::default_value());
+                Ok(false)
+            }
+        }
+    }
+
+    /// Subscribe a callback to be invoked when config of type `C` is reloaded.
+    ///
+    /// Requires the `reload` feature. Async counterpart of `Kit::subscribe`.
+    /// Callbacks use `Arc<dyn Fn() + Send + Sync>` (thread-safe).
+    #[cfg(feature = "reload")]
+    pub fn subscribe<C: 'static>(&self, callback: impl Fn() + Send + Sync + 'static) {
+        let callback: Arc<dyn Fn() + Send + Sync> = Arc::new(callback);
+        self.reload
+            .subscribers
+            .write()
+            .expect("reload subscribers lock poisoned")
+            .entry(TypeId::of::<C>())
+            .or_default()
+            .push(callback);
+    }
+
+    /// Reload a configuration via its `Configurable` implementation and
+    /// notify all subscribers of type `C`.
+    ///
+    /// Requires the `reload` feature. Async counterpart of `Kit::reload_config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::BuildFailed` if `Configurable::load` fails.
+    #[cfg(feature = "reload")]
+    pub fn reload_config<C: super::Configurable + Send + Sync>(&self) -> Result<(), TraitKitError> {
+        let config = C::load().map_err(|e| TraitKitError::BuildFailed {
+            context: "reload_config".into(),
+            source: e,
+        })?;
+        self.configs.insert(config);
+        let callbacks: Vec<Arc<dyn Fn() + Send + Sync>> =
+            match self.reload.subscribers.read().expect("reload subscribers lock poisoned").get(&TypeId::of::<C>()) {
+                Some(subs) => subs.iter().map(Arc::clone).collect(),
+                None => Vec::new(),
+            };
+        for cb in &callbacks {
+            cb();
+        }
+        Ok(())
+    }
+
+    /// Encrypt and store a configuration value.
+    ///
+    /// Requires the `encryption` feature. Async counterpart of `Kit::set_encrypted`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::BuildFailed` if serialization, key derivation, or
+    /// encryption fails.
+    #[cfg(feature = "encryption")]
+    pub fn set_encrypted<C>(&self, value: &C, master_key: &[u8]) -> Result<(), TraitKitError>
+    where
+        C: super::ModuleConfig + serde::Serialize + Send + Sync,
+    {
+        use super::XChaCha20Crypto;
+
+        if master_key.len() < 16 {
+            return Err(TraitKitError::BuildFailed {
+                context: "set_encrypted".into(),
+                source: Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "master_key must be at least 16 bytes, got {}",
+                        master_key.len()
+                    ),
+                )),
+            });
+        }
+
+        let mut field_key =
+            super::kit::derive_kit_field_key(master_key, C::PATH, "set_encrypted")?;
+
+        let mut plaintext = match serde_json::to_vec(value) {
+            Ok(vec) => vec,
+            Err(e) => {
+                super::kit::zeroize_bytes(&mut field_key);
+                return Err(TraitKitError::BuildFailed {
+                    context: "set_encrypted".into(),
+                    source: Box::new(e),
+                });
+            }
+        };
+
+        let encrypted = XChaCha20Crypto::new().encrypt(&plaintext, &field_key);
+        super::kit::zeroize_bytes(&mut field_key);
+        super::kit::zeroize_bytes(&mut plaintext);
+        let (nonce, ciphertext) = encrypted.map_err(|e| TraitKitError::BuildFailed {
+            context: "set_encrypted".into(),
+            source: Box::new(e),
+        })?;
+
+        self.encryption
+            .encrypted_configs
+            .write()
+            .expect("encrypted_configs lock poisoned")
+            .insert(TypeId::of::<C>(), super::EncryptedBlob::new(nonce, ciphertext));
+        Ok(())
+    }
+
+    /// Check if an encrypted config of type `C` is registered.
+    #[cfg(feature = "encryption")]
+    pub fn contains_encrypted<C: super::ModuleConfig>(&self) -> bool {
+        self.encryption
+            .encrypted_configs
+            .read()
+            .expect("encrypted_configs lock poisoned")
+            .contains_key(&TypeId::of::<C>())
+    }
+
+    /// Retrieve and decrypt a configuration value.
+    ///
+    /// Requires the `encryption` feature. Async counterpart of `Kit::get_encrypted`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::MissingConfig` if no encrypted blob for `C` exists.
+    /// Returns `TraitKitError::BuildFailed` if key derivation, decryption, or
+    /// deserialization fails.
+    #[cfg(feature = "encryption")]
+    pub fn get_encrypted<C>(&self, master_key: &[u8]) -> Result<C, TraitKitError>
+    where
+        C: super::ModuleConfig + serde::de::DeserializeOwned + Send + Sync,
+    {
+        use super::XChaCha20Crypto;
+
+        if master_key.len() < 16 {
+            return Err(TraitKitError::BuildFailed {
+                context: "get_encrypted".into(),
+                source: Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "master_key must be at least 16 bytes, got {}",
+                        master_key.len()
+                    ),
+                )),
+            });
+        }
+
+        let blob = self
+            .encryption
+            .encrypted_configs
+            .read()
+            .expect("encrypted_configs lock poisoned")
+            .get(&TypeId::of::<C>())
+            .cloned()
+            .ok_or(TraitKitError::MissingConfig {
+                key: std::any::type_name::<C>().to_string(),
+            })?;
+
+        let mut field_key =
+            super::kit::derive_kit_field_key(master_key, C::PATH, "get_encrypted")?;
+
+        let decrypted = XChaCha20Crypto::new().decrypt(blob.nonce(), blob.ciphertext(), &field_key);
+        super::kit::zeroize_bytes(&mut field_key);
+        let mut plaintext = decrypted.map_err(|e| TraitKitError::BuildFailed {
+            context: "get_encrypted".into(),
+            source: Box::new(e),
+        })?;
+
+        let parsed: Result<C, _> = serde_json::from_slice(&plaintext);
+        super::kit::zeroize_bytes(&mut plaintext);
+        parsed.map_err(|e| TraitKitError::BuildFailed {
+            context: "get_encrypted".into(),
+            source: Box::new(e),
+        })
+    }
+
+    // ─── Observation Port Accessors ────────────────────────────────────
+
+    /// Retrieve the injected [`MetricsPort`], if any.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned.
+    #[must_use]
+    pub fn metrics_port(&self) -> super::ports::OptionalMetricsPort {
+        self.ports.metrics_port.read().expect("lock poisoned").clone()
+    }
+
+    /// Retrieve the injected [`LogPort`], if any.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned.
+    #[must_use]
+    pub fn log_port(&self) -> super::ports::OptionalLogPort {
+        self.ports.log_port.read().expect("lock poisoned").clone()
     }
 }
 
