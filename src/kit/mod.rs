@@ -10,6 +10,8 @@ pub mod ports;
 pub mod report;
 pub(crate) mod typemap;
 
+pub mod events;
+
 #[cfg(feature = "async")]
 pub mod async_kit;
 #[cfg(feature = "async")]
@@ -84,6 +86,8 @@ pub use ports::{
     LogPort, LogLevel, MetricsPort, NoOpLogPort, NoOpMetricsPort, OptionalLogPort,
     OptionalMetricsPort,
 };
+
+pub use events::{EventBus, KitEvent, MemoryEventBus, NoOpEventBus, OptionalEventBus};
 
 #[cfg(feature = "toggle")]
 pub use toggle::{MemoryToggle, ToggleBackend, ToggleBackendType, ToggleValue};

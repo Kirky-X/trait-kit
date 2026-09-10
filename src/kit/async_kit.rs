@@ -129,6 +129,7 @@ struct EncryptionFields {
 struct PortsFields {
     metrics_port: Arc<RwLock<super::ports::OptionalMetricsPort>>,
     log_port: Arc<RwLock<super::ports::OptionalLogPort>>,
+    event_bus: Arc<RwLock<super::events::OptionalEventBus>>,
 }
 
 /// Marker type for the unbuilt state.
@@ -371,6 +372,10 @@ impl AsyncKit {
         };
 
         // 3. Invoke each module's AsyncBuildFn in topological order.
+        // T208: per-module timestamps are only taken when a bus is injected.
+        let event_bus_present = {
+            self.ports.event_bus.read().expect("lock poisoned").is_some()
+        };
         for type_id in &sorted {
             let module_name = self.graph.name_of(*type_id).unwrap_or("<unknown>");
             let build_fn =
@@ -395,6 +400,7 @@ impl AsyncKit {
             // where `'a` is tied to the borrow of `self`. Awaiting consumes
             // the future, releasing the borrow before the next statement.
             let fut = build_fn(&self);
+            let event_start = event_bus_present.then(std::time::Instant::now);
             match fut.await {
                 Ok(boxed) => {
                     // `elapsed` is taken before decorators run, matching the
@@ -423,6 +429,13 @@ impl AsyncKit {
                         for obs in observers.iter() {
                             obs.on_module_built(module_name, elapsed);
                         }
+                    }
+                    if let Some(event_start) = event_start {
+                        let elapsed_us = event_start.elapsed().as_micros() as u64;
+                        self.publish_event(super::events::KitEvent::ModuleBuilt {
+                            module: module_name,
+                            elapsed_us,
+                        });
                     }
                 }
                 Err(e) => {
@@ -691,6 +704,20 @@ impl AsyncKit {
         *self.ports.log_port.write().expect("lock poisoned") = port.into();
     }
 
+    /// Inject an [`EventBus`](super::events::EventBus) that receives runtime
+    /// lifecycle events (T208): module builds, health samples, config changes.
+    ///
+    /// Default is `None` (= no-op): publishing costs one `Option` check.
+    pub fn with_event_bus(&mut self, bus: impl Into<super::events::OptionalEventBus>) {
+        *self.ports.event_bus.write().expect("lock poisoned") = bus.into();
+    }
+
+    /// Retrieve the injected event bus, if any (T208).
+    #[must_use]
+    pub fn event_bus(&self) -> super::events::OptionalEventBus {
+        self.ports.event_bus.read().expect("lock poisoned").clone()
+    }
+
     // ─── Decorator ─────────────────────────────────────────────────────
 
     /// Register a decorator for an async module's capability.
@@ -732,6 +759,16 @@ impl AsyncKit {
 }
 
 impl<S> AsyncKit<S> {
+    // ─── Event bus (T208, available on both Kit states) ────────────────
+
+    /// Publish `event` to the injected bus (no-op when absent). Internal
+    /// helper keeping the `Option` check in exactly one place.
+    fn publish_event(&self, event: super::events::KitEvent) {
+        if let Some(bus) = self.ports.event_bus.read().expect("lock poisoned").as_ref() {
+            bus.publish(event);
+        }
+    }
+
     /// Apply registered decorators for a capability (keyed by capability `TypeId`).
     #[cfg(feature = "decorator")]
     fn apply_decorators(
@@ -927,10 +964,21 @@ impl AsyncKit<Ready> {
                 .map(|(name, checker)| (*name, Arc::clone(checker)))
                 .collect()
         };
-        checkers
+        let report: Vec<(&'static str, crate::core::health::HealthStatus)> = checkers
             .into_iter()
             .map(|(name, checker)| (name, checker(&self.capabilities)))
-            .collect()
+            .collect();
+        // T208: publish each sampled status to the injected event bus.
+        if self.ports.event_bus.read().expect("lock poisoned").is_some() {
+            for (name, status) in &report {
+                self.publish_event(super::events::KitEvent::HealthChanged {
+                    module: name,
+                    status: status.as_status_name(),
+                    detail: status.detail().map(str::to_owned),
+                });
+            }
+        }
+        report
     }
 
     // ─── Factory Pattern ───────────────────────────────────────────────

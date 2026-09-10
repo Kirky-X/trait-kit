@@ -203,6 +203,7 @@ struct ObserverFields {
 struct PortsFields {
     metrics_port: RefCell<super::ports::OptionalMetricsPort>,
     log_port: RefCell<super::ports::OptionalLogPort>,
+    event_bus: RefCell<super::events::OptionalEventBus>,
 }
 
 /// Fields gated behind the `decorator` feature.
@@ -904,6 +905,8 @@ impl Kit {
     /// 3. Invoke the `build_fn` for regular modules
     /// 4. Insert remaining unregistered overrides after the loop
     fn build_eager_modules(&self, sorted: &[TypeId]) -> Result<(), TraitKitError> {
+        // T208: per-module timestamps are only taken when a bus is injected.
+        let event_bus_present = self.ports.event_bus.borrow().is_some();
         for type_id in sorted {
             let module_name = self.module_name(*type_id);
 
@@ -941,6 +944,7 @@ impl Kit {
             let start_instant = std::time::Instant::now();
             #[cfg(feature = "report")]
             let report_start = std::time::Instant::now();
+            let event_start = event_bus_present.then(std::time::Instant::now);
             Self::notify_module_start(&observers, module_name);
 
             match (build_fn)(self) {
@@ -969,6 +973,13 @@ impl Kit {
                         report_start.elapsed().as_micros() as u64,
                         report_deps,
                     );
+                    if let Some(event_start) = event_start {
+                        let elapsed_us = event_start.elapsed().as_micros() as u64;
+                        self.publish_event(super::events::KitEvent::ModuleBuilt {
+                            module: module_name,
+                            elapsed_us,
+                        });
+                    }
                 }
                 Err(e) => {
                     let err = TraitKitError::BuildFailed {
@@ -1392,6 +1403,30 @@ impl<S> Kit<S> {
             current = dec(current);
         }
         current
+    }
+
+    // ─── Event bus (T208, available on both Kit states) ────────────────
+
+    /// Inject an [`EventBus`](super::events::EventBus) that receives runtime
+    /// lifecycle events: module builds, health samples, config changes.
+    ///
+    /// Default is `None` (= no-op): publishing costs one `Option` check.
+    pub fn with_event_bus(&mut self, bus: impl Into<super::events::OptionalEventBus>) {
+        *self.ports.event_bus.borrow_mut() = bus.into();
+    }
+
+    /// Retrieve the injected event bus, if any (T208).
+    #[must_use]
+    pub fn event_bus(&self) -> super::events::OptionalEventBus {
+        self.ports.event_bus.borrow().clone()
+    }
+
+    /// Publish `event` to the injected bus (no-op when absent). Internal
+    /// helper keeping the `Option` check in exactly one place.
+    fn publish_event(&self, event: super::events::KitEvent) {
+        if let Some(bus) = self.ports.event_bus.borrow().as_ref() {
+            bus.publish(event);
+        }
     }
 
     /// Retrieve a capability by its module type.
@@ -1985,10 +2020,22 @@ impl Kit<Ready> {
     #[cfg(feature = "health")]
     pub fn health_report(&self) -> Vec<(&'static str, crate::core::health::HealthStatus)> {
         let checkers = self.health.health_checkers.borrow();
-        checkers
+        let report: Vec<(&'static str, crate::core::health::HealthStatus)> = checkers
             .values()
             .map(|(name, checker)| (*name, checker(&self.capabilities)))
-            .collect()
+            .collect();
+        drop(checkers);
+        // T208: publish each sampled status to the injected event bus.
+        if self.ports.event_bus.borrow().is_some() {
+            for (name, status) in &report {
+                self.publish_event(super::events::KitEvent::HealthChanged {
+                    module: name,
+                    status: status.as_status_name(),
+                    detail: status.detail().map(str::to_owned),
+                });
+            }
+        }
+        report
     }
 
     /// Aggregate the health of all registered checkers into a structured
@@ -2382,5 +2429,138 @@ mod i18n_module_tests {
             const NAME: &'static str = "plain";
         }
         assert!(<Plain as ModuleMeta>::i18n_ftl().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod event_bus_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::events::{KitEvent, MemoryEventBus};
+    use crate::kit::Kit;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Debug, Clone)]
+    struct BusCap;
+
+    #[derive(Debug)]
+    struct BusError;
+
+    impl std::fmt::Display for BusError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "bus test error")
+        }
+    }
+    impl std::error::Error for BusError {}
+
+    struct BusLeaf;
+    impl ModuleMeta for BusLeaf {
+        const NAME: &'static str = "bus-leaf";
+    }
+    impl AutoBuilder for BusLeaf {
+        type Capability = Arc<BusCap>;
+        type Error = BusError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(BusCap))
+        }
+    }
+
+    struct BusTop;
+    impl ModuleMeta for BusTop {
+        const NAME: &'static str = "bus-top";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            static DEPS: &[(&str, std::any::TypeId)] =
+                &[(<BusLeaf as ModuleMeta>::NAME, std::any::TypeId::of::<BusLeaf>())];
+            DEPS
+        }
+    }
+    impl AutoBuilder for BusTop {
+        type Capability = Arc<BusCap>;
+        type Error = BusError;
+        fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            kit.require::<BusLeaf>().map_err(|_| BusError)?;
+            Ok(Arc::new(BusCap))
+        }
+    }
+
+    #[test]
+    fn module_built_events_published_in_build_order() {
+        let bus = Arc::new(MemoryEventBus::new());
+        let seen: Arc<Mutex<Vec<(&'static str, u64)>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        bus.subscribe(move |event| {
+            if let KitEvent::ModuleBuilt { module, elapsed_us } = event {
+                sink.lock().unwrap().push((*module, *elapsed_us));
+            }
+        });
+
+        let mut kit = Kit::new();
+        kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>));
+        kit.register::<BusTop>().expect("register top");
+        kit.register::<BusLeaf>().expect("register leaf");
+        let ready = kit.build().expect("build ok");
+
+        let log = seen.lock().unwrap();
+        assert_eq!(
+            log.len(),
+            2,
+            "both modules published ModuleBuilt (topo order)"
+        );
+        assert_eq!(log[0].0, "bus-leaf", "leaf built first (topological)");
+        assert_eq!(log[1].0, "bus-top");
+        // Ready kit keeps the injected bus accessible.
+        assert!(ready.event_bus().is_some());
+    }
+
+    #[test]
+    fn build_without_bus_publishes_nothing_and_succeeds() {
+        let mut kit = Kit::new();
+        kit.register::<BusLeaf>().expect("register");
+        let ready = kit.build().expect("build ok without event bus");
+        assert!(ready.event_bus().is_none(), "default bus is None (no-op)");
+    }
+
+    #[cfg(feature = "health")]
+    #[test]
+    fn health_report_publishes_health_changed_events() {
+        use crate::core::HealthCheck;
+        use crate::core::HealthStatus;
+
+        struct BusSick;
+        impl ModuleMeta for BusSick {
+            const NAME: &'static str = "bus-sick";
+        }
+        impl AutoBuilder for BusSick {
+            type Capability = Arc<BusCap>;
+            type Error = BusError;
+            fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+                Ok(Arc::new(BusCap))
+            }
+        }
+        impl HealthCheck for BusSick {
+            fn check(_cap: &Self::Capability) -> HealthStatus {
+                HealthStatus::unhealthy("simulated failure")
+            }
+        }
+
+        let bus = Arc::new(MemoryEventBus::new());
+        let seen: Arc<Mutex<Vec<(&'static str, &'static str)>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        bus.subscribe(move |event| {
+            if let KitEvent::HealthChanged { module, status, .. } = event {
+                sink.lock().unwrap().push((*module, *status));
+            }
+        });
+
+        let mut kit = Kit::new();
+        kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>));
+        kit.register::<BusSick>().expect("register");
+        kit.register_health_check::<BusSick>();
+        let ready = kit.build().expect("build ok");
+        let report = ready.health_report();
+        let _ = report;
+
+        let log = seen.lock().unwrap();
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0], ("bus-sick", "unhealthy"));
     }
 }
