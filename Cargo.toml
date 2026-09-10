@@ -45,7 +45,18 @@ thiserror = { version = "2.0", default-features = false }
 serial_test = "4.0"
 static_assertions = "1.1"
 trybuild = "1.0"
+criterion = { version = "0.7", default-features = false, features = [
+    "cargo_bench_support",
+] }
 trait-kit-derive = { version = "0.5.0-rc.2", path = "trait-kit-derive" }
+
+[[bench]]
+name = "kit_bench"
+path = "benches/kit_bench.rs"
+harness = false
+# Toggle benchmarks exercise the `toggle`-gated API surface; plain `cargo bench`
+# (default features) skips this target, `cargo bench --features toggle` runs it.
+required-features = ["toggle"]
 
 [features]
 default = []
