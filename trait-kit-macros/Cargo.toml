@@ -1,0 +1,26 @@
+[package]
+name = "trait-kit-macros"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license = "MIT"
+description = "Proc-macro crate for trait-kit: #[derive(Module)] generates ModuleMeta declarations."
+keywords = ["trait-kit", "derive", "module", "di"]
+categories = ["rust-patterns", "development-tools"]
+
+[lints]
+workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2.0", features = ["full", "extra-traits"] }
+quote = "1.0"
+proc-macro2 = "1.0"
+
+[dev-dependencies]
+trait-kit = { path = "..", default-features = false }
+trybuild = "1.0"

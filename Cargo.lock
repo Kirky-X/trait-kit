@@ -1772,6 +1772,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "trait-kit-macros"
+version = "0.5.0-rc.3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+ "trait-kit",
+ "trybuild",
+]
+
+[[package]]
 name = "trybuild"
 version = "1.0.120"
 source = "registry+https://github.com/rust-lang/crates.io-index"

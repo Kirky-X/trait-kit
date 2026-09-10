@@ -1,0 +1,5 @@
+error: unknown `module` argument `nmae`; expected `name` or `deps`
+ --> tests/ui/module_unknown_arg.rs:5:10
+  |
+5 | #[module(nmae = "typo")]
+  |          ^^^^
