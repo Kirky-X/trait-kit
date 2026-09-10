@@ -90,7 +90,7 @@ pub use ports::{
 pub use events::{EventBus, KitEvent, MemoryEventBus, NoOpEventBus, OptionalEventBus};
 
 #[cfg(feature = "toggle")]
-pub use toggle::{MemoryToggle, ToggleBackend, ToggleBackendType, ToggleValue};
+pub use toggle::{MemoryToggle, ToggleBackend, ToggleBackendType, ToggleHandle, ToggleKey, ToggleValue};
 #[cfg(all(feature = "toggle", feature = "confers"))]
 pub use toggle::ConfersToggle;
 

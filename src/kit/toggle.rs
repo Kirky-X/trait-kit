@@ -251,6 +251,93 @@ pub type ToggleBackendType = ConfersToggle;
 #[cfg(not(feature = "confers"))]
 pub type ToggleBackendType = MemoryToggle;
 
+// ─── Typed toggle keys (T209) ───────────────────────────────────────────
+
+/// Compile-time toggle key binding (T209).
+///
+/// Implement this trait (usually via the [`define_toggle_key!`] macro) to get
+/// a typed handle [`ToggleHandle`] whose `get`/`set` cannot suffer from
+/// misspelled string keys: the key is fixed once at the type level.
+pub trait ToggleKey {
+    /// The string key stored in the toggle backend.
+    const KEY: &'static str;
+}
+
+/// Declare a named [`ToggleKey`] type in one line.
+///
+/// ```ignore
+/// trait_kit::kit::toggle::define_toggle_key!(PrdMode = "prd-mode");
+/// // `PrdMode::KEY == "prd-mode"`
+/// ```
+#[macro_export]
+macro_rules! define_toggle_key {
+    ($name:ident = $key:literal) => {
+        #[derive(Debug, Clone, Copy, Default)]
+        struct $name;
+
+        impl $crate::kit::toggle::ToggleKey for $name {
+            const KEY: &'static str = $key;
+        }
+    };
+    (pub $name:ident = $key:literal) => {
+        #[derive(Debug, Clone, Copy, Default)]
+        pub struct $name;
+
+        impl $crate::kit::toggle::ToggleKey for $name {
+            const KEY: &'static str = $key;
+        }
+    };
+}
+
+/// Strongly typed toggle handle bound to a [`ToggleKey`] (T209).
+///
+/// Obtained from `Kit<Ready>::toggle_handle::<K>()`. All operations go through
+/// `K::KEY`, so a typo is a compile error (unknown type) rather than a silent
+/// runtime miss.
+pub struct ToggleHandle<'a, K: ToggleKey> {
+    kit: &'a crate::kit::Kit<crate::kit::Ready>,
+    _marker: std::marker::PhantomData<K>,
+}
+
+impl<K: ToggleKey> std::fmt::Debug for ToggleHandle<'_, K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ToggleHandle<{}>({:?})", std::any::type_name::<K>(), K::KEY)
+    }
+}
+
+impl<'a, K: ToggleKey> ToggleHandle<'a, K> {
+    /// Current boolean state of the toggle (false when unset or non-bool).
+    #[must_use]
+    pub fn get(&self) -> bool {
+        self.kit.is_toggle_enabled(K::KEY)
+    }
+
+    /// Set the toggle's boolean state.
+    pub fn set(&self, enabled: bool) {
+        self.kit.enable_toggle(K::KEY, enabled);
+    }
+
+    /// The underlying string key (rarely needed; prefer typed usage).
+    #[must_use]
+    pub const fn key(&self) -> &'static str {
+        K::KEY
+    }
+}
+
+#[cfg(feature = "toggle")]
+impl crate::kit::Kit<crate::kit::Ready> {
+    /// Create a typed toggle handle for key `K` (T209).
+    ///
+    /// Requires the `toggle` feature.
+    #[must_use]
+    pub fn toggle_handle<K: ToggleKey>(&self) -> ToggleHandle<'_, K> {
+        ToggleHandle {
+            kit: self,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -364,5 +451,57 @@ mod tests {
             assert_eq!(prev, Some(ToggleValue::Float(1.0)));
             assert!(!t.contains("val"));
         }
+    }
+}
+
+#[cfg(all(test, feature = "toggle", feature = "confers"))]
+mod typed_handle_tests {
+    use super::*;
+    use crate::kit::Kit;
+
+    struct PrdModeKey;
+    impl ToggleKey for PrdModeKey {
+        const KEY: &'static str = "prd-mode";
+    }
+
+    struct DebugModeKey;
+    impl ToggleKey for DebugModeKey {
+        const KEY: &'static str = "debug-mode";
+    }
+
+    #[test]
+    fn typed_handle_set_get_round_trip() {
+        let kit = Kit::new();
+        kit.enable_toggle("prd-mode", false);
+        let ready = kit.build().expect("build ok");
+
+        let handle = ready.toggle_handle::<PrdModeKey>();
+        assert!(!handle.get());
+        handle.set(true);
+        assert!(handle.get());
+
+        // Distinct key type → independent handle over its own key.
+        let other = ready.toggle_handle::<DebugModeKey>();
+        assert!(!other.get(), "different key untouched by PrdModeKey set");
+    }
+
+    #[test]
+    fn typed_handle_shares_backend_with_string_api() {
+        let mut kit = Kit::new();
+        kit.enable_toggle("prd-mode", true);
+        let ready = kit.build().expect("build ok");
+
+        let handle = ready.toggle_handle::<PrdModeKey>();
+        assert!(handle.get());
+        assert!(ready.is_toggle_enabled("prd-mode"), "typed and string APIs share the backend");
+        handle.set(false);
+        assert!(!ready.is_toggle_enabled("prd-mode"));
+        assert_eq!(handle.key(), "prd-mode");
+    }
+
+    #[test]
+    fn define_toggle_key_macro_generates_usable_key() {
+        crate::define_toggle_key!(TestMacroKey = "macro-key");
+        assert_eq!(<TestMacroKey as ToggleKey>::KEY, "macro-key");
     }
 }
