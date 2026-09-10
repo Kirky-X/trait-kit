@@ -44,6 +44,75 @@ impl HealthStatus {
             detail: detail.into(),
         }
     }
+
+    /// Flat, lowercase status name (`"healthy"` / `"degraded"` /
+    /// `"unhealthy"`) for JSON and Prometheus-style exports.
+    #[must_use]
+    pub fn as_status_name(&self) -> &'static str {
+        match self {
+            Self::Healthy => "healthy",
+            Self::Degraded { .. } => "degraded",
+            Self::Unhealthy { .. } => "unhealthy",
+        }
+    }
+
+    /// The human-readable detail for `Degraded` / `Unhealthy` states.
+    #[must_use]
+    pub fn detail(&self) -> Option<&str> {
+        match self {
+            Self::Healthy => None,
+            Self::Degraded { detail } | Self::Unhealthy { detail } => Some(detail.as_str()),
+        }
+    }
+
+    /// Severity rank (0 = healthy, 1 = degraded, 2 = unhealthy) used for
+    /// worst-of aggregation.
+    #[must_use]
+    pub fn severity_rank(&self) -> u8 {
+        match self {
+            Self::Healthy => 0,
+            Self::Degraded { .. } => 1,
+            Self::Unhealthy { .. } => 2,
+        }
+    }
+}
+
+/// Per-module health entry of a [`HealthAggregate`] JSON export (T205).
+#[cfg(all(feature = "health", feature = "report"))]
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HealthModuleEntry {
+    /// Module name.
+    pub module: &'static str,
+    /// Flat status name (`healthy` / `degraded` / `unhealthy`).
+    pub status: &'static str,
+    /// Detail message for degraded / unhealthy states, if any.
+    pub detail: Option<String>,
+}
+
+/// Aggregated health of the whole Kit, ready for a `/healthz` endpoint (T205).
+///
+/// The overall status is the worst-of across all registered health checkers
+/// (`unhealthy` > `degraded` > `healthy`); an empty checker set is healthy by
+/// convention.
+#[cfg(all(feature = "health", feature = "report"))]
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HealthAggregate {
+    /// Worst-of overall status name.
+    pub status: &'static str,
+    /// Convenience flag: `status == "healthy"`.
+    pub healthy: bool,
+    /// Per-module statuses.
+    pub modules: Vec<HealthModuleEntry>,
+}
+
+#[cfg(all(feature = "health", feature = "report"))]
+impl HealthAggregate {
+    /// Serialize to a JSON string (the `/healthz` payload).
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self)
+            .unwrap_or_else(|e| format!("{{\"error\":\"serialize failed: {e}\"}}"))
+    }
 }
 
 /// Synchronous health check for a module.
@@ -354,5 +423,107 @@ mod async_tests {
     fn async_health_test_error_display() {
         let e = AsyncHealthError;
         assert_eq!(format!("{e}"), "async health error");
+    }
+}
+
+#[cfg(all(test, feature = "health", feature = "report"))]
+mod aggregate_tests {
+    use super::*;
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct AggCap;
+
+    #[derive(Debug)]
+    struct AggError;
+
+    impl std::fmt::Display for AggError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "agg error")
+        }
+    }
+    impl std::error::Error for AggError {}
+
+    struct AggHealthy;
+    impl ModuleMeta for AggHealthy {
+        const NAME: &'static str = "agg-healthy";
+    }
+    impl AutoBuilder for AggHealthy {
+        type Capability = Arc<AggCap>;
+        type Error = AggError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(AggCap))
+        }
+    }
+    impl HealthCheck for AggHealthy {
+        fn check(_cap: &Self::Capability) -> HealthStatus {
+            HealthStatus::Healthy
+        }
+    }
+
+    struct AggDegraded;
+    impl ModuleMeta for AggDegraded {
+        const NAME: &'static str = "agg-degraded";
+    }
+    impl AutoBuilder for AggDegraded {
+        type Capability = Arc<AggCap>;
+        type Error = AggError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(AggCap))
+        }
+    }
+    impl HealthCheck for AggDegraded {
+        fn check(_cap: &Self::Capability) -> HealthStatus {
+            HealthStatus::degraded("slow queries")
+        }
+    }
+
+    #[test]
+    fn status_name_and_detail_are_flat() {
+        assert_eq!(HealthStatus::Healthy.as_status_name(), "healthy");
+        assert_eq!(HealthStatus::Healthy.detail(), None);
+        let deg = HealthStatus::degraded("partial");
+        assert_eq!(deg.as_status_name(), "degraded");
+        assert_eq!(deg.detail(), Some("partial"));
+        assert!(HealthStatus::unhealthy("down").severity_rank() > deg.severity_rank());
+    }
+
+    #[test]
+    fn health_aggregate_worst_of_and_json() {
+        let mut kit = Kit::new();
+        kit.register::<AggHealthy>().unwrap();
+        kit.register::<AggDegraded>().unwrap();
+        kit.register_health_check::<AggHealthy>();
+        kit.register_health_check::<AggDegraded>();
+        let ready = kit.build().unwrap();
+
+        let agg = ready.health_aggregate();
+        assert_eq!(agg.status, "degraded", "worst-of across modules");
+        assert!(!agg.healthy);
+        let degraded = agg
+            .modules
+            .iter()
+            .find(|m| m.module == "agg-degraded")
+            .expect("entry");
+        assert_eq!(degraded.status, "degraded");
+        assert_eq!(degraded.detail.as_deref(), Some("slow queries"));
+
+        let json = ready.health_json();
+        let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        assert_eq!(value["status"], "degraded");
+        assert_eq!(value["healthy"], false);
+        assert_eq!(value["modules"].as_array().map(Vec::len), Some(2));
+    }
+
+    #[test]
+    fn health_aggregate_empty_is_healthy() {
+        let kit = Kit::new().build().expect("build ok");
+        let agg = kit.health_aggregate();
+        assert_eq!(agg.status, "healthy");
+        assert!(agg.healthy);
+        assert!(agg.modules.is_empty());
+        assert!(kit.health_json().contains("\"healthy\""));
     }
 }

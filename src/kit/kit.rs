@@ -1935,6 +1935,51 @@ impl Kit<Ready> {
             .collect()
     }
 
+    /// Aggregate the health of all registered checkers into a structured
+    /// [`HealthAggregate`] (T205): worst-of overall status plus per-module
+    /// entries, ready for a `/healthz` endpoint.
+    ///
+    /// Requires the `health` and `report` features. Serialize with
+    /// [`HealthAggregate::to_json`](crate::core::health::HealthAggregate::to_json)
+    /// or `Kit::health_json()`.
+    #[cfg(all(feature = "health", feature = "report"))]
+    pub fn health_aggregate(&self) -> crate::core::health::HealthAggregate {
+        use crate::core::health::{HealthAggregate, HealthModuleEntry};
+
+        let report = self.health_report();
+        let mut worst_rank = 0u8;
+        let modules = report
+            .into_iter()
+            .map(|(name, status)| {
+                worst_rank = worst_rank.max(status.severity_rank());
+                HealthModuleEntry {
+                    module: name,
+                    status: status.as_status_name(),
+                    detail: status.detail().map(str::to_owned),
+                }
+            })
+            .collect::<Vec<_>>();
+        let status = match worst_rank {
+            0 => "healthy",
+            1 => "degraded",
+            _ => "unhealthy",
+        };
+        HealthAggregate {
+            status,
+            healthy: worst_rank == 0,
+            modules,
+        }
+    }
+
+    /// Aggregate health JSON string (T205) — the direct `/healthz` payload.
+    ///
+    /// See [`Kit::health_aggregate`] for the structured form. Requires the
+    /// `health` and `report` features.
+    #[cfg(all(feature = "health", feature = "report"))]
+    pub fn health_json(&self) -> String {
+        self.health_aggregate().to_json()
+    }
+
     // ─── Factory Pattern ───────────────────────────────────────────────
 
     /// Create a factory closure that produces new instances on each call.

@@ -39,6 +39,8 @@ pub use lifecycle::Lifecycle;
 pub use health::AsyncHealthCheck;
 #[cfg(feature = "health")]
 pub use health::{HealthCheck, HealthStatus};
+#[cfg(all(feature = "health", feature = "report"))]
+pub use health::{HealthAggregate, HealthModuleEntry};
 
 #[cfg(feature = "observer")]
 pub use observer::BuildObserver;
