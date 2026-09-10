@@ -297,6 +297,29 @@ impl AsyncKit {
         self.configs.insert(config);
     }
 
+    /// Store a configuration value behind an `Arc` for zero-clone reads (T215).
+    ///
+    /// Stored under `TypeId::of::<Arc<C>>` — a distinct slot from plain
+    /// `set_config`. Read back with `config_arc::<C>()`.
+    pub fn set_config_arc<C: Clone + Send + Sync + 'static>(&self, config: C) {
+        self.configs.insert(std::sync::Arc::new(config));
+    }
+
+    /// Read a configuration value as an `Arc` snapshot — read-side zero clone (T215).
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::MissingConfig` if no `Arc` snapshot of `C` was set.
+    pub fn config_arc<C: Clone + Send + Sync + 'static>(
+        &self,
+    ) -> Result<std::sync::Arc<C>, TraitKitError> {
+        self.configs
+            .get_cloned::<std::sync::Arc<C>>()
+            .ok_or(TraitKitError::MissingConfig {
+                key: std::any::type_name::<C>().to_string(),
+            })
+    }
+
     /// Validate the dependency graph and build all modules in topological
     /// order, returning an `AsyncKit<Ready>` whose capabilities are available
     /// via `require` / `optional`.

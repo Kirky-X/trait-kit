@@ -608,6 +608,16 @@ impl Kit {
         self.configs.insert(config);
     }
 
+    /// Store a configuration value behind an `Arc` for zero-clone reads (T215).
+    ///
+    /// The value is stored under `TypeId::of::<Arc<C>>` — a distinct slot from
+    /// the plain `set_config` storage — so `config_arc::<C>()` returns an
+    /// `Arc` clone (refcount bump only) while `config::<C>()` keeps its
+    /// existing semantics for `set_config` values.
+    pub fn set_config_arc<C: Clone + 'static>(&self, config: C) {
+        self.configs.insert(std::sync::Arc::new(config));
+    }
+
     /// Load a configuration via its `Configurable` implementation and store it.
     ///
     /// Requires the `confers` feature. The type must implement `Configurable`,
@@ -1656,6 +1666,21 @@ impl<S> Kit<S> {
     pub fn config<C: Clone + 'static>(&self) -> Result<C, TraitKitError> {
         self.configs
             .get_cloned::<C>()
+            .ok_or(TraitKitError::MissingConfig {
+                key: std::any::type_name::<C>().to_string(),
+            })
+    }
+
+    /// Read a configuration value as an `Arc` snapshot — read-side zero clone (T215).
+    ///
+    /// Only sees values stored via `set_config_arc` (or the async counterpart).
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::MissingConfig` if no `Arc` snapshot of `C` was set.
+    pub fn config_arc<C: Clone + 'static>(&self) -> Result<std::sync::Arc<C>, TraitKitError> {
+        self.configs
+            .get_cloned::<std::sync::Arc<C>>()
             .ok_or(TraitKitError::MissingConfig {
                 key: std::any::type_name::<C>().to_string(),
             })
@@ -2782,5 +2807,55 @@ mod get_arc_tests {
             .insert_boxed(std::any::TypeId::of::<ArcModule>(), Box::new(ArcCap { value: 1 }));
         let err = ready.get_arc::<ArcModule, ArcCap>().unwrap_err();
         assert_eq!(err.kind(), crate::ErrorKind::TypeMismatch);
+    }
+}
+
+#[cfg(test)]
+mod config_arc_tests {
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct SnapshotConfig {
+        values: Vec<u64>,
+        host: String,
+    }
+
+    #[test]
+    fn config_arc_reads_share_one_snapshot() {
+        let kit = Kit::new();
+        kit.set_config_arc(SnapshotConfig {
+            values: vec![1, 2, 3],
+            host: "db".into(),
+        });
+
+        let a = kit.config_arc::<SnapshotConfig>().expect("arc config");
+        let b = kit.config_arc::<SnapshotConfig>().expect("arc config");
+        assert!(
+            Arc::ptr_eq(&a, &b),
+            "config_arc reads must alias the same snapshot (zero clone)"
+        );
+        assert_eq!(a.values, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn config_arc_missing_returns_error() {
+        let kit = Kit::new();
+        let err = kit.config_arc::<SnapshotConfig>().unwrap_err();
+        assert!(matches!(err, crate::TraitKitError::MissingConfig { .. }));
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn async_config_arc_zero_clone_reads() {
+        use crate::kit::AsyncKit;
+        let kit = AsyncKit::new();
+        kit.set_config_arc(SnapshotConfig {
+            values: vec![9],
+            host: "async".into(),
+        });
+        let a = kit.config_arc::<SnapshotConfig>().expect("arc");
+        let b = kit.config_arc::<SnapshotConfig>().expect("arc");
+        assert!(Arc::ptr_eq(&a, &b));
     }
 }
