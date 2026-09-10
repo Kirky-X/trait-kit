@@ -9,6 +9,7 @@ trait-kit-error-already-registered = module `{ $module }` is already registered
 trait-kit-error-build-failed = failed to build `{ $context }`: { $source }
 
 trait-kit-error-missing-capability = missing capability `{ $key }`
+trait-kit-error-capability-type-mismatch = capability type mismatch for `{ $key }`
 
 trait-kit-error-missing-config = missing config `{ $key }`
 

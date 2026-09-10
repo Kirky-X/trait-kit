@@ -49,6 +49,15 @@ pub enum TraitKitError {
         key: String,
     },
 
+    /// 能力存在但类型不匹配（T210）。
+    ///
+    /// 模块的 capability 已构建，但与请求的 `M::Capability` 类型不符
+    /// （例如 override 注入了另一种能力类型）。
+    CapabilityTypeMismatch {
+        /// 能力所属模块的名称。
+        key: String,
+    },
+
     /// 请求的配置不存在。
     MissingConfig {
         /// 缺失的配置键（支持 i18n 翻译后的文本）。
@@ -123,6 +132,16 @@ impl fmt::Display for TraitKitError {
                     ),
                 )
             }
+            Self::CapabilityTypeMismatch { key } => {
+                write!(
+                    f,
+                    "{}",
+                    tr(
+                        "trait-kit-error-capability-type-mismatch",
+                        &[("key", key.as_str())],
+                    ),
+                )
+            }
             Self::MissingConfig { key } => {
                 write!(
                     f,
@@ -165,6 +184,50 @@ impl std::error::Error for TraitKitError {
             #[cfg(feature = "lifecycle")]
             Self::LifecycleFailed { source, .. } => Some(source.as_ref()),
             _ => None,
+        }
+    }
+}
+
+/// Coarse failure classification for precise downstream matching (T210).
+///
+/// `TraitKitError::kind()` maps every variant onto one of these kinds so
+/// callers can match on *why* an operation failed without tying themselves to
+/// individual variants:
+///
+/// - [`ErrorKind::Missing`] — the requested capability/config was never registered.
+/// - [`ErrorKind::InitFailed`] — the module exists but its construction failed
+///   (retryable: lazy builders are restored after a failure).
+/// - [`ErrorKind::TypeMismatch`] — a value exists but its type differs from
+///   the requested one.
+/// - [`ErrorKind::Other`] — everything else (graph/cycle/lifecycle/shutdown errors).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ErrorKind {
+    /// The capability/config is absent entirely.
+    Missing,
+    /// Construction failed (see `BuildFailed` / `LifecycleFailed` sources).
+    InitFailed,
+    /// A stored value's type does not match the requested type.
+    TypeMismatch,
+    /// Any other failure (graph validation, lifecycle, shutdown, ...).
+    Other,
+}
+
+impl TraitKitError {
+    /// Classify this error (T210).
+    #[must_use]
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::MissingCapability { .. } => ErrorKind::Missing,
+            Self::MissingConfig { .. } => ErrorKind::Missing,
+            Self::CapabilityTypeMismatch { .. } => ErrorKind::TypeMismatch,
+            Self::BuildFailed { .. } => ErrorKind::InitFailed,
+            #[cfg(feature = "lifecycle")]
+            Self::LifecycleFailed { .. } => ErrorKind::InitFailed,
+            Self::CycleDetected { .. }
+            | Self::DependencyMissing { .. }
+            | Self::AlreadyRegistered { .. } => ErrorKind::Other,
+            #[cfg(feature = "shutdown")]
+            Self::ShutdownTimedOut { .. } => ErrorKind::Other,
         }
     }
 }

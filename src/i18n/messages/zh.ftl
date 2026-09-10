@@ -9,6 +9,7 @@ trait-kit-error-already-registered = 模块 `{ $module }` 已注册
 trait-kit-error-build-failed = 构建 `{ $context }` 失败: { $source }
 
 trait-kit-error-missing-capability = 缺少能力 `{ $key }`
+trait-kit-error-capability-type-mismatch = 能力类型不匹配 `{ $key }`
 
 trait-kit-error-missing-config = 缺少配置 `{ $key }`
 

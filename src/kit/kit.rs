@@ -1455,9 +1455,26 @@ impl<S> Kit<S> {
             return Ok(cap);
         }
 
+        // 1b. T210: a capability box exists under this module's TypeId but the
+        // downcast to `M::Capability` failed → precise TypeMismatch error.
+        if self.capabilities.contains_by_type_id(type_id) {
+            return Err(TraitKitError::CapabilityTypeMismatch {
+                key: M::NAME.to_string(),
+            });
+        }
+
         // 2. Lazy slots — check OnceLock cache (previously-built lazy modules)
         if let Some(cached) = Self::get_lazy_cached::<M>(self, type_id) {
             return Ok(cached);
+        }
+
+        // 2b. T210: a lazy-slot cache value exists but the downcast failed.
+        if let Some(slot) = self.lazy_slots.borrow().get(&type_id) {
+            if slot.cell.get().is_some() {
+                return Err(TraitKitError::CapabilityTypeMismatch {
+                    key: M::NAME.to_string(),
+                });
+            }
         }
 
         // 3. Lazy slots — first-access construction (cell empty, builder exists)
@@ -1576,7 +1593,7 @@ impl<S> Kit<S> {
         let mut result = Vec::with_capacity(vec.len());
         for boxed in vec {
             let cap = boxed.downcast_ref::<M::Capability>().cloned().ok_or(
-                TraitKitError::MissingCapability {
+                TraitKitError::CapabilityTypeMismatch {
                     key: M::NAME.to_string(),
                 },
             )?;
@@ -2562,5 +2579,88 @@ mod event_bus_tests {
         let log = seen.lock().unwrap();
         assert_eq!(log.len(), 1);
         assert_eq!(log[0], ("bus-sick", "unhealthy"));
+    }
+}
+
+#[cfg(test)]
+mod require_error_kind_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::error::ErrorKind;
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct StringCap(String);
+
+    #[derive(Debug, Clone)]
+    struct OtherCap;
+
+    #[derive(Debug)]
+    struct KindError;
+
+    impl std::fmt::Display for KindError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "kind error")
+        }
+    }
+    impl std::error::Error for KindError {}
+
+    struct KindModule;
+    impl ModuleMeta for KindModule {
+        const NAME: &'static str = "kind-module";
+    }
+    impl AutoBuilder for KindModule {
+        type Capability = Arc<StringCap>;
+        type Error = KindError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(StringCap("cap".into())))
+        }
+    }
+
+    #[test]
+    fn missing_capability_classifies_as_missing() {
+        let kit = Kit::new().build().expect("build ok");
+        let err = kit.require::<KindModule>().unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::Missing);
+        assert!(matches!(err, crate::TraitKitError::MissingCapability { .. }));
+    }
+
+    #[test]
+    fn wrong_type_capability_classifies_as_type_mismatch() {
+        let mut kit = Kit::new();
+        kit.register::<KindModule>().expect("register");
+        let ready = kit.build().expect("build ok");
+        // Simulate a broken invariant (capability box of a different type under
+        // the module's TypeId) via the crate-internal TypeMap so the T210
+        // detection path in `require` is exercised. Insert AFTER build, since
+        // build would otherwise overwrite the box with the real capability.
+        ready.capabilities.insert_boxed(
+            std::any::TypeId::of::<KindModule>(),
+            Box::new(Arc::new(OtherCap)),
+        );
+
+        let err = ready.require::<KindModule>().unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::TypeMismatch, "got: {err:?}");
+        assert!(
+            matches!(err, crate::TraitKitError::CapabilityTypeMismatch { .. }),
+            "wrong-type capability must surface TypeMismatch, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn kind_covers_all_variants() {
+        let missing = crate::TraitKitError::MissingCapability { key: "k".into() };
+        let cfg = crate::TraitKitError::MissingConfig { key: "c".into() };
+        let mismatch = crate::TraitKitError::CapabilityTypeMismatch { key: "k".into() };
+        let build = crate::TraitKitError::BuildFailed {
+            context: "m".into(),
+            source: Box::new(std::io::Error::other("x")),
+        };
+        let reg = crate::TraitKitError::AlreadyRegistered { module: "m" };
+        assert_eq!(missing.kind(), ErrorKind::Missing);
+        assert_eq!(cfg.kind(), ErrorKind::Missing);
+        assert_eq!(mismatch.kind(), ErrorKind::TypeMismatch);
+        assert_eq!(build.kind(), ErrorKind::InitFailed);
+        assert_eq!(reg.kind(), ErrorKind::Other);
     }
 }
