@@ -105,9 +105,22 @@ pub struct Ready;
 #[cfg(feature = "reload")]
 type SubscriberMap = RefCell<HashMap<TypeId, Vec<Rc<dyn Fn()>>>>;
 
+/// A stored encrypted config with its key-version envelope (T220).
+#[cfg(feature = "encryption")]
+#[derive(Clone)]
+struct VersionedBlob {
+    /// Envelope version: how many master-key generations this blob survived.
+    key_version: u32,
+    blob: EncryptedBlob,
+}
+
+/// Initial key version for freshly encrypted entries.
+#[cfg(feature = "encryption")]
+const INITIAL_KEY_VERSION: u32 = 1;
+
 /// Type alias for the encrypted config store (single-threaded, `!Sync`).
 #[cfg(feature = "encryption")]
-type EncryptedConfigMap = RefCell<HashMap<TypeId, EncryptedBlob>>;
+type EncryptedConfigMap = RefCell<HashMap<TypeId, VersionedBlob>>;
 
 /// Type-erased lazy build closure stored in `LazySlot`.
 ///
@@ -1954,7 +1967,13 @@ impl Kit {
 
         self.encryption.encrypted_configs
             .borrow_mut()
-            .insert(TypeId::of::<C>(), EncryptedBlob::new(nonce, ciphertext));
+            .insert(
+                TypeId::of::<C>(),
+                VersionedBlob {
+                    key_version: INITIAL_KEY_VERSION,
+                    blob: EncryptedBlob::new(nonce, ciphertext),
+                },
+            );
         Ok(())
     }
 
@@ -1964,6 +1983,39 @@ impl Kit {
         self.encryption.encrypted_configs
             .borrow()
             .contains_key(&TypeId::of::<C>())
+    }
+
+    /// Encrypt and store a config value with an explicit key-version envelope
+    /// (T220). The envelope records which master-key generation produced the
+    /// ciphertext; `rotate_master_key` bumps it on migration.
+    ///
+    /// Requires the `encryption` feature.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`set_encrypted`](Kit::set_encrypted).
+    #[cfg(feature = "encryption")]
+    pub fn set_encrypted_with_version<C>(
+        &self,
+        value: &C,
+        master_key: &[u8],
+        key_version: u32,
+    ) -> Result<(), TraitKitError>
+    where
+        C: super::ModuleConfig + serde::Serialize,
+    {
+        self.set_encrypted::<C>(value, master_key)?;
+        if key_version != INITIAL_KEY_VERSION {
+            if let Some(entry) = self
+                .encryption
+                .encrypted_configs
+                .borrow_mut()
+                .get_mut(&TypeId::of::<C>())
+            {
+                entry.key_version = key_version;
+            }
+        }
+        Ok(())
     }
 
     /// Load a configuration via `Configurable::load`, falling back to
@@ -2496,7 +2548,7 @@ impl Kit<Ready> {
             });
         }
 
-        let blob = self
+        let versioned = self
             .encryption
             .encrypted_configs
             .borrow()
@@ -2505,6 +2557,7 @@ impl Kit<Ready> {
             .ok_or(TraitKitError::MissingConfig {
                 key: std::any::type_name::<C>().to_string(),
             })?;
+        let blob = versioned.blob;
 
         let mut field_key = derive_kit_field_key(master_key, C::PATH, "get_encrypted")?;
 
@@ -2525,6 +2578,136 @@ impl Kit<Ready> {
             context: "get_encrypted".into(),
             source: Box::new(e),
         })
+    }
+
+    // ─── Key rotation (T220) ───────────────────────────────────────────
+
+    /// Current key-version envelope of the stored encrypted config `C`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::MissingConfig` if `C` has no encrypted entry.
+    #[cfg(feature = "encryption")]
+    pub fn encrypted_key_version<C: 'static>(&self) -> Result<u32, TraitKitError> {
+        self.encryption
+            .encrypted_configs
+            .borrow()
+            .get(&TypeId::of::<C>())
+            .map(|entry| entry.key_version)
+            .ok_or(TraitKitError::MissingConfig {
+                key: std::any::type_name::<C>().to_string(),
+            })
+    }
+
+    /// Decrypt `C` expecting a specific key-version envelope (T220).
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::MissingConfig` when absent, `BuildFailed` with
+    /// a version-mismatch message when the stored envelope differs from
+    /// `expected_version`, or the usual decryption errors on key mismatch.
+    #[cfg(feature = "encryption")]
+    pub fn get_encrypted_with_version<C>(
+        &self,
+        master_key: &[u8],
+        expected_version: u32,
+    ) -> Result<C, TraitKitError>
+    where
+        C: super::ModuleConfig + serde::de::DeserializeOwned,
+    {
+        let stored = self.encrypted_key_version::<C>()?;
+        if stored != expected_version {
+            return Err(TraitKitError::BuildFailed {
+                context: "get_encrypted_with_version".into(),
+                source: Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "key-version mismatch for `{}`: stored v{stored}, expected v{expected_version}",
+                        std::any::type_name::<C>()
+                    ),
+                )),
+            });
+        }
+        self.get_encrypted::<C>(master_key)
+    }
+
+    /// Rotate the master key for the encrypted config `C` without downtime
+    /// (T220): decrypt with `old_master_key`, re-encrypt with
+    /// `new_master_key`, and bump the key-version envelope.
+    ///
+    /// Returns the new envelope version (`previous + 1`).
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::BuildFailed` if the old key is wrong (fail
+    /// closed — the stored blob is untouched) or `new_master_key` is too
+    /// short; `MissingConfig` when `C` has no encrypted entry.
+    #[cfg(feature = "encryption")]
+    pub fn rotate_master_key<C>(
+        &self,
+        old_master_key: &[u8],
+        new_master_key: &[u8],
+    ) -> Result<u32, TraitKitError>
+    where
+        C: super::ModuleConfig + serde::de::DeserializeOwned + serde::Serialize,
+    {
+        use super::XChaCha20Crypto;
+
+        if new_master_key.len() < 16 {
+            return Err(TraitKitError::BuildFailed {
+                context: "rotate_master_key".into(),
+                source: Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "new_master_key must be at least 16 bytes, got {}",
+                        new_master_key.len()
+                    ),
+                )),
+            });
+        }
+
+        let stored = self
+            .encryption
+            .encrypted_configs
+            .borrow()
+            .get(&TypeId::of::<C>())
+            .cloned()
+            .ok_or(TraitKitError::MissingConfig {
+                key: std::any::type_name::<C>().to_string(),
+            })?;
+
+        // Decrypt with the old key (fail closed on mismatch).
+        let mut old_field_key = derive_kit_field_key(old_master_key, C::PATH, "rotate_master_key")?;
+        let decrypted =
+            XChaCha20Crypto::new().decrypt(stored.blob.nonce(), stored.blob.ciphertext(), &old_field_key);
+        zeroize_bytes(&mut old_field_key);
+        let mut plaintext = decrypted.map_err(|e| TraitKitError::BuildFailed {
+            context: "rotate_master_key (old key)".into(),
+            source: Box::new(e),
+        })?;
+
+        // Re-encrypt under the new key generation.
+        let mut new_field_key =
+            derive_kit_field_key(new_master_key, C::PATH, "rotate_master_key")?;
+        let encrypted = XChaCha20Crypto::new().encrypt(&plaintext, &new_field_key);
+        zeroize_bytes(&mut plaintext);
+        zeroize_bytes(&mut new_field_key);
+        let (nonce, ciphertext) = encrypted.map_err(|e| TraitKitError::BuildFailed {
+            context: "rotate_master_key (new key)".into(),
+            source: Box::new(e),
+        })?;
+
+        let new_version = stored.key_version.saturating_add(1);
+        self.encryption.encrypted_configs
+            .borrow_mut()
+            .insert(
+                TypeId::of::<C>(),
+                VersionedBlob {
+                    key_version: new_version,
+                    blob: EncryptedBlob::new(nonce, ciphertext),
+                },
+            );
+        Ok(new_version)
     }
 
     // ─── Observation Port Accessors ────────────────────────────────────
@@ -3170,5 +3353,114 @@ mod try_decorate_tests {
         kit.try_decorate::<DecModule>(|cap| cap).expect("identity");
         let ready = kit.build().expect("build ok");
         assert_eq!(ready.require::<DecModule>().expect("require").0, 1);
+    }
+}
+
+#[cfg(all(test, feature = "encryption"))]
+mod key_rotation_tests {
+    use crate::kit::Kit;
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct RotationConfig {
+        secret: String,
+    }
+
+    impl crate::kit::ModuleConfig for RotationConfig {
+        const PATH: &'static str = "test/key-rotation";
+        fn default_value() -> Self {
+            Self {
+                secret: String::new(),
+            }
+        }
+    }
+
+    #[test]
+    fn key_version_envelope_stored_and_readable() {
+        let kit = Kit::new();
+        kit.set_encrypted_with_version(
+            &RotationConfig {
+                secret: "s3cret".into(),
+            },
+            &[9u8; 32],
+            3,
+        )
+        .expect("set with version");
+        let ready = kit.build().expect("build ok");
+        assert_eq!(ready.encrypted_key_version::<RotationConfig>().expect("v"), 3);
+
+        // Version-checked read succeeds with the right envelope...
+        let plain: RotationConfig = ready
+            .get_encrypted_with_version::<RotationConfig>(&[9u8; 32], 3)
+            .expect("version match");
+        assert_eq!(plain.secret, "s3cret");
+
+        // ...and fails closed on envelope mismatch (before any decryption).
+        let err = ready
+            .get_encrypted_with_version::<RotationConfig>(&[9u8; 32], 2)
+            .expect_err("version mismatch");
+        assert!(
+            err.to_string().contains("v2"),
+            "mismatch names expected version: {err}"
+        );
+    }
+
+    #[test]
+    fn rotate_master_key_migrates_and_bumps_version() {
+        let old_key = [1u8; 32];
+        let new_key = [2u8; 32];
+        let kit = Kit::new();
+        kit.set_encrypted(
+            &RotationConfig {
+                secret: "rotate-me".into(),
+            },
+            &old_key,
+        )
+        .expect("set with old key");
+        let ready = kit.build().expect("build ok");
+        assert_eq!(ready.encrypted_key_version::<RotationConfig>().unwrap(), 1);
+
+        // Wrong old key → rotation fails closed, stored blob untouched.
+        let err = ready
+            .rotate_master_key::<RotationConfig>(&[7u8; 32], &new_key)
+            .expect_err("wrong old key rejected");
+        assert!(err.to_string().contains("old key"));
+        assert_eq!(ready.encrypted_key_version::<RotationConfig>().unwrap(), 1);
+
+        // Correct old key → migration succeeds and bumps the envelope.
+        let version = ready
+            .rotate_master_key::<RotationConfig>(&old_key, &new_key)
+            .expect("rotate ok");
+        assert_eq!(version, 2);
+        assert_eq!(ready.encrypted_key_version::<RotationConfig>().unwrap(), 2);
+
+        // New key decrypts; old key is rejected.
+        let plain: RotationConfig = ready.get_encrypted(&new_key).expect("new key works");
+        assert_eq!(plain.secret, "rotate-me");
+        assert!(ready.get_encrypted::<RotationConfig>(&old_key).is_err());
+
+        // Rotation chains: v2 → v3.
+        let version = ready
+            .rotate_master_key::<RotationConfig>(&new_key, &old_key)
+            .expect("rotate again");
+        assert_eq!(version, 3);
+        let plain: RotationConfig = ready.get_encrypted(&old_key).expect("back to old key");
+        assert_eq!(plain.secret, "rotate-me");
+    }
+
+    #[test]
+    fn rotate_rejects_short_new_key() {
+        let kit = Kit::new();
+        kit.set_encrypted(
+            &RotationConfig {
+                secret: "x".into(),
+            },
+            &[1u8; 32],
+        )
+        .expect("set");
+        let ready = kit.build().expect("build ok");
+        let err = ready
+            .rotate_master_key::<RotationConfig>(&[1u8; 32], &[3u8; 8])
+            .expect_err("short new key");
+        assert!(err.to_string().contains("at least 16"));
     }
 }
