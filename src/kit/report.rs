@@ -25,6 +25,8 @@ pub(crate) struct ReportFields {
     topo_order: RefCell<Vec<&'static str>>,
     /// Total wall time of `build()` (set when build finishes).
     total_elapsed_us: RefCell<Option<u64>>,
+    /// Contract entries captured at registration time (T222).
+    contract: RefCell<Vec<ContractEntry>>,
 }
 
 impl ReportFields {
@@ -74,6 +76,19 @@ impl ReportFields {
         *self.total_elapsed_us.borrow_mut() = Some(us);
     }
 
+    /// Record a module contract entry (name, version, capability, deps).
+    pub(crate) fn push_contract(&self, entry: ContractEntry) {
+        self.contract.borrow_mut().push(entry);
+    }
+
+    /// Snapshot the registered module contracts (T222).
+    pub(crate) fn contract_snapshot(&self) -> ContractManifest {
+        ContractManifest {
+            schema_version: CONTRACT_SCHEMA_VERSION,
+            modules: self.contract.borrow().clone(),
+        }
+    }
+
     /// Snapshot the accumulated build facts into a [`BuildReport`].
     pub(crate) fn snapshot(&self) -> BuildReport {
         BuildReport {
@@ -83,6 +98,41 @@ impl ReportFields {
             total_elapsed_us: *self.total_elapsed_us.borrow(),
             ..BuildReport::default()
         }
+    }
+}
+
+/// One module's contract: name, declared version, capability type, deps (T222).
+#[derive(Debug, Clone, Serialize)]
+pub struct ContractEntry {
+    /// Module name (`ModuleMeta::NAME`).
+    pub module: &'static str,
+    /// Declared capability version (`ModuleMeta::VERSION`).
+    pub version: &'static str,
+    /// Concrete capability type name (`std::any::type_name`).
+    pub capability: &'static str,
+    /// Dependency module names.
+    pub deps: Vec<&'static str>,
+}
+
+/// Machine-readable contract manifest of all registered modules (T222).
+#[derive(Debug, Clone, Serialize)]
+pub struct ContractManifest {
+    /// Manifest schema version.
+    pub schema_version: u32,
+    /// One entry per registered module, registration order.
+    pub modules: Vec<ContractEntry>,
+}
+
+/// Current [`ContractManifest`] schema version.
+pub const CONTRACT_SCHEMA_VERSION: u32 = 1;
+
+impl ContractManifest {
+    /// Serialize to a JSON string.
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|e| {
+            format!("{{\"error\":\"serialize failed: {e}\"}}")
+        })
     }
 }
 
@@ -349,5 +399,89 @@ mod tests {
         assert_eq!(report.modules.len(), 3);
         assert_eq!(report.overrides.len(), 1);
         assert_eq!(report.total_elapsed_us, Some(100));
+    }
+}
+
+#[cfg(test)]
+mod contract_manifest_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct ManifestCap;
+
+    #[derive(Debug)]
+    struct ManifestError;
+    impl std::fmt::Display for ManifestError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "manifest error")
+        }
+    }
+    impl std::error::Error for ManifestError {}
+
+    struct ManifestLeaf;
+    impl ModuleMeta for ManifestLeaf {
+        const NAME: &'static str = "manifest-leaf";
+        const VERSION: &'static str = "2.1.0";
+    }
+    impl AutoBuilder for ManifestLeaf {
+        type Capability = Arc<ManifestCap>;
+        type Error = ManifestError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(ManifestCap))
+        }
+    }
+
+    struct ManifestTop;
+    impl ModuleMeta for ManifestTop {
+        const NAME: &'static str = "manifest-top";
+        const VERSION: &'static str = "0.3.0";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            static DEPS: &[(&str, std::any::TypeId)] =
+                &[(<ManifestLeaf as ModuleMeta>::NAME, std::any::TypeId::of::<ManifestLeaf>())];
+            DEPS
+        }
+    }
+    impl AutoBuilder for ManifestTop {
+        type Capability = Arc<ManifestCap>;
+        type Error = ManifestError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(ManifestCap))
+        }
+    }
+
+    #[test]
+    fn contract_manifest_lists_modules_with_versions_and_capabilities() {
+        let mut kit = Kit::new();
+        kit.register::<ManifestTop>().expect("top");
+        kit.register::<ManifestLeaf>().expect("leaf");
+        let ready = kit.build().expect("build ok");
+
+        let manifest = ready.contract_manifest();
+        assert_eq!(manifest.schema_version, 1);
+        assert_eq!(manifest.modules.len(), 2);
+
+        let leaf = manifest.modules.iter().find(|m| m.module == "manifest-leaf").expect("leaf");
+        assert_eq!(leaf.version, "2.1.0");
+        assert!(leaf.deps.is_empty());
+        assert!(leaf.capability.contains("ManifestCap"), "capability type name: {}", leaf.capability);
+
+        let top = manifest.modules.iter().find(|m| m.module == "manifest-top").expect("top");
+        assert_eq!(top.version, "0.3.0");
+        assert_eq!(top.deps, vec!["manifest-leaf"]);
+    }
+
+    #[test]
+    fn contract_manifest_json_round_trips() {
+        let mut kit = Kit::new();
+        kit.register::<ManifestLeaf>().expect("leaf");
+        let ready = kit.build().expect("build ok");
+
+        let json = ready.contract_manifest().to_json();
+        let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["modules"][0]["module"], "manifest-leaf");
+        assert_eq!(value["modules"][0]["version"], "2.1.0");
     }
 }

@@ -106,4 +106,7 @@ pub use toggle::{MemoryToggle, ToggleBackend, ToggleBackendType, ToggleHandle, T
 pub use toggle::ConfersToggle;
 
 #[cfg(feature = "report")]
-pub use report::{BuildReport, ModuleBuildState, ModuleReportEntry, OverrideRecord};
+pub use report::{
+    BuildReport, ContractEntry, ContractManifest, ModuleBuildState, ModuleReportEntry,
+    OverrideRecord,
+};

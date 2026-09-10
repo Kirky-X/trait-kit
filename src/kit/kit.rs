@@ -406,6 +406,13 @@ impl Kit {
             .insert(TypeId::of::<M>(), build_fn);
         self.record_module_i18n::<M>();
         self.record_module_versions::<M>();
+        #[cfg(feature = "report")]
+        self.report.push_contract(super::report::ContractEntry {
+            module: M::NAME,
+            version: M::VERSION,
+            capability: std::any::type_name::<M::Capability>(),
+            deps: M::dependencies().iter().map(|(n, _)| *n).collect(),
+        });
         Ok(())
     }
 
@@ -2558,6 +2565,16 @@ impl Kit<Ready> {
     #[must_use]
     pub fn module_count(&self) -> usize {
         self.graph.entries().len()
+    }
+
+    /// Contract manifest of all registered modules (T222): name, declared
+    /// version, capability type, and dependency names — the machine-readable
+    /// assembly contract for cross-service comparison. Requires the `report`
+    /// feature.
+    #[cfg(feature = "report")]
+    #[must_use]
+    pub fn contract_manifest(&self) -> super::report::ContractManifest {
+        self.report.contract_snapshot()
     }
 
     /// Structured, machine-readable build report (T202).
