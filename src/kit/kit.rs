@@ -604,8 +604,20 @@ impl Kit {
     }
 
     /// Set a configuration value.
+    ///
+    /// Publishes a `KitEvent::ConfigChanged` audit event to the injected
+    /// event bus (T216; no-op when no bus is injected).
     pub fn set_config<C: Clone + 'static>(&self, config: C) {
+        let replaced = self.configs.contains::<C>();
         self.configs.insert(config);
+        self.publish_event(super::events::KitEvent::ConfigChanged {
+            key: std::any::type_name::<C>().to_string(),
+            summary: if replaced {
+                "set (replaced)".to_string()
+            } else {
+                "set (new)".to_string()
+            },
+        });
     }
 
     /// Store a configuration value behind an `Arc` for zero-clone reads (T215).
@@ -615,7 +627,16 @@ impl Kit {
     /// `Arc` clone (refcount bump only) while `config::<C>()` keeps its
     /// existing semantics for `set_config` values.
     pub fn set_config_arc<C: Clone + 'static>(&self, config: C) {
+        let replaced = self.configs.contains::<std::sync::Arc<C>>();
         self.configs.insert(std::sync::Arc::new(config));
+        self.publish_event(super::events::KitEvent::ConfigChanged {
+            key: std::any::type_name::<C>().to_string(),
+            summary: if replaced {
+                "set_arc (replaced)".to_string()
+            } else {
+                "set_arc (new)".to_string()
+            },
+        });
     }
 
     /// Load a configuration via its `Configurable` implementation and store it.
@@ -711,6 +732,11 @@ impl Kit {
                 })?;
         drop(snapshots);
         self.set_config(config);
+        // T216: distinct restore audit on top of the set_config event.
+        self.publish_event(super::events::KitEvent::ConfigChanged {
+            key: std::any::type_name::<C>().to_string(),
+            summary: "restore snapshot".to_string(),
+        });
         Ok(())
     }
 
@@ -1738,6 +1764,12 @@ impl<S> Kit<S> {
         for cb in &callbacks {
             cb();
         }
+        // T216: reload audit event (published after the config is committed
+        // and subscribers notified, so observers see the new state).
+        self.publish_event(super::events::KitEvent::ConfigChanged {
+            key: std::any::type_name::<C>().to_string(),
+            summary: "reload".to_string(),
+        });
         Ok(())
     }
 
@@ -2857,5 +2889,87 @@ mod config_arc_tests {
         let a = kit.config_arc::<SnapshotConfig>().expect("arc");
         let b = kit.config_arc::<SnapshotConfig>().expect("arc");
         assert!(Arc::ptr_eq(&a, &b));
+    }
+}
+
+#[cfg(test)]
+mod config_audit_event_tests {
+    use crate::kit::events::{KitEvent, MemoryEventBus};
+    use crate::kit::Kit;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Debug, Clone)]
+    struct AuditConfig {
+        level: u8,
+    }
+
+    #[test]
+    fn set_config_publishes_config_changed_audit() {
+        let bus = Arc::new(MemoryEventBus::new());
+        let log: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&log);
+        bus.subscribe(move |event| {
+            if let KitEvent::ConfigChanged { key, summary } = event {
+                sink.lock().unwrap().push((key.clone(), summary.clone()));
+            }
+        });
+
+        let mut kit = Kit::new();
+        kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>));
+
+        kit.set_config(AuditConfig { level: 1 });
+        kit.set_config(AuditConfig { level: 2 });
+        kit.set_config_arc(AuditConfig { level: 3 });
+
+        let entries = log.lock().unwrap();
+        assert_eq!(entries.len(), 3, "two set + one set_arc audits");
+        assert_eq!(entries[0].1, "set (new)");
+        assert_eq!(entries[1].1, "set (replaced)");
+        assert!(entries[2].1.starts_with("set_arc"));
+        assert!(
+            entries[0].0.contains("AuditConfig"),
+            "key is the config type name: {}",
+            entries[0].0
+        );
+    }
+
+    #[cfg(feature = "reload")]
+    #[test]
+    fn reload_config_publishes_reload_audit() {
+        let bus = Arc::new(MemoryEventBus::new());
+        let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&log);
+        bus.subscribe(move |event| {
+            if let KitEvent::ConfigChanged { summary, .. } = event {
+                sink.lock().unwrap().push(summary.clone());
+            }
+        });
+
+        struct ReloadableConfig;
+        impl crate::kit::Configurable for ReloadableConfig {
+            fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+                Ok(ReloadableConfig)
+            }
+        }
+        impl Clone for ReloadableConfig {
+            fn clone(&self) -> Self {
+                Self
+            }
+        }
+        impl std::fmt::Debug for ReloadableConfig {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "ReloadableConfig")
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>));
+        kit.reload_config::<ReloadableConfig>().expect("reload ok");
+
+        let entries = log.lock().unwrap();
+        assert!(
+            entries.iter().any(|s| s == "reload"),
+            "reload audit published: {entries:?}"
+        );
     }
 }

@@ -294,7 +294,19 @@ impl AsyncKit {
     /// panicked while holding the write lock). See [`register`](Self::register)
     /// for context on lock poisoning.
     pub fn set_config<C: Clone + Send + Sync + 'static>(&self, config: C) {
+        let replaced = self.configs.contains::<C>();
         self.configs.insert(config);
+        // T216: config-change audit event to the injected bus (no-op default).
+        if let Some(bus) = self.ports.event_bus.read().expect("lock poisoned").as_ref() {
+            bus.publish(super::events::KitEvent::ConfigChanged {
+                key: std::any::type_name::<C>().to_string(),
+                summary: if replaced {
+                    "set (replaced)".to_string()
+                } else {
+                    "set (new)".to_string()
+                },
+            });
+        }
     }
 
     /// Store a configuration value behind an `Arc` for zero-clone reads (T215).
