@@ -92,14 +92,16 @@ fn prs01_no_default_features_core_api_gate() {
     assert!(ready.graph_mermaid().contains("bare-mod"));
 }
 
-/// PRS-02：13 个 feature 名单完整（与 Cargo.toml [features] 一致）。
+/// PRS-02：feature 名单完整（与 Cargo.toml [features] 一致）。
+/// rc4 批次新增 report/presets/compose/presets-remote/negotiate 五项（13 → 18）。
 #[test]
-fn prs02_feature_table_lists_all_thirteen() {
+fn prs02_feature_table_lists_all_features() {
     let features = parse_features();
     let mut names: Vec<&String> = features.keys().collect();
     names.sort();
     let expected = [
         "async",
+        "compose",
         "confers",
         "decorator",
         "encryption",
@@ -107,8 +109,12 @@ fn prs02_feature_table_lists_all_thirteen() {
         "i18n",
         "interface",
         "lifecycle",
+        "negotiate",
         "observer",
+        "presets",
+        "presets-remote",
         "reload",
+        "report",
         "scope",
         "shutdown",
         "toggle",
@@ -119,7 +125,7 @@ fn prs02_feature_table_lists_all_thirteen() {
             "Cargo.toml [features] 缺少 feature '{f}'：got {names:?}"
         );
     }
-    // 除 13 个 feature 外仅允许空集 default（PRS-01 的可编译前提）。
+    // 除 18 个 feature 外仅允许空集 default（PRS-01 的可编译前提）。
     assert_eq!(
         features.get("default").map(Vec::is_empty),
         Some(true),
@@ -128,7 +134,7 @@ fn prs02_feature_table_lists_all_thirteen() {
     assert_eq!(
         names.len(),
         expected.len() + 1,
-        "[features] 段应恰含 13 个 feature + default：got {names:?}"
+        "[features] 段应恰含 18 个 feature + default：got {names:?}"
     );
 }
 
@@ -162,10 +168,11 @@ fn prs05_encryption_chain_expansion() {
     );
 }
 
-/// PRS-03 门禁测试化：`--all-features` 下全 13 项激活。
+/// PRS-03 门禁测试化：`--all-features` 下全部 18 项激活。
 /// 该测试仅在全 feature 组合编译时存在（cfg 段即门禁本体）。
 #[cfg(all(
     feature = "async",
+    feature = "compose",
     feature = "confers",
     feature = "decorator",
     feature = "encryption",
@@ -173,17 +180,21 @@ fn prs05_encryption_chain_expansion() {
     feature = "i18n",
     feature = "interface",
     feature = "lifecycle",
+    feature = "negotiate",
     feature = "observer",
+    feature = "presets",
+    feature = "presets-remote",
     feature = "reload",
+    feature = "report",
     feature = "scope",
     feature = "shutdown",
     feature = "toggle",
 ))]
 #[test]
 fn prs03_all_features_gate_reached() {
-    // 能编译并执行到此处 = 13 项 feature 全部激活。
+    // 能编译并执行到此处 = 18 项 feature 全部激活。
     let features = parse_features();
-    assert_eq!(features.len(), 14, "13 feature + default 空集");
+    assert_eq!(features.len(), 19, "18 feature + default 空集");
 }
 
 /// PRS-06：examples crate 20 个示例全部显式 `[[example]]` 注册，且
