@@ -274,7 +274,6 @@ mod async_macro_tests {
     // === Fixtures ===
 
     #[derive(Debug, Error)]
-    #[allow(dead_code, reason = "mock error type verifies trait signature only")]
     enum MockErr {
         #[error("mock async build failed: {0}")]
         Failed(String),
@@ -396,7 +395,6 @@ mod sync_auto_builder_tests {
     // === Fixtures ===
 
     #[derive(Debug, Error)]
-    #[allow(dead_code, reason = "mock error type verifies trait signature only")]
     enum MockErr {
         #[error("mock build failed: {0}")]
         Failed(String),

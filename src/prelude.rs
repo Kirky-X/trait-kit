@@ -80,6 +80,7 @@ mod tests {
         assert_same_type::<AsyncUnbuilt, AsyncUnbuiltMarker>();
     }
 
-    #[allow(dead_code, reason = "trait presence check only")]
+    // 编译期哨兵：仅以 `M: AsyncAutoBuilder` 约束验证 trait 已从 prelude 导出。
+    // 泛型且从不实例化，dead_code 不触发，无需标记。
     fn _async_auto_builder_is_in_prelude<M: AsyncAutoBuilder>() {}
 }

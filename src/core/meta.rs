@@ -308,11 +308,8 @@ mod interface_tests {
     #[test]
     fn interface_auto_implemented_for_custom_types() {
         struct MyType;
-        #[allow(dead_code)]
-        enum MyEnum {
-            A,
-            B,
-        }
+        // 空枚举：仅在类型层面参与 Interface 断言，不存在可构造的变体。
+        enum MyEnum {}
 
         fn assert_interface<T: Interface>() {}
         assert_interface::<MyType>();

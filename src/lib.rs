@@ -98,7 +98,6 @@ pub(crate) mod test_helpers {
 
     /// Mock error type for tests verifying `AsyncAutoBuilder` trait signatures.
     #[derive(Debug, thiserror::Error)]
-    #[allow(dead_code, reason = "mock error type verifies trait signature only")]
     pub(crate) enum MockError {
         #[error("mock build failed: {0}")]
         Failed(String),

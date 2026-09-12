@@ -31,7 +31,7 @@ impl AutoBuilder for LoggerModule {
 
 #[derive(Clone, Debug)]
 struct DbConfig {
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "url 仅作仿真配置填充，测试断言只读 max_connections")]
     url: String,
     max_connections: u32,
 }

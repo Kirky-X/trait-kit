@@ -31,7 +31,7 @@ pub struct AsyncTypeMap {
 pub struct AsyncTypeMapReadGuard<'a, T> {
     /// Holds the read lock; never read directly — kept alive so its `Drop`
     /// releases the lock only after the borrowed `value` is no longer used.
-    #[allow(dead_code, reason = "field exists to hold the read lock until Drop")]
+    #[expect(dead_code, reason = "RAII 锁卫字段：仅凭 Drop 释放读锁，从不读取")]
     guard: RwLockReadGuard<'a, HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
     value: &'a T,
 }

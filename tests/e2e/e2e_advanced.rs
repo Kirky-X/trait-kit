@@ -13,8 +13,6 @@
 
 #![allow(clippy::needless_pass_by_value, clippy::type_complexity)]
 
-use std::cell::Cell;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -53,19 +51,6 @@ mod core_scenarios {
         }
     }
 
-    /// Gamma depends on Beta; Beta depends on Alpha → chain A→B→C.
-    #[allow(dead_code)]
-    struct GammaModule;
-    impl_module_meta!(GammaModule, "gamma", deps = [BetaModule]);
-    impl AutoBuilder for GammaModule {
-        type Capability = Arc<u32>;
-        type Error = TraitKitError;
-        fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
-            let beta = kit.require::<BetaModule>()?;
-            Ok(Arc::new(*beta + 100))
-        }
-    }
-
     // Re-declare Beta with a dep on Alpha (B04 chain).
     // We can't re-impl ModuleMeta for BetaModule, so we use a fresh chain
     // for B04 to avoid disturbing other tests.
@@ -101,26 +86,6 @@ mod core_scenarios {
             let b = kit.require::<ChainB>()?;
             Ok(Arc::new(*b + 1))
         }
-    }
-
-    /// Build-counter fixture: increments a shared `Cell` on each build_fn call.
-    /// Used by A02 (lazy module not rebuilt) and A06 (override skips build_fn).
-    fn make_counted_module() -> (
-        Rc<Cell<u32>>,
-        impl AutoBuilder<Capability = Arc<u32>, Error = TraitKitError>,
-    ) {
-        let counter = Rc::new(Cell::new(0u32));
-        // We need a static type for the module — can't return impl trait as
-        // a concrete type. Instead we use a global AtomicUsize inside a
-        // dedicated module type. The Rc<Cell> approach is for inline checks.
-        // We return a placeholder; real tests use the global type below.
-        (counter, AlphaModule)
-    }
-    // Note: `make_counted_module` is unused; kept as a compile-time stub to
-    // illustrate the pattern. Real counting uses `CountedModule` below.
-    #[allow(dead_code)]
-    fn _silence_make_counted_module_warning() {
-        let _ = make_counted_module();
     }
 
     /// Module that increments a global `AtomicUsize` on each build, returning

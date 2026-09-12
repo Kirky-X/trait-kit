@@ -1136,7 +1136,7 @@ impl Kit {
     // Not called without `observer` (its only call site is observer-gated),
     // kept for signature parity with the observer arm.
     #[cfg(not(feature = "observer"))]
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "调用点在 observer 门内，本桩仅为签名对齐")]
     #[allow(clippy::trivially_copy_pass_by_ref)] // signature parity
     fn notify_module_built(
         _list: &ObserverList,
@@ -1405,7 +1405,8 @@ impl Kit {
     }
 
     #[cfg(not(feature = "i18n"))]
-    #[allow(clippy::unused_self, dead_code)] // signature parity with the i18n arm
+    // 泛型桩从不被调用也不会触发 dead_code；仅 clippy 需放行未用的 self。
+    #[allow(clippy::unused_self)] // signature parity with the i18n arm
     fn record_module_i18n<M: crate::core::ModuleMeta>(&self) {}
 
     /// Record `M`'s declared version and its minimum-version requirements.
@@ -1427,7 +1428,8 @@ impl Kit {
     }
 
     #[cfg(not(feature = "negotiate"))]
-    #[allow(clippy::unused_self, dead_code)] // signature parity with the negotiate arm
+    // 泛型桩从不被调用也不会触发 dead_code；仅 clippy 需放行未用的 self。
+    #[allow(clippy::unused_self)] // signature parity with the negotiate arm
     fn record_module_versions<M: crate::core::ModuleMeta>(&self) {}
 
     /// Semver-compat validation pass: every declared requirement must

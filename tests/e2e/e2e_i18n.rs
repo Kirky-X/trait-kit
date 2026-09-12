@@ -19,7 +19,7 @@ use trait_kit::i18n::I18nManager;
 /// 所有测试首行调用：OnceLock 竞争双方都写入同一 locale，胜者恒为
 /// zh-CN，因此无需 serial 门控。
 // 调用方均位于 shutdown 门控模块内，仅启用 i18n 时本函数编译期闲置。
-#[allow(dead_code)]
+#[cfg_attr(not(feature = "shutdown"), allow(dead_code))]
 fn ensure_zh() {
     I18nManager::init_with_locale("zh-CN");
 }
