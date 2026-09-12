@@ -947,6 +947,11 @@ mod lifecycle_tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    // ready/shutdown 计数器被同模块两个测试共享，而任一测试的 build 都会
+    // 触发 on_ready——并发执行时计数互相污染，故临界区以互斥锁串行化
+    // （与下方 TOPO_SHUTDOWN_ORDER 同一口径）。计数器保持全局：
+    // on_ready 若改为跨线程调用，测试仍可观测。
+    static LC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     static LC_SHUTDOWN: AtomicUsize = AtomicUsize::new(0);
     static LC_READY: AtomicUsize = AtomicUsize::new(0);
 
@@ -976,6 +981,7 @@ mod lifecycle_tests {
 
     #[test]
     fn lifecycle_on_ready_called_during_build() {
+        let _serial = LC_LOCK.lock().unwrap();
         LC_READY.store(0, Ordering::SeqCst);
         let mut kit = Kit::new();
         kit.register::<LcModule>().unwrap();
@@ -990,6 +996,7 @@ mod lifecycle_tests {
 
     #[test]
     fn lifecycle_shutdown_called_in_reverse_order() {
+        let _serial = LC_LOCK.lock().unwrap();
         LC_SHUTDOWN.store(0, Ordering::SeqCst);
         let mut kit = Kit::new();
         kit.register::<LcModule>().unwrap();
