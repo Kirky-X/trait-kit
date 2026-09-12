@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X
 // SPDX-License-Identifier: MIT
-//! Preset module packages (T204): ready-made modules for common integration
+//! Preset module packages: ready-made modules for common integration
 //! needs.
 //!
 //! The headline preset is [`ConfersConfigModule`], which wraps a
@@ -128,7 +128,7 @@ pub enum PresetError {
     /// first — use [`register_confers_config`] instead of plain
     /// `kit.register::<ConfersConfigModule>()`.
     ProviderNotInjected,
-    /// A remote source failed to load (T219).
+    /// A remote source failed to load.
     #[cfg(feature = "presets-remote")]
     RemoteLoad {
         /// Error message from the source.
@@ -307,9 +307,8 @@ mod tests {
     }
 }
 
-// ─── Remote source bridge (T219, `presets-remote` feature) ─────────────────
 
-/// Bridge confers remote/`AsyncSource` configuration into an `AsyncKit` (T219).
+/// Bridge confers remote/`AsyncSource` configuration into an `AsyncKit`.
 ///
 /// The remote module loads the source once during `AsyncKit::build()`, wraps
 /// the snapshot in a dot-path [`RemoteConfigProvider`], and publishes a
@@ -397,7 +396,7 @@ pub mod remote {
         }
     }
 
-    /// AsyncKit module exposing a remote configuration snapshot (T219).
+    /// AsyncKit module exposing a remote configuration snapshot.
     ///
     /// Capability: [`ConfersConfigHandle`](super::ConfersConfigHandle) — the
     /// same handle type as the local preset, so downstream modules are source
@@ -425,7 +424,7 @@ pub mod remote {
                     message: e.to_string(),
                 })?;
                 let provider = Arc::new(RemoteConfigProvider::new(snapshot));
-                // Audit: surface the remote load on the kit event bus (T208).
+                // Audit: surface the remote load on the kit event bus.
                 kit.emit_event(crate::kit::events::KitEvent::ConfigChanged {
                     key: "confers-config-remote".to_string(),
                     summary: format!("remote load from {source_name}"),
@@ -437,7 +436,7 @@ pub mod remote {
 
     use std::pin::Pin;
 
-    /// Inject a remote source and register [`ConfersRemoteConfigModule`] (T219).
+    /// Inject a remote source and register [`ConfersRemoteConfigModule`].
     ///
     /// # Errors
     ///

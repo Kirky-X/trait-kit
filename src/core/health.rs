@@ -77,7 +77,7 @@ impl HealthStatus {
     }
 }
 
-/// Per-module health entry of a [`HealthAggregate`] JSON export (T205).
+/// Per-module health entry of a [`HealthAggregate`] JSON export.
 #[cfg(all(feature = "health", feature = "report"))]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct HealthModuleEntry {
@@ -89,7 +89,7 @@ pub struct HealthModuleEntry {
     pub detail: Option<String>,
 }
 
-/// Aggregated health of the whole Kit, ready for a `/healthz` endpoint (T205).
+/// Aggregated health of the whole Kit, ready for a `/healthz` endpoint.
 ///
 /// The overall status is the worst-of across all registered health checkers
 /// (`unhealthy` > `degraded` > `healthy`); an empty checker set is healthy by
@@ -115,7 +115,7 @@ impl HealthAggregate {
     }
 }
 
-/// One ring-buffer sample of a module's health (T213).
+/// One ring-buffer sample of a module's health.
 ///
 /// Produced by `Kit<Ready>::record_health_history()`; queried via
 /// `health_history()`. Requires the `health` feature.

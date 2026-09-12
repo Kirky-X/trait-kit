@@ -251,9 +251,8 @@ pub type ToggleBackendType = ConfersToggle;
 #[cfg(not(feature = "confers"))]
 pub type ToggleBackendType = MemoryToggle;
 
-// ─── Typed toggle keys (T209) ───────────────────────────────────────────
 
-/// Compile-time toggle key binding (T209).
+/// Compile-time toggle key binding.
 ///
 /// Implement this trait (usually via the [`define_toggle_key!`] macro) to get
 /// a typed handle [`ToggleHandle`] whose `get`/`set` cannot suffer from
@@ -289,7 +288,7 @@ macro_rules! define_toggle_key {
     };
 }
 
-/// Strongly typed toggle handle bound to a [`ToggleKey`] (T209).
+/// Strongly typed toggle handle bound to a [`ToggleKey`].
 ///
 /// Obtained from `Kit<Ready>::toggle_handle::<K>()`. All operations go through
 /// `K::KEY`, so a typo is a compile error (unknown type) rather than a silent
@@ -326,7 +325,7 @@ impl<'a, K: ToggleKey> ToggleHandle<'a, K> {
 
 #[cfg(feature = "toggle")]
 impl crate::kit::Kit<crate::kit::Ready> {
-    /// Create a typed toggle handle for key `K` (T209).
+    /// Create a typed toggle handle for key `K`.
     ///
     /// Requires the `toggle` feature.
     #[must_use]

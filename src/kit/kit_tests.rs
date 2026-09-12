@@ -46,7 +46,6 @@ mod tests {
         }
     }
 
-    // === T002 tests ===
 
     #[test]
     fn overrides_field_is_empty_on_new() {
@@ -60,7 +59,6 @@ mod tests {
         assert_eq!(kit.overrides.borrow().len(), 0);
     }
 
-    // === T003 tests ===
 
     #[test]
     fn override_module_inserts_into_overrides_map() {
@@ -97,7 +95,6 @@ mod tests {
         assert_eq!(kit.overrides.borrow().len(), 0);
     }
 
-    // === T004 tests ===
 
     /// Module whose `build_fn` increments a counter, to verify override skips it.
     struct CountingModule;
@@ -153,7 +150,6 @@ mod tests {
         assert_eq!(cap.load(Ordering::SeqCst), 77);
     }
 
-    // === T005 tests ===
 
     #[test]
     fn require_ref_returns_reference_to_built_capability() {
@@ -186,7 +182,6 @@ mod tests {
         ));
     }
 
-    // === T007 tests ===
 
     #[test]
     fn register_lazy_does_not_build_during_build() {
@@ -223,7 +218,6 @@ mod tests {
         ));
     }
 
-    // === T008 tests ===
 
     #[test]
     fn lazy_slots_empty_on_new_kit() {
@@ -258,7 +252,7 @@ mod tests {
         let built = kit.build().unwrap();
 
         // The OnceLock cell should be empty (not yet constructed) — first
-        // access via require() (T009) will populate it.
+        // access via require() will populate it.
         let slots = built.lazy_slots.borrow();
         let slot = slots
             .get(&TypeId::of::<CountingModule>())
@@ -292,7 +286,6 @@ mod tests {
         );
     }
 
-    // === T009 tests ===
 
     #[test]
     fn require_triggers_lazy_construction_on_first_access() {
@@ -396,7 +389,6 @@ mod tests {
         );
     }
 
-    // === T010 tests ===
 
     /// Multi-binding module A (capability = Arc<AtomicUsize>).
     struct MultiModuleA;
@@ -537,7 +529,6 @@ mod tests {
         assert_eq!(kit.multi_builders.borrow().get(&cap_id).unwrap().len(), 2);
     }
 
-    // === T011 tests ===
 
     #[test]
     fn require_all_returns_empty_for_unregistered_capability() {
@@ -2471,7 +2462,6 @@ mod config_inheritance_tests {
         }
     }
 
-    // ── populate_defaults tests (T013) ──
 
     #[test]
     fn populate_defaults_fills_empty_kit() {
@@ -2500,7 +2490,6 @@ mod config_inheritance_tests {
         assert_eq!(config.port, 5432);
     }
 
-    // ── merge_config tests (T005) ──
 
     #[test]
     fn merge_config_overrides_only_some_fields() {
@@ -2532,7 +2521,6 @@ mod config_inheritance_tests {
         assert!(!kit.configs.contains::<TestDbConfig>());
     }
 
-    // ── SharedConfig tests (T010) ──
 
     #[test]
     fn extract_then_inject_shared_flows_values() {
@@ -2557,7 +2545,6 @@ mod config_inheritance_tests {
         assert_eq!(db.max_connections, 10); // B's own default preserved
     }
 
-    // ── inject_shared type safety test (T011) ──
 
     #[test]
     fn inject_shared_skips_type_mismatch_silently() {

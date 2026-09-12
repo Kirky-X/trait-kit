@@ -566,7 +566,6 @@ mod interpolate_string_tests {
     }
 }
 
-// ─── KeyProvider port (T212, `encryption` feature) ──────────────────────────
 
 /// Zeroizing master-key container.
 ///
@@ -622,7 +621,7 @@ impl Drop for KeyBytes {
     }
 }
 
-/// Master-key provider port (T212).
+/// Master-key provider port.
 ///
 /// Decouples encrypted-config storage from hardcoded key material: callers
 /// inject a provider (env, file, KMS, ...) and `Kit::set_encrypted_with_key_provider`
@@ -645,7 +644,7 @@ pub trait KeyProvider: Send + Sync {
 }
 
 /// Adapter: any confers [`SecretKeyProvider`](confers::secret::SecretKeyProvider)
-/// becomes a trait-kit [`KeyProvider`] (T212).
+/// becomes a trait-kit [`KeyProvider`].
 ///
 /// This is the bridge that lets downstream crates reuse the confers key
 /// ecosystem (env/file/KMS providers) inside trait-kit's encrypted config.

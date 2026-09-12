@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X
 // SPDX-License-Identifier: MIT
-//! Criterion benchmarks for the core Kit hot paths (T201).
+//! Criterion benchmarks for the core Kit hot paths.
 //!
 //! Covers the four axes promised by the "runtime zero-overhead" claim:
 //!

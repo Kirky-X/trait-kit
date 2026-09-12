@@ -105,7 +105,7 @@ pub struct Ready;
 #[cfg(feature = "reload")]
 type SubscriberMap = RefCell<HashMap<TypeId, Vec<Rc<dyn Fn()>>>>;
 
-/// A stored encrypted config with its key-version envelope (T220).
+/// A stored encrypted config with its key-version envelope.
 #[cfg(feature = "encryption")]
 #[derive(Clone)]
 struct VersionedBlob {
@@ -201,7 +201,7 @@ struct LifecycleFields {
 #[cfg(feature = "health")]
 struct HealthFields {
     health_checkers: RefCell<HashMap<TypeId, (/* module_name */ &'static str, HealthCheckerFn)>>,
-    /// Ring buffer of recent health samples (T213). Oldest first.
+    /// Ring buffer of recent health samples. Oldest first.
     history: RefCell<std::collections::VecDeque<crate::core::health::HealthSample>>,
     /// Ring capacity (default 32, configurable).
     history_capacity: std::cell::Cell<usize>,
@@ -244,7 +244,7 @@ struct DecoratorFields {
     decorator_module_to_cap: RefCell<HashMap<TypeId, TypeId>>,
 }
 
-/// Fields gated behind the `negotiate` feature (T221).
+/// Fields gated behind the `negotiate` feature.
 #[cfg(feature = "negotiate")]
 #[derive(Default)]
 struct NegotiateFields {
@@ -254,7 +254,7 @@ struct NegotiateFields {
     requirements: RefCell<Vec<(&'static str, &'static str, &'static str)>>,
 }
 
-/// Fields gated behind the `i18n` feature (T207).
+/// Fields gated behind the `i18n` feature.
 #[cfg(feature = "i18n")]
 #[derive(Default)]
 struct I18nFields {
@@ -291,7 +291,7 @@ pub struct Kit<S = Unbuilt> {
     /// `register_multi`. Keyed by `TypeId::of::<M::Capability>()` (not the
     /// module type) so multiple module types with the same capability type
     /// aggregate into one Vec. Built into `multi_capabilities` during
-    /// `build()` by T011.
+    /// `build()`.
     multi_builders: RefCell<HashMap<TypeId, Vec<BuildFn>>>,
     /// Multi-binding capabilities (Ready state): built results from
     /// `multi_builders`. Keyed by `TypeId::of::<M::Capability>()`.
@@ -300,7 +300,7 @@ pub struct Kit<S = Unbuilt> {
     /// Interface builders (Unbuilt state): modules registered via
     /// `register_as`. Keyed by `TypeId::of::<M::Interface>()` (not the
     /// module type) so `resolve::<I>()` retrieves by interface type.
-    /// Built into `capabilities` during `build()` (T015). Values carry the
+    /// Built into `capabilities` during `build()`. Values carry the
     /// owning module's name so duplicate-interface errors can name the
     /// module that already occupies the interface.
     #[cfg(feature = "interface")]
@@ -472,7 +472,7 @@ impl Kit {
     /// of the same module type `M` will return `AlreadyRegistered`.
     ///
     /// During `build()`, all multi-binding builders are invoked and the
-    /// results are stored in `multi_capabilities` (T011). Use `require_all`
+    /// results are stored in `multi_capabilities`. Use `require_all`
     /// to retrieve the ordered Vec of capabilities.
     ///
     /// # Errors
@@ -655,7 +655,7 @@ impl Kit {
     /// Set a configuration value.
     ///
     /// Publishes a `KitEvent::ConfigChanged` audit event to the injected
-    /// event bus (T216; no-op when no bus is injected).
+    /// event bus (no-op when no bus is injected).
     pub fn set_config<C: Clone + 'static>(&self, config: C) {
         let replaced = self.configs.contains::<C>();
         self.configs.insert(config);
@@ -669,7 +669,7 @@ impl Kit {
         });
     }
 
-    /// Store a configuration value behind an `Arc` for zero-clone reads (T215).
+    /// Store a configuration value behind an `Arc` for zero-clone reads.
     ///
     /// The value is stored under `TypeId::of::<Arc<C>>` — a distinct slot from
     /// the plain `set_config` storage — so `config_arc::<C>()` returns an
@@ -781,7 +781,7 @@ impl Kit {
                 })?;
         drop(snapshots);
         self.set_config(config);
-        // T216: distinct restore audit on top of the set_config event.
+        // distinct restore audit on top of the set_config event.
         self.publish_event(super::events::KitEvent::ConfigChanged {
             key: std::any::type_name::<C>().to_string(),
             summary: "restore snapshot".to_string(),
@@ -866,7 +866,7 @@ impl Kit {
         #[cfg(feature = "report")]
         let report_build_start = std::time::Instant::now();
 
-        // T221: semver-compat negotiation between declared requirements and
+        // semver-compat negotiation between declared requirements and
         // provider versions, before any module builds.
         #[cfg(feature = "negotiate")]
         self.validate_version_requirements()?;
@@ -911,7 +911,7 @@ impl Kit {
         self.report
             .set_total_elapsed_us(report_build_start.elapsed().as_micros() as u64);
 
-        // T207: merge module-owned FTL fragments matching the active locale
+        // merge module-owned FTL fragments matching the active locale
         // into the kit-local overlay catalog (must happen before `self.i18n`
         // is moved into the ready Kit below).
         #[cfg(feature = "i18n")]
@@ -997,7 +997,7 @@ impl Kit {
     /// 3. Invoke the `build_fn` for regular modules
     /// 4. Insert remaining unregistered overrides after the loop
     fn build_eager_modules(&self, sorted: &[TypeId]) -> Result<(), TraitKitError> {
-        // T208: per-module timestamps are only taken when a bus is injected.
+        // per-module timestamps are only taken when a bus is injected.
         let event_bus_present = self.ports.event_bus.borrow().is_some();
         for type_id in sorted {
             let module_name = self.module_name(*type_id);
@@ -1391,7 +1391,7 @@ impl Kit {
 
     // ─── Observability ─────────────────────────────────────────────────
 
-    /// Collect `M`'s FTL fragments into the kit-local i18n store (T207).
+    /// Collect `M`'s FTL fragments into the kit-local i18n store.
     /// Zero code without the `i18n` feature (call sites are cfg-gated too).
     #[cfg(feature = "i18n")]
     fn record_module_i18n<M: crate::core::ModuleMeta>(&self) {
@@ -1405,8 +1405,8 @@ impl Kit {
     #[allow(clippy::unused_self, dead_code)] // signature parity with the i18n arm
     fn record_module_i18n<M: crate::core::ModuleMeta>(&self) {}
 
-    /// Record `M`'s declared version and its minimum-version requirements
-    /// (T221). Zero code without the `negotiate` feature.
+    /// Record `M`'s declared version and its minimum-version requirements.
+    /// Zero code without the `negotiate` feature.
     #[cfg(feature = "negotiate")]
     fn record_module_versions<M: crate::core::ModuleMeta>(&self) {
         self.negotiate
@@ -1427,7 +1427,7 @@ impl Kit {
     #[allow(clippy::unused_self, dead_code)] // signature parity with the negotiate arm
     fn record_module_versions<M: crate::core::ModuleMeta>(&self) {}
 
-    /// Semver-compat validation pass (T221): every declared requirement must
+    /// Semver-compat validation pass: every declared requirement must
     /// be satisfied by the provider's declared version.
     #[cfg(feature = "negotiate")]
     fn validate_version_requirements(&self) -> Result<(), TraitKitError> {
@@ -1527,7 +1527,7 @@ impl Kit {
             .insert(TypeId::of::<M>(), TypeId::of::<M::Capability>());
     }
 
-    /// Decorate a module with **registration-time contract validation** (T217).
+    /// Decorate a module with **registration-time contract validation**.
     ///
     /// Unlike [`decorate`](Kit::decorate) — which panics at build time when the
     /// target was never registered — this checked variant validates the target
@@ -1575,7 +1575,6 @@ impl<S> Kit<S> {
         current
     }
 
-    // ─── Event bus (T208, available on both Kit states) ────────────────
 
     /// Inject an [`EventBus`](super::events::EventBus) that receives runtime
     /// lifecycle events: module builds, health samples, config changes.
@@ -1585,7 +1584,7 @@ impl<S> Kit<S> {
         *self.ports.event_bus.borrow_mut() = bus.into();
     }
 
-    /// Retrieve the injected event bus, if any (T208).
+    /// Retrieve the injected event bus, if any.
     #[must_use]
     pub fn event_bus(&self) -> super::events::OptionalEventBus {
         self.ports.event_bus.borrow().clone()
@@ -1599,14 +1598,14 @@ impl<S> Kit<S> {
         }
     }
 
-    /// Publish a custom event to the injected bus (T208 public escape hatch):
+    /// Publish a custom event to the injected bus (public escape hatch):
     /// lets module builders feed their own lifecycle events into the same
     /// channel. No-op when no bus is injected.
     pub fn emit_event(&self, event: super::events::KitEvent) {
         self.publish_event(event);
     }
 
-    /// Retrieve an `Arc`-typed capability without cloning the payload (T211).
+    /// Retrieve an `Arc`-typed capability without cloning the payload.
     ///
     /// For modules whose `Capability = Arc<C>` this is the first-class cheap
     /// sharing path: the returned `Arc` clone only bumps a reference counter
@@ -1678,7 +1677,7 @@ impl<S> Kit<S> {
             return Ok(cap);
         }
 
-        // 1b. T210: a capability box exists under this module's TypeId but the
+        // 1b. a capability box exists under this module's TypeId but the
         // downcast to `M::Capability` failed → precise TypeMismatch error.
         if self.capabilities.contains_by_type_id(type_id) {
             return Err(TraitKitError::CapabilityTypeMismatch {
@@ -1691,7 +1690,7 @@ impl<S> Kit<S> {
             return Ok(cached);
         }
 
-        // 2b. T210: a lazy-slot cache value exists but the downcast failed.
+        // 2b. a lazy-slot cache value exists but the downcast failed.
         if let Some(slot) = self.lazy_slots.borrow().get(&type_id) {
             if slot.cell.get().is_some() {
                 return Err(TraitKitError::CapabilityTypeMismatch {
@@ -1838,7 +1837,7 @@ impl<S> Kit<S> {
             })
     }
 
-    /// Read a configuration value as an `Arc` snapshot — read-side zero clone (T215).
+    /// Read a configuration value as an `Arc` snapshot — read-side zero clone.
     ///
     /// Only sees values stored via `set_config_arc` (or the async counterpart).
     ///
@@ -1905,7 +1904,7 @@ impl<S> Kit<S> {
         for cb in &callbacks {
             cb();
         }
-        // T216: reload audit event (published after the config is committed
+        // reload audit event (published after the config is committed
         // and subscribers notified, so observers see the new state).
         self.publish_event(super::events::KitEvent::ConfigChanged {
             key: std::any::type_name::<C>().to_string(),
@@ -1963,8 +1962,8 @@ impl Kit {
     ///
     /// # Errors
     ///
-    /// Encrypt and store a config value using an injected [`KeyProvider`]
-    /// (T212) — the key is pulled from the provider at call time, never
+    /// Encrypt and store a config value using an injected [`KeyProvider`].
+    /// The key is pulled from the provider at call time, never
     /// hardcoded at the call site.
     ///
     /// Requires the `encryption` feature.
@@ -2060,8 +2059,8 @@ impl Kit {
             .contains_key(&TypeId::of::<C>())
     }
 
-    /// Encrypt and store a config value with an explicit key-version envelope
-    /// (T220). The envelope records which master-key generation produced the
+    /// Encrypt and store a config value with an explicit key-version envelope.
+    /// The envelope records which master-key generation produced the
     /// ciphertext; `rotate_master_key` bumps it on migration.
     ///
     /// Requires the `encryption` feature.
@@ -2349,7 +2348,7 @@ impl Kit<Ready> {
             .map(|(name, checker)| (*name, checker(&self.capabilities)))
             .collect();
         drop(checkers);
-        // T208: publish each sampled status to the injected event bus.
+        // publish each sampled status to the injected event bus.
         if self.ports.event_bus.borrow().is_some() {
             for (name, status) in &report {
                 self.publish_event(super::events::KitEvent::HealthChanged {
@@ -2361,7 +2360,6 @@ impl Kit<Ready> {
         }
         report
     }
-    // ─── Health history ring buffer (T213) ─────────────────────────────
 
     /// Configure the health-history ring capacity (default 32). Shrinking
     /// drops the oldest samples immediately.
@@ -2375,7 +2373,7 @@ impl Kit<Ready> {
     }
 
     /// Sample every registered health checker once and append the results to
-    /// the ring history (T213). The library never spawns timers — drive this
+    /// the ring history. The library never spawns timers — drive this
     /// from your own interval/scheduler.
     #[cfg(feature = "health")]
     pub fn record_health_history(&self) {
@@ -2404,7 +2402,7 @@ impl Kit<Ready> {
         }
     }
 
-    /// Query the ring history, oldest first (T213).
+    /// Query the ring history, oldest first.
     #[cfg(feature = "health")]
     #[must_use]
     pub fn health_history(&self) -> Vec<crate::core::health::HealthSample> {
@@ -2412,7 +2410,7 @@ impl Kit<Ready> {
     }
 
     /// Aggregate the health of all registered checkers into a structured
-    /// [`HealthAggregate`] (T205): worst-of overall status plus per-module
+    /// [`HealthAggregate`]: worst-of overall status plus per-module
     /// entries, ready for a `/healthz` endpoint.
     ///
     /// Requires the `health` and `report` features. Serialize with
@@ -2447,7 +2445,7 @@ impl Kit<Ready> {
         }
     }
 
-    /// Aggregate health JSON string (T205) — the direct `/healthz` payload.
+    /// Aggregate health JSON string — the direct `/healthz` payload.
     ///
     /// See [`Kit::health_aggregate`] for the structured form. Requires the
     /// `health` and `report` features.
@@ -2500,7 +2498,7 @@ impl Kit<Ready> {
         super::scope::Scope::new()
     }
 
-    /// Create a scope bound to this Kit as its parent context (T206).
+    /// Create a scope bound to this Kit as its parent context.
     ///
     /// The scope can resolve this Kit's capabilities read-only via
     /// `scope.parent::<M>()` (per-request modules plus shared parent
@@ -2516,7 +2514,6 @@ impl Kit<Ready> {
         super::scope::Scope::with_parent(std::rc::Rc::downgrade(self))
     }
 
-    // ─── i18n: module-owned translations (T207) ────────────────────────
 
     /// Raw module-owned FTL fragments collected at registration time
     /// (`(locale, ftl_source)` pairs, registration order).
@@ -2528,7 +2525,7 @@ impl Kit<Ready> {
         self.i18n.module_ftl.borrow().clone()
     }
 
-    /// Translate a message preferring the kit-local module overlay (T207).
+    /// Translate a message preferring the kit-local module overlay.
     ///
     /// Lookup order: (1) the overlay catalog merged at `build()` from module
     /// fragments matching the active locale, (2) the global `tr()` catalog.
@@ -2567,7 +2564,7 @@ impl Kit<Ready> {
         self.graph.entries().len()
     }
 
-    /// Contract manifest of all registered modules (T222): name, declared
+    /// Contract manifest of all registered modules: name, declared
     /// version, capability type, and dependency names — the machine-readable
     /// assembly contract for cross-service comparison. Requires the `report`
     /// feature.
@@ -2577,7 +2574,7 @@ impl Kit<Ready> {
         self.report.contract_snapshot()
     }
 
-    /// Structured, machine-readable build report (T202).
+    /// Structured, machine-readable build report.
     ///
     /// Companion to the human-oriented `graph_dot()` / `graph_mermaid()`
     /// exports: module list with build states (built / lazy / overridden),
@@ -2665,7 +2662,6 @@ impl Kit<Ready> {
         })
     }
 
-    // ─── Key rotation (T220) ───────────────────────────────────────────
 
     /// Current key-version envelope of the stored encrypted config `C`.
     ///
@@ -2684,7 +2680,7 @@ impl Kit<Ready> {
             })
     }
 
-    /// Decrypt `C` expecting a specific key-version envelope (T220).
+    /// Decrypt `C` expecting a specific key-version envelope.
     ///
     /// # Errors
     ///
@@ -2716,8 +2712,8 @@ impl Kit<Ready> {
         self.get_encrypted::<C>(master_key)
     }
 
-    /// Rotate the master key for the encrypted config `C` without downtime
-    /// (T220): decrypt with `old_master_key`, re-encrypt with
+    /// Rotate the master key for the encrypted config `C` without downtime —
+    /// decrypt with `old_master_key`, re-encrypt with
     /// `new_master_key`, and bump the key-version envelope.
     ///
     /// Returns the new envelope version (`previous + 1`).
@@ -3133,7 +3129,7 @@ mod require_error_kind_tests {
         kit.register::<KindModule>().expect("register");
         let ready = kit.build().expect("build ok");
         // Simulate a broken invariant (capability box of a different type under
-        // the module's TypeId) via the crate-internal TypeMap so the T210
+        // the module's TypeId) via the crate-internal TypeMap so the
         // detection path in `require` is exercised. Insert AFTER build, since
         // build would otherwise overwrite the box with the real capability.
         ready.capabilities.insert_boxed(

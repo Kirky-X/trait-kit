@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X
 // SPDX-License-Identifier: MIT
-//! Sub-Kit composition (T214): register a whole child `Kit` as a single
+//! Sub-Kit composition: register a whole child `Kit` as a single
 //! module in a parent `Kit`.
 //!
 //! This gives large applications an explicit vertical-slice boundary: a child
@@ -24,7 +24,7 @@ use crate::core::{AutoBuilder, ModuleMeta};
 use crate::error::TraitKitError;
 use crate::kit::{Kit, Ready};
 
-/// Declarative description of a child Kit (T214).
+/// Declarative description of a child Kit.
 pub trait SubKitSpec: 'static {
     /// Diagnostic name of the child module inside the parent graph.
     const NAME: &'static str;
@@ -80,7 +80,7 @@ impl std::fmt::Debug for SubKitHandle {
     }
 }
 
-/// The parent-side module wrapping a child Kit (T214).
+/// The parent-side module wrapping a child Kit.
 ///
 /// `build()` composes and builds the child Kit (validating the child's own
 /// dependency graph), then hands out the [`SubKitHandle`]. A child build

@@ -19,7 +19,7 @@ use super::kit::{Kit, LazyBuildFn, LazySlot, Ready};
 /// creates its own instances — useful for per-request isolation in web
 /// servers, where each request gets its own scope with fresh instances.
 ///
-/// # Parent context (T206)
+/// # Parent context
 ///
 /// A `Scope` can optionally hold a **read-only** handle to a parent
 /// `Kit<Ready>` (created via
@@ -69,7 +69,7 @@ impl Scope {
         }
     }
 
-    /// Read-only query into the parent context (T206).
+    /// Read-only query into the parent context.
     ///
     /// Resolves `M`'s capability from the parent `Kit<Ready>` if one exists.
     /// The scope never caches or mutates parent state. Returns `None` when:
@@ -567,7 +567,6 @@ mod tests {
         assert_eq!(format!("{e}"), "scope error");
     }
 
-    // ─── Parent context (T206) ─────────────────────────────────────────
 
     #[test]
     fn parent_query_resolves_parent_capability_and_shares_singleton() {

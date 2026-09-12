@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X
 // SPDX-License-Identifier: MIT
-//! Behavior tests for `#[derive(Module)]` (T203): the derived `ModuleMeta`
+//! Behavior tests for `#[derive(Module)]`: the derived `ModuleMeta`
 //! must be indistinguishable from the hand-written impl.
 
 use std::any::TypeId;

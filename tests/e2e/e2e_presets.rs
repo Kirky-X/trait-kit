@@ -285,7 +285,7 @@ fn prs06_examples_manifest_required_features_structure() {
     assert!(examples.iter().any(|(n, _)| n == "default_basic"));
 }
 
-/// TGL-09 结构核对：`src/kit/toggle.rs` 为完整开关句柄模块（T013 落地后），
+/// TGL-09 结构核对：`src/kit/toggle.rs` 为完整开关句柄模块，
 /// 包含 `ToggleBackend` trait、`ToggleValue` 枚举、`MemoryToggle` 实现，
 /// 以及 `ConfersToggle`（confers feature 启用时）。
 #[test]

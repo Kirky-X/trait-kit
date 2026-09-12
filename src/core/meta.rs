@@ -23,7 +23,7 @@ pub trait ModuleMeta: 'static {
         &[]
     }
 
-    /// Module-owned Fluent (`.ftl`) resource fragments (T207).
+    /// Module-owned Fluent (`.ftl`) resource fragments.
     ///
     /// Returns `(locale, ftl_source)` pairs. `Kit` collects fragments from
     /// every registered module and merges the ones matching the active
@@ -39,14 +39,14 @@ pub trait ModuleMeta: 'static {
         &[]
     }
 
-    /// This module's capability version (T221), used for dependency
+    /// This module's capability version, used for dependency
     /// negotiation at `build()` time. Defaults to `"0.0.0"`, which signals
     /// "version not declared" — a consumer requiring a minimum version of an
     /// undeclared provider fails the build.
     const VERSION: &'static str = "0.0.0";
 
     /// Minimum capability versions this module requires from its
-    /// dependencies (T221): `(module_name, min_version)` pairs. Checked at
+    /// dependencies: `(module_name, min_version)` pairs. Checked at
     /// `build()` with semver compatibility (same major, provider >= minimum).
     /// Defaults to empty.
     #[must_use]
@@ -55,7 +55,7 @@ pub trait ModuleMeta: 'static {
     }
 }
 
-/// Semver compatibility check (T221): `provided` satisfies `required` iff
+/// Semver compatibility check: `provided` satisfies `required` iff
 /// they share the same major version and `provided >= required` on the
 /// `(major, minor, patch)` tuple. Pre-release/build suffixes (`-rc.1`,
 /// `+meta`) are stripped before comparison; missing components default to 0.
@@ -176,7 +176,7 @@ pub trait InterfaceBuilder: ModuleMeta {
 ///
 /// The `build` method returns a `Pin<Box<dyn Future + Send>>` rather than using
 /// native `async fn` in trait so that the trait can be type-erased through the
-/// `AsyncBuildFn` stored in `AsyncKit`'s dependency graph (Phase 1b). Rust
+/// `AsyncBuildFn` stored in `AsyncKit`'s dependency graph. Rust
 /// 1.91 supports `async fn` in trait (stable since 1.75), but `dyn`-compatible
 /// dispatch still requires the explicit `Pin<Box>` indirection.
 ///

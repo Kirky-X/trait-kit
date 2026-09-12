@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X
 // SPDX-License-Identifier: MIT
-//! Structured build report export (T202).
+//! Structured build report export.
 //!
 //! Collects per-module build facts while `Kit::build` executes and exposes
 //! them as a machine-readable [`BuildReport`] (JSON via `to_json`), alongside
@@ -25,7 +25,7 @@ pub(crate) struct ReportFields {
     topo_order: RefCell<Vec<&'static str>>,
     /// Total wall time of `build()` (set when build finishes).
     total_elapsed_us: RefCell<Option<u64>>,
-    /// Contract entries captured at registration time (T222).
+    /// Contract entries captured at registration time.
     contract: RefCell<Vec<ContractEntry>>,
 }
 
@@ -81,7 +81,7 @@ impl ReportFields {
         self.contract.borrow_mut().push(entry);
     }
 
-    /// Snapshot the registered module contracts (T222).
+    /// Snapshot the registered module contracts.
     pub(crate) fn contract_snapshot(&self) -> ContractManifest {
         ContractManifest {
             schema_version: CONTRACT_SCHEMA_VERSION,
@@ -101,7 +101,7 @@ impl ReportFields {
     }
 }
 
-/// One module's contract: name, declared version, capability type, deps (T222).
+/// One module's contract: name, declared version, capability type, deps.
 #[derive(Debug, Clone, Serialize)]
 pub struct ContractEntry {
     /// Module name (`ModuleMeta::NAME`).
@@ -114,7 +114,7 @@ pub struct ContractEntry {
     pub deps: Vec<&'static str>,
 }
 
-/// Machine-readable contract manifest of all registered modules (T222).
+/// Machine-readable contract manifest of all registered modules.
 #[derive(Debug, Clone, Serialize)]
 pub struct ContractManifest {
     /// Manifest schema version.

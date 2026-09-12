@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X
 // SPDX-License-Identifier: MIT
-//! Proc-macro crate for trait-kit (T203).
+//! Proc-macro crate for trait-kit.
 //!
 //! Currently provides [`derive(Module)`](derive@Module): derive
 //! `trait_kit::core::ModuleMeta` for a struct, generating the module name and

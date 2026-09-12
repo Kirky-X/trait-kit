@@ -35,13 +35,13 @@ pub enum TraitKitError {
         module: &'static str,
     },
 
-    /// 装饰器目标模块未注册（T217：契约前移到注册时）。
+    /// 装饰器目标模块未注册。
     DecoratorTargetMissing {
         /// 被装饰的模块名。
         module: &'static str,
     },
 
-    /// 依赖能力版本不满足要求（T221：semver 兼容校验失败）。
+    /// 依赖能力版本不满足要求。
     VersionIncompatible {
         /// 发起依赖的模块。
         module: &'static str,
@@ -67,7 +67,7 @@ pub enum TraitKitError {
         key: String,
     },
 
-    /// 能力存在但类型不匹配（T210）。
+    /// 能力存在但类型不匹配。
     ///
     /// 模块的 capability 已构建，但与请求的 `M::Capability` 类型不符
     /// （例如 override 注入了另一种能力类型）。
@@ -221,7 +221,7 @@ impl std::error::Error for TraitKitError {
     }
 }
 
-/// Coarse failure classification for precise downstream matching (T210).
+/// Coarse failure classification for precise downstream matching.
 ///
 /// `TraitKitError::kind()` maps every variant onto one of these kinds so
 /// callers can match on *why* an operation failed without tying themselves to
@@ -246,7 +246,7 @@ pub enum ErrorKind {
 }
 
 impl TraitKitError {
-    /// Classify this error (T210).
+    /// Classify this error.
     #[must_use]
     pub fn kind(&self) -> ErrorKind {
         match self {

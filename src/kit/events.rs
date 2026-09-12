@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X
 // SPDX-License-Identifier: MIT
-//! Runtime event bus port (T208).
+//! Runtime event bus port.
 //!
 //! A single typed channel for the lifecycle events that previously lived in
 //! disconnected mechanisms (build observers, health pull-model, reload

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X
 // SPDX-License-Identifier: MIT
-//! API 文档一致性门禁（T223）。
+//! API 文档一致性门禁。
 //!
 //! MVP 口径：静态清单断言。每个"关键项"必须同时满足两个条件——
 //!

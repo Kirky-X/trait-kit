@@ -195,7 +195,7 @@ type AsyncBuildFut<'a> = Pin<
 /// A completed item of a [`BatchJoin`]: item id plus its future output.
 type BatchOutput<T> = (T, Result<Box<dyn Any + Send + Sync>, Box<dyn std::error::Error + Send + 'static>>);
 
-/// Dependency-free concurrency-limited join driver (T218).
+/// Dependency-free concurrency-limited join driver.
 ///
 /// Polls at most `limit` queued futures at a time; as futures complete, new
 /// ones are admitted from the queue. Children are polled with the *caller's*
@@ -257,7 +257,7 @@ where
     }
 }
 
-/// Split a validated topological order into dependency levels (T218).
+/// Split a validated topological order into dependency levels.
 ///
 /// Level 0 = modules without dependencies; level N = modules whose longest
 /// dependency chain has N+1 nodes. Within a level no module depends on
@@ -317,7 +317,7 @@ pub struct AsyncKit<S = Unbuilt> {
     #[cfg(feature = "encryption")]
     encryption: EncryptionFields,
     ports: PortsFields,
-    /// Max concurrently-polled module builds per topological layer (T218).
+    /// Max concurrently-polled module builds per topological layer.
     max_concurrency: usize,
     _state: PhantomData<S>,
 }
@@ -413,7 +413,7 @@ impl AsyncKit {
     pub fn set_config<C: Clone + Send + Sync + 'static>(&self, config: C) {
         let replaced = self.configs.contains::<C>();
         self.configs.insert(config);
-        // T216: config-change audit event to the injected bus (no-op default).
+        // config-change audit event to the injected bus (no-op default).
         if let Some(bus) = self.ports.event_bus.read().expect("lock poisoned").as_ref() {
             bus.publish(super::events::KitEvent::ConfigChanged {
                 key: std::any::type_name::<C>().to_string(),
@@ -426,7 +426,7 @@ impl AsyncKit {
         }
     }
 
-    /// Store a configuration value behind an `Arc` for zero-clone reads (T215).
+    /// Store a configuration value behind an `Arc` for zero-clone reads.
     ///
     /// Stored under `TypeId::of::<Arc<C>>` — a distinct slot from plain
     /// `set_config`. Read back with `config_arc::<C>()`.
@@ -434,7 +434,7 @@ impl AsyncKit {
         self.configs.insert(std::sync::Arc::new(config));
     }
 
-    /// Read a configuration value as an `Arc` snapshot — read-side zero clone (T215).
+    /// Read a configuration value as an `Arc` snapshot — read-side zero clone.
     ///
     /// # Errors
     ///
@@ -523,7 +523,7 @@ impl AsyncKit {
             guard.drain().collect()
         };
 
-        // 3. Build modules topological-layer by topological-layer (T218):
+        // 3. Build modules topological-layer by topological-layer:
         //    modules whose dependencies are all satisfied (same level) run
         //    concurrently, bounded by `max_concurrency`. Within a layer,
         //    results are processed in completion order; observer callbacks
@@ -882,14 +882,14 @@ impl AsyncKit {
     }
 
     /// Inject an [`EventBus`](super::events::EventBus) that receives runtime
-    /// lifecycle events (T208): module builds, health samples, config changes.
+    /// lifecycle events: module builds, health samples, config changes.
     ///
     /// Default is `None` (= no-op): publishing costs one `Option` check.
     pub fn with_event_bus(&mut self, bus: impl Into<super::events::OptionalEventBus>) {
         *self.ports.event_bus.write().expect("lock poisoned") = bus.into();
     }
 
-    /// Configure the per-layer build concurrency limit (T218).
+    /// Configure the per-layer build concurrency limit.
     ///
     /// `AsyncKit::build()` groups modules into topological layers and drives
     /// the futures of each layer concurrently, with at most `limit` module
@@ -898,7 +898,7 @@ impl AsyncKit {
         self.max_concurrency = limit.max(1);
     }
 
-    /// Retrieve the injected event bus, if any (T208).
+    /// Retrieve the injected event bus, if any.
     #[must_use]
     pub fn event_bus(&self) -> super::events::OptionalEventBus {
         self.ports.event_bus.read().expect("lock poisoned").clone()
@@ -945,7 +945,6 @@ impl AsyncKit {
 }
 
 impl<S> AsyncKit<S> {
-    // ─── Event bus (T208, available on both Kit states) ────────────────
 
     /// Publish `event` to the injected bus (no-op when absent). Internal
     /// helper keeping the `Option` check in exactly one place.
@@ -955,7 +954,7 @@ impl<S> AsyncKit<S> {
         }
     }
 
-    /// Publish a custom event to the injected bus (T208 public escape hatch):
+    /// Publish a custom event to the injected bus (public escape hatch):
     /// lets module builders feed their own lifecycle events into the same
     /// channel. No-op when no bus is injected.
     pub fn emit_event(&self, event: super::events::KitEvent) {
@@ -1161,7 +1160,7 @@ impl AsyncKit<Ready> {
             .into_iter()
             .map(|(name, checker)| (name, checker(&self.capabilities)))
             .collect();
-        // T208: publish each sampled status to the injected event bus.
+        // publish each sampled status to the injected event bus.
         if self.ports.event_bus.read().expect("lock poisoned").is_some() {
             for (name, status) in &report {
                 self.publish_event(super::events::KitEvent::HealthChanged {
@@ -1340,7 +1339,6 @@ impl AsyncKit {
     }
 }
 
-// ─── T011: AsyncKit 配置能力对称 — load_config / snapshot / reload / encryption ───
 
 impl AsyncKit {
     /// Load a configuration via its `Configurable` implementation and store it.
@@ -1757,7 +1755,7 @@ mod tests {
         }
     }
 
-    // --- T008 mock modules for build() tests ---
+    // --- mock modules for build() tests ---
 
     /// Build callback returns `Err`, exercising `TraitKitError::BuildFailed`.
     struct MockErrModule;
@@ -2014,7 +2012,7 @@ mod tests {
         assert_send::<Result<AsyncKit<Ready>, TraitKitError>>();
     }
 
-    // --- T008 tests for AsyncKit::build() ---
+    // --- tests for AsyncKit::build() ---
 
     #[test]
     fn async_kit_build_returns_ready_state() {
@@ -2119,7 +2117,7 @@ mod tests {
         }
     }
 
-    // --- T010 tests for AsyncKit<Ready> retrieval API (require/optional/contains/contains_config) ---
+    // --- tests for AsyncKit<Ready> retrieval API (require/optional/contains/contains_config) ---
 
     #[test]
     fn async_kit_ready_require_returns_capability() {
@@ -2214,7 +2212,6 @@ mod tests {
         );
     }
 
-    // === T012 mocks: cross-module dependency injection (R-004) ===
     //
     // MockBModule: no deps, cap = Arc<Bcap{n:42}>.
     // MockAModule: declares dep on MockBModule; build() calls
@@ -2472,7 +2469,7 @@ mod tests {
         }
     }
 
-    // --- T012 tests: cross-module dependency injection (R-004) ---
+    // --- tests: cross-module dependency injection (R-004) ---
 
     /// R-004 #1: A declares dep on B; B is built before A (topo order).
     /// A's cap embeds B's n=42, proving B was ready when A's build ran.
@@ -2532,7 +2529,7 @@ mod tests {
     }
 
     /// R-004 #4: 3-node cycle A→B→C→A → `TraitKitError::CycleDetected`.
-    /// Distinct from the 2-node cycle test (T008) — exercises DFS cycle
+    /// Distinct from the 2-node cycle test — exercises DFS cycle
     /// extraction on a longer ring.
     #[test]
     fn async_kit_di_three_node_cycle_returns_error() {
