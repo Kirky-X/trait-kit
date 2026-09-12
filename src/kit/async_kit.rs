@@ -192,9 +192,6 @@ type AsyncBuildFut<'a> = Pin<
     >,
 >;
 
-/// A completed item of a [`BatchJoin`]: item id plus its future output.
-type BatchOutput<T> = (T, Result<Box<dyn Any + Send + Sync>, Box<dyn std::error::Error + Send + 'static>>);
-
 /// Dependency-free concurrency-limited join driver.
 ///
 /// Polls at most `limit` queued futures at a time; as futures complete, new
@@ -3660,27 +3657,6 @@ mod concurrency_tests {
                 cx.waker().wake_by_ref();
                 std::task::Poll::Pending
             }
-        }
-    }
-
-    /// Module whose build reports its concurrency window into shared state.
-    struct SlowModule {
-        active: Arc<AtomicUsize>,
-        max_active: Arc<AtomicUsize>,
-    }
-    impl ModuleMeta for SlowModule {
-        const NAME: &'static str = "slow-module";
-    }
-    impl AsyncAutoBuilder for SlowModule {
-        type Capability = Arc<Mutex<u32>>;
-        type Error = TraitKitError;
-        fn build<'a>(
-            _kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
-        {
-            // Per-instance state is impossible through the static trait — the
-            // shared atomics are cloned in before registration (see test).
-            unreachable!("use build_with via Clone; provided for trait completeness")
         }
     }
 

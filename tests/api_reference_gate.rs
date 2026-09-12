@@ -184,7 +184,6 @@ fn _assert_interface_api() {
 
 #[cfg(feature = "observer")]
 fn _assert_observer_api() {
-    trait DocObserver: trait_kit::core::observer::BuildObserver {}
     let _ = |obs: std::sync::Arc<dyn trait_kit::core::observer::BuildObserver>| obs;
 }
 
@@ -234,6 +233,15 @@ fn api_reference_lists_core_entries() {
 
 #[test]
 fn api_reference_documented_feature_items_resolve() {
+    // 绑定与下方使用同受 feature 门控，默认 feature 组合下全部编译剔除。
+    #[cfg(any(
+        feature = "async",
+        feature = "health",
+        feature = "scope",
+        feature = "interface",
+        feature = "observer",
+        feature = "confers"
+    ))]
     let doc = api_reference_md();
     // 文档带 feature 标注的项必须真实存在（编译期引用 + 文档收录成对）。
     #[cfg(feature = "async")]

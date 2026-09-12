@@ -3095,7 +3095,7 @@ mod require_error_kind_tests {
     use std::sync::Arc;
 
     #[derive(Debug, Clone)]
-    struct StringCap(String);
+    struct StringCap;
 
     #[derive(Debug, Clone)]
     struct OtherCap;
@@ -3118,7 +3118,7 @@ mod require_error_kind_tests {
         type Capability = Arc<StringCap>;
         type Error = KindError;
         fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
-            Ok(Arc::new(StringCap("cap".into())))
+            Ok(Arc::new(StringCap))
         }
     }
 
@@ -3252,7 +3252,6 @@ mod config_arc_tests {
     #[derive(Debug, Clone)]
     struct SnapshotConfig {
         values: Vec<u64>,
-        host: String,
     }
 
     #[test]
@@ -3260,7 +3259,6 @@ mod config_arc_tests {
         let kit = Kit::new();
         kit.set_config_arc(SnapshotConfig {
             values: vec![1, 2, 3],
-            host: "db".into(),
         });
 
         let a = kit.config_arc::<SnapshotConfig>().expect("arc config");
@@ -3286,7 +3284,6 @@ mod config_arc_tests {
         let kit = AsyncKit::new();
         kit.set_config_arc(SnapshotConfig {
             values: vec![9],
-            host: "async".into(),
         });
         let a = kit.config_arc::<SnapshotConfig>().expect("arc");
         let b = kit.config_arc::<SnapshotConfig>().expect("arc");
@@ -3301,9 +3298,7 @@ mod config_audit_event_tests {
     use std::sync::{Arc, Mutex};
 
     #[derive(Debug, Clone)]
-    struct AuditConfig {
-        level: u8,
-    }
+    struct AuditConfig;
 
     #[test]
     fn set_config_publishes_config_changed_audit() {
@@ -3319,9 +3314,9 @@ mod config_audit_event_tests {
         let mut kit = Kit::new();
         kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>));
 
-        kit.set_config(AuditConfig { level: 1 });
-        kit.set_config(AuditConfig { level: 2 });
-        kit.set_config_arc(AuditConfig { level: 3 });
+        kit.set_config(AuditConfig);
+        kit.set_config(AuditConfig);
+        kit.set_config_arc(AuditConfig);
 
         let entries = log.lock().unwrap();
         assert_eq!(entries.len(), 3, "two set + one set_arc audits");
