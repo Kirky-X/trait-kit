@@ -2,7 +2,7 @@
 
 <img src="docs/assets/trait-kit.svg" alt="trait-kit logo" width="180">
 
-[![CI Status](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml) [![Version](https://img.shields.io/crates/v/trait-kit.svg)](https://crates.io/crates/trait-kit) [![Docs.rs](https://docs.rs/trait-kit/badge.svg)](https://docs.rs/trait-kit) [![Downloads](https://img.shields.io/crates/d/trait-kit.svg)](https://crates.io/crates/trait-kit) [![License](https://img.shields.io/crates/l/trait-kit.svg)](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE) [![Rust](https://img.shields.io/badge/rust-1.97.1%2B-orange.svg)](https://www.rust-lang.org/)
+[![CI Status](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml) [![Version](https://img.shields.io/crates/v/trait-kit.svg)](https://crates.io/crates/trait-kit) [![Docs.rs](https://docs.rs/trait-kit/badge.svg)](https://docs.rs/trait-kit) [![Downloads](https://img.shields.io/crates/d/trait-kit.svg)](https://crates.io/crates/trait-kit) [![License](https://img.shields.io/crates/l/trait-kit.svg)](LICENSE) [![Rust](https://img.shields.io/badge/rust-1.97.1%2B-orange.svg)](https://www.rust-lang.org/)
 
 **中文** | [English](README_EN.md)
 
@@ -119,7 +119,7 @@ cargo add trait-kit
 
 ### 💡 最小示例
 
-定义一个 logger 模块，注册、构建 Kit，然后检索能力（出处：[examples/src/core/default_basic.rs](https://github.com/Kirky-X/trait-kit/blob/main/examples/src/core/default_basic.rs)，有精简）：
+定义一个 logger 模块，注册、构建 Kit，然后检索能力（出处：[examples/src/core/default_basic.rs](examples/src/core/default_basic.rs)，有精简）：
 
 ```rust
 use std::sync::Arc;
@@ -276,7 +276,7 @@ fn main() {
 }
 ```
 
-完整的 `Kit<Unbuilt>` / `Kit<Ready>` 方法列表（含各 feature 门控）见 [📘 API 参考](https://github.com/Kirky-X/trait-kit/blob/main/docs/API_REFERENCE.md) 与 [docs.rs](https://docs.rs/trait-kit)。
+完整的 `Kit<Unbuilt>` / `Kit<Ready>` 方法列表（含各 feature 门控）见 [📘 API 参考](docs/API_REFERENCE.md) 与 [docs.rs](https://docs.rs/trait-kit)。
 
 ---
 
@@ -323,14 +323,14 @@ trait-kit = { version = "0.5.0-rc.3", features = ["encryption"] }
 
 | 文档 | 说明 |
 |------|------|
-| [📖 用户指南](https://github.com/Kirky-X/trait-kit/blob/main/docs/USER_GUIDE.md) | 从安装到进阶用法的完整教程 |
-| [📘 API 参考](https://github.com/Kirky-X/trait-kit/blob/main/docs/API_REFERENCE.md) | 全部公开 API 速查，逐项标注 feature 门控 |
-| [🏗️ 架构文档](https://github.com/Kirky-X/trait-kit/blob/main/docs/ARCHITECTURE.md) | 设计模式、数据流、线程安全模型与目录结构 |
-| [🧪 验收测试场景](https://github.com/Kirky-X/trait-kit/blob/main/docs/TEST_SCENARIOS.md) | 验收场景穷举矩阵与 e2e 落地对账 |
-| [⚡ 性能基准](https://github.com/Kirky-X/trait-kit/blob/main/docs/PERFORMANCE.md) | criterion 基准设施、基线数据与复现方法 |
-| [🔒 安全文档](https://github.com/Kirky-X/trait-kit/blob/main/docs/SECURITY.md) | 支持策略、漏洞报告流程与安全设计 |
-| [📋 更新日志](https://github.com/Kirky-X/trait-kit/blob/main/docs/CHANGELOG.md) | 每个版本的变更记录 |
-| [🤝 贡献指南](https://github.com/Kirky-X/trait-kit/blob/main/docs/CONTRIBUTING.md) | 环境准备、TDD 工作流与提交规范 |
+| [📖 用户指南](docs/USER_GUIDE.md) | 从安装到进阶用法的完整教程 |
+| [📘 API 参考](docs/API_REFERENCE.md) | 全部公开 API 速查，逐项标注 feature 门控 |
+| [🏗️ 架构文档](docs/ARCHITECTURE.md) | 设计模式、数据流、线程安全模型与目录结构 |
+| [🧪 验收测试场景](docs/TEST_SCENARIOS.md) | 验收场景穷举矩阵与 e2e 落地对账 |
+| [⚡ 性能基准](docs/PERFORMANCE.md) | criterion 基准设施、基线数据与复现方法 |
+| [🔒 安全文档](docs/SECURITY.md) | 支持策略、漏洞报告流程与安全设计 |
+| [📋 更新日志](docs/CHANGELOG.md) | 每个版本的变更记录 |
+| [🤝 贡献指南](docs/CONTRIBUTING.md) | 环境准备、TDD 工作流与提交规范 |
 | [📦 crates.io](https://crates.io/crates/trait-kit) / [docs.rs](https://docs.rs/trait-kit) | 发布版本与在线 API 文档 |
 
 ---
@@ -366,7 +366,7 @@ cargo run -p trait-kit-examples --example <名称> --features <特性>
 | `shutdown` | `shutdown` | `ShutdownCoordinator` 分阶段优雅关闭（`StopRequests` → `DrainQueue` → `CloseConnections`）+ 超时控制 |
 | `i18n` | `i18n` | `I18nFormatter` 本地化数字/日期/复数/排序 |
 
-示例详情见 [examples/README.md](https://github.com/Kirky-X/trait-kit/blob/main/examples/README.md)。
+示例详情见 [examples/README.md](examples/README.md)。
 
 ---
 
@@ -410,7 +410,7 @@ graph LR
     R --> E["encryption"]
 ```
 
-更多设计细节（依赖图验证、数据流、线程安全模型、目录结构）见 [架构文档](https://github.com/Kirky-X/trait-kit/blob/main/docs/ARCHITECTURE.md)。
+更多设计细节（依赖图验证、数据流、线程安全模型、目录结构）见 [架构文档](docs/ARCHITECTURE.md)。
 
 ---
 
@@ -565,7 +565,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 80
 | `toggle/set` | toggle 写 | ~21 ns |
 | `toggle/get` | toggle 读 | ~12 ns |
 
-> 测量环境：AMD Ryzen 9 9950X（16C/32T）、WSL2、rustc 1.97.1、`bench` profile（`opt-level=3`、`lto=fat`、`codegen-units=1`）、criterion `sample_size=20`，median 口径。数字引自 [docs/PERFORMANCE.md](https://github.com/Kirky-X/trait-kit/blob/main/docs/PERFORMANCE.md)，不同机器量级会有差异。
+> 测量环境：AMD Ryzen 9 9950X（16C/32T）、WSL2、rustc 1.97.1、`bench` profile（`opt-level=3`、`lto=fat`、`codegen-units=1`）、criterion `sample_size=20`，median 口径。数字引自 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)，不同机器量级会有差异。
 
 ```sh
 # 运行全部基准（toggle 基准需要 toggle feature）
@@ -576,20 +576,20 @@ cargo bench --features toggle -- --save-baseline <name>
 cargo bench --features toggle -- --baseline <name>
 ```
 
-`require` 基准与裸 `Arc::clone` + `TypeId` 查找同量级，验证了"零开销能力检索"的设计目标；大结构能力建议改用 `require_ref`（借用读）。完整方法与结论见 [docs/PERFORMANCE.md](https://github.com/Kirky-X/trait-kit/blob/main/docs/PERFORMANCE.md)。
+`require` 基准与裸 `Arc::clone` + `TypeId` 查找同量级，验证了"零开销能力检索"的设计目标；大结构能力建议改用 `require_ref`（借用读）。完整方法与结论见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)。
 
 ---
 
 ## 🔒 安全
 
-- **漏洞报告**：请勿通过公开 Issue 报告，使用 GitHub 私密通道 [Security Advisories](https://github.com/Kirky-X/trait-kit/security/advisories/new)（"Report a vulnerability"）。维护者承诺 48 小时内确认、7 天内给出初步评估（见 [SECURITY.md](https://github.com/Kirky-X/trait-kit/blob/main/SECURITY.md)）。
+- **漏洞报告**：请勿通过公开 Issue 报告，使用 GitHub 私密通道 [Security Advisories](https://github.com/Kirky-X/trait-kit/security/advisories/new)（"Report a vulnerability"）。维护者承诺 48 小时内确认、7 天内给出初步评估（见 [SECURITY.md](SECURITY.md)）。
 - **无 unsafe**：`#![deny(unsafe_code)]` 全 crate 强制。
 - **编译期排除误用**：typestate 使"未构建就检索"成为编译错误；依赖图在 `build()` 时做缺失依赖与环检测。
 - **明确的线程安全边界**：同步 `Kit` 为 `!Sync`（编译器强制，见 `static_assertions` 断言），多线程用 `AsyncKit`（`Send + Sync`）。
 - **加密配置存储**（`encryption`）：XChaCha20-Poly1305 AEAD，HKDF 从主密钥与 `ModuleConfig::PATH` 派生字段密钥；`EncryptedBlob` 的 `Debug` 实现不泄露加密材料。
 - **供应链门禁**：`cargo deny check`（`deny.toml`：advisories / licenses / bans / sources）+ `cargo audit` 为 CI 必过项；CodeQL 静态分析常开；lefthook 私钥扫描拦截凭据入库。
 
-完整的安全设计、最佳实践与安全修复记录见 [docs/SECURITY.md](https://github.com/Kirky-X/trait-kit/blob/main/docs/SECURITY.md)。
+完整的安全设计、最佳实践与安全修复记录见 [docs/SECURITY.md](docs/SECURITY.md)。
 
 ---
 
@@ -613,7 +613,7 @@ cargo bench --features toggle -- --baseline <name>
 
 ## 🤝 参与贡献
 
-欢迎参与贡献！完整的开发环境准备、TDD 工作流与提交规范请参见 [贡献指南](https://github.com/Kirky-X/trait-kit/blob/main/docs/CONTRIBUTING.md)。
+欢迎参与贡献！完整的开发环境准备、TDD 工作流与提交规范请参见 [贡献指南](docs/CONTRIBUTING.md)。
 
 ### 构建要求
 
@@ -649,7 +649,7 @@ cargo fmt --all -- --check
 
 ## 📋 更新日志
 
-详见 [CHANGELOG.md](https://github.com/Kirky-X/trait-kit/blob/main/docs/CHANGELOG.md)。近期版本要点：
+详见 [CHANGELOG.md](docs/CHANGELOG.md)。近期版本要点：
 
 - **0.5.0-rc.2**（2026-09-03）：文档版本号与 Kit API 表格同步；`confers` 依赖路径本地化（`path` + `version` 双写）。
 - **0.4.2**（2026-08-06）：修复 `AsyncKit::decorate()` 装饰器存储键错误（decorator 此前从未生效）。
@@ -659,7 +659,7 @@ cargo fmt --all -- --check
 
 ## 📄 许可证
 
-本项目基于 **MIT + Commons Clause** 许可证发布：MIT 主许可之上附加 Commons Clause v1.0 条件，未经许可方单独书面授权不得销售本软件；属于 source-available 许可证，商业使用需单独授权。详见 [LICENSE](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE)。
+本项目基于 **MIT + Commons Clause** 许可证发布：MIT 主许可之上附加 Commons Clause v1.0 条件，未经许可方单独书面授权不得销售本软件；属于 source-available 许可证，商业使用需单独授权。详见 [LICENSE](LICENSE)。
 
 Copyright (c) 2026 Kirky.X
 
@@ -678,7 +678,7 @@ Copyright (c) 2026 Kirky.X
 ## 📞 联系与支持
 
 - **Bug 与功能建议**：[GitHub Issues](https://github.com/Kirky-X/trait-kit/issues)
-- **安全漏洞**：请勿通过公开 Issue 报告，参见 [安全文档](https://github.com/Kirky-X/trait-kit/blob/main/docs/SECURITY.md) 的漏洞报告流程。
+- **安全漏洞**：请勿通过公开 Issue 报告，参见 [安全文档](docs/SECURITY.md) 的漏洞报告流程。
 - **维护者**：Kirky.X
 
 ---
