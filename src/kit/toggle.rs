@@ -16,7 +16,7 @@
 //!
 //! Requires the `toggle` feature (which implies `conditional`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // ─── ToggleValue ────────────────────────────────────────────────────────
 
@@ -117,10 +117,16 @@ impl ToggleBackend for MemoryToggle {
 /// supports config loading, concurrent access, and descriptions). Non-boolean
 /// typed values are kept in a side `HashMap` since confers' registry is
 /// boolean-only.
+///
+/// confers 的 registry 没有注销 API，`remove` 只能 disable 底层条目；
+/// 为满足 [`ToggleBackend::remove`] 的移除语义，被移除的布尔键记录在
+/// tombstone 集合中，`get` / `contains` / `list` 一律过滤，直到
+/// `set` 重新写入该键为止。
 #[cfg(feature = "confers")]
 pub struct ConfersToggle {
     registry: confers::FeatureToggleRegistry,
     typed_side: HashMap<String, ToggleValue>,
+    removed: HashSet<String>,
 }
 
 #[cfg(feature = "confers")]
@@ -131,6 +137,7 @@ impl ConfersToggle {
         Self {
             registry: confers::FeatureToggleRegistry::new(),
             typed_side: HashMap::new(),
+            removed: HashSet::new(),
         }
     }
 
@@ -140,6 +147,7 @@ impl ConfersToggle {
         Self {
             registry,
             typed_side: HashMap::new(),
+            removed: HashSet::new(),
         }
     }
 
@@ -165,7 +173,7 @@ impl ToggleBackend for ConfersToggle {
             return Some(v.clone());
         }
         // Fall back to confers registry (boolean only)
-        if self.registry.len() > 0 {
+        if self.registry.len() > 0 && !self.removed.contains(key) {
             let infos = self.registry.list();
             for info in &infos {
                 if info.name == key {
@@ -190,6 +198,8 @@ impl ToggleBackend for ConfersToggle {
                 }
                 // Remove from typed side if it was there
                 self.typed_side.remove(&key);
+                // A fresh set re-activates the key after a prior remove.
+                self.removed.remove(&key);
             }
             _ => {
                 // Non-boolean: store in side map
@@ -207,8 +217,12 @@ impl ToggleBackend for ConfersToggle {
         let infos = self.registry.list();
         for info in &infos {
             if info.name == key {
-                // Can't truly remove from confers registry, but disable it
+                // confers registry cannot unregister entries: disable the
+                // underlying toggle and tombstone the key so `get` /
+                // `contains` / `list` honor the removal contract. A later
+                // `set` revives the key.
                 self.registry.disable(key);
+                self.removed.insert(key.to_string());
                 return Some(ToggleValue::Bool(info.enabled));
             }
         }
@@ -223,7 +237,7 @@ impl ToggleBackend for ConfersToggle {
             .collect();
         // Add boolean toggles from confers that aren't in the typed side
         for info in self.registry.list() {
-            if !self.typed_side.contains_key(&info.name) {
+            if !self.typed_side.contains_key(&info.name) && !self.removed.contains(&info.name) {
                 result.push((info.name, ToggleValue::Bool(info.enabled)));
             }
         }
@@ -234,7 +248,7 @@ impl ToggleBackend for ConfersToggle {
         if self.typed_side.contains_key(key) {
             return true;
         }
-        self.registry.list().iter().any(|i| i.name == key)
+        !self.removed.contains(key) && self.registry.list().iter().any(|i| i.name == key)
     }
 }
 
@@ -450,6 +464,24 @@ mod tests {
             assert_eq!(prev, Some(ToggleValue::Float(1.0)));
             assert!(!t.contains("val"));
         }
+
+        #[test]
+        fn confers_toggle_remove_bool_hides_key_until_reset() {
+            // confers registry 无法注销条目；remove 后 get/contains/list
+            // 必须遵循移除语义，直到 set 重新写入该键。
+            let mut t = ConfersToggle::new();
+            t.set("feature".into(), ToggleValue::Bool(true));
+            let prev = t.remove("feature");
+            assert_eq!(prev, Some(ToggleValue::Bool(true)));
+            assert_eq!(t.get("feature"), None);
+            assert!(!t.contains("feature"));
+            assert!(t.list().iter().all(|(k, _)| k != "feature"));
+
+            // set 重新写入后恢复可见。
+            t.set("feature".into(), ToggleValue::Bool(false));
+            assert_eq!(t.get("feature"), Some(ToggleValue::Bool(false)));
+            assert!(t.contains("feature"));
+        }
     }
 }
 
@@ -486,7 +518,7 @@ mod typed_handle_tests {
 
     #[test]
     fn typed_handle_shares_backend_with_string_api() {
-        let mut kit = Kit::new();
+        let kit = Kit::new();
         kit.enable_toggle("prd-mode", true);
         let ready = kit.build().expect("build ok");
 

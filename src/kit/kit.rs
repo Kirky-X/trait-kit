@@ -83,6 +83,9 @@ pub(crate) fn derive_kit_field_key(
 /// 因此这里显式 `#[allow(unsafe_code)]` 并给出 SAFETY 论证，模式与
 /// `require()` / `factory()` 中的 typestate cast 一致。
 #[cfg(feature = "encryption")]
+// 禁止内联：内联后编译器可能推断缓冲区在调用点已死而整体删除
+// volatile 写循环；独立成函数保证每个调用点的擦除真实发生。
+#[inline(never)]
 #[allow(unsafe_code)]
 pub(crate) fn zeroize_bytes(buf: &mut [u8]) {
     for byte in buf.iter_mut() {
@@ -2449,8 +2452,12 @@ impl Kit<Ready> {
     ///
     /// See [`Kit::health_aggregate`] for the structured form. Requires the
     /// `health` and `report` features.
+    ///
+    /// # Errors
+    ///
+    /// Propagates the `serde_json` error from serialization.
     #[cfg(all(feature = "health", feature = "report"))]
-    pub fn health_json(&self) -> String {
+    pub fn health_json(&self) -> serde_json::Result<String> {
         self.health_aggregate().to_json()
     }
 

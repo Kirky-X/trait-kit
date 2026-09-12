@@ -571,9 +571,6 @@ mod tests {
     #[test]
     fn parent_query_resolves_parent_capability_and_shares_singleton() {
         use std::rc::Rc;
-        let kit = Rc::new(crate::kit::Kit::new().build().expect("build ok"));
-        // Inject a parent singleton via override-like registration:
-        // use a built kit with a registered module.
         let mut unbuilt = crate::kit::Kit::new();
         unbuilt.register::<ScopeModule>().expect("register");
         let kit = Rc::new(unbuilt.build().expect("build ok"));

@@ -128,11 +128,13 @@ pub const CONTRACT_SCHEMA_VERSION: u32 = 1;
 
 impl ContractManifest {
     /// Serialize to a JSON string.
-    #[must_use]
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|e| {
-            format!("{{\"error\":\"serialize failed: {e}\"}}")
-        })
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying `serde_json` error instead of embedding it in
+    /// an otherwise-valid-looking JSON body.
+    pub fn to_json(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self)
     }
 }
 
@@ -206,13 +208,13 @@ pub const SCHEMA_VERSION: u32 = 1;
 
 impl BuildReport {
     /// Serialize the report to a JSON string.
-    #[must_use]
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|e| {
-            // `BuildReport` contains only JSON-safe primitives; this arm is
-            // unreachable in practice but must not panic (library code).
-            format!("{{\"error\":\"serialize failed: {e}\"}}")
-        })
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying `serde_json` error instead of embedding it in
+    /// an otherwise-valid-looking JSON body.
+    pub fn to_json(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self)
     }
 
     /// Parse a JSON string back into a generic JSON value (test helper for
@@ -360,7 +362,7 @@ mod tests {
         kit.register::<RptLeaf>().expect("register leaf");
         let ready = kit.build().expect("build ok");
 
-        let json = ready.build_report().to_json();
+        let json = ready.build_report().to_json().expect("serialize report");
         let value = BuildReport::from_json_str(&json).expect("valid JSON");
         assert_eq!(value["schema_version"], 1);
         assert_eq!(value["topo_order"][0], "rpt-leaf");
@@ -478,7 +480,10 @@ mod contract_manifest_tests {
         kit.register::<ManifestLeaf>().expect("leaf");
         let ready = kit.build().expect("build ok");
 
-        let json = ready.contract_manifest().to_json();
+        let json = ready
+            .contract_manifest()
+            .to_json()
+            .expect("serialize manifest");
         let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
         assert_eq!(value["schema_version"], 1);
         assert_eq!(value["modules"][0]["module"], "manifest-leaf");

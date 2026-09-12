@@ -78,7 +78,7 @@ pub trait EventBus: Send + Sync + 'static {
 /// Kit's build path.
 #[derive(Default)]
 pub struct MemoryEventBus {
-    subscribers: Mutex<Vec<Box<dyn Fn(&KitEvent) + Send + Sync>>>,
+    subscribers: Mutex<Vec<std::sync::Arc<dyn Fn(&KitEvent) + Send + Sync>>>,
 }
 
 impl MemoryEventBus {
@@ -91,14 +91,21 @@ impl MemoryEventBus {
     /// Register a subscriber. Receives every published event, in publish
     /// order, synchronously inside `publish`.
     pub fn subscribe(&self, subscriber: impl Fn(&KitEvent) + Send + Sync + 'static) {
-        self.subscribers.lock().expect("event bus lock").push(Box::new(subscriber));
+        self.subscribers
+            .lock()
+            .expect("event bus lock")
+            .push(std::sync::Arc::new(subscriber));
     }
 }
 
 impl EventBus for MemoryEventBus {
     fn publish(&self, event: KitEvent) {
-        let subscribers = self.subscribers.lock().expect("event bus lock");
-        for subscriber in subscribers.iter() {
+        // Snapshot the subscriber list under the lock, then release it before
+        // invoking any callback: a subscriber that re-enters `publish` or
+        // `subscribe` on the same thread would otherwise deadlock on the
+        // non-reentrant `Mutex`.
+        let snapshot = self.subscribers.lock().expect("event bus lock").clone();
+        for subscriber in &snapshot {
             // One misbehaving subscriber must not block the rest, and a
             // panicking subscriber must not unwind into Kit internals.
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -165,6 +172,35 @@ mod tests {
 
         bus.publish(KitEvent::ConfigChanged { key: "k".into(), summary: "set".into() });
         assert_eq!(count.load(Ordering::SeqCst), 1, "second subscriber still ran");
+    }
+
+    #[test]
+    fn memory_bus_survives_reentrant_publish_and_subscribe() {
+        // 回归：publish 持锁回调时，同线程内再入 publish/subscribe 会在
+        // 不可重入 Mutex 上死锁；现在先快照订阅者再释放锁。
+        let bus = Arc::new(MemoryEventBus::new());
+        let count = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&count);
+
+        let inner_bus = Arc::clone(&bus);
+        bus.subscribe(move |event| {
+            if let KitEvent::ModuleBuilt { .. } = event {
+                // Re-entrant publish + subscribe on the same thread.
+                inner_bus.publish(KitEvent::ConfigChanged {
+                    key: "inner".into(),
+                    summary: "re-entry".into(),
+                });
+                inner_bus.subscribe(|_event| {});
+                counter.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+
+        bus.publish(KitEvent::ModuleBuilt { module: "a", elapsed_us: 1 });
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "outer subscriber completed without deadlocking"
+        );
     }
 
     #[test]

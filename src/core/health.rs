@@ -108,10 +108,14 @@ pub struct HealthAggregate {
 #[cfg(all(feature = "health", feature = "report"))]
 impl HealthAggregate {
     /// Serialize to a JSON string (the `/healthz` payload).
-    #[must_use]
-    pub fn to_json(&self) -> String {
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying `serde_json` error instead of embedding it in
+    /// an otherwise-valid-looking JSON body, so a serialization failure can
+    /// never be mistaken for a degraded/unhealthy status report.
+    pub fn to_json(&self) -> serde_json::Result<String> {
         serde_json::to_string(self)
-            .unwrap_or_else(|e| format!("{{\"error\":\"serialize failed: {e}\"}}"))
     }
 }
 
@@ -525,7 +529,7 @@ mod aggregate_tests {
         assert_eq!(degraded.status, "degraded");
         assert_eq!(degraded.detail.as_deref(), Some("slow queries"));
 
-        let json = ready.health_json();
+        let json = ready.health_json().expect("serialize health aggregate");
         let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
         assert_eq!(value["status"], "degraded");
         assert_eq!(value["healthy"], false);
@@ -539,7 +543,11 @@ mod aggregate_tests {
         assert_eq!(agg.status, "healthy");
         assert!(agg.healthy);
         assert!(agg.modules.is_empty());
-        assert!(kit.health_json().contains("\"healthy\""));
+        assert!(
+            kit.health_json()
+                .expect("serialize health aggregate")
+                .contains("\"healthy\"")
+        );
     }
 }
 

@@ -26,7 +26,7 @@ pub mod observer;
 #[cfg(feature = "async")]
 pub use meta::AsyncAutoBuilder;
 pub(crate) use meta::BuildFn;
-pub use meta::{AutoBuilder, ModuleMeta, semver_compatible };
+pub use meta::{AutoBuilder, ModuleMeta, semver_compatible};
 #[cfg(feature = "interface")]
 pub use meta::{Interface, InterfaceBuilder};
 

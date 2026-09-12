@@ -209,34 +209,35 @@ use std::hash::BuildHasher;
 
 /// Interpolate `${VAR}` and `${VAR:-default}` patterns in a JSON value.
 ///
-/// Recursively walks the JSON structure, replacing patterns in String values
-/// only. Object keys and non-String variants are left unchanged. Unknown
-/// variables without a default are preserved as-is. `$$` escapes to a literal
-/// `$` (see `interpolate_string`).
+/// Walks the JSON structure, replacing patterns in String values only. Object
+/// keys and non-String variants are left unchanged. Unknown variables without
+/// a default are preserved as-is. `$$` escapes to a literal `$` (see
+/// `interpolate_string`).
 #[cfg(feature = "confers")]
 pub fn interpolate_json_value<S: BuildHasher>(
     value: &mut serde_json::Value,
     vars: &HashMap<String, String, S>,
 ) {
-    match value {
-        serde_json::Value::String(s) => {
-            *s = interpolate_string(s, vars);
-        }
-        serde_json::Value::Array(arr) => {
-            for item in arr {
-                interpolate_json_value(item, vars);
+    // 显式工作栈代替函数递归：输入可能来自不受信的深层嵌套 JSON，
+    // 递归展开会在超深结构上耗尽调用栈。
+    let mut stack: Vec<&mut serde_json::Value> = vec![value];
+    while let Some(current) = stack.pop() {
+        match current {
+            serde_json::Value::String(s) => {
+                *s = interpolate_string(s, vars);
             }
-        }
-        serde_json::Value::Object(map) => {
-            for (_, v) in map {
-                interpolate_json_value(v, vars);
+            serde_json::Value::Array(arr) => {
+                stack.extend(arr.iter_mut());
             }
+            serde_json::Value::Object(map) => {
+                stack.extend(map.values_mut());
+            }
+            _ => {}
         }
-        _ => {}
     }
 }
 
-/// Recursively deep-merge `overlay` into `base`.
+/// Deep-merge `overlay` into `base`.
 ///
 /// - When both `base` and `overlay` are JSON Objects, merge key-by-key:
 ///   - Keys only in `overlay` are inserted into `base`.
@@ -244,6 +245,12 @@ pub fn interpolate_json_value<S: BuildHasher>(
 ///   - Keys in both where values are not both Objects: `overlay` wins (replaces).
 /// - Arrays are treated as atomic values (replaced, not element-wise merged).
 /// - Scalars are replaced.
+///
+/// 递归深度与输入嵌套深度一致。实际调用路径中 `Value` 均来自
+/// `serde_json` 解析或 Rust 类型序列化，嵌套深度分别受解析器默认
+/// 128 层递归上限与类型定义约束，不会溢出栈；手工构造超深 `Value`
+/// 不在支持范围内（对这类值 `serde_json` 自身的 `clone`/`Drop` 同样
+/// 递归）。
 #[cfg(feature = "confers")]
 pub fn merge_json_deep(base: &mut serde_json::Value, overlay: &serde_json::Value) {
     match (base, overlay) {

@@ -277,6 +277,78 @@ mod tests {
     use super::*;
 
     #[test]
+    fn error_kind_classifies_every_variant() {
+        fn boxed(
+            e: impl std::error::Error + Send + 'static,
+        ) -> Box<dyn std::error::Error + Send + 'static> {
+            Box::new(e)
+        }
+        assert!(matches!(
+            TraitKitError::MissingCapability { key: "k".into() }.kind(),
+            ErrorKind::Missing
+        ));
+        assert!(matches!(
+            TraitKitError::MissingConfig { key: "k".into() }.kind(),
+            ErrorKind::Missing
+        ));
+        assert!(matches!(
+            TraitKitError::CapabilityTypeMismatch { key: "k".into() }.kind(),
+            ErrorKind::TypeMismatch
+        ));
+        assert!(matches!(
+            TraitKitError::BuildFailed {
+                context: "ctx".into(),
+                source: boxed(std::io::Error::other("boom")),
+            }
+            .kind(),
+            ErrorKind::InitFailed
+        ));
+        #[cfg(feature = "lifecycle")]
+        assert!(matches!(
+            TraitKitError::LifecycleFailed {
+                context: "ctx".into(),
+                source: boxed(std::io::Error::other("boom")),
+            }
+            .kind(),
+            ErrorKind::InitFailed
+        ));
+        assert!(matches!(
+            TraitKitError::CycleDetected {
+                cycle: vec!["a", "b"],
+            }
+            .kind(),
+            ErrorKind::Other
+        ));
+        assert!(matches!(
+            TraitKitError::DependencyMissing { module: "m", missing: "d" }.kind(),
+            ErrorKind::Other
+        ));
+        assert!(matches!(
+            TraitKitError::AlreadyRegistered { module: "m" }.kind(),
+            ErrorKind::Other
+        ));
+        assert!(matches!(
+            TraitKitError::DecoratorTargetMissing { module: "m" }.kind(),
+            ErrorKind::Other
+        ));
+        assert!(matches!(
+            TraitKitError::VersionIncompatible {
+                module: "m",
+                dependency: "d",
+                required: "1.0.0",
+                provided: "0.9.0",
+            }
+            .kind(),
+            ErrorKind::Other
+        ));
+        #[cfg(feature = "shutdown")]
+        assert!(matches!(
+            TraitKitError::ShutdownTimedOut { phases: Vec::new() }.kind(),
+            ErrorKind::Other
+        ));
+    }
+
+    #[test]
     fn cycle_detected_display_contains_modules() {
         let err = TraitKitError::CycleDetected {
             cycle: vec!["alpha", "beta", "gamma"],

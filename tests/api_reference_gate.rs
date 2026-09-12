@@ -49,6 +49,29 @@ fn _assert_core_api() {
     };
     graph.add(entry).expect("unique entry");
     let _ = graph.entries().len();
+
+    // 声明式宏（docs: 声明式宏）——真实展开以验证宏导出可用。
+    struct GateMacroModule;
+    trait_kit::impl_module_meta!(GateMacroModule, "gate-macro-module");
+    trait_kit::impl_auto_builder!(GateMacroModule, GateCap, GateError, |_kit| {
+        Ok(GateCap)
+    });
+    let _ = <GateMacroModule as trait_kit::core::ModuleMeta>::NAME;
+
+    // i18n（docs: i18n API）——`tr()` 与 `I18nManager` 始终可用。
+    fn tr_ref(message_id: &str) -> String {
+        trait_kit::i18n::tr(message_id, &[])
+    }
+    fn i18n_manager_tag(m: &trait_kit::i18n::I18nManager) -> &str {
+        m.locale_tag()
+    }
+    let _ = (tr_ref as fn(&str) -> String, i18n_manager_tag);
+
+    // Prelude（docs: Prelude）——经 prelude 路径引用最常用导出。
+    fn prelude_kit() -> trait_kit::prelude::Kit {
+        trait_kit::prelude::Kit::new()
+    }
+    let _ = prelude_kit;
 }
 
 // 共享 fixture（各断言函数各自引用，保证独立编译有效）。
@@ -127,7 +150,6 @@ impl trait_kit::core::HealthCheck for GateHealthModule {
 use std::pin::Pin;
 
 #[cfg(feature = "async")]
-#[allow(dead_code, reason = "compile-time API surface assertion only")]
 fn _assert_async_api() {
     fn async_auto_builder<T: trait_kit::core::AsyncAutoBuilder>() {}
     fn ready_requires(
@@ -139,7 +161,6 @@ fn _assert_async_api() {
 }
 
 #[cfg(feature = "health")]
-#[allow(dead_code, reason = "compile-time API surface assertion only")]
 fn _assert_health_api() {
     fn status(s: trait_kit::core::HealthStatus) -> bool {
         s.is_healthy()
@@ -149,13 +170,11 @@ fn _assert_health_api() {
 }
 
 #[cfg(feature = "scope")]
-#[allow(dead_code, reason = "compile-time API surface assertion only")]
 fn _assert_scope_api() {
     let _scope: trait_kit::kit::Scope = trait_kit::kit::Scope::new();
 }
 
 #[cfg(feature = "interface")]
-#[allow(dead_code, reason = "compile-time API surface assertion only")]
 fn _assert_interface_api() {
     // `Interface` 是 blanket trait；`InterfaceBuilder` 需要完整的擦除实现，
     // 这里以方法签名存在性 + 文档收录作为门禁口径。
@@ -164,14 +183,12 @@ fn _assert_interface_api() {
 }
 
 #[cfg(feature = "observer")]
-#[allow(dead_code, reason = "compile-time API surface assertion only")]
 fn _assert_observer_api() {
     trait DocObserver: trait_kit::core::observer::BuildObserver {}
     let _ = |obs: std::sync::Arc<dyn trait_kit::core::observer::BuildObserver>| obs;
 }
 
 #[cfg(feature = "confers")]
-#[allow(dead_code, reason = "compile-time API surface assertion only")]
 fn _assert_confers_api() {
     #[derive(Clone)]
     struct ValidatedConfig;
@@ -203,6 +220,9 @@ const ALWAYS_REQUIRED_DOC_ENTRIES: &[&str] = &[
 
 #[test]
 fn api_reference_lists_core_entries() {
+    // 激活编译期存在性门禁：真实调用 `_assert_*`，使公开项签名漂移
+    // 在 `cargo test` 编译阶段即失败，而非留作从未引用的死代码。
+    _assert_core_api();
     let doc = api_reference_md();
     for entry in ALWAYS_REQUIRED_DOC_ENTRIES {
         assert!(
@@ -218,28 +238,34 @@ fn api_reference_documented_feature_items_resolve() {
     // 文档带 feature 标注的项必须真实存在（编译期引用 + 文档收录成对）。
     #[cfg(feature = "async")]
     {
+        _assert_async_api();
         assert!(doc.contains("AsyncAutoBuilder"), "doc must list AsyncAutoBuilder");
         assert!(doc.contains("AsyncKit"), "doc must list AsyncKit");
     }
     #[cfg(feature = "health")]
     {
+        _assert_health_api();
         assert!(doc.contains("HealthStatus"), "doc must list HealthStatus");
         assert!(doc.contains("HealthCheck"), "doc must list HealthCheck");
     }
     #[cfg(feature = "scope")]
     {
+        _assert_scope_api();
         assert!(doc.contains("`Scope`"), "doc must list Scope");
     }
     #[cfg(feature = "interface")]
     {
+        _assert_interface_api();
         assert!(doc.contains("InterfaceBuilder"), "doc must list InterfaceBuilder");
     }
     #[cfg(feature = "observer")]
     {
+        _assert_observer_api();
         assert!(doc.contains("BuildObserver"), "doc must list BuildObserver");
     }
     #[cfg(feature = "confers")]
     {
+        _assert_confers_api();
         assert!(doc.contains("Validatable"), "doc must list Validatable");
         assert!(
             doc.contains("interpolate_json_value"),

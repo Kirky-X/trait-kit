@@ -430,8 +430,22 @@ impl AsyncKit {
     ///
     /// Stored under `TypeId::of::<Arc<C>>` — a distinct slot from plain
     /// `set_config`. Read back with `config_arc::<C>()`.
+    ///
+    /// Publishes the same `KitEvent::ConfigChanged` audit event as
+    /// `set_config`, so event subscribers see Arc-slot updates too.
     pub fn set_config_arc<C: Clone + Send + Sync + 'static>(&self, config: C) {
+        let replaced = self.configs.contains::<std::sync::Arc<C>>();
         self.configs.insert(std::sync::Arc::new(config));
+        if let Some(bus) = self.ports.event_bus.read().expect("lock poisoned").as_ref() {
+            bus.publish(super::events::KitEvent::ConfigChanged {
+                key: std::any::type_name::<C>().to_string(),
+                summary: if replaced {
+                    "set_arc (replaced)".to_string()
+                } else {
+                    "set_arc (new)".to_string()
+                },
+            });
+        }
     }
 
     /// Read a configuration value as an `Arc` snapshot — read-side zero clone.
