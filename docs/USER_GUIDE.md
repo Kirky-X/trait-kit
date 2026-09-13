@@ -94,18 +94,11 @@ fn main() {
 
 ### Typestate 两阶段
 
-```text
-Kit<Unbuilt>                    Kit<Ready>
-┌─────────────────┐   build()   ┌─────────────────┐
-│ register()      │ ──────────→ │ require()       │
-│ set_config()    │             │ optional()      │
-│ build()         │             │ contains()      │
-└─────────────────┘             └─────────────────┘
-```
-
 - **`Kit<Unbuilt>`（构建阶段）**：注册模块、存入配置、声明生命周期钩子。此阶段类型上不允许检索能力，未构建的模块无法被 `require()`，这类误用会直接**编译失败**。
 - **`kit.build()`**：验证依赖图（缺失依赖检测、Kahn 算法环检测 + 拓扑排序），按拓扑序构建所有模块。
 - **`Kit<Ready>`（运行阶段）**：只读检索能力与配置，不可再注册。
+
+两阶段的完整方法面与流程图见 [架构文档](ARCHITECTURE.md)，逐方法 feature 门控见 [API 参考](API_REFERENCE.md)。
 
 ### 能力（Capability）
 

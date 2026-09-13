@@ -192,9 +192,8 @@ impl_async_auto_builder!(MyModule, Arc<Cap>, MyError, |kit| Box::pin(async move 
 | --- | --- |
 | `DependencyGraph` | 依赖图容器（Kahn 拓扑排序 + DFS 环检测） |
 | `GraphError` / `ModuleEntry` | 图校验错误与模块图节点 |
-| `Kit<Ready>::graph_dot()` / `graph_mermaid()` | 依赖图文本导出 |
-| `Kit<Ready>::module_count()` | 已注册模块数 |
-| `Kit<Ready>::build_report()` `report` | 结构化构建报告（JSON） |
+
+方法级导出（`graph_dot()` / `graph_mermaid()` / `module_count()` / `build_report()` `report`）见 [Kit API](#kit-api) 的 `Kit<Ready>` 表，不再重复列出。
 
 ### 事件总线与观测端口
 
@@ -524,7 +523,8 @@ pub trait BuildObserver: Send + Sync + 'static {
 |---|---|---|
 | `SubKitSpec` / `SubKitModule` / `SubKitHandle` | `compose` | 子 Kit 以单一模块身份注册进父 Kit（能力命名空间隔离 + 跨 Kit 依赖校验） |
 | `ConfersConfigModule` | `presets` | confers 配置中心作为 Kit 模块纳入体系（`presets-remote` 走 confers 远程 `AsyncSource`） |
-| `BuildReport` / `graph_dot` / `graph_mermaid` | `report` | 结构化构建报告与依赖图导出 |
+
+`report` feature 的 `BuildReport` / `graph_dot` / `graph_mermaid` 见 [Kit API](#kit-api) 的 `Kit<Ready>` 表与 [依赖图导出](#依赖图导出) 一节。
 
 ### 其他方法级门控速查
 

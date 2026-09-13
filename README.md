@@ -371,45 +371,15 @@ cargo run -p trait-kit-examples --example <名称> --features <特性>
 
 ## 🏗️ 架构
 
-trait-kit workspace 由四个成员组成：主 crate `trait-kit`、过程宏 crate `trait-kit-derive`（`#[derive(ConfigInherit)]` / `#[derive(SharedConfig)]` 配置继承宏）、过程宏 crate `trait-kit-macros`（`#[derive(Module)]` 生成 `ModuleMeta` 声明）与示例 crate `trait-kit-examples`。主 crate 的 `src/` 分三层：`core` 是模块接口层（`meta` 定义 `ModuleMeta` / `AutoBuilder` / `AsyncAutoBuilder` / `InterfaceBuilder`，`macros` 提供声明宏，`health` / `lifecycle` / `observer` 为 feature 门控的运行时接口）；`kit` 是能力管理中心（typestate `Kit`、`DependencyGraph` 环检测与拓扑排序、`TypeMap`、`config` confers 集成，以及 `scope` / `toggle` / `shutdown` / `async_kit` / `events` / `ports` 与 feature 门控的 `report` / `presets` / `sub_kit`）；`i18n` 提供基于 Fluent FTL 的 `tr()` 翻译与 ICU4X 驱动的 `I18nFormatter`。`error.rs` 定义统一的 `TraitKitError`（`Display` 经 `tr()` 本地化），`prelude.rs` 汇总常用类型再导出。
-
-```mermaid
-flowchart TD
-    subgraph ws["trait-kit workspace"]
-        TK["trait-kit 主 crate<br/>core / kit / i18n"]
-        DER["trait-kit-derive<br/>ConfigInherit + SharedConfig"]
-        MAC["trait-kit-macros<br/>derive Module"]
-        EX["trait-kit-examples<br/>20 个可运行示例"]
-    end
-
-    subgraph tk["trait-kit src 模块"]
-        CORE["core 接口层<br/>ModuleMeta / AutoBuilder / Lifecycle / HealthCheck / BuildObserver"]
-        KIT["kit 管理中心<br/>Kit / DependencyGraph / TypeMap / Scope / Shutdown / AsyncKit"]
-        I18N["i18n 国际化<br/>tr + I18nFormatter"]
-    end
-
-    TK --> CORE
-    TK --> KIT
-    TK --> I18N
-    TK -->|"dev-dependency"| DER
-    MAC -->|"dev-dependency（测试）"| TK
-    EX --> TK
-    EX --> DER
-```
+trait-kit workspace 由四个成员组成：主 crate `trait-kit`、过程宏 crate `trait-kit-derive` 与 `trait-kit-macros`、示例 crate `trait-kit-examples`；主 crate 的 `src/` 分 `core` 接口层、`kit` 能力管理中心、`i18n` 国际化三层。
 
 **核心设计**：
 
 - **Typestate 模式**：`Kit<Unbuilt>` → `Kit<Ready>`，构建时验证依赖图，运行时零开销。
 - **内部可变性**：同步 `Kit` 基于 `RefCell`，单线程 `!Sync` 设计，避免锁开销；`AsyncKit` 使用 `Arc<RwLock>` 支持多线程。
-- **三级 Feature 继承**（confers 集成）：
+- **三级 Feature 继承**（confers 集成）：各 feature 的启用关系见[特性标志](#-特性标志)。
 
-```mermaid
-graph LR
-    C["confers"] --> R["reload"]
-    R --> E["encryption"]
-```
-
-更多设计细节（依赖图验证、数据流、线程安全模型、目录结构）见 [架构文档](docs/ARCHITECTURE.md)。
+workspace 结构图、依赖图验证、数据流、线程安全模型与目录结构等完整设计见 [架构文档](docs/ARCHITECTURE.md)。
 
 ---
 
@@ -422,31 +392,7 @@ graph LR
 | 注册期 | `Kit<Unbuilt>` | `register` / `register_lazy` / `register_multi` / `register_if` / `register_as` / `override_module` / `set_config` / `build` |
 | 运行期 | `Kit<Ready>` | `require` / `require_ref` / `require_all` / `optional` / `factory` / `resolve` / `contains` / `config` / `health_check` / `shutdown` |
 
-`build()` 内部的真实执行路径如下（依据 `src/kit/kit.rs` 与架构文档）：
-
-```mermaid
-sequenceDiagram
-    participant U as 用户代码
-    participant K as Kit Unbuilt
-    participant G as DependencyGraph
-    participant T as TypeMap
-
-    U->>K: register 模块 M
-    K->>G: 加入模块条目
-    U->>K: set_config 值
-    K->>T: 写入配置
-
-    U->>K: build
-    K->>G: 缺失依赖检测 + 环检测
-    G-->>K: 返回拓扑序
-
-    loop 按拓扑序逐模块
-        K->>K: 检查 override 后调用 BuildFn
-        K->>T: 写入能力
-    end
-
-    K-->>U: 返回 Kit Ready
-```
+`build()` 内部的真实执行路径（缺失依赖检测 → 环检测与拓扑排序 → 按拓扑序逐模块构建 → 返回 `Kit<Ready>`，依据 `src/kit/kit.rs`）的完整时序图见 [架构文档 · 数据流](docs/ARCHITECTURE.md#-数据流)。
 
 ---
 
@@ -553,29 +499,9 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 80
 
 ## 📊 性能
 
-性能来自设计层面：typestate 把依赖图验证全部前置到 `build()`，`Kit<Ready>` 上的能力检索是 `TypeId` 查表 + 克隆；同步 `Kit` 基于 `RefCell` 无锁设计。criterion 基准设施覆盖四个热路径轴（`benches/kit_bench.rs`，基准项需 `--features toggle`）：
+性能来自设计层面：typestate 把依赖图验证全部前置到 `build()`，`Kit<Ready>` 上的能力检索是 `TypeId` 查表 + 克隆；同步 `Kit` 基于 `RefCell` 无锁设计。criterion 基准设施覆盖 build / require / config / toggle 四个热路径轴（`benches/kit_bench.rs`，基准项需 `--features toggle`）；基线（2026-09-10）实测 `require` 与裸 `Arc::clone` + `TypeId` 查找同量级，验证了"零开销能力检索"的设计目标，大结构能力建议改用 `require_ref`（借用读）。
 
-| 基准 | 轴 | median（基线 2026-09-10） |
-|------|----|--------------------------|
-| `build/three_module_chain` | build | ~706 ns |
-| `require/arc_capability_top` | require | ~15 ns |
-| `config/read_clone` | config 读 | ~39 ns |
-| `config/write_set_config` | config 写 | ~34 ns |
-| `toggle/set` | toggle 写 | ~21 ns |
-| `toggle/get` | toggle 读 | ~12 ns |
-
-> 测量环境：AMD Ryzen 9 9950X（16C/32T）、WSL2、rustc 1.97.1、`bench` profile（`opt-level=3`、`lto=fat`、`codegen-units=1`）、criterion `sample_size=20`，median 口径。数字引自 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)，不同机器量级会有差异。
-
-```sh
-# 运行全部基准（toggle 基准需要 toggle feature）
-cargo bench --features toggle
-
-# 保存基线并与改动对比
-cargo bench --features toggle -- --save-baseline <name>
-cargo bench --features toggle -- --baseline <name>
-```
-
-`require` 基准与裸 `Arc::clone` + `TypeId` 查找同量级，验证了"零开销能力检索"的设计目标；大结构能力建议改用 `require_ref`（借用读）。完整方法与结论见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)。
+基线数字、测量环境与复现命令见 [⚡ 性能基准](docs/PERFORMANCE.md)。
 
 ---
 
@@ -629,11 +555,7 @@ cargo bench --features toggle -- --baseline <name>
 
 ### 开发命令
 
-```sh
-cargo test --workspace --all-features
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo fmt --all -- --check
-```
+与 CI 一致的常用命令（全量测试、lint、文档零告警、依赖审计、覆盖率门禁）见[🧪 测试](#-测试)章节与 [贡献指南](docs/CONTRIBUTING.md)。
 
 ### PR 流程
 

@@ -373,45 +373,15 @@ See [examples/README.md](examples/README.md) for details.
 
 ## 🏗️ Architecture
 
-The trait-kit workspace has four members: the main `trait-kit` crate, the proc-macro crate `trait-kit-derive` (`#[derive(ConfigInherit)]` / `#[derive(SharedConfig)]` config-inheritance macros), the proc-macro crate `trait-kit-macros` (`#[derive(Module)]` generates `ModuleMeta` declarations), and the examples crate `trait-kit-examples`. The main crate's `src/` has three layers: `core` is the module interface layer (`meta` defines `ModuleMeta` / `AutoBuilder` / `AsyncAutoBuilder` / `InterfaceBuilder`, `macros` provides declarative macros, and `health` / `lifecycle` / `observer` are feature-gated runtime interfaces); `kit` is the capability management center (typestate `Kit`, `DependencyGraph` cycle detection and topological sort, `TypeMap`, `config` confers integration, plus `scope` / `toggle` / `shutdown` / `async_kit` / `events` / `ports` and the feature-gated `report` / `presets` / `sub_kit`); `i18n` provides Fluent FTL-based `tr()` translation and the ICU4X-powered `I18nFormatter`. `error.rs` defines the unified `TraitKitError` (its `Display` output is localized via `tr()`), and `prelude.rs` collects the most common re-exports.
-
-```mermaid
-flowchart TD
-    subgraph ws["trait-kit workspace"]
-        TK["trait-kit main crate<br/>core / kit / i18n"]
-        DER["trait-kit-derive<br/>ConfigInherit + SharedConfig"]
-        MAC["trait-kit-macros<br/>derive Module"]
-        EX["trait-kit-examples<br/>20 runnable examples"]
-    end
-
-    subgraph tk["trait-kit src modules"]
-        CORE["core interface layer<br/>ModuleMeta / AutoBuilder / Lifecycle / HealthCheck / BuildObserver"]
-        KIT["kit management center<br/>Kit / DependencyGraph / TypeMap / Scope / Shutdown / AsyncKit"]
-        I18N["i18n<br/>tr + I18nFormatter"]
-    end
-
-    TK --> CORE
-    TK --> KIT
-    TK --> I18N
-    TK -->|"dev-dependency"| DER
-    MAC -->|"dev-dependency tests"| TK
-    EX --> TK
-    EX --> DER
-```
+The trait-kit workspace has four members: the main `trait-kit` crate, the proc-macro crates `trait-kit-derive` and `trait-kit-macros`, and the examples crate `trait-kit-examples`; the main crate's `src/` is organized into the `core` interface layer, the `kit` capability management center, and the `i18n` layer.
 
 **Core Design**:
 
 - **Typestate Pattern**: `Kit<Unbuilt>` → `Kit<Ready>`, build-time dependency-graph validation, zero runtime overhead.
 - **Interior Mutability**: the sync `Kit` is `RefCell`-based with a single-threaded `!Sync` design that avoids lock overhead; `AsyncKit` uses `Arc<RwLock>` for multi-threading.
-- **Three-Level Feature Inheritance** (confers integration):
+- **Three-Level Feature Inheritance** (confers integration): see [Feature Flags](#-feature-flags) for each feature's enablement chain.
 
-```mermaid
-graph LR
-    C["confers"] --> R["reload"]
-    R --> E["encryption"]
-```
-
-For more design details (dependency-graph validation, data flow, thread-safety model, directory layout), see the [Architecture document](docs/ARCHITECTURE.md).
+The workspace diagram, dependency-graph validation, data flow, thread-safety model, and directory layout are documented in full in the [Architecture document](docs/ARCHITECTURE.md).
 
 ---
 
@@ -424,31 +394,7 @@ All capability retrieval happens after `build()`: registration methods live on `
 | Registration | `Kit<Unbuilt>` | `register` / `register_lazy` / `register_multi` / `register_if` / `register_as` / `override_module` / `set_config` / `build` |
 | Runtime | `Kit<Ready>` | `require` / `require_ref` / `require_all` / `optional` / `factory` / `resolve` / `contains` / `config` / `health_check` / `shutdown` |
 
-The actual execution path inside `build()` (per `src/kit/kit.rs` and the architecture document):
-
-```mermaid
-sequenceDiagram
-    participant U as User code
-    participant K as Kit Unbuilt
-    participant G as DependencyGraph
-    participant T as TypeMap
-
-    U->>K: register module M
-    K->>G: add module entry
-    U->>K: set_config value
-    K->>T: insert config
-
-    U->>K: build
-    K->>G: missing-dep check + cycle detection
-    G-->>K: topological order
-
-    loop Each module in topo order
-        K->>K: check overrides then invoke BuildFn
-        K->>T: insert capability
-    end
-
-    K-->>U: return Kit Ready
-```
+The actual execution path inside `build()` (missing-dep check → cycle detection and topological sort → per-module build in topo order → return `Kit<Ready>`; per `src/kit/kit.rs`): for the full sequence diagram see the [Architecture document · Data flow](docs/ARCHITECTURE.md#-数据流).
 
 ---
 
@@ -555,29 +501,9 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 80
 
 ## 📊 Performance
 
-Performance comes from design: typestate moves dependency-graph validation entirely into `build()`, capability retrieval on `Kit<Ready>` is a `TypeId` lookup + clone, and the sync `Kit` is lock-free via `RefCell`. The criterion benchmark setup covers four hot-path axes (`benches/kit_bench.rs`; benchmark targets require `--features toggle`):
+Performance comes from design: typestate moves dependency-graph validation entirely into `build()`, capability retrieval on `Kit<Ready>` is a `TypeId` lookup + clone, and the sync `Kit` is lock-free via `RefCell`. The criterion benchmark setup covers the build / require / config / toggle hot-path axes (`benches/kit_bench.rs`; benchmark targets require `--features toggle`); the baseline (2026-09-10) measured `require` on the same magnitude as a bare `Arc::clone` + `TypeId` lookup, validating the "zero-cost capability retrieval" design goal — for large capability structs prefer `require_ref` (borrowed read).
 
-| Benchmark | Axis | median (baseline 2026-09-10) |
-|-----------|------|------------------------------|
-| `build/three_module_chain` | build | ~706 ns |
-| `require/arc_capability_top` | require | ~15 ns |
-| `config/read_clone` | config read | ~39 ns |
-| `config/write_set_config` | config write | ~34 ns |
-| `toggle/set` | toggle write | ~21 ns |
-| `toggle/get` | toggle read | ~12 ns |
-
-> Measurement environment: AMD Ryzen 9 9950X (16C/32T), WSL2, rustc 1.97.1, the `bench` profile (`opt-level=3`, `lto=fat`, `codegen-units=1`), criterion `sample_size=20`, median-based. Numbers are quoted from [docs/PERFORMANCE.md](docs/PERFORMANCE.md); magnitudes vary across machines.
-
-```sh
-# Run all benchmarks (the toggle benchmarks need the toggle feature)
-cargo bench --features toggle
-
-# Save a baseline and compare changes against it
-cargo bench --features toggle -- --save-baseline <name>
-cargo bench --features toggle -- --baseline <name>
-```
-
-The `require` benchmark sits in the same magnitude as a bare `Arc::clone` + `TypeId` lookup, validating the "zero-cost capability retrieval" design goal; for large capability structs prefer `require_ref` (borrowed read). Full methodology and conclusions live in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+Baseline numbers, the measurement environment, and reproduction commands live in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
 ---
 
@@ -631,11 +557,7 @@ Contributions are welcome! For full environment setup, the TDD workflow, and com
 
 ### Development Commands
 
-```sh
-cargo test --workspace --all-features
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo fmt --all -- --check
-```
+Common commands matching CI (full tests, lint, zero-warning docs, dependency audit, coverage gate) are listed in the [Testing](#-testing) section and the [Contributing Guide](docs/CONTRIBUTING.md).
 
 ### Pull Request Process
 

@@ -284,18 +284,4 @@ src/
 
 ## 🚪 错误处理
 
-`TraitKitError` 统一所有 Kit 操作错误，`Display` 通过 `tr()` 自动本地化：
-
-| 变体 | 触发场景 |
-|---|---|
-| `CycleDetected` | 依赖图中检测到环 |
-| `DependencyMissing` | 依赖的模块未注册 |
-| `AlreadyRegistered` | 模块重复注册 |
-| `DecoratorTargetMissing` | 装饰器目标模块未注册（`try_decorate` 注册时校验） |
-| `VersionIncompatible` | 依赖能力版本不满足 `required_versions`（`negotiate` feature 校验） |
-| `BuildFailed` | 模块构建失败 |
-| `MissingCapability` | 能力不存在 |
-| `CapabilityTypeMismatch` | 能力已构建但类型不符（如 override 注入了另一种能力类型） |
-| `MissingConfig` | 配置不存在 |
-| `LifecycleFailed` | 生命周期钩子失败（需 `lifecycle` feature） |
-| `ShutdownTimedOut` | 优雅关闭超时（需 `shutdown` feature） |
+`TraitKitError` 统一所有 Kit 操作错误，`Display` 通过 `tr()` 自动本地化。全部变体的触发场景与处理建议见 [用户指南 · 故障排查](USER_GUIDE.md#-故障排查)，枚举定义与字段见 [API 参考 · 错误类型](API_REFERENCE.md#-错误类型)。
