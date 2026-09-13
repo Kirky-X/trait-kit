@@ -1,13 +1,11 @@
 # 📘 Trait-Kit API 参考
 
-trait-kit 的完整 API 参考。按模块组织，标注各 API 所需的 feature flag。
-
-> 本文由原 `docs/API.md` 与 `docs/API_REFERENCE.md` 合并而成，是唯一的 API 参考文档。
+trait-kit 的完整 API 参考。按模块组织，标注各 API 所需的 feature flag（当前版本 **0.5.0-rc.3**）。
 
 ## 📋 目录
 
 <details open>
-<summary>目录</summary>
+<summary>📑 目录</summary>
 
 - [📖 概述](#-概述)
 - [🔩 核心 API](#-核心-api)
@@ -39,6 +37,14 @@ trait-kit 的完整 API 参考。按模块组织，标注各 API 所需的 featu
 pub trait ModuleMeta: 'static {
     const NAME: &'static str;
     fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
+
+    // 版本协商（negotiate feature 在 build() 时校验，声明本身无门控）
+    const VERSION: &'static str = "0.0.0";
+    fn required_versions() -> &'static [(&'static str, &'static str)] { &[] }
+
+    // 模块自带 FTL 翻译片段（需 i18n feature）
+    #[cfg(feature = "i18n")]
+    fn i18n_ftl() -> &'static [(&'static str, &'static str)] { &[] }
 }
 ```
 
@@ -46,6 +52,9 @@ pub trait ModuleMeta: 'static {
 |---|---|
 | `NAME` | 模块诊断名称，用于错误消息和日志 |
 | `dependencies()` | 返回依赖模块的 `(name, TypeId)` 对。默认返回空切片 |
+| `VERSION` | 模块能力版本，默认 `"0.0.0"` 表示未声明；`negotiate` feature 下参与 `build()` 时的 semver 兼容校验 |
+| `required_versions()` | 对依赖模块要求的最低版本 `(name, min_version)` 列表，默认为空 |
+| `i18n_ftl()` `i18n` | 模块自带的 `(locale, ftl_source)` 翻译片段，`build()` 时合并为 kit 本地翻译 overlay |
 
 ### `AutoBuilder`
 
@@ -75,24 +84,35 @@ pub trait AutoBuilder: ModuleMeta {
 | `register_health_check::<M>()` | `health` | 注册健康检查 |
 | `with_observer(obs)` | `observer` | 附加构建观察者 |
 | `decorate::<M>(f)` | `decorator` | 注册能力装饰器 |
+| `try_decorate::<M>(f)` | `decorator` | 装饰器注册（目标未注册时返回 `DecoratorTargetMissing`） |
 | `override_module::<M>(cap)` | — | 覆盖模块能力（测试注入） |
 | `override_module_strict::<M>(cap)` | — | 覆盖并验证依赖存在性 |
 | `set_config::<C>(value)` | — | 存储类型化配置 |
+| `set_config_arc::<C>(value)` | — | 存储配置并以 `Arc` 快照共享 |
 | `load_config::<C>()` | `confers` | 通过 `Configurable::load()` 加载配置 |
 | `load_and_validate::<C>()` | `confers` | 加载配置并验证，失败不存入 |
+| `load_config_or_default::<C>()` | `confers` | 加载失败时落 `default_value()`（返回是否加载成功） |
+| `load_config_with::<C, S>(vars)` | `confers` | 加载配置并做 `${VAR}` 变量替换 |
 | `snapshot_config::<C>()` | `confers` | 快照当前配置（返回是否成功） |
 | `restore_config::<C>()` | `confers` | 回滚配置到最近快照 |
 | `has_snapshot::<C>()` | `confers` | 检查指定类型快照是否存在 |
-| `load_config_with::<C, S>(vars)` | `confers` | 加载配置并做 `${VAR}` 变量替换 |
+| `populate_defaults::<C>()` | `confers` | 空 Kit 时填充 `ModuleConfig::default_value()` |
+| `merge_config::<C>(ovr)` | `confers` | 应用 `ConfigInherit` 字段覆盖 |
+| `extract_shared::<C>()` | `confers` | 从配置提取共享字段到 overlay |
+| `inject_shared::<C>()` | `confers` | 从 overlay 注入共享字段到配置 |
 | `enable_toggle(key, bool)` | `toggle` | 设置 feature flag |
 | `is_toggle_enabled(key)` | `toggle` | 查询 flag 状态 |
+| `set_toggle` / `get_toggle` / `remove_toggle` / `list_toggles` | `toggle` | 类型化开关句柄（`ToggleValue`：Bool/Int/Float/Str） |
 | `register_if_toggle::<M>(key)` | `toggle` | 按 toggle 条件注册模块 |
 | `subscribe::<C>(cb)` | `reload` | 订阅配置热重载回调 |
 | `reload_config::<C>()` | `reload` | 重新加载配置并通知订阅者 |
-| `set_encrypted(val, key)` | `encryption` | 加密存储配置 |
+| `set_encrypted::<C>(val, key)` | `encryption` | 加密存储配置（XChaCha20-Poly1305） |
+| `set_encrypted_with_version::<C>(val, key, version)` | `encryption` | 带密钥版本的加密存储（配合轮换） |
+| `set_encrypted_with_key_provider::<C, P>(val, provider)` | `encryption` | 经 `KeyProvider` 调用时取钥（fail-closed） |
+| `with_metrics_port(port)` | — | 注入 `MetricsPort` 观测端口 |
+| `with_log_port(port)` | — | 注入 `LogPort` 观测端口 |
+| `with_event_bus(bus)` | — | 注入 `EventBus` 事件总线 |
 | `build()` | — | 验证依赖图 → 拓扑排序 → 构建 → `Kit<Ready>` |
-
-> 配置继承体系的方法（`populate_defaults` / `merge_config` / `extract_shared` / `inject_shared`）见下文[配置继承体系](#配置继承体系-confers)。
 
 #### `Kit<Ready>` — 运行阶段
 
@@ -100,24 +120,41 @@ pub trait AutoBuilder: ModuleMeta {
 |---|---|---|
 | `require::<M>()` | — | 检索能力（Clone，缺失则报错） |
 | `require_ref::<M>()` | — | 零拷贝检索（返回 `Ref<'_, Cap>`） |
+| `get_arc::<M, T>()` | — | `Arc` 能力免克隆检索（返回 `Arc<T>`，同指针） |
 | `optional::<M>()` | — | 可选检索（返回 `Option`） |
 | `require_all::<M>()` | — | 检索所有多绑定能力 |
 | `resolve::<I>()` | `interface` | 按接口类型检索 `Arc<I>` |
 | `contains::<M>()` | — | 检查能力是否存在 |
 | `contains_config::<C>()` | — | 检查配置是否存在 |
 | `config::<C>()` | — | 检索配置（Clone） |
-| `get_encrypted::<C>(key)` | `encryption` | 解密检索配置 |
+| `config_arc::<C>()` | — | 以 `Arc` 快照检索配置 |
+| `factory::<M>()` | — | 创建工厂闭包，每次调用产生新实例 |
+| `create_scope()` | `scope` | 创建空 `Scope`（与 Kit 能力互相独立） |
+| `create_scope_from(self)` | `scope` | 消费 Kit 创建带父上下文的 `Scope`（`scope.parent::<T>()` 只读查询） |
 | `health_check::<M>()` | `health` | 查询单模块健康状态 |
 | `health_report()` | `health` | 查询所有模块健康报告 |
-| `factory::<M>()` | — | 创建工厂闭包，每次调用产生新实例 |
+| `health_aggregate()` | `health` + `report` | worst-of 整体状态 + 各模块明细 |
+| `health_json()` | `health` + `report` | 健康聚合 JSON 导出（供 /healthz 消费） |
+| `record_health_history()` / `health_history()` | `health` | 环形缓冲健康采样与读取 |
 | `shutdown()` | `lifecycle` | 按逆拓扑序执行 `on_shutdown` |
 | `set_config::<C>(value)` | — | 运行时更新配置 |
 | `subscribe::<C>(cb)` | `reload` | 订阅热重载 |
 | `reload_config::<C>()` | `reload` | 重新加载配置 |
-| `enable_toggle(key, bool)` | `toggle` | 运行时修改 feature flag |
-| `is_toggle_enabled(key)` | `toggle` | 查询 flag 状态 |
+| `enable_toggle(key, bool)` / `is_toggle_enabled(key)` | `toggle` | 运行时修改/查询 feature flag |
+| `set_toggle` / `get_toggle` / `remove_toggle` / `list_toggles` | `toggle` | 类型化开关句柄 |
+| `get_encrypted::<C>(key)` | `encryption` | 解密检索配置 |
+| `contains_encrypted::<C>()` | `encryption` | 检查加密配置是否存在 |
+| `get_encrypted_with_version::<C>(key, expected_version)` | `encryption` | 按密钥版本解密检索 |
+| `rotate_master_key::<C>(old, new)` | `encryption` | 主密钥轮换并迁移旧密文（错钥 fail-closed，版本递增） |
+| `encrypted_key_version::<C>()` | `encryption` | 查询密文当前密钥版本 |
+| `module_tr(message_id)` | `i18n` | 经 kit 本地翻译 overlay 翻译（模块 `i18n_ftl` 优先，全局 `tr()` 兜底） |
+| `graph_dot()` / `graph_mermaid()` | — | 依赖图文本导出 |
+| `module_count()` | — | 已注册模块数 |
+| `build_report()` | `report` | 结构化构建报告（JSON） |
+| `contract_manifest()` | `report` | 契约清单导出 |
+| `emit_event(event)` | — | 发布自定义 `KitEvent` |
 
-### 宏
+### 声明宏
 
 #### `impl_module_meta!`
 
@@ -139,6 +176,16 @@ impl_module_meta!(MyModule, "my-module", deps = [DepA, DepB]);
 impl_auto_builder!(MyModule, Arc<Cap>, MyError, |kit| Ok(Arc::new(Cap { ... })));
 ```
 
+#### `impl_async_auto_builder!` `async`
+
+生成 `AsyncAutoBuilder` 实现。
+
+```rust
+impl_async_auto_builder!(MyModule, Arc<Cap>, MyError, |kit| Box::pin(async move {
+    Ok(Arc::new(Cap { ... }))
+}));
+```
+
 ### 依赖图导出
 
 | API | 说明 |
@@ -149,6 +196,18 @@ impl_auto_builder!(MyModule, Arc<Cap>, MyError, |kit| Ok(Arc::new(Cap { ... })))
 | `Kit<Ready>::module_count()` | 已注册模块数 |
 | `Kit<Ready>::build_report()` `report` | 结构化构建报告（JSON） |
 
+### 事件总线与观测端口
+
+默认可用（无 feature 门控），默认 `NoOp` 实现零开销：
+
+| API | 说明 |
+| --- | --- |
+| `KitEvent` | 生命周期事件枚举（`ModuleBuilt` / `HealthChanged` / `ConfigChanged` 等） |
+| `EventBus` trait + `MemoryEventBus` / `NoOpEventBus` | 事件总线（`MemoryEventBus` 含订阅者 panic 隔离），`with_event_bus` 注入 |
+| `MetricsPort` trait（counter/gauge/histogram） | 指标观测端口，`with_metrics_port` 注入 |
+| `LogPort` trait | 结构化日志观测端口，`with_log_port` 注入 |
+| `KeyProvider` trait + `KeyBytes` `encryption` | 密钥提供方抽象，`KeyBytes` 为零化容器 |
+
 ### 国际化
 
 `tr()` 与 `I18nManager` 在默认特性下即可用（轻量 Fluent FTL 翻译）；`I18nFormatter` 的 ICU4X 区域感知格式化需启用 `i18n` feature。
@@ -156,8 +215,8 @@ impl_auto_builder!(MyModule, Arc<Cap>, MyError, |kit| Ok(Arc::new(Cap { ... })))
 #### `I18nManager`
 
 ```rust
-let mgr = I18nManager::init();           // 自动检测系统 locale
-let mgr = I18nManager::init_with_locale("zh-CN")?;  // 指定 locale
+let mgr = I18nManager::init();                      // 自动检测系统 locale
+let mgr = I18nManager::init_with_locale("zh-CN");   // 指定 locale（无效 locale 回退英文目录）
 ```
 
 #### `tr()` — 消息翻译
@@ -172,8 +231,8 @@ let msg = tr("trait-kit-error-cycle-detected", &[("cycle", "A → B → A")]);
 ```rust
 use trait_kit::i18n::I18nFormatter;
 let fmt = I18nFormatter::new("zh-CN")?;
-fmt.format_number(1234567.89);  // "1,234,567.89"
-fmt.format_date(...);
+let text: String = fmt.format_number(1234567.89)?;  // 分组符按 locale 输出
+fmt.format_date(2026, 9, 10)?;
 ```
 
 ### Prelude
@@ -185,11 +244,12 @@ fmt.format_date(...);
 | `ModuleMeta`, `AutoBuilder` | — |
 | `Kit`, `Unbuilt`, `Ready` | — |
 | `TraitKitError` | — |
-| `I18nManager`, `I18nFormatter`, `I18nError`, `tr` | — |
+| `I18nManager`, `I18nError`, `tr` | — |
+| `I18nFormatter` | `i18n` |
 | `AsyncAutoBuilder` | `async` |
 | `AsyncKit`, `AsyncUnbuilt`, `AsyncReady` | `async` |
-| `Configurable` | `confers` |
-| `ModuleConfig` | `confers` |
+| `Configurable`, `ModuleConfig`, `Validatable` | `confers` |
+| `ConfigInherit`, `SharedConfig` | `confers` |
 | `Lifecycle` | `lifecycle` |
 | `AsyncLifecycle` | `lifecycle` + `async` |
 | `HealthCheck`, `HealthStatus` | `health` |
@@ -199,6 +259,8 @@ fmt.format_date(...);
 | `AsyncScope` | `scope` + `async` |
 | `ShutdownCoordinator`, `ShutdownPhase`, `ShutdownPhaseResult`, `ShutdownResult` | `shutdown` |
 | `AsyncShutdownCoordinator` | `shutdown` + `async` |
+
+> derive 宏（`#[derive(ConfigInherit)]` / `#[derive(SharedConfig)]`）不随 prelude 导出，需在 `Cargo.toml` 中显式依赖 `trait-kit-derive`。
 
 ---
 
@@ -285,11 +347,15 @@ pub enum TraitKitError {
     CycleDetected { cycle: Vec<&'static str> },
     DependencyMissing { module: &'static str, missing: &'static str },
     AlreadyRegistered { module: &'static str },
-    BuildFailed { context: String, source: Box<dyn Error + Send> },
+    DecoratorTargetMissing { module: &'static str },
+    VersionIncompatible { module: &'static str, dependency: &'static str,
+                          required: &'static str, provided: &'static str },
+    BuildFailed { context: String, source: Box<dyn Error + Send + 'static> },
     MissingCapability { key: String },
+    CapabilityTypeMismatch { key: String },
     MissingConfig { key: String },
-    LifecycleFailed { context: String, source: Box<dyn Error + Send> }, // lifecycle
-    ShutdownTimedOut { phases: Vec<ShutdownPhase> },                     // shutdown
+    LifecycleFailed { context: String, source: Box<dyn Error + Send + 'static> }, // lifecycle
+    ShutdownTimedOut { phases: Vec<ShutdownPhase> },                              // shutdown
 }
 ```
 
@@ -318,15 +384,13 @@ pub trait AsyncAutoBuilder: ModuleMeta {
 }
 ```
 
-#### `impl_async_auto_builder!` `async`
+`AsyncKit` 与同步 `Kit` API 对称（注册/构建/检索/配置/加密/开关全部可用），另提供：
 
-生成 `AsyncAutoBuilder` 实现。
-
-```rust
-impl_async_auto_builder!(MyModule, Arc<Cap>, MyError, |kit| Box::pin(async move {
-    Ok(Arc::new(Cap { ... }))
-}));
-```
+| API | 说明 |
+|---|---|
+| `with_max_concurrency(limit)` | 按拓扑分层并发构建的并发上限 |
+| `create_scope()` | 创建异步作用域 |
+| `AsyncKit<Ready>` 配置面 | `load_config` 系列、`subscribe` / `reload_config`、`snapshot_config` / `restore_config`、`set_encrypted` / `get_encrypted` 与同步 Kit 能力一致 |
 
 ### `interface` — 接口/实现分离
 
@@ -442,6 +506,26 @@ pub trait BuildObserver: Send + Sync + 'static {
 | `require::<M>()` | 检索能力 |
 | `contains::<M>()` | 检查能力是否已插入 |
 
+### `toggle` — 类型化开关句柄
+
+`toggle` feature 除 `Kit` 上的方法级 API（`enable_toggle` / `is_toggle_enabled` / `register_if_toggle`）外，还提供独立开关后端：
+
+| API | 说明 |
+|---|---|
+| `ToggleBackend` trait | 开关后端抽象 |
+| `ToggleValue` | 类型化开关值（Bool / Int / Float / Str） |
+| `MemoryToggle` | 内存后端（`confers` feature 启用时自动切换 `ConfersToggle`） |
+| `ToggleKey` / `ToggleHandle<T>` | 强类型开关键与句柄 |
+| `define_toggle_key!` 宏 | 编译期防 key 拼写错 |
+
+### 扩展组合 API
+
+| API | Feature | 说明 |
+|---|---|---|
+| `SubKitSpec` / `SubKitModule` / `SubKitHandle` | `compose` | 子 Kit 以单一模块身份注册进父 Kit（能力命名空间隔离 + 跨 Kit 依赖校验） |
+| `ConfersConfigModule` | `presets` | confers 配置中心作为 Kit 模块纳入体系（`presets-remote` 走 confers 远程 `AsyncSource`） |
+| `BuildReport` / `graph_dot` / `graph_mermaid` | `report` | 结构化构建报告与依赖图导出 |
+
 ### 其他方法级门控速查
 
 `reload`（热重载）、`encryption`（加密配置）、`toggle`（特性开关）、`decorator`（装饰器）、`shutdown`（优雅关闭协调器）等 feature 以**方法级门控**挂在 `Kit` / `AsyncKit` 上，详见上文 [Kit API](#kit-api) 表格的 Feature 列。
@@ -496,7 +580,7 @@ struct AppConfig {
 }
 
 impl Configurable for AppConfig {
-    fn load() -> Result<Self, Box<dyn std::error::Error>> {
+    fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
         Ok(AppConfig::load_sync()?)
     }
 }

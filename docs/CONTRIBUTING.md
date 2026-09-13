@@ -2,7 +2,23 @@
 
 感谢您对 trait-kit 项目的关注！本文档描述参与开发所需的工具、流程和规范。
 
-## 欢迎
+## 📋 目录
+
+<details open>
+<summary>📑 目录</summary>
+
+- [👋 欢迎](#-欢迎)
+- [🧰 环境准备](#-环境准备)
+- [🔁 开发工作流（TDD）](#-开发工作流tdd)
+- [📐 代码规范](#-代码规范)
+- [🚀 提交与 PR 流程](#-提交与-pr-流程)
+- [📜 行为准则](#-行为准则)
+
+</details>
+
+---
+
+## 👋 欢迎
 
 欢迎参与 trait-kit 的开发！无论是修复 bug、新增 feature 门控能力、改进文档还是完善示例，都非常有价值。
 
@@ -10,14 +26,14 @@
 - 安全漏洞**不要**使用公开 Issue，参见 [安全文档](SECURITY.md) 的漏洞报告流程。
 - 动手前建议先在 Issue 中沟通方案，避免与现有 feature 规划冲突。
 
-## 环境准备
+## 🧰 环境准备
 
 - **Rust 1.97.1+**（`Cargo.toml` 中 `rust-version = "1.97.1"`，edition 2024）
 - **cargo**、**rustfmt**、**clippy**（随 rustup 安装）
 - **cargo-deny**：`cargo install cargo-deny`（pre-commit 与 CI 依赖审计需要）
 - **pre-commit**（与 `lefthook.yml` 功能等价，二选一）：
 
-```bash
+```sh
 uv tool install pre-commit   # 或 pip install pre-commit
 pre-commit install
 ```
@@ -26,7 +42,7 @@ pre-commit install
 
 ### 常用命令
 
-```bash
+```sh
 # 构建（全特性 / 无默认特性，与 CI 一致）
 cargo build --all-features --lib
 cargo build --no-default-features --lib
@@ -48,7 +64,7 @@ cargo deny check
 cargo +1.97.1 check
 ```
 
-## 开发工作流（TDD）
+## 🔁 开发工作流（TDD）
 
 每个开发任务遵循 Red → Green → Commit → Analyze → Next 循环：
 
@@ -64,7 +80,7 @@ cargo +1.97.1 check
 
 trait-kit 的 feature 之间存在继承关系（`encryption` → `reload` → `confers`），提交前请至少覆盖以下组合（对齐 CI 与验收矩阵）：
 
-```bash
+```sh
 cargo test --all-features --lib
 cargo test                          # 默认特性
 cargo test --no-default-features
@@ -79,7 +95,7 @@ cargo test --features i18n
 - 在 README（中/英）的「特性标志」表格与 [docs/API_REFERENCE.md](API_REFERENCE.md) 中同步登记。
 - 如涉及 confers 集成，注意高级 feature 会自动启用低级 feature，方法需做 `cfg(feature = "...")` 门控。
 
-## 代码规范
+## 📐 代码规范
 
 - 遵循现有代码库的命名与模块组织惯例（`src/core` 接口层、`src/kit` 管理中心、`src/i18n` 国际化）。
 - **简洁优先**：只写能解决问题的最少代码，不添加不必要的注释、docstring 或类型标注。
@@ -109,7 +125,7 @@ cargo test --features i18n
 - **tiangang**：SAST 安全扫描（发布前必须 0 CRITICAL）
 - **kueiku**：硬性 bug 分析与根因定位
 
-## 提交与 PR 流程
+## 🚀 提交与 PR 流程
 
 1. 从 `main` 创建 feature 分支（如 `feat/<功能>` 或 `fix/<问题>`），**禁止直接提交到 main**。
 2. 提交信息遵循 conventional commits：`feat(scope): ...`、`fix(scope): ...`、`docs: ...` 等。
@@ -122,6 +138,6 @@ cargo test --features i18n
 
 发布由维护者执行：tag 推送触发 `release.yml`（构建验证 → GitHub Release → crates.io 发布），贡献者无需操作。
 
-## 行为准则
+## 📜 行为准则
 
-本项目遵循 [Rust 行为准则](https://www.rust-lang.org/policies/code-of-conduct)。所有贡献者均需遵守——保持友善、尊重与专业，让社区对每个人都友好。
+本项目遵循 [Rust 行为准则](https://www.rust-lang.org/policies/code-of-conduct)。所有贡献者均需遵守：保持友善、尊重与专业，让社区对每个人都友好。

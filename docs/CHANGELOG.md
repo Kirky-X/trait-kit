@@ -5,13 +5,35 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并遵循 [语义化版本](https://semver.org/lang/zh-CN/v2.0.0.html)。
 
+## 📋 目录
+
+<details open>
+<summary>📑 目录</summary>
+
+- [Unreleased](#unreleased)
+- [`0.5.0-rc.3`](#050-rc3---2026-09-10)
+- [`0.5.0-rc.2`](#050-rc2---2026-09-03)
+- [`0.4.2`](#042---2026-08-06)
+- [`0.4.1`](#041---2026-08-06)
+- [`0.4.0`](#040---2026-08-04)
+- [`0.3.1`](#031---2026-07-22)
+- [`0.3.0`](#030---2026-07-13)
+- [`0.2.5`](#025---2026-07-12)
+- [`0.2.4`](#024---2026-07-11)
+- [`0.2.3`](#023)
+- [`0.2.2`](#022)
+
+</details>
+
+---
+
 ## [Unreleased]
 
 _暂无未发布变更。_
 
 ---
 
-## [0.5.0-rc.3] — 2026-09-10
+## [0.5.0-rc.3] - 2026-09-10
 
 ### Added
 
@@ -280,7 +302,10 @@ _暂无未发布变更。_
 - `TypeMap` 类型安全存储（以 `TypeId` 为键）
 - 依赖图验证：环检测 + 拓扑排序构建
 
-[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.2...HEAD
+[0.5.0-rc.3]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.2...v0.5.0-rc.3
+[0.5.0-rc.2]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.1...v0.5.0-rc.2
+[0.4.2]: https://github.com/Kirky-X/trait-kit/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Kirky-X/trait-kit/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Kirky-X/trait-kit/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Kirky-X/trait-kit/compare/v0.3.0...v0.3.1

@@ -5,73 +5,79 @@ trait-kit 的架构设计围绕一个核心目标：**在应用启动时，以�
 ## 📋 目录
 
 <details open>
-<summary>目录</summary>
+<summary>📑 目录</summary>
 
-- [整体架构](#整体架构)
-- [核心设计模式](#核心设计模式)
-- [模块系统](#模块系统)
-- [数据流](#数据流)
-- [目录结构](#目录结构)
-- [线程安全模型](#线程安全模型)
-- [错误处理](#错误处理)
+- [🗺️ 整体架构](#️-整体架构)
+- [🧩 核心设计模式](#-核心设计模式)
+- [📦 模块系统](#-模块系统)
+- [🔄 数据流](#-数据流)
+- [📁 目录结构](#-目录结构)
+- [🧵 线程安全模型](#-线程安全模型)
+- [🚪 错误处理](#-错误处理)
 
 </details>
 
 ---
 
-## 整体架构
+## 🗺️ 整体架构
+
+trait-kit workspace 由四个成员组成。主 crate 的 `src/` 分三层：`core` 接口层、`kit` 能力管理中心、`i18n` 国际化。
 
 ```mermaid
-graph TB
-    subgraph core["core — 核心接口层"]
-        MM[ModuleMeta<br/>名称 + 依赖声明]
-        AB[AutoBuilder<br/>同步构建]
-        AAB[AsyncAutoBuilder<br/>异步构建]
-        IB[InterfaceBuilder<br/>接口分离]
-        LC[Lifecycle<br/>on_ready + on_shutdown]
-        HC[HealthCheck<br/>HealthStatus 报告]
-        OBS[BuildObserver<br/>构建回调]
+flowchart TD
+    subgraph ws["trait-kit workspace"]
+        TK["trait-kit 主 crate<br/>core / kit / i18n"]
+        DER["trait-kit-derive<br/>ConfigInherit + SharedConfig"]
+        MAC["trait-kit-macros<br/>derive Module"]
+        EX["trait-kit-examples<br/>20 个可运行示例"]
     end
 
-    subgraph kit["kit — 能力管理中心"]
-        K[Kit&lt;Unbuilt&gt; → Kit&lt;Ready&gt;]
-        DG[DependencyGraph<br/>环检测 + 拓扑排序]
-        TM[TypeMap<br/>TypeId 键值存储]
-        CFG[Config<br/>confers 集成]
-        SC[Scope / AsyncScope<br/>作用域隔离]
+    subgraph tk["trait-kit src 模块"]
+        CORE["core 接口层<br/>ModuleMeta / AutoBuilder / Lifecycle / HealthCheck / BuildObserver"]
+        KIT["kit 管理中心<br/>Kit / DependencyGraph / TypeMap / Scope / Shutdown / AsyncKit"]
+        I18N["i18n 国际化<br/>tr + I18nFormatter"]
     end
 
-    subgraph async_kit["async_kit — 异步能力管理"]
-        AK[AsyncKit&lt;Unbuilt&gt; → AsyncKit&lt;Ready&gt;]
-        ATM[AsyncTypeMap<br/>Arc&lt;RwLock&gt; 存储]
-    end
+    TK --> CORE
+    TK --> KIT
+    TK --> I18N
+    TK -->|"dev-dependency"| DER
+    MAC -->|"dev-dependency（测试）"| TK
+    EX --> TK
+    EX --> DER
+```
 
-    subgraph i18n_mod["i18n — 国际化"]
-        I18N[I18nManager + tr<br/>Fluent FTL 翻译]
-        FMT[I18nFormatter<br/>ICU4X 格式化]
-    end
+`kit` 管理中心内部的组件关系：
 
-    MM --> K
-    AB --> K
-    AAB --> AK
-    IB --> K
-    LC --> K
-    HC --> K
-    OBS --> K
+```mermaid
+flowchart TD
+    K["Kit typestate<br/>Unbuilt → Ready"]
+    DG["DependencyGraph<br/>环检测 + 拓扑排序"]
+    TM["TypeMap<br/>TypeId 键值存储"]
+    CFG["config<br/>confers 集成"]
+    SC["scope / shutdown / toggle<br/>运行时扩展"]
+    AK["AsyncKit<br/>并发构建"]
+    ATM["AsyncTypeMap<br/>Arc RwLock 存储"]
+    EV["events / ports<br/>事件总线与观测端口"]
+    RP["report / presets / sub_kit<br/>可选组合面"]
+
     K --> DG
     K --> TM
     K --> CFG
     K --> SC
     AK --> ATM
+    AK --> DG
+    K -.-> EV
+    K -.-> RP
 ```
 
-## 核心设计模式
+## 🧩 核心设计模式
 
 ### Typestate 模式
 
 Kit 使用 typestate 模式确保构建时验证：
 
-```
+```text
 Kit<Unbuilt>                    Kit<Ready>
 ┌─────────────────┐   build()   ┌─────────────────┐
 │ register()      │ ──────────→ │ require()       │
@@ -103,7 +109,7 @@ Kit<Unbuilt>                    Kit<Ready>
 
 构建按拓扑序执行，确保依赖先于消费者构建。
 
-## 模块系统
+## 📦 模块系统
 
 ### 能力注册模式
 
@@ -118,27 +124,25 @@ Kit<Unbuilt>                    Kit<Ready>
 
 ### Feature 分层
 
+18 个可选 feature 中，confers 系列存在继承链，其余为零依赖独立 feature：
+
 ```mermaid
 graph LR
-    subgraph 核心["核心（无 feature）"]
-        C1[ModuleMeta + AutoBuilder]
-        C2[Kit typestate]
-        C3[DependencyGraph]
-        C4[I18nManager + tr]
+    C["confers"] --> R["reload"]
+    R --> E["encryption"]
+
+    subgraph zc["零依赖独立 feature"]
+        Z["async / interface / lifecycle / health<br/>scope / toggle / observer / decorator / shutdown"]
     end
 
-    subgraph 可选["可选 Feature"]
-        F1[async]
-        F2[confers → reload → encryption]
-        F3[interface]
-        F4[lifecycle]
-        F5[health]
-        F6[scope]
-        F7[toggle]
-        F8[observer]
-        F10[decorator]
-        F11[shutdown]
+    subgraph dep["带可选依赖的 feature"]
+        D1["i18n<br/>icu / writeable / sys-locale"]
+        D2["report<br/>serde / serde_json"]
+        P["presets / presets-remote"]
+        N["negotiate / compose"]
     end
+
+    P --> C
 ```
 
 ### 配置继承四层体系
@@ -147,22 +151,20 @@ graph LR
 
 ```mermaid
 graph TB
-    subgraph Layer1["Layer 1: merge_json_deep"]
-        L1["递归深合并 JSON Object"]
-    end
-
-    subgraph Layer2["Layer 2: ConfigInherit"]
-        L2["编译期安全字段覆盖\nOption&lt;T&gt; 仅 Some 时覆盖"]
-        L2D["#[derive\(ConfigInherit\)]"]
+    subgraph Layer4["Layer 4: populate_defaults"]
+        L4["零配置自动填充<br/>ModuleConfig default_value"]
     end
 
     subgraph Layer3["Layer 3: SharedConfig"]
-        L3["serde_json::Value overlay\n跨类型共享字段继承"]
-        L3D["#[derive\(SharedConfig\)]\n#[shared\(field1, field2\)]"]
+        L3["serde_json Value overlay<br/>跨类型共享字段继承<br/>derive SharedConfig"]
     end
 
-    subgraph Layer4["Layer 4: populate_defaults"]
-        L4["零配置自动加载\nModuleConfig::default_value\(\)"]
+    subgraph Layer2["Layer 2: ConfigInherit"]
+        L2["编译期安全字段覆盖<br/>Option T 仅 Some 时覆盖<br/>derive ConfigInherit"]
+    end
+
+    subgraph Layer1["Layer 1: merge_json_deep"]
+        L1["递归深合并 JSON Object"]
     end
 
     Layer4 --> Layer3 --> Layer2 --> Layer1
@@ -170,18 +172,18 @@ graph TB
 
 **数据流**：`AppConfig` → `extract_shared` → `shared_fields overlay` → `inject_shared` → `DbConfig`
 
-## 数据流
+## 🔄 数据流
 
 ### 构建流程
 
 ```mermaid
 sequenceDiagram
     participant User as 用户代码
-    participant Kit as Kit<Unbuilt>
+    participant Kit as Kit Unbuilt
     participant Graph as DependencyGraph
     participant TypeMap as TypeMap
 
-    User->>Kit: register::<M>()
+    User->>Kit: register 模块 M
     Kit->>Graph: add(ModuleEntry)
     Kit->>Kit: 存储 BuildFn
 
@@ -199,7 +201,7 @@ sequenceDiagram
     end
 
     Kit->>Kit: 执行 ready_callbacks（lifecycle）
-    Kit-->>User: Kit<Ready>
+    Kit-->>User: Kit Ready
 ```
 
 ### 能力检索流程
@@ -207,28 +209,28 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant User as 用户代码
-    participant Kit as Kit<Ready>
+    participant Kit as Kit Ready
     participant TypeMap as TypeMap
 
-    User->>Kit: require::<M>()
+    User->>Kit: require 模块 M
     Kit->>TypeMap: get_cloned_by_type_id(TypeId)
 
     alt 即时构建模块
-        TypeMap-->>Kit: Box<dyn Any>
-        Kit-->>User: M::Capability (clone)
+        TypeMap-->>Kit: Box dyn Any
+        Kit-->>User: M::Capability（clone）
     else 延迟构建模块
         Kit->>Kit: 检查 OnceLock
         alt 首次访问
             Kit->>Kit: 调用 BuildFn
             Kit->>TypeMap: 缓存结果
         end
-        Kit-->>User: M::Capability (clone)
+        Kit-->>User: M::Capability（clone）
     end
 ```
 
-## 目录结构
+## 📁 目录结构
 
-```
+```text
 src/
 ├── lib.rs              # crate 入口，re-export
 ├── error.rs            # TraitKitError 错误类型（i18n 本地化）
@@ -243,13 +245,20 @@ src/
 ├── kit/
 │   ├── mod.rs          # Kit 模块声明 + re-export
 │   ├── kit.rs          # Kit<Unbuilt> → Kit<Ready> typestate 实现
+│   ├── kit_tests.rs    # kit.rs 内联测试的独立承载文件
 │   ├── graph.rs        # DependencyGraph：环检测 + 拓扑排序
 │   ├── typemap.rs      # TypeMap：TypeId 键值存储
 │   ├── scope.rs        # Scope / AsyncScope
 │   ├── shutdown.rs     # ShutdownCoordinator / AsyncShutdownCoordinator
-│   ├── async_kit.rs    # AsyncKit
+│   ├── toggle.rs       # ToggleBackend / MemoryToggle / 类型化开关句柄
+│   ├── async_kit.rs    # AsyncKit（并发构建 + Send + Sync）
 │   ├── async_typemap.rs # AsyncTypeMap
-│   └── config.rs       # confers 集成
+│   ├── config.rs       # confers 集成（含加密存储 / KeyProvider）
+│   ├── events.rs       # EventBus / KitEvent / MemoryEventBus
+│   ├── ports.rs        # MetricsPort / LogPort 观测端口
+│   ├── report.rs       # BuildReport 结构化构建报告
+│   ├── presets.rs      # ConfersConfigModule 预设模块包
+│   └── sub_kit.rs      # 子 Kit 组合（compose feature）
 └── i18n/
     ├── mod.rs          # I18nManager + I18nFormatter + tr()
     ├── i18n_impl.rs    # 实现细节
@@ -259,7 +268,7 @@ src/
         └── zh.ftl      # 中文消息
 ```
 
-## 线程安全模型
+## 🧵 线程安全模型
 
 | 类型 | Send | Sync | 说明 |
 |---|---|---|---|
@@ -273,7 +282,7 @@ src/
 | `ShutdownCoordinator` | ✗ | ✗ | `RefCell` |
 | `AsyncShutdownCoordinator` | ✓ | ✓ | `Arc<RwLock>` |
 
-## 错误处理
+## 🚪 错误处理
 
 `TraitKitError` 统一所有 Kit 操作错误，`Display` 通过 `tr()` 自动本地化：
 
@@ -282,8 +291,11 @@ src/
 | `CycleDetected` | 依赖图中检测到环 |
 | `DependencyMissing` | 依赖的模块未注册 |
 | `AlreadyRegistered` | 模块重复注册 |
+| `DecoratorTargetMissing` | 装饰器目标模块未注册（`try_decorate` 注册时校验） |
+| `VersionIncompatible` | 依赖能力版本不满足 `required_versions`（`negotiate` feature 校验） |
 | `BuildFailed` | 模块构建失败 |
 | `MissingCapability` | 能力不存在 |
+| `CapabilityTypeMismatch` | 能力已构建但类型不符（如 override 注入了另一种能力类型） |
 | `MissingConfig` | 配置不存在 |
 | `LifecycleFailed` | 生命周期钩子失败（需 `lifecycle` feature） |
 | `ShutdownTimedOut` | 优雅关闭超时（需 `shutdown` feature） |

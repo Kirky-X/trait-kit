@@ -1,11 +1,11 @@
-# PERFORMANCE — trait-kit 基准与基线（T201）
+# ⚡ Trait-Kit 性能基准
 
 > 兑现 README "运行时零开销" 主张：以 criterion 基准建立可复现的性能基线。
 > 本文件记录基线数字与测量方法；CI 阈值门禁**暂不启用**（待多机数据稳定后引入，回归阈值建议 ±20%）。
 
-## 运行方式
+## 🏃 运行方式
 
-```bash
+```sh
 # 全部基准（toggle 基准需要 toggle feature）
 cargo bench --features toggle
 
@@ -27,7 +27,7 @@ cargo bench --features toggle -- build/three_module_chain
 | toggle | `toggle/set` | `enable_toggle`（Ready Kit，HashMap 后端） |
 | toggle | `toggle/get` | `is_toggle_enabled`（未命中 → 命中路径均为此量级） |
 
-## 基线（2026-09-10）
+## 📊 基线（2026-09-10）
 
 - 机器：AMD Ryzen 9 9950X（16C/32T），WSL2 kernel 6.6.87
 - 工具链：rustc 1.97.1，`bench` profile（继承 `release`：`opt-level=3`、`lto=fat`、`codegen-units=1`）
@@ -53,15 +53,15 @@ cargo bench --features toggle -- build/three_module_chain
 - **build ≈ 706 ns / 3 模块**：图校验（缺依赖 + 环检测）+ Kahn 排序 + 3 次构建回调，
   启动期一次性成本，量级符合预期。
 
-## 复现与对比
+## 🔁 复现与对比
 
 1. 固定机器插电、关闭省电模式；
 2. `cargo bench --features toggle -- --save-baseline <name>` 保存基线；
 3. 改动后 `cargo bench --features toggle -- --baseline <name>` 对比；
    criterion 会在输出中标注回归/改进（noise_threshold=5%）。
 
-## CI 阈值（待启用）
+## 🚦 CI 阈值（待启用）
 
 - 建议：任一基准 median 回归 > 20% 时失败（连续两次运行确认，排除噪声）。
 - 启用前置：至少两台不同机器各留存 3 次基线，确认方差 < 10%。
-- 本轮（workspace-rc4-completion）不启用，仅记录基线。
+- 当前阶段仅记录基线，阈值门禁待多机数据稳定后引入。

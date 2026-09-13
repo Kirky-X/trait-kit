@@ -1,18 +1,55 @@
-# trait-kit 验收测试场景穷举矩阵
+# 🧪 Trait-Kit 验收测试场景
 
-> 适用版本：trait-kit **0.5.0-rc.2**（workspace 根，Rust 1.97.1 / edition 2024）
-> 用途：验收工程第一步 —— 先穷举全部验收场景，后续按本文档逐条固化为 `tests/e2e/` 下的 E2E 测试。
-> 编写依据（只读核对）：`Cargo.toml [features]`（13 个 feature，无 default）、`src/lib.rs` 导出面、`src/core`（meta/macros/health/lifecycle/observer）、`src/kit`（kit/graph/typemap/config/scope/toggle/shutdown/async_kit/async_typemap）、`src/i18n`（FTL 目录 + ICU4X）、`trait-kit-derive`（ConfigInherit/SharedConfig）、`tests/`（7 个文件）、`tests/ui/`（3 个 trybuild 用例）、`examples/`（20 个示例）。
+> 适用版本：trait-kit **0.5.0-rc.2**（矩阵编写与对账基线；0.5.0-rc.3 起 feature 面扩展见 [CHANGELOG](CHANGELOG.md)，场景口径不变）
+> 用途：穷举全部验收场景，作为 `tests/e2e/` E2E 测试的对账基线。
+> 编写依据（只读核对）：`Cargo.toml [features]`、`src/lib.rs` 导出面、`src/core`（meta/macros/health/lifecycle/observer）、`src/kit`（kit/graph/typemap/config/scope/toggle/shutdown/async_kit/async_typemap）、`src/i18n`（FTL 目录 + ICU4X）、`trait-kit-derive`（ConfigInherit/SharedConfig）、`tests/`、`tests/ui/`（3 个 trybuild 用例）、`examples/`（20 个示例）。
 > 所有引用的既有测试名均经 `grep` 核实存在。
 > 组合兼容性经 `cargo check --all-features` 实测通过（exit 0）。
 >
-> **落地对账（阶段 2 完成时回填）**：
-> 1. §2 全部场景已落地 `tests/e2e/`（13 个文件，根 `Cargo.toml` 显式 `[[test]]` 注册，目标名 `e2e_*`）；文中“无→需新增 / …→需新增断言”标记已全部清零，逐场景执行结果见 `reviews/acceptance-report.md` 阶段 2 台账。
-> 2. **真实行为核正 2 处**（RLD-07、CCY-06）：原推测 `require_ref` 借用期间 `reload_config`/`set_config` 会 borrow 冲突 panic——实现核实 `configs` 与 `capabilities` 为两个独立 `TypeMap`（`src/kit/kit.rs`），借用存活期间配置写入正常工作；已按真实行为固化（防回归：若未来合并两 TypeMap，测试将失败并暴露隐蔽 panic）。另 `set_config` 为 `Kit<Unbuilt>` 态方法，Ready 态写配置唯一路径是 `reload_config`。
+> **落地对账（已回填）**：
+> 1. §2 全部场景已落地 `tests/e2e/`（13 个文件，根 `Cargo.toml` 显式 `[[test]]` 注册，目标名 `e2e_*`）；逐场景执行结果见 `reviews/acceptance-report.md` 台账。
+> 2. **真实行为核正 2 处**（RLD-07、CCY-06）：原推测 `require_ref` 借用期间 `reload_config`/`set_config` 会 borrow 冲突 panic；实现核实 `configs` 与 `capabilities` 为两个独立 `TypeMap`（`src/kit/kit.rs`），借用存活期间配置写入正常工作；已按真实行为固化（防回归：若未来合并两 TypeMap，测试将失败并暴露隐蔽 panic）。另 `set_config` 为 `Kit<Unbuilt>` 态方法，Ready 态写配置唯一路径是 `reload_config`。
 > 3. **CCY-03 等效落地**：未走 trybuild（stderr 快照依赖 feature 集，组合矩阵下脆弱），以 `tests/basic.rs:11-12` 的 `static_assertions::assert_not_impl_any!(Kit<Unbuilt>: Sync)`（含 `Kit<Ready>`）编译期断言等效固化。
 > 4. 既有场景引用声明：各 e2e 文件头注释已标注「本文件新增落地 vs 既有覆盖引用」的逐场景归属。
 
-## 阅读约定
+## 📋 目录
+
+<details open>
+<summary>📑 目录</summary>
+
+- [📌 阅读约定](#-阅读约定)
+- [🗺️ 1. 总览：功能域 × feature 分组](#️-1-总览功能域--feature-分组)
+- [📋 2. 场景矩阵](#-2-场景矩阵)
+  - [2.1 模块元数据与声明宏](#21-模块元数据与声明宏met9-条)
+  - [2.2 注册与构建 / typestate](#22-注册与构建--typestatereg20-条)
+  - [2.3 能力获取](#23-能力获取cap12-条)
+  - [2.4 依赖图](#24-依赖图dep10-条)
+  - [2.5 配置中心](#25-配置中心cfg22-条)
+  - [2.6 热重载](#26-热重载rld9-条)
+  - [2.7 加密存储](#27-加密存储enc13-条)
+  - [2.8 接口/实现分离](#28-接口实现分离itf9-条)
+  - [2.9 生命周期](#29-生命周期lcy9-条)
+  - [2.10 健康检查](#210-健康检查hlt9-条)
+  - [2.11 构建观察者](#211-构建观察者obs7-条)
+  - [2.12 装饰器](#212-装饰器dec8-条)
+  - [2.13 作用域](#213-作用域scp10-条)
+  - [2.14 特性开关](#214-特性开关tgl9-条)
+  - [2.15 优雅关闭](#215-优雅关闭shd13-条)
+  - [2.16 异步 Kit](#216-异步-kitask15-条)
+  - [2.17 国际化](#217-国际化i1814-条)
+  - [2.18 错误体系](#218-错误体系err9-条)
+  - [2.19 prelude 导出面](#219-prelude-导出面pre3-条)
+  - [2.20 feature 组合交互](#220-feature-组合交互cmp15-条)
+  - [2.21 并发与竞态](#221-并发与竞态ccy7-条)
+  - [2.22 feature 编译矩阵](#222-feature-编译矩阵prs6-条)
+- [🔗 3. feature 互斥 / 组合矩阵](#-3-feature-互斥--组合矩阵)
+- [🐳 4. Docker 服务需求汇总](#-4-docker-服务需求汇总)
+- [🧭 5. 执行计划](#-5-执行计划)
+- [📊 6. 统计汇总](#-6-统计汇总)
+
+</details>
+
+## 📌 阅读约定
 
 - **类型**：`正常`（合法输入下的预期行为）/ `异常`（错误输入、违规操作，须给出明确错误或编译失败）/ `边界`（极限值、并发、竞态、组合临界、语义固化）。
 - **既有覆盖**：`文件::测试名` 表示已有测试（`src/**` 内联测试模块不写 `src/` 前缀直接给 `相对路径::测试名`）；标注 `→需新增断言` 表示已有单测或示例但缺集成/行为级断言；`无→需新增` 表示无既有覆盖。
@@ -22,7 +59,7 @@
 
 ### 重要发现（编写时盘点得出）
 
-1. **`src/kit/toggle.rs` 是 doc-only 模块（10 行）**：toggle 能力并非独立运行时，而是实现为 `Kit`/`Kit<Ready>` 上的方法（`enable_toggle` / `is_toggle_enabled` / `register_if_toggle`），底层为 `RefCell<HashMap<String, bool>>`。验收时按 Kit 方法口径测，不存在独立注册表 API。
+1. **`src/kit/toggle.rs` 是 doc-only 模块（10 行，0.5.0-rc.2 时点；rc.3 已升级为完整开关实现，见 [CHANGELOG](CHANGELOG.md)）**：toggle 能力并非独立运行时，而是实现为 `Kit`/`Kit<Ready>` 上的方法（`enable_toggle` / `is_toggle_enabled` / `register_if_toggle`），底层为 `RefCell<HashMap<String, bool>>`。验收时按 Kit 方法口径测，不存在独立注册表 API。
 2. **sync `Kit` 为 `RefCell` 实现（`!Sync`），`AsyncKit` 为 `AsyncTypeMap` 实现（`Send + Sync`）**：两条产品线并发模型不同。sync 线所有 API 仅限单线程使用；负向 `!Sync` 断言目前缺失（CCY-03）。
 3. **`tests/e2e_feature_combinations.rs` 与 `tests/e2e_advanced.rs` 内大量测试用 `#[cfg(all(test, feature = …))]` 门控**：裸 `cargo test`（无 feature）只执行 no-feature 组；验收必须按 feature 矩阵分别跑 `cargo test --features <组合>`，否则组合组静默不编译、不执行。
 4. **typestate 违规目前只有 3 个 trybuild 用例守卫**（`tests/ui/ready_cannot_build.rs`、`ready_cannot_register.rs`、`unbuilt_cannot_optional.rs`），由 `tests/compile_fail.rs` 单 runner 驱动；Ready 态其余违规面（如 Ready 上 `override_module_strict` 不存在等）随 API 增长需补 UI 用例。
@@ -32,7 +69,7 @@
 
 ---
 
-## 1. 总览：功能域 × feature 分组
+## 🗺️ 1. 总览：功能域 × feature 分组
 
 | # | 功能域 | 场景 ID 前缀 | 涉及 feature（Cargo.toml 名） | 主要公共 API |
 |---|--------|-------------|------------------------------|--------------|
@@ -63,7 +100,7 @@
 
 ---
 
-## 2. 场景矩阵
+## 📋 2. 场景矩阵
 
 ### 2.1 模块元数据与声明宏（MET，9 条）
 
@@ -173,7 +210,7 @@
 | RLD-04 | 同类型多个订阅者全部按注册序收到通知 | 边界 | reload | 无 | `tests/basic.rs::reload_config_invokes_multiple_subscribers`、`src/kit/kit.rs::reload_config_fires_all_subscribers` | tests/e2e/e2e_config.rs |
 | RLD-05 | 无订阅者时 `reload_config` 成功 no-op | 边界 | reload | 无 | `tests/basic.rs::subscribe_and_reload_with_no_subscribers_succeeds` | tests/e2e/e2e_config.rs |
 | RLD-06 | 订阅者 panic 语义固化：新值已存储、剩余订阅者被跳过（panic 穿透 `reload_config`，文档化行为） | 异常 | reload | 无 | 无→需新增 | tests/e2e/e2e_config.rs |
-| RLD-07 | `require_ref` 借用存活期间调用 `reload_config`。**真实行为核正**（落地阶段核实）：`configs` 与 `capabilities` 为两个独立 `TypeMap`（`src/kit/kit.rs`），借用存活期间 `reload_config` 写配置不触能力借用、正常工作，无 borrow 冲突；同时固化 `set_config` 为 Unbuilt 态方法（Ready 态写配置唯一路径为 `reload_config`）——防未来合并两 TypeMap 引入隐蔽 panic | 边界 | reload | 无 | `src/kit/typemap.rs::inner_ref_panics_if_mutably_borrowed`（TypeMap 层既有） | tests/e2e/e2e_config.rs::e2e_require_ref_borrow_survives_reload_and_set_config + tests/e2e/e2e_concurrency.rs |
+| RLD-07 | `require_ref` 借用存活期间调用 `reload_config`。**真实行为核正**（落地阶段核实）：`configs` 与 `capabilities` 为两个独立 `TypeMap`（`src/kit/kit.rs`），借用存活期间 `reload_config` 写配置不触能力借用、正常工作，无 borrow 冲突；同时固化 `set_config` 为 Unbuilt 态方法（Ready 态写配置唯一路径为 `reload_config`），以防未来合并两 TypeMap 引入隐蔽 panic | 边界 | reload | 无 | `src/kit/typemap.rs::inner_ref_panics_if_mutably_borrowed`（TypeMap 层既有） | tests/e2e/e2e_config.rs::e2e_require_ref_borrow_survives_reload_and_set_config + tests/e2e/e2e_concurrency.rs |
 | RLD-08 | feature 链映射：`reload` 自动启用 `confers`（已剪除 `confers/watch` 死链），`subscribe/reload_config` 经 Kit 自有 SubscriberMap 工作 | 正常 | reload | 无 | `Cargo.toml` 声明核对 + `tests/e2e_feature_combinations.rs::e2e_confers_plus_reload` | tests/e2e/e2e_feature_combinations.rs |
 | RLD-09 | examples/hot_reload 运行验收：改值 → reload → 回调打印新值 | 正常 | reload | 无 | examples/hot_reload（运行验收） | tests/e2e/e2e_feature_combinations.rs（引用示例） |
 
@@ -415,11 +452,11 @@
 
 ---
 
-## 3. feature 互斥 / 组合矩阵
+## 🔗 3. feature 互斥 / 组合矩阵
 
 ### 3.1 依赖链（由 Cargo.toml `[features]` 固化，组合测试无需单独验证的部分）
 
-```
+```text
 reload     → confers（已剪除 confers/watch 死链）
 encryption → confers, confers/encryption
 confers    → dep:confers, dep:serde, dep:serde_json
@@ -429,7 +466,7 @@ async / interface / lifecycle / health / scope / toggle / observer / decorator /
            → 空 feature（零依赖、零传递项）
 ```
 
-结论：**不存在互斥 feature，也不存在预设（preset）**——9 个零依赖 feature 可自由叠加；约束只体现为"开 `reload`/`encryption` 自动带上 `confers` 引擎"。`cargo check --all-features`（13 项全开）实测通过（exit 0），全 feature 互容得到编译级验证。
+结论：**不存在互斥 feature，也不存在预设（preset）**：9 个零依赖 feature 可自由叠加；约束只体现为"开 `reload`/`encryption` 自动带上 `confers` 引擎"。`cargo check --all-features`（13 项全开）实测通过（exit 0），全 feature 互容得到编译级验证。
 
 ### 3.2 跨 feature 门控（编译期联动，组合行为测试的输入依据）
 
@@ -467,7 +504,7 @@ async / interface / lifecycle / health / scope / toggle / observer / decorator /
 
 ---
 
-## 4. Docker 服务需求汇总
+## 🐳 4. Docker 服务需求汇总
 
 **无。** trait-kit 是纯内存库，全部 238 个场景的依赖服务为"无"，理由如下：
 
@@ -479,7 +516,7 @@ async / interface / lifecycle / health / scope / toggle / observer / decorator /
 
 ---
 
-## 5. 执行计划
+## 🧭 5. 执行计划
 
 ### 5.1 层级与命令
 
@@ -552,7 +589,7 @@ async / interface / lifecycle / health / scope / toggle / observer / decorator /
 
 ---
 
-## 6. 统计汇总
+## 📊 6. 统计汇总
 
 （按本文档场景行逐条程序化统计得出，口径见备注）
 
@@ -576,8 +613,8 @@ async / interface / lifecycle / health / scope / toggle / observer / decorator /
 > 既有测试资产基线（grep 实测）：src 内联 **394** 个 `#[test]`；`tests/` **185** 个测试函数（basic 45 / e2e_advanced 84 / e2e_feature_combinations 42 / config_inherit_derive 6 / shared_config_derive 5 / config_inheritance_e2e 2 / compile_fail 1 runner→3 个 ui 用例）；examples **20** 个。
 > 说明：既有覆盖口径存在合法重叠（一条场景可同时引用 tests/ 集成测试与 src 内联测试）；"需新增"取最强缺口判定。后续落地阶段允许将粒度过细的场景合并实现，但 **ID 保持稳定**以便追溯。
 
-### 与任务输入的偏离说明
+### 编写基线核对说明
 
-1. **src 内 `#[cfg(test)]` 计数**：任务输入为 17 处，实测字面 `#[cfg(test)]` 为 **16 处**，另有 38 处 `#[cfg(all(test, feature = …))]` 门控测试块（共 394 个内联测试）。以实测为准。
-2. **examples 计数**：任务输入为 21 个，实测 `examples/Cargo.toml` 显式 `[[example]]` 注册 **20 个**（`examples/src` 下亦为 20 个 .rs 文件）。以实测为准。
-3. **依赖服务**：任务输入提示"仅 confers feature 需要文件/远程场景"；核对后 trait-kit 的 confers 面只含进程内 trait 桥接，文件路径仅出现在 confers derive 的文件加载（E2E 可用临时文件），**无任何远程场景**（§4）。
+1. **src 内 `#[cfg(test)]` 计数**：初稿口径为 17 处，实测字面 `#[cfg(test)]` 为 **16 处**，另有 38 处 `#[cfg(all(test, feature = …))]` 门控测试块（共 394 个内联测试）。以实测为准。
+2. **examples 计数**：初稿口径为 21 个，实测 `examples/Cargo.toml` 显式 `[[example]]` 注册 **20 个**（`examples/src` 下亦为 20 个 .rs 文件）。以实测为准。
+3. **依赖服务**：初稿口径提示"仅 confers feature 需要文件/远程场景"；核对后 trait-kit 的 confers 面只含进程内 trait 桥接，文件路径仅出现在 confers derive 的文件加载（E2E 可用临时文件），**无任何远程场景**（§4）。

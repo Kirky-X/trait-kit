@@ -5,21 +5,21 @@
 ## 📋 目录
 
 <details open>
-<summary>目录</summary>
+<summary>📑 目录</summary>
 
-- [简介](#简介)
-- [快速开始](#快速开始)
-- [核心概念](#核心概念)
-- [配置](#配置)
-- [进阶用法](#进阶用法)
-- [最佳实践](#最佳实践)
-- [故障排查](#故障排查)
+- [🌟 简介](#-简介)
+- [🚀 快速开始](#-快速开始)
+- [🧭 核心概念](#-核心概念)
+- [⚙️ 配置](#️-配置)
+- [🔧 进阶用法](#-进阶用法)
+- [✅ 最佳实践](#-最佳实践)
+- [🩺 故障排查](#-故障排查)
 
 </details>
 
 ---
 
-## 简介
+## 🌟 简介
 
 trait-kit 解决的问题是：**在应用启动时，以类型安全、可验证的方式装配模块依赖**。
 
@@ -32,7 +32,7 @@ trait-kit 解决的问题是：**在应用启动时，以类型安全、可验�
 
 ---
 
-## 快速开始
+## 🚀 快速开始
 
 ### 环境要求
 
@@ -44,7 +44,7 @@ trait-kit 解决的问题是：**在应用启动时，以类型安全、可验�
 cargo add trait-kit
 ```
 
-默认特性只含核心 `Module` + `Kit`，无额外依赖负担。
+默认特性只含核心 `ModuleMeta` + `AutoBuilder` + `Kit`，无任何额外依赖。
 
 ### 第一个模块
 
@@ -86,15 +86,15 @@ fn main() {
 }
 ```
 
-运行完整的可运行示例见 [examples/](../examples/README.md)。
+完整可运行示例见 [examples/README.md](../examples/README.md)。
 
 ---
 
-## 核心概念
+## 🧭 核心概念
 
 ### Typestate 两阶段
 
-```
+```text
 Kit<Unbuilt>                    Kit<Ready>
 ┌─────────────────┐   build()   ┌─────────────────┐
 │ register()      │ ──────────→ │ require()       │
@@ -103,7 +103,7 @@ Kit<Unbuilt>                    Kit<Ready>
 └─────────────────┘             └─────────────────┘
 ```
 
-- **`Kit<Unbuilt>`（构建阶段）**：注册模块、存入配置、声明生命周期钩子。此阶段类型上不允许检索能力——未构建的模块无法被 `require()`，这类误用会直接**编译失败**。
+- **`Kit<Unbuilt>`（构建阶段）**：注册模块、存入配置、声明生命周期钩子。此阶段类型上不允许检索能力，未构建的模块无法被 `require()`，这类误用会直接**编译失败**。
 - **`kit.build()`**：验证依赖图（缺失依赖检测、Kahn 算法环检测 + 拓扑排序），按拓扑序构建所有模块。
 - **`Kit<Ready>`（运行阶段）**：只读检索能力与配置，不可再注册。
 
@@ -136,7 +136,7 @@ impl_module_meta!(StorageModule, "storage", deps = [LoggerModule]);
 
 ---
 
-## 配置
+## ⚙️ 配置
 
 配置是存储在 Kit 的 `TypeMap` 中的**类型化值**，以类型为键，无需 `ConfigKey` 样板。
 
@@ -197,12 +197,12 @@ struct AppConfig {
 }
 
 impl Configurable for AppConfig {
-    fn load() -> Result<Self, Box<dyn std::error::Error>> {
+    fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
         Ok(AppConfig::load_sync()?)
     }
 }
 
-let kit = Kit::new();
+let mut kit = Kit::new();
 kit.load_config::<AppConfig>()?;   // 从环境变量/默认值加载
 ```
 
@@ -212,6 +212,7 @@ kit.load_config::<AppConfig>()?;   // 从环境变量/默认值加载
 |---|---|
 | `load_and_validate::<C>()` | 加载并执行 `Validatable::validate`，失败不存入 |
 | `load_config_with::<C>(vars)` | 加载时做 `${VAR}` 变量替换 |
+| `load_config_or_default::<C>()` | 加载失败时落 `ModuleConfig::default_value()`（返回是否加载成功） |
 | `snapshot_config::<C>()` / `restore_config::<C>()` | 配置快照与回滚 |
 | `subscribe::<C>(cb)` / `reload_config::<C>()` `reload` | 热重载订阅与触发 |
 
@@ -235,9 +236,9 @@ impl ModuleConfig for AppConfig {
 启用 `encryption` feature 后，静态配置可用 XChaCha20-Poly1305 加密存储。加密密钥通过 HKDF 从主密钥与 `ModuleConfig::PATH` 派生，同一主密钥为不同模块生成不同字段密钥：
 
 ```rust,ignore
-let kit = Kit::new();
+let mut kit = Kit::new();
 let secret = AppConfig { host: "production-db".to_string() };
-let master_key = [0u8; 32]; // 32 字节主密钥
+let master_key = [0u8; 32]; // 32 字节主密钥（演示用，生产环境请从密钥管理服务获取）
 
 kit.set_encrypted(&secret, &master_key)?;
 let kit = kit.build()?;
@@ -261,7 +262,7 @@ struct DbConfig {
     max_connections: u32,
 }
 
-let kit = Kit::new();
+let mut kit = Kit::new();
 kit.populate_defaults::<DbConfig>();       // 零配置默认值
 kit.extract_shared::<AppConfig>();         // 从 AppConfig 提取共享字段
 kit.inject_shared::<DbConfig>();           // 注入到 DbConfig
@@ -272,7 +273,7 @@ kit.merge_config::<DbConfig>(ovr);         // 编译期安全字段覆盖
 
 ---
 
-## 进阶用法
+## 🔧 进阶用法
 
 ### 异步模块 `async`
 
@@ -318,7 +319,7 @@ let kit = kit.build()?;
 
 ---
 
-## 最佳实践
+## ✅ 最佳实践
 
 1. **用宏声明模块**：`impl_module_meta!` / `impl_auto_builder!` 消除样板；依赖一律写进 `deps = [...]`，让环检测与缺失依赖检测在启动前生效。
 2. **能力用 `Arc<T>` 包装**：能力需 `Clone`；共享可变服务用 `Arc<Service>`，避免深拷贝。
@@ -330,7 +331,7 @@ let kit = kit.build()?;
 
 ---
 
-## 故障排查
+## 🩺 故障排查
 
 常见错误均以 `TraitKitError` 变体出现，`Display` 自动本地化输出：
 
@@ -339,16 +340,19 @@ let kit = kit.build()?;
 | `CycleDetected { cycle }` | 依赖图中存在环 | 检查 `deps = [...]` 声明，打破循环（拆分模块或引入中间模块） |
 | `DependencyMissing { module, missing }` | 声明的依赖未注册 | 在 `build()` 前补齐 `kit.register::<MissingModule>()` |
 | `AlreadyRegistered { module }` | 模块重复注册 | 同一模块只需注册一次；多实例需求用 `register_multi` |
+| `DecoratorTargetMissing { module }` | 装饰器目标模块未注册 | 改用 `try_decorate::<M>(f)` 在注册时校验，或先 `register::<M>()` |
+| `VersionIncompatible { .. }` | 依赖模块版本不满足 `required_versions`（`negotiate` feature） | 对齐 `ModuleMeta::VERSION` 的 semver 兼容版本 |
 | `BuildFailed { context, source }` | 模块构建函数返回错误 | 查看 `source` 中的原始错误，通常是外部资源不可用 |
 | `MissingCapability { key }` | `require::<M>()` 时能力不存在 | 确认模块已注册且 `build()` 已完成；可选场景改用 `optional::<M>()` |
-| `MissingConfig { key }` | `config::<C>()` 时配置不存在 | 先 `set_config::<C>(value)` 或用 confers 的 `load_config::<C>()` |
+| `CapabilityTypeMismatch { key }` | 能力已构建但类型不符（如 override 注入了另一种能力类型） | 检查 `override_module` 注入值的类型与模块声明一致 |
+| `MissingConfig { key }` | `config::<C>()` 时配置不存在 | 先 `set_config(value)` 或用 confers 的 `load_config::<C>()` |
 | `LifecycleFailed { .. }` `lifecycle` | `on_ready` 钩子失败 | 检查钩子内的初始化逻辑与外部依赖 |
 | `ShutdownTimedOut { phases }` `shutdown` | 优雅关闭超时 | 调整 `set_phase_timeout` / `set_global_timeout`，检查钩子是否阻塞 |
 
 其他常见问题：
 
-- **typestate 编译错误**（如 `ready_cannot_register`）：在 `Kit<Ready>` 上调用注册方法、或在 `Kit<Unbuilt>` 上调用 `require()` 都会编译失败——这是有意的构建期防护，请检查调用阶段。
-- **feature 方法不存在**：方法级门控 API（如 `subscribe`、`set_encrypted`）需启用对应 feature，参见 [特性标志说明](../README.md#-特性标志)。
+- **typestate 编译错误**（如 `ready_cannot_register`）：在 `Kit<Ready>` 上调用注册方法、或在 `Kit<Unbuilt>` 上调用 `require()` 都会编译失败。这是有意的构建期防护，请检查调用阶段。
+- **feature 方法不存在**：方法级门控 API（如 `subscribe`、`set_encrypted`）需启用对应 feature，参见 [README 特性标志](../README.md#-特性标志)。
 - **跨线程使用 `Kit` 报 `!Sync`**：改用 `AsyncKit`（`async` feature），或在单线程内使用 `Kit`。
 
 仍有问题？请到 [GitHub Issues](https://github.com/Kirky-X/trait-kit/issues) 搜索或提问。
