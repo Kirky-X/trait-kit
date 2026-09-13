@@ -12,17 +12,16 @@
 
 </div>
 
-**trait-kit** 是一个轻量级 Rust 库，提供标准化的模块接口和集中式能力与配置管理中心（`Kit`）。采用 typestate 模式（`Kit<Unbuilt>` → `Kit<Ready>`）进行构建时验证，基于 `RefCell` 的内部可变性实现单线程设计（`!Sync`）；18 个可选 feature 覆盖异步、配置集成、生命周期、国际化等场景，可选依赖全部经 feature 门控，默认构建零额外依赖。
+---
 
-<div align="center">
+<div align="center" style="padding: 32px; margin: 24px 0">
 
-<table>
-<tr>
-<td align="center" width="25%">🧩<br><b>标准模块接口</b><br><sub><code>ModuleMeta</code> + <code>AutoBuilder</code> 统一契约，宏一行声明模块</sub></td>
-<td align="center" width="25%">🏗️<br><b>构建期验证</b><br><sub>typestate 依赖图校验，装配错误前置到应用启动之前</sub></td>
-<td align="center" width="25%">🔎<br><b>类型安全检索</b><br><sub>能力按模块类型存取，无字符串键、无 downcast</sub></td>
-<td align="center" width="25%">⚡<br><b>按需扩展</b><br><sub>18 个可选 feature，可选依赖全部门控，默认零开销</sub></td>
-</tr>
+### 🧩 标准化模块装配
+
+模块以 `ModuleMeta` + `AutoBuilder` 声明契约，Kit 集中完成装配校验与能力检索：
+
+<table style="width:100%; border-collapse: collapse">
+<tr><td align="center" width="25%" style="padding: 12px">🧩<br><b>标准模块接口</b><br><span style="color:#64748B">ModuleMeta + AutoBuilder 统一契约，宏一行声明模块</span></td><td align="center" width="25%" style="padding: 12px">🏗️<br><b>构建期验证</b><br><span style="color:#64748B">typestate 依赖图校验，装配错误前置到启动之前</span></td><td align="center" width="25%" style="padding: 12px">🔎<br><b>类型安全检索</b><br><span style="color:#64748B">能力按模块类型存取，无字符串键、无 downcast</span></td><td align="center" width="25%" style="padding: 12px">⚡<br><b>按需扩展</b><br><span style="color:#64748B">18 个可选 feature 全部门控，默认零开销</span></td></tr>
 </table>
 
 </div>

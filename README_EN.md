@@ -12,17 +12,16 @@
 
 </div>
 
-**trait-kit** is a lightweight Rust library that provides a standardized module interface and a centralized capability & configuration management center (`Kit`). It uses a typestate pattern (`Kit<Unbuilt>` → `Kit<Ready>`) for build-time validation and `RefCell`-based interior mutability for a single-threaded, `!Sync` design; 18 optional features cover async, config integration, lifecycle, i18n, and more, with every optional dependency feature-gated so the default build carries zero extra dependencies.
+---
 
-<div align="center">
+<div align="center" style="padding: 32px; margin: 24px 0">
 
-<table>
-<tr>
-<td align="center" width="25%">🧩<br><b>Standard Module Interface</b><br><sub>A uniform contract from <code>ModuleMeta</code> + <code>AutoBuilder</code>, one-line module declaration via macros</sub></td>
-<td align="center" width="25%">🏗️<br><b>Build-Time Validation</b><br><sub>Typestate dependency-graph checks surface wiring errors before your app starts</sub></td>
-<td align="center" width="25%">🔎<br><b>Type-Safe Retrieval</b><br><sub>Capabilities stored and fetched by module type, no string keys, no downcast</sub></td>
-<td align="center" width="25%">⚡<br><b>Opt-In Extension</b><br><sub>18 optional features, all optional dependencies gated, zero cost by default</sub></td>
-</tr>
+### 🧩 Standardized Module Assembly
+
+Modules declare a contract via `ModuleMeta` + `AutoBuilder`; the Kit centralizes assembly, validation, and capability lookup:
+
+<table style="width:100%; border-collapse: collapse">
+<tr><td align="center" width="25%" style="padding: 12px">🧩<br><b>Standard Module Interface</b><br><span style="color:#64748B">uniform contract, one-line macro declaration</span></td><td align="center" width="25%" style="padding: 12px">🏗️<br><b>Build-Time Validation</b><br><span style="color:#64748B">typestate dependency-graph checks before startup</span></td><td align="center" width="25%" style="padding: 12px">🔎<br><b>Type-Safe Retrieval</b><br><span style="color:#64748B">by module type, no string keys, no downcast</span></td><td align="center" width="25%" style="padding: 12px">⚡<br><b>Extensible on Demand</b><br><span style="color:#64748B">18 optional features, all gated, zero default cost</span></td></tr>
 </table>
 
 </div>
@@ -32,7 +31,7 @@
 ## 📋 Table of Contents
 
 <details open>
-<summary>📑 Table of Contents</summary>
+<summary>📑 目录</summary>
 
 - [✨ Features](#-features)
 - [🚀 Quick Start](#-quick-start)
