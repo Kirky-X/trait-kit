@@ -332,7 +332,10 @@ impl std::fmt::Display for GraphError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::DependencyMissing { module, missing } => {
-                write!(f, "module `{module}` depends on unregistered module `{missing}`")
+                write!(
+                    f,
+                    "module `{module}` depends on unregistered module `{missing}`"
+                )
             }
             Self::CycleDetected { cycle } => {
                 write!(f, "dependency cycle detected: {}", cycle.join(" -> "))

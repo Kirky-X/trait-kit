@@ -41,9 +41,8 @@ use super::AsyncTypeMap;
 use super::{DependencyGraph, GraphError, ModuleEntry};
 
 #[cfg(feature = "lifecycle")]
-type AsyncShutdownHookFn = Box<
-    dyn for<'a> Fn(&'a AsyncTypeMap) -> Pin<Box<dyn Future<Output = ()> + 'a>> + Send + Sync,
->;
+type AsyncShutdownHookFn =
+    Box<dyn for<'a> Fn(&'a AsyncTypeMap) -> Pin<Box<dyn Future<Output = ()> + 'a>> + Send + Sync>;
 #[cfg(feature = "lifecycle")]
 type AsyncReadyCallback = Box<
     dyn for<'a> Fn(
@@ -106,16 +105,19 @@ struct ConfersFields {
     /// Shared field overlay for cross-type config inheritance (async counterpart).
     /// Values are `serde_json::Value` to preserve type information.
     shared_fields: Arc<RwLock<serde_json::Map<String, serde_json::Value>>>,
-    /// Config snapshots for save/restore (async counterpart of Kit's RefCell<HashMap>).
+    /// Config snapshots for save/restore (async counterpart of Kit's `RefCell<HashMap>`).
     config_snapshots: Arc<RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>,
 }
+
+/// 已登记的 reload 回调（线程安全闭包）
+type ReloadSubscriber = Arc<dyn Fn() + Send + Sync>;
 
 /// Fields gated behind the `reload` feature (async counterpart).
 #[cfg(feature = "reload")]
 #[derive(Default)]
 struct ReloadFields {
     /// Thread-safe subscriber map: `Arc<dyn Fn() + Send + Sync>` instead of `Rc<dyn Fn()>`.
-    subscribers: Arc<RwLock<HashMap<TypeId, Vec<Arc<dyn Fn() + Send + Sync>>>>>,
+    subscribers: Arc<RwLock<HashMap<TypeId, Vec<ReloadSubscriber>>>>,
 }
 
 /// Fields gated behind the `encryption` feature (async counterpart).
@@ -254,6 +256,12 @@ where
     }
 }
 
+/// 单个待构建项：`(模块标识, 构建期起点)` 与其构建 future 的配对
+type QueuedBuild<'a> = (
+    (TypeId, &'static str, Option<std::time::Instant>),
+    AsyncBuildFut<'a>,
+);
+
 /// Split a validated topological order into dependency levels.
 ///
 /// Level 0 = modules without dependencies; level N = modules whose longest
@@ -266,7 +274,7 @@ fn topo_layers(graph: &DependencyGraph, sorted: &[TypeId]) -> Vec<Vec<TypeId>> {
             .entries()
             .iter()
             .find(|entry| entry.type_id == *id)
-            .map(|entry| {
+            .map_or(0, |entry| {
                 entry
                     .dependencies
                     .iter()
@@ -274,8 +282,7 @@ fn topo_layers(graph: &DependencyGraph, sorted: &[TypeId]) -> Vec<Vec<TypeId>> {
                     .max()
                     .unwrap_or(0)
                     + 1
-            })
-            .unwrap_or(0);
+            });
         level_of.insert(*id, level);
     }
     let mut buckets: Vec<Vec<TypeId>> = Vec::new();
@@ -430,6 +437,10 @@ impl AsyncKit {
     ///
     /// Publishes the same `KitEvent::ConfigChanged` audit event as
     /// `set_config`, so event subscribers see Arc-slot updates too.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the event bus lock is poisoned.
     pub fn set_config_arc<C: Clone + Send + Sync + 'static>(&self, config: C) {
         let replaced = self.configs.contains::<std::sync::Arc<C>>();
         self.configs.insert(std::sync::Arc::new(config));
@@ -540,7 +551,11 @@ impl AsyncKit {
         //    results are processed in completion order; observer callbacks
         //    fire per module as its result is processed.
         let event_bus_present = {
-            self.ports.event_bus.read().expect("lock poisoned").is_some()
+            self.ports
+                .event_bus
+                .read()
+                .expect("lock poisoned")
+                .is_some()
         };
         // Per-module wall timing is taken only when a consumer exists.
         #[allow(unused_mut, unused_assignments)]
@@ -553,9 +568,8 @@ impl AsyncKit {
         for layer in layers {
             // Materialize the layer's futures up front (lazy — nothing runs
             // until the driver polls them).
-            let mut queued: std::collections::VecDeque<
-                ((TypeId, &'static str, Option<std::time::Instant>), AsyncBuildFut),
-            > = std::collections::VecDeque::new();
+            let mut queued: std::collections::VecDeque<QueuedBuild> =
+                std::collections::VecDeque::new();
             for type_id in layer {
                 let module_name = self.graph.name_of(type_id).unwrap_or("<unknown>");
                 let build_fn =
@@ -619,8 +633,9 @@ impl AsyncKit {
                         if event_bus_present {
                             self.publish_event(super::events::KitEvent::ModuleBuilt {
                                 module: module_name,
-                                elapsed_us: started_at
-                                    .map_or(0, |t| t.elapsed().as_micros() as u64),
+                                elapsed_us: started_at.map_or(0, |t| {
+                                    u64::try_from(t.elapsed().as_micros()).unwrap_or(u64::MAX)
+                                }),
                             });
                         }
                     }
@@ -671,9 +686,7 @@ impl AsyncKit {
                 .async_shutdown_callbacks
                 .write()
                 .expect("lock poisoned")
-                .sort_by_key(|(type_id, _)| {
-                    topo_index.get(type_id).copied().unwrap_or(usize::MAX)
-                });
+                .sort_by_key(|(type_id, _)| topo_index.get(type_id).copied().unwrap_or(usize::MAX));
         }
 
         let kit = AsyncKit {
@@ -714,9 +727,8 @@ impl AsyncKit {
                 .map(|(idx, id)| (*id, idx))
                 .collect();
             let mut on_ready: Vec<(TypeId, AsyncReadyCallback)> = ready_callbacks;
-            on_ready.sort_by_key(|(type_id, _)| {
-                topo_index.get(type_id).copied().unwrap_or(usize::MAX)
-            });
+            on_ready
+                .sort_by_key(|(type_id, _)| topo_index.get(type_id).copied().unwrap_or(usize::MAX));
             for (_type_id, callback) in &on_ready {
                 callback(&kit).await?;
             }
@@ -781,7 +793,8 @@ impl AsyncKit {
                 }
             })
         });
-        self.lifecycle.async_shutdown_callbacks
+        self.lifecycle
+            .async_shutdown_callbacks
             .write()
             .expect("lock poisoned")
             .push((TypeId::of::<M>(), async_shutdown_hook));
@@ -795,7 +808,8 @@ impl AsyncKit {
                 })
             })
         });
-        self.lifecycle.ready_callbacks
+        self.lifecycle
+            .ready_callbacks
             .write()
             .expect("lock poisoned")
             .push((TypeId::of::<M>(), ready_cb));
@@ -825,7 +839,8 @@ impl AsyncKit {
                 },
             }
         });
-        self.health.health_checkers
+        self.health
+            .health_checkers
             .write()
             .expect("lock poisoned")
             .insert(TypeId::of::<M>(), (M::NAME, checker));
@@ -860,7 +875,8 @@ impl AsyncKit {
     /// Panics if the internal `RwLock` is poisoned.
     #[cfg(feature = "observer")]
     pub fn with_observer(&mut self, observer: Arc<dyn crate::core::observer::BuildObserver>) {
-        self.observer.observers
+        self.observer
+            .observers
             .write()
             .expect("lock poisoned")
             .push(observer);
@@ -868,27 +884,24 @@ impl AsyncKit {
 
     // ─── Observation Ports ─────────────────────────────────────────────
 
-    /// Inject a [`MetricsPort`] for recording counters/gauges/histograms.
+    /// Inject a [`MetricsPort`](crate::kit::ports::MetricsPort) for recording counters/gauges/histograms.
     ///
     /// # Panics
     ///
     /// Panics if the internal `RwLock` is poisoned.
-    pub fn with_metrics_port(
-        &mut self,
-        port: impl Into<super::ports::OptionalMetricsPort>,
-    ) {
+    pub fn with_metrics_port(&mut self, port: impl Into<super::ports::OptionalMetricsPort>) {
         *self.ports.metrics_port.write().expect("lock poisoned") = port.into();
     }
 
-    /// Inject a [`LogPort`] for structured log recording.
+    /// Inject a [`LogPort`](crate::kit::ports::LogPort) for structured log recording.
     ///
     /// # Panics
     ///
     /// Panics if the internal `RwLock` is poisoned.
-    pub fn with_log_port(
-        &mut self,
-        port: impl Into<super::ports::OptionalLogPort>,
-    ) {
+    /// # Panics
+    ///
+    /// Panics if the log port lock is poisoned.
+    pub fn with_log_port(&mut self, port: impl Into<super::ports::OptionalLogPort>) {
         *self.ports.log_port.write().expect("lock poisoned") = port.into();
     }
 
@@ -896,6 +909,10 @@ impl AsyncKit {
     /// lifecycle events: module builds, health samples, config changes.
     ///
     /// Default is `None` (= no-op): publishing costs one `Option` check.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the event bus lock is poisoned.
     pub fn with_event_bus(&mut self, bus: impl Into<super::events::OptionalEventBus>) {
         *self.ports.event_bus.write().expect("lock poisoned") = bus.into();
     }
@@ -905,11 +922,19 @@ impl AsyncKit {
     /// `AsyncKit::build()` groups modules into topological layers and drives
     /// the futures of each layer concurrently, with at most `limit` module
     /// builds in flight. Default: unlimited. Values are clamped to >= 1.
+    ///
+    /// # Panics
+    ///
+    /// This setter never panics; the limit is clamped to `>= 1` defensively.
     pub fn with_max_concurrency(&mut self, limit: usize) {
         self.max_concurrency = limit.max(1);
     }
 
     /// Retrieve the injected event bus, if any.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the event bus lock is poisoned.
     #[must_use]
     pub fn event_bus(&self) -> super::events::OptionalEventBus {
         self.ports.event_bus.read().expect("lock poisoned").clone()
@@ -940,7 +965,8 @@ impl AsyncKit {
             let decorated = decorator(*cap);
             Box::new(decorated) as Box<dyn Any + Send + Sync>
         });
-        self.decorator.decorators
+        self.decorator
+            .decorators
             .write()
             .expect("lock poisoned")
             .entry(TypeId::of::<M::Capability>())
@@ -948,7 +974,8 @@ impl AsyncKit {
             .push(wrapper);
         // Record module TypeId → capability TypeId mapping so
         // `build()` can look up decorators by module TypeId.
-        self.decorator.decorator_module_to_cap
+        self.decorator
+            .decorator_module_to_cap
             .write()
             .expect("lock poisoned")
             .insert(TypeId::of::<M>(), TypeId::of::<M::Capability>());
@@ -956,7 +983,6 @@ impl AsyncKit {
 }
 
 impl<S> AsyncKit<S> {
-
     /// Publish `event` to the injected bus (no-op when absent). Internal
     /// helper keeping the `Option` check in exactly one place.
     fn publish_event(&self, event: super::events::KitEvent) {
@@ -1101,7 +1127,8 @@ impl AsyncKit<Ready> {
     #[cfg(feature = "lifecycle")]
     pub async fn shutdown_async(&self) {
         let async_hooks: Vec<(TypeId, AsyncShutdownHookFn)> = {
-            self.lifecycle.async_shutdown_callbacks
+            self.lifecycle
+                .async_shutdown_callbacks
                 .write()
                 .expect("lock poisoned")
                 .drain(..)
@@ -1172,7 +1199,13 @@ impl AsyncKit<Ready> {
             .map(|(name, checker)| (name, checker(&self.capabilities)))
             .collect();
         // publish each sampled status to the injected event bus.
-        if self.ports.event_bus.read().expect("lock poisoned").is_some() {
+        if self
+            .ports
+            .event_bus
+            .read()
+            .expect("lock poisoned")
+            .is_some()
+        {
             for (name, status) in &report {
                 self.publish_event(super::events::KitEvent::HealthChanged {
                     module: name,
@@ -1317,7 +1350,8 @@ impl AsyncKit {
     pub fn extract_shared<C: super::SharedConfig + Send + Sync>(&self) {
         if let Ok(config) = self.config::<C>() {
             let fields = config.extract_shared();
-            self.confers.shared_fields
+            self.confers
+                .shared_fields
                 .write()
                 .expect("shared_fields lock poisoned")
                 .extend(fields);
@@ -1349,7 +1383,6 @@ impl AsyncKit {
         }
     }
 }
-
 
 impl AsyncKit {
     /// Load a configuration via its `Configurable` implementation and store it.
@@ -1402,7 +1435,12 @@ impl AsyncKit {
     /// Snapshot the current configuration of type `C`.
     ///
     /// Requires the `confers` feature. Returns `false` if no config of type `C` is present.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the config snapshots lock is poisoned.
     #[cfg(feature = "confers")]
+    #[must_use]
     pub fn snapshot_config<C: Clone + Send + Sync + 'static>(&self) -> bool {
         if let Some(config) = self.configs.get_cloned::<C>() {
             self.confers
@@ -1423,6 +1461,10 @@ impl AsyncKit {
     /// # Errors
     ///
     /// Returns `TraitKitError::MissingConfig` if no snapshot exists for `C`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the config snapshots lock is poisoned.
     #[cfg(feature = "confers")]
     pub fn restore_config<C: Clone + Send + Sync + 'static>(&self) -> Result<(), TraitKitError> {
         let snapshots = self
@@ -1430,24 +1472,31 @@ impl AsyncKit {
             .config_snapshots
             .read()
             .expect("config_snapshots lock poisoned");
-        let boxed = snapshots
-            .get(&TypeId::of::<C>())
-            .ok_or_else(|| TraitKitError::MissingConfig {
-                key: format!("{} (snapshot)", std::any::type_name::<C>()),
-            })?;
-        let config = boxed
-            .downcast_ref::<C>()
-            .cloned()
-            .ok_or_else(|| TraitKitError::MissingConfig {
-                key: format!("{} (snapshot downcast)", std::any::type_name::<C>()),
-            })?;
+        let boxed =
+            snapshots
+                .get(&TypeId::of::<C>())
+                .ok_or_else(|| TraitKitError::MissingConfig {
+                    key: format!("{} (snapshot)", std::any::type_name::<C>()),
+                })?;
+        let config =
+            boxed
+                .downcast_ref::<C>()
+                .cloned()
+                .ok_or_else(|| TraitKitError::MissingConfig {
+                    key: format!("{} (snapshot downcast)", std::any::type_name::<C>()),
+                })?;
         drop(snapshots);
         self.set_config(config);
         Ok(())
     }
 
     /// Check if a snapshot exists for configuration type `C`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the config snapshots lock is poisoned.
     #[cfg(feature = "confers")]
+    #[must_use]
     pub fn has_snapshot<C: 'static>(&self) -> bool {
         self.confers
             .config_snapshots
@@ -1495,6 +1544,11 @@ impl AsyncKit {
     /// `ModuleConfig::default_value` if loading fails.
     ///
     /// Requires the `confers` feature. Returns `true` if `C::load()` succeeded.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::BuildFailed` if storing the loaded config fails
+    /// (e.g. the config channel is closed).
     #[cfg(feature = "confers")]
     pub fn load_config_or_default<C>(&self) -> Result<bool, TraitKitError>
     where
@@ -1516,6 +1570,10 @@ impl AsyncKit {
     ///
     /// Requires the `reload` feature. Async counterpart of `Kit::subscribe`.
     /// Callbacks use `Arc<dyn Fn() + Send + Sync>` (thread-safe).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the reload subscribers lock is poisoned.
     #[cfg(feature = "reload")]
     pub fn subscribe<C: 'static>(&self, callback: impl Fn() + Send + Sync + 'static) {
         let callback: Arc<dyn Fn() + Send + Sync> = Arc::new(callback);
@@ -1536,6 +1594,10 @@ impl AsyncKit {
     /// # Errors
     ///
     /// Returns `TraitKitError::BuildFailed` if `Configurable::load` fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the reload subscribers lock is poisoned.
     #[cfg(feature = "reload")]
     pub fn reload_config<C: super::Configurable + Send + Sync>(&self) -> Result<(), TraitKitError> {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
@@ -1543,11 +1605,16 @@ impl AsyncKit {
             source: e,
         })?;
         self.configs.insert(config);
-        let callbacks: Vec<Arc<dyn Fn() + Send + Sync>> =
-            match self.reload.subscribers.read().expect("reload subscribers lock poisoned").get(&TypeId::of::<C>()) {
-                Some(subs) => subs.iter().map(Arc::clone).collect(),
-                None => Vec::new(),
-            };
+        let callbacks: Vec<Arc<dyn Fn() + Send + Sync>> = match self
+            .reload
+            .subscribers
+            .read()
+            .expect("reload subscribers lock poisoned")
+            .get(&TypeId::of::<C>())
+        {
+            Some(subs) => subs.iter().map(Arc::clone).collect(),
+            None => Vec::new(),
+        };
         for cb in &callbacks {
             cb();
         }
@@ -1562,6 +1629,10 @@ impl AsyncKit {
     ///
     /// Returns `TraitKitError::BuildFailed` if serialization, key derivation, or
     /// encryption fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encrypted-config lock is poisoned.
     #[cfg(feature = "encryption")]
     pub fn set_encrypted<C>(&self, value: &C, master_key: &[u8]) -> Result<(), TraitKitError>
     where
@@ -1582,8 +1653,7 @@ impl AsyncKit {
             });
         }
 
-        let mut field_key =
-            super::kit::derive_kit_field_key(master_key, C::PATH, "set_encrypted")?;
+        let mut field_key = super::kit::derive_kit_field_key(master_key, C::PATH, "set_encrypted")?;
 
         let mut plaintext = match serde_json::to_vec(value) {
             Ok(vec) => vec,
@@ -1608,12 +1678,20 @@ impl AsyncKit {
             .encrypted_configs
             .write()
             .expect("encrypted_configs lock poisoned")
-            .insert(TypeId::of::<C>(), super::EncryptedBlob::new(nonce, ciphertext));
+            .insert(
+                TypeId::of::<C>(),
+                super::EncryptedBlob::new(nonce, ciphertext),
+            );
         Ok(())
     }
 
     /// Check if an encrypted config of type `C` is registered.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encrypted-config lock is poisoned.
     #[cfg(feature = "encryption")]
+    #[must_use]
     pub fn contains_encrypted<C: super::ModuleConfig>(&self) -> bool {
         self.encryption
             .encrypted_configs
@@ -1631,6 +1709,10 @@ impl AsyncKit {
     /// Returns `TraitKitError::MissingConfig` if no encrypted blob for `C` exists.
     /// Returns `TraitKitError::BuildFailed` if key derivation, decryption, or
     /// deserialization fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encrypted-config lock is poisoned.
     #[cfg(feature = "encryption")]
     pub fn get_encrypted<C>(&self, master_key: &[u8]) -> Result<C, TraitKitError>
     where
@@ -1662,8 +1744,7 @@ impl AsyncKit {
                 key: std::any::type_name::<C>().to_string(),
             })?;
 
-        let mut field_key =
-            super::kit::derive_kit_field_key(master_key, C::PATH, "get_encrypted")?;
+        let mut field_key = super::kit::derive_kit_field_key(master_key, C::PATH, "get_encrypted")?;
 
         let decrypted = XChaCha20Crypto::new().decrypt(blob.nonce(), blob.ciphertext(), &field_key);
         super::kit::zeroize_bytes(&mut field_key);
@@ -1682,17 +1763,21 @@ impl AsyncKit {
 
     // ─── Observation Port Accessors ────────────────────────────────────
 
-    /// Retrieve the injected [`MetricsPort`], if any.
+    /// Retrieve the injected [`MetricsPort`](crate::kit::ports::MetricsPort), if any.
     ///
     /// # Panics
     ///
     /// Panics if the internal `RwLock` is poisoned.
     #[must_use]
     pub fn metrics_port(&self) -> super::ports::OptionalMetricsPort {
-        self.ports.metrics_port.read().expect("lock poisoned").clone()
+        self.ports
+            .metrics_port
+            .read()
+            .expect("lock poisoned")
+            .clone()
     }
 
-    /// Retrieve the injected [`LogPort`], if any.
+    /// Retrieve the injected [`LogPort`](crate::kit::ports::LogPort), if any.
     ///
     /// # Panics
     ///
@@ -2746,9 +2831,7 @@ mod async_lifecycle_tests {
         }
     }
     impl AsyncLifecycle for AsyncShutdownLcModule {
-        fn on_shutdown<'a>(
-            _cap: &'a Arc<()>,
-        ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        fn on_shutdown<'a>(_cap: &'a Arc<()>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
             Box::pin(async {
                 ASYNC_LC_SHUTDOWN.fetch_add(1, Ordering::SeqCst);
             })
@@ -2805,9 +2888,7 @@ mod async_lifecycle_tests {
             }
         }
         impl AsyncLifecycle for OneShotModule {
-            fn on_shutdown<'a>(
-                _cap: &'a Arc<()>,
-            ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+            fn on_shutdown<'a>(_cap: &'a Arc<()>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
                 Box::pin(async {
                     ONE_SHOT_COUNT.fetch_add(1, Ordering::SeqCst);
                 })
@@ -2854,14 +2935,9 @@ mod async_lifecycle_tests {
             }
         }
         impl AsyncLifecycle for OrderDepModule {
-            fn on_shutdown<'a>(
-                _cap: &'a Arc<()>,
-            ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+            fn on_shutdown<'a>(_cap: &'a Arc<()>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
                 Box::pin(async {
-                    SHUTDOWN_ORDER
-                        .lock()
-                        .expect("lock poisoned")
-                        .push("dep");
+                    SHUTDOWN_ORDER.lock().expect("lock poisoned").push("dep");
                 })
             }
         }
@@ -2886,9 +2962,7 @@ mod async_lifecycle_tests {
             }
         }
         impl AsyncLifecycle for OrderDependentModule {
-            fn on_shutdown<'a>(
-                _cap: &'a Arc<()>,
-            ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+            fn on_shutdown<'a>(_cap: &'a Arc<()>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
                 Box::pin(async {
                     SHUTDOWN_ORDER
                         .lock()
@@ -3582,7 +3656,8 @@ mod async_config_inheritance_tests {
     #[test]
     fn async_inject_shared_noop_when_config_missing() {
         let kit = AsyncKit::new();
-        kit.confers.shared_fields
+        kit.confers
+            .shared_fields
             .write()
             .unwrap()
             .insert("host".into(), serde_json::json!("some-host"));
@@ -3669,12 +3744,15 @@ mod concurrency_tests {
         for i in 0u64..4 {
             let a = Arc::clone(&active);
             let m = Arc::clone(&max_active);
-            queued.push_back((i, Box::pin(async move {
-                let now = a.fetch_add(1, Ordering::SeqCst) + 1;
-                m.fetch_max(now, Ordering::SeqCst);
-                YieldOnce { yielded: false }.await;
-                a.fetch_sub(1, Ordering::SeqCst);
-            }) as Pin<Box<dyn Future<Output = ()> + Send>>));
+            queued.push_back((
+                i,
+                Box::pin(async move {
+                    let now = a.fetch_add(1, Ordering::SeqCst) + 1;
+                    m.fetch_max(now, Ordering::SeqCst);
+                    YieldOnce { yielded: false }.await;
+                    a.fetch_sub(1, Ordering::SeqCst);
+                }) as Pin<Box<dyn Future<Output = ()> + Send>>,
+            ));
         }
         let batch = BatchJoin {
             queued,
@@ -3699,12 +3777,15 @@ mod concurrency_tests {
         for i in 0u64..4 {
             let a = Arc::clone(&active);
             let m = Arc::clone(&max_active);
-            queued.push_back((i, Box::pin(async move {
-                let now = a.fetch_add(1, Ordering::SeqCst) + 1;
-                m.fetch_max(now, Ordering::SeqCst);
-                YieldOnce { yielded: false }.await;
-                a.fetch_sub(1, Ordering::SeqCst);
-            }) as Pin<Box<dyn Future<Output = ()> + Send>>));
+            queued.push_back((
+                i,
+                Box::pin(async move {
+                    let now = a.fetch_add(1, Ordering::SeqCst) + 1;
+                    m.fetch_max(now, Ordering::SeqCst);
+                    YieldOnce { yielded: false }.await;
+                    a.fetch_sub(1, Ordering::SeqCst);
+                }) as Pin<Box<dyn Future<Output = ()> + Send>>,
+            ));
         }
         let batch = BatchJoin {
             queued,
@@ -3736,8 +3817,13 @@ mod concurrency_tests {
                     type Error = TraitKitError;
                     fn build<'a>(
                         _kit: &'a AsyncKit,
-                    ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
-                    {
+                    ) -> Pin<
+                        Box<
+                            dyn Future<Output = Result<Self::Capability, TraitKitError>>
+                                + Send
+                                + 'a,
+                        >,
+                    > {
                         Box::pin(async move {
                             let now = ACTIVE.fetch_add(1, Ordering::SeqCst) + 1;
                             MAX_ACTIVE.fetch_max(now, Ordering::SeqCst);
@@ -3758,7 +3844,9 @@ mod concurrency_tests {
         kit.register::<ConcB>().expect("b");
         kit.register::<ConcC>().expect("c");
         let ready = block_on(kit.build()).expect("build ok");
-        assert!(ready.contains::<ConcA>() && ready.contains::<ConcB>() && ready.contains::<ConcC>());
+        assert!(
+            ready.contains::<ConcA>() && ready.contains::<ConcB>() && ready.contains::<ConcC>()
+        );
         assert_eq!(
             MAX_ACTIVE.load(Ordering::SeqCst),
             3,
@@ -3794,8 +3882,10 @@ mod concurrency_tests {
         impl ModuleMeta for DepTop {
             const NAME: &'static str = "dep-top";
             fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-                static DEPS: &[(&str, std::any::TypeId)] =
-                    &[(<DepLeaf as ModuleMeta>::NAME, std::any::TypeId::of::<DepLeaf>())];
+                static DEPS: &[(&str, std::any::TypeId)] = &[(
+                    <DepLeaf as ModuleMeta>::NAME,
+                    std::any::TypeId::of::<DepLeaf>(),
+                )];
                 DEPS
             }
         }
@@ -3807,9 +3897,11 @@ mod concurrency_tests {
             ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
             {
                 Box::pin(async move {
-                    kit.require::<DepLeaf>().map_err(|e| {
-                        TraitKitError::BuildFailed { context: "dep-top".into(), source: Box::new(e) }
-                    })?;
+                    kit.require::<DepLeaf>()
+                        .map_err(|e| TraitKitError::BuildFailed {
+                            context: "dep-top".into(),
+                            source: Box::new(e),
+                        })?;
                     ORDER.lock().unwrap().push("dep-top");
                     Ok(Arc::new(SlowCap))
                 })
@@ -3822,8 +3914,14 @@ mod concurrency_tests {
         let ready = block_on(kit.build()).expect("build ok");
         assert!(ready.contains::<DepTop>());
         let order = ORDER.lock().unwrap();
-        let leaf_pos = order.iter().position(|n| *n == "dep-leaf").expect("leaf ran");
+        let leaf_pos = order
+            .iter()
+            .position(|n| *n == "dep-leaf")
+            .expect("leaf ran");
         let top_pos = order.iter().position(|n| *n == "dep-top").expect("top ran");
-        assert!(leaf_pos < top_pos, "dependency must complete first: {order:?}");
+        assert!(
+            leaf_pos < top_pos,
+            "dependency must complete first: {order:?}"
+        );
     }
 }

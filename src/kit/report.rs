@@ -222,10 +222,8 @@ impl BuildReport {
     ///
     /// # Errors
     ///
-    /// Returns the serde_json error if the string is not valid JSON.
-    pub fn from_json_str(
-        s: &str,
-    ) -> Result<serde_json::Value, serde_json::Error> {
+    /// Returns the `serde_json` error if the string is not valid JSON.
+    pub fn from_json_str(s: &str) -> Result<serde_json::Value, serde_json::Error> {
         serde_json::from_str(s)
     }
 }
@@ -266,8 +264,10 @@ mod tests {
     impl ModuleMeta for RptTop {
         const NAME: &'static str = "rpt-top";
         fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-            static DEPS: &[(&str, std::any::TypeId)] =
-                &[(<RptLeaf as ModuleMeta>::NAME, std::any::TypeId::of::<RptLeaf>())];
+            static DEPS: &[(&str, std::any::TypeId)] = &[(
+                <RptLeaf as ModuleMeta>::NAME,
+                std::any::TypeId::of::<RptLeaf>(),
+            )];
             DEPS
         }
     }
@@ -305,7 +305,13 @@ mod tests {
         // Topological order: leaf precedes top; the dependency-free lazy
         // module may appear anywhere between them (Kahn queue order).
         assert_eq!(report.topo_order.len(), 3);
-        let idx = |n: &str| report.topo_order.iter().position(|m| *m == n).expect("in topo");
+        let idx = |n: &str| {
+            report
+                .topo_order
+                .iter()
+                .position(|m| *m == n)
+                .expect("in topo")
+        };
         assert!(idx("rpt-leaf") < idx("rpt-top"), "leaf before top");
 
         let leaf = report
@@ -440,8 +446,10 @@ mod contract_manifest_tests {
         const NAME: &'static str = "manifest-top";
         const VERSION: &'static str = "0.3.0";
         fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-            static DEPS: &[(&str, std::any::TypeId)] =
-                &[(<ManifestLeaf as ModuleMeta>::NAME, std::any::TypeId::of::<ManifestLeaf>())];
+            static DEPS: &[(&str, std::any::TypeId)] = &[(
+                <ManifestLeaf as ModuleMeta>::NAME,
+                std::any::TypeId::of::<ManifestLeaf>(),
+            )];
             DEPS
         }
     }
@@ -464,12 +472,24 @@ mod contract_manifest_tests {
         assert_eq!(manifest.schema_version, 1);
         assert_eq!(manifest.modules.len(), 2);
 
-        let leaf = manifest.modules.iter().find(|m| m.module == "manifest-leaf").expect("leaf");
+        let leaf = manifest
+            .modules
+            .iter()
+            .find(|m| m.module == "manifest-leaf")
+            .expect("leaf");
         assert_eq!(leaf.version, "2.1.0");
         assert!(leaf.deps.is_empty());
-        assert!(leaf.capability.contains("ManifestCap"), "capability type name: {}", leaf.capability);
+        assert!(
+            leaf.capability.contains("ManifestCap"),
+            "capability type name: {}",
+            leaf.capability
+        );
 
-        let top = manifest.modules.iter().find(|m| m.module == "manifest-top").expect("top");
+        let top = manifest
+            .modules
+            .iter()
+            .find(|m| m.module == "manifest-top")
+            .expect("top");
         assert_eq!(top.version, "0.3.0");
         assert_eq!(top.deps, vec!["manifest-leaf"]);
     }

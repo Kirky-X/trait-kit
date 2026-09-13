@@ -56,7 +56,11 @@ impl ConfersConfigHandle {
     /// String value for `key`, or `None` when absent / not a string.
     #[must_use]
     pub fn get_string(&self, key: &str) -> Option<String> {
-        self.provider.get_raw(key)?.inner.as_str().map(str::to_owned)
+        self.provider
+            .get_raw(key)?
+            .inner
+            .as_str()
+            .map(str::to_owned)
     }
 
     /// Integer value for `key`, or `None` when absent / not an integer.
@@ -227,7 +231,12 @@ mod tests {
         fn from_pairs<const N: usize>(pairs: [(&str, ConfigValue); N]) -> Arc<Self> {
             let map = pairs
                 .into_iter()
-                .map(|(k, v)| (k.to_string(), AnnotatedValue::new(v, SourceId::default(), k)))
+                .map(|(k, v)| {
+                    (
+                        k.to_string(),
+                        AnnotatedValue::new(v, SourceId::default(), k),
+                    )
+                })
                 .collect();
             Arc::new(Self(map))
         }
@@ -290,7 +299,10 @@ mod tests {
 
         let h1 = ready.require::<ConfersConfigModule>().expect("require");
         let h2 = h1.clone();
-        assert!(h1.contains("a") && h2.contains("a"), "clone shares provider");
+        assert!(
+            h1.contains("a") && h2.contains("a"),
+            "clone shares provider"
+        );
     }
 
     #[test]
@@ -307,20 +319,19 @@ mod tests {
     }
 }
 
-
 /// Bridge confers remote/`AsyncSource` configuration into an `AsyncKit`.
 ///
 /// The remote module loads the source once during `AsyncKit::build()`, wraps
-/// the snapshot in a dot-path [`RemoteConfigProvider`], and publishes a
+/// the snapshot in a dot-path [`RemoteConfigProvider`](Self), and publishes a
 /// `ConfigChanged` audit event on the kit's event bus. Requires the
 /// `presets-remote` feature (implies `presets` and confers `remote`).
 #[cfg(feature = "presets-remote")]
 pub mod remote {
     use super::{ConfersConfigHandle, PresetError};
-    use confers::{AnnotatedValue, ConfigProvider, ConfigValue};
     use crate::core::{AsyncAutoBuilder, ModuleMeta};
     use crate::error::TraitKitError;
     use crate::kit::AsyncKit;
+    use confers::{AnnotatedValue, ConfigProvider, ConfigValue};
     use std::sync::Arc;
 
     /// Config slot carrying the remote source into the module build.
@@ -396,9 +407,9 @@ pub mod remote {
         }
     }
 
-    /// AsyncKit module exposing a remote configuration snapshot.
+    /// `AsyncKit` module exposing a remote configuration snapshot.
     ///
-    /// Capability: [`ConfersConfigHandle`](super::ConfersConfigHandle) — the
+    /// Capability: `ConfersConfigHandle` — the
     /// same handle type as the local preset, so downstream modules are source
     /// agnostic.
     pub struct ConfersRemoteConfigModule;
@@ -413,8 +424,11 @@ pub mod remote {
 
         fn build<'a>(
             kit: &'a AsyncKit,
-        ) -> Pin<Box<dyn std::future::Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
-        {
+        ) -> Pin<
+            Box<
+                dyn std::future::Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a,
+            >,
+        > {
             Box::pin(async move {
                 let slot = kit
                     .config::<RemoteSourceSlot>()
@@ -464,6 +478,10 @@ pub mod remote {
         }
 
         #[async_trait]
+        #[allow(
+            clippy::unnecessary_literal_bound,
+            reason = "confers trait 把 name 的生命周期绑到 self，mock 返回字面量无法改 &'static str"
+        )]
         impl confers::interface::AsyncSource for MockRemoteSource {
             async fn load(&self) -> confers::ConfigResult<AnnotatedValue> {
                 Ok(AnnotatedValue::new(
@@ -497,7 +515,9 @@ pub mod remote {
             });
 
             let mut kit = AsyncKit::new();
-            kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>));
+            kit.with_event_bus(Some(
+                Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>
+            ));
             register_confers_remote_config(&mut kit, source).expect("register remote preset");
             let ready = block_on(kit.build()).expect("build ok");
 
@@ -521,6 +541,10 @@ pub mod remote {
         fn remote_source_failure_fails_build() {
             struct FailingSource;
             #[async_trait]
+            #[allow(
+                clippy::unnecessary_literal_bound,
+                reason = "同上：trait 签名生命周期绑定，字面量返回值豁免"
+            )]
             impl confers::interface::AsyncSource for FailingSource {
                 async fn load(&self) -> confers::ConfigResult<AnnotatedValue> {
                     Err(confers::ConfigError::FileNotFound {
@@ -538,8 +562,7 @@ pub mod remote {
             }
 
             let mut kit = AsyncKit::new();
-            register_confers_remote_config(&mut kit, Arc::new(FailingSource))
-                .expect("register");
+            register_confers_remote_config(&mut kit, Arc::new(FailingSource)).expect("register");
             let err = block_on(kit.build()).expect_err("remote failure fails build");
             assert!(
                 err.to_string().contains("mock-remote-source"),

@@ -31,7 +31,10 @@ impl AutoBuilder for LoggerModule {
 
 #[derive(Clone, Debug)]
 struct DbConfig {
-    #[expect(dead_code, reason = "url 仅作仿真配置填充，测试断言只读 max_connections")]
+    #[expect(
+        dead_code,
+        reason = "url 仅作仿真配置填充，测试断言只读 max_connections"
+    )]
     url: String,
     max_connections: u32,
 }
@@ -751,7 +754,11 @@ mod graph_coverage {
     /// same `DependencyGraph` MUST be given a distinct `TypeId` (e.g.
     /// `TypeId::of::<A>()` for a dedicated placeholder type). Reusing a single
     /// `TypeId` across entries would make registration collide.
-    fn entry(name: &'static str, type_id: TypeId, deps: Vec<(&'static str, TypeId)>) -> ModuleEntry {
+    fn entry(
+        name: &'static str,
+        type_id: TypeId,
+        deps: Vec<(&'static str, TypeId)>,
+    ) -> ModuleEntry {
         ModuleEntry {
             type_id,
             name,

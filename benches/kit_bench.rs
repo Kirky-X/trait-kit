@@ -21,17 +21,20 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 
+use trait_kit::TraitKitError;
 use trait_kit::core::{AutoBuilder, ModuleMeta};
 use trait_kit::kit::{Kit, Ready};
-use trait_kit::TraitKitError;
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
 
 /// Typed configuration payload used by the config benchmarks.
 #[derive(Debug, Clone)]
-#[allow(dead_code, reason = "fields exercise realistic clone cost in read bench")]
+#[allow(
+    dead_code,
+    reason = "fields exercise realistic clone cost in read bench"
+)]
 struct BenchConfig {
     url: String,
     retries: u32,
@@ -72,8 +75,10 @@ struct BenchMid;
 impl ModuleMeta for BenchMid {
     const NAME: &'static str = "bench-mid";
     fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-        static DEPS: &[(&str, std::any::TypeId)] =
-            &[(<BenchLeaf as ModuleMeta>::NAME, std::any::TypeId::of::<BenchLeaf>())];
+        static DEPS: &[(&str, std::any::TypeId)] = &[(
+            <BenchLeaf as ModuleMeta>::NAME,
+            std::any::TypeId::of::<BenchLeaf>(),
+        )];
         DEPS
     }
 }
@@ -91,8 +96,10 @@ struct BenchTop;
 impl ModuleMeta for BenchTop {
     const NAME: &'static str = "bench-top";
     fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-        static DEPS: &[(&str, std::any::TypeId)] =
-            &[(<BenchMid as ModuleMeta>::NAME, std::any::TypeId::of::<BenchMid>())];
+        static DEPS: &[(&str, std::any::TypeId)] = &[(
+            <BenchMid as ModuleMeta>::NAME,
+            std::any::TypeId::of::<BenchMid>(),
+        )];
         DEPS
     }
 }

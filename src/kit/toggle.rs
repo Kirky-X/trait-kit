@@ -173,7 +173,7 @@ impl ToggleBackend for ConfersToggle {
             return Some(v.clone());
         }
         // Fall back to confers registry (boolean only)
-        if self.registry.len() > 0 && !self.removed.contains(key) {
+        if !self.registry.is_empty() && !self.removed.contains(key) {
             let infos = self.registry.list();
             for info in &infos {
                 if info.name == key {
@@ -188,7 +188,9 @@ impl ToggleBackend for ConfersToggle {
         match &value {
             ToggleValue::Bool(enabled) => {
                 // Register in confers if not present, then set state
-                if !self.registry.is_enabled(&key) && !self.registry.list().iter().any(|i| i.name == key) {
+                if !self.registry.is_enabled(&key)
+                    && !self.registry.list().iter().any(|i| i.name == key)
+                {
                     self.registry.register(key.clone(), "", *enabled);
                 }
                 if *enabled {
@@ -256,8 +258,8 @@ impl ToggleBackend for ConfersToggle {
 
 /// The concrete toggle backend type used by `Kit` and `AsyncKit`.
 ///
-/// - With `confers` feature: [`ConfersToggle`] (confers registry + typed side-map).
-/// - Without `confers`: [`MemoryToggle`] (pure HashMap).
+/// - With `confers` feature: [`ConfersToggle`] (`confers` registry + typed side-map).
+/// - Without `confers`: [`MemoryToggle`] (pure `HashMap`).
 #[cfg(feature = "confers")]
 pub type ToggleBackendType = ConfersToggle;
 
@@ -265,10 +267,9 @@ pub type ToggleBackendType = ConfersToggle;
 #[cfg(not(feature = "confers"))]
 pub type ToggleBackendType = MemoryToggle;
 
-
 /// Compile-time toggle key binding.
 ///
-/// Implement this trait (usually via the [`define_toggle_key!`] macro) to get
+/// Implement this trait (usually via the `define_toggle_key!` macro) to get
 /// a typed handle [`ToggleHandle`] whose `get`/`set` cannot suffer from
 /// misspelled string keys: the key is fixed once at the type level.
 pub trait ToggleKey {
@@ -314,11 +315,16 @@ pub struct ToggleHandle<'a, K: ToggleKey> {
 
 impl<K: ToggleKey> std::fmt::Debug for ToggleHandle<'_, K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ToggleHandle<{}>({:?})", std::any::type_name::<K>(), K::KEY)
+        write!(
+            f,
+            "ToggleHandle<{}>({:?})",
+            std::any::type_name::<K>(),
+            K::KEY
+        )
     }
 }
 
-impl<'a, K: ToggleKey> ToggleHandle<'a, K> {
+impl<K: ToggleKey> ToggleHandle<'_, K> {
     /// Current boolean state of the toggle (false when unset or non-bool).
     #[must_use]
     pub fn get(&self) -> bool {
@@ -387,7 +393,7 @@ mod tests {
     fn memory_toggle_list() {
         let mut t = MemoryToggle::new();
         t.set("a".into(), ToggleValue::Bool(true));
-        t.set("b".into(), ToggleValue::Float(3.14));
+        t.set("b".into(), ToggleValue::Float(std::f64::consts::PI));
         let list = t.list();
         assert_eq!(list.len(), 2);
         let keys: Vec<&str> = list.iter().map(|(k, _)| k.as_str()).collect();
@@ -524,7 +530,10 @@ mod typed_handle_tests {
 
         let handle = ready.toggle_handle::<PrdModeKey>();
         assert!(handle.get());
-        assert!(ready.is_toggle_enabled("prd-mode"), "typed and string APIs share the backend");
+        assert!(
+            ready.is_toggle_enabled("prd-mode"),
+            "typed and string APIs share the backend"
+        );
         handle.set(false);
         assert!(!ready.is_toggle_enabled("prd-mode"));
         assert_eq!(handle.key(), "prd-mode");

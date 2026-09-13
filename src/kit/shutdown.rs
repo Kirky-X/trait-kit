@@ -458,10 +458,9 @@ impl AsyncShutdownCoordinator {
     ///
     /// 当内部 `RwLock` 中毒时返回 `TraitKitError::BuildFailed`。
     pub fn set_global_timeout(&self, timeout: Duration) -> Result<(), TraitKitError> {
-        let mut global = self
-            .global_timeout
-            .write()
-            .map_err(|_| lock_poisoned(String::from("shutdown coordinator `set_global_timeout`")))?;
+        let mut global = self.global_timeout.write().map_err(|_| {
+            lock_poisoned(String::from("shutdown coordinator `set_global_timeout`"))
+        })?;
         *global = Some(timeout);
         Ok(())
     }
@@ -846,18 +845,12 @@ mod tests {
             }
         );
 
-        let r1 = ShutdownResult {
-            phases: vec![a],
-        };
-        let r2 = ShutdownResult {
-            phases: vec![b],
-        };
+        let r1 = ShutdownResult { phases: vec![a] };
+        let r2 = ShutdownResult { phases: vec![b] };
         assert_eq!(r1, r2);
         assert_eq!(
             ShutdownResult::default(),
-            ShutdownResult {
-                phases: Vec::new()
-            }
+            ShutdownResult { phases: Vec::new() }
         );
     }
 
@@ -1117,9 +1110,7 @@ mod async_tests {
         block_on(async {
             let coord = AsyncShutdownCoordinator::new();
             // 全局预算 20ms：第一个 hook 阻塞 50ms 耗尽预算，第二个 hook 必须跳过
-            coord
-                .set_global_timeout(Duration::from_millis(20))
-                .unwrap();
+            coord.set_global_timeout(Duration::from_millis(20)).unwrap();
 
             coord
                 .register_hook(ShutdownPhase::StopRequests, || {

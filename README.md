@@ -2,7 +2,7 @@
 
 <img src="docs/assets/trait-kit.svg" alt="trait-kit logo" width="180">
 
-[![CI Status](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml) [![Version](https://img.shields.io/crates/v/trait-kit.svg)](https://crates.io/crates/trait-kit) [![Docs.rs](https://docs.rs/trait-kit/badge.svg)](https://docs.rs/trait-kit) [![Downloads](https://img.shields.io/crates/d/trait-kit.svg)](https://crates.io/crates/trait-kit) [![License](https://img.shields.io/crates/l/trait-kit.svg)](LICENSE) [![Rust](https://img.shields.io/badge/rust-1.97.1%2B-orange.svg)](https://www.rust-lang.org/)
+[![CI Status](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml) [![Version](https://img.shields.io/crates/v/trait-kit.svg)](https://crates.io/crates/trait-kit) [![Docs.rs](https://docs.rs/trait-kit/badge.svg)](https://docs.rs/trait-kit) [![Downloads](https://img.shields.io/crates/d/trait-kit.svg)](https://crates.io/crates/trait-kit) [![License](https://img.shields.io/crates/l/trait-kit.svg)](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE) [![Rust](https://img.shields.io/badge/rust-1.97.1%2B-orange.svg)](https://www.rust-lang.org/)
 
 **中文** | [English](README_EN.md)
 
@@ -575,7 +575,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 80
 
 ## 📄 许可证
 
-本项目基于 **MIT + Commons Clause** 许可证发布：MIT 主许可之上附加 Commons Clause v1.0 条件，未经许可方单独书面授权不得销售本软件；属于 source-available 许可证，商业使用需单独授权。详见 [LICENSE](LICENSE)。
+本项目基于 **MIT + Commons Clause** 许可证发布：MIT 主许可之上附加 Commons Clause v1.0 条件，未经许可方单独书面授权不得销售本软件；属于 source-available 许可证，商业使用需单独授权。详见 [LICENSE](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE)。
 
 Copyright (c) 2026 Kirky.X
 

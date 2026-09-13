@@ -14,7 +14,7 @@ use std::sync::Arc;
 /// Implementations record counter/gauge/histogram values. The trait is
 /// object-safe (`Send + Sync`) so it can be stored as `Arc<dyn MetricsPort>`.
 ///
-/// # NoOp default
+/// # `NoOp` default
 ///
 /// [`NoOpMetricsPort`] discards all recordings. Use it as the default when
 /// no metrics backend is configured.
@@ -32,7 +32,7 @@ pub trait MetricsPort: Send + Sync + 'static {
 /// Implementations receive structured log records from Kit/AsyncKit
 /// lifecycle events. The trait is object-safe (`Send + Sync`).
 ///
-/// # NoOp default
+/// # `NoOp` default
 ///
 /// [`NoOpLogPort`] discards all records.
 pub trait LogPort: Send + Sync + 'static {

@@ -346,7 +346,9 @@ dependencies = [
 
 [[package]]
 name = "confers"
-version = "0.6.0-rc.3"
+version = "0.6.0-rc.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e93a0924eabc16e4fd10766c890d0c661ac62d32243ce8d8197a105931dbfb8"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -378,7 +380,9 @@ dependencies = [
 
 [[package]]
 name = "confers-macros"
-version = "0.6.0-rc.3"
+version = "0.6.0-rc.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "246b658b18e09a056e9a69f5e8bd3be8f34ebe8efe2a13cd369c286e40f9367a"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -2608,7 +2612,7 @@ dependencies = [
 
 [[package]]
 name = "trait-kit"
-version = "0.5.0-rc.3"
+version = "0.5.0-rc.4"
 dependencies = [
  "async-trait",
  "confers",
@@ -2627,7 +2631,7 @@ dependencies = [
 
 [[package]]
 name = "trait-kit-derive"
-version = "0.5.0-rc.3"
+version = "0.5.0-rc.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2636,7 +2640,7 @@ dependencies = [
 
 [[package]]
 name = "trait-kit-examples"
-version = "0.5.0-rc.3"
+version = "0.5.0-rc.4"
 dependencies = [
  "confers",
  "serde",
@@ -2647,7 +2651,7 @@ dependencies = [
 
 [[package]]
 name = "trait-kit-macros"
-version = "0.5.0-rc.3"
+version = "0.5.0-rc.4"
 dependencies = [
  "proc-macro2",
  "quote",

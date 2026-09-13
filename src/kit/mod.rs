@@ -73,12 +73,12 @@ pub use config::merge_json_deep;
 
 #[cfg(feature = "presets")]
 pub use presets::{
-    register_confers_config, ConfersConfigHandle, ConfersConfigModule, PresetError, Presets,
+    ConfersConfigHandle, ConfersConfigModule, PresetError, Presets, register_confers_config,
 };
 
 #[cfg(feature = "presets-remote")]
 pub use presets::remote::{
-    register_confers_remote_config, ConfersRemoteConfigModule, RemoteConfigProvider,
+    ConfersRemoteConfigModule, RemoteConfigProvider, register_confers_remote_config,
 };
 
 #[cfg(feature = "compose")]
@@ -89,21 +89,23 @@ pub use sub_kit::{SubKitHandle, SubKitModule, SubKitSpec};
 // and #[derive(SharedConfig)]. The traits are re-exported above.
 
 #[cfg(feature = "encryption")]
-pub use config::{ConfersKeyProvider, EncryptedBlob, KeyBytes, KeyProvider};
-#[cfg(feature = "encryption")]
 pub(crate) use config::XChaCha20Crypto;
+#[cfg(feature = "encryption")]
+pub use config::{ConfersKeyProvider, EncryptedBlob, KeyBytes, KeyProvider};
 
 pub use ports::{
-    LogPort, LogLevel, MetricsPort, NoOpLogPort, NoOpMetricsPort, OptionalLogPort,
+    LogLevel, LogPort, MetricsPort, NoOpLogPort, NoOpMetricsPort, OptionalLogPort,
     OptionalMetricsPort,
 };
 
 pub use events::{EventBus, KitEvent, MemoryEventBus, NoOpEventBus, OptionalEventBus};
 
-#[cfg(feature = "toggle")]
-pub use toggle::{MemoryToggle, ToggleBackend, ToggleBackendType, ToggleHandle, ToggleKey, ToggleValue};
 #[cfg(all(feature = "toggle", feature = "confers"))]
 pub use toggle::ConfersToggle;
+#[cfg(feature = "toggle")]
+pub use toggle::{
+    MemoryToggle, ToggleBackend, ToggleBackendType, ToggleHandle, ToggleKey, ToggleValue,
+};
 
 #[cfg(feature = "report")]
 pub use report::{

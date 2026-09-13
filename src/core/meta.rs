@@ -99,7 +99,10 @@ mod semver_tests {
     fn major_mismatch_or_older_is_incompatible() {
         assert!(!compat("2.0.0", "1.9.9"), "major bump breaks compat");
         assert!(!compat("1.1.0", "1.2.0"), "older provider");
-        assert!(!compat("1.1.0-rc.1", "1.1.0"), "prerelease sorts below release");
+        assert!(
+            !compat("1.1.0-rc.1", "1.1.0"),
+            "prerelease sorts below release"
+        );
     }
 }
 

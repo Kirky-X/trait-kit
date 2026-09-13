@@ -46,7 +46,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn overrides_field_is_empty_on_new() {
         let kit = Kit::new();
@@ -58,7 +57,6 @@ mod tests {
         let kit = Kit::new();
         assert_eq!(kit.overrides.borrow().len(), 0);
     }
-
 
     #[test]
     fn override_module_inserts_into_overrides_map() {
@@ -94,7 +92,6 @@ mod tests {
         // Override should not have been inserted
         assert_eq!(kit.overrides.borrow().len(), 0);
     }
-
 
     /// Module whose `build_fn` increments a counter, to verify override skips it.
     struct CountingModule;
@@ -150,7 +147,6 @@ mod tests {
         assert_eq!(cap.load(Ordering::SeqCst), 77);
     }
 
-
     #[test]
     fn require_ref_returns_reference_to_built_capability() {
         let mut kit = Kit::new();
@@ -181,7 +177,6 @@ mod tests {
             Err(TraitKitError::MissingCapability { ref key }) if key == "counting"
         ));
     }
-
 
     #[test]
     fn register_lazy_does_not_build_during_build() {
@@ -217,7 +212,6 @@ mod tests {
             Err(TraitKitError::AlreadyRegistered { module: "counting" })
         ));
     }
-
 
     #[test]
     fn lazy_slots_empty_on_new_kit() {
@@ -285,7 +279,6 @@ mod tests {
                 .contains_key(&TypeId::of::<CountingModule>())
         );
     }
-
 
     #[test]
     fn require_triggers_lazy_construction_on_first_access() {
@@ -388,7 +381,6 @@ mod tests {
             "lazy build accessed eager dep (42 + 100)"
         );
     }
-
 
     /// Multi-binding module A (capability = Arc<AtomicUsize>).
     struct MultiModuleA;
@@ -528,7 +520,6 @@ mod tests {
         let cap_id = TypeId::of::<Arc<AtomicUsize>>();
         assert_eq!(kit.multi_builders.borrow().get(&cap_id).unwrap().len(), 2);
     }
-
 
     #[test]
     fn require_all_returns_empty_for_unregistered_capability() {
@@ -2469,7 +2460,6 @@ mod config_inheritance_tests {
         }
     }
 
-
     #[test]
     fn populate_defaults_fills_empty_kit() {
         let kit = Kit::new();
@@ -2496,7 +2486,6 @@ mod config_inheritance_tests {
         assert_eq!(config.host, "prod-db");
         assert_eq!(config.port, 5432);
     }
-
 
     #[test]
     fn merge_config_overrides_only_some_fields() {
@@ -2528,7 +2517,6 @@ mod config_inheritance_tests {
         assert!(!kit.configs.contains::<TestDbConfig>());
     }
 
-
     #[test]
     fn extract_then_inject_shared_flows_values() {
         let kit = Kit::new();
@@ -2552,15 +2540,16 @@ mod config_inheritance_tests {
         assert_eq!(db.max_connections, 10); // B's own default preserved
     }
 
-
     #[test]
     fn inject_shared_skips_type_mismatch_silently() {
         let kit = Kit::new();
         // Manually put a wrong-type value into shared overlay
-        kit.confers.shared_fields
+        kit.confers
+            .shared_fields
             .borrow_mut()
             .insert("host".into(), serde_json::json!([1, 2, 3])); // array, not string
-        kit.confers.shared_fields
+        kit.confers
+            .shared_fields
             .borrow_mut()
             .insert("port".into(), serde_json::json!("not-a-number")); // string, not number
 
@@ -2591,7 +2580,8 @@ mod config_inheritance_tests {
     fn inject_shared_noop_when_config_missing() {
         let kit = Kit::new();
         // Put something in overlay first
-        kit.confers.shared_fields
+        kit.confers
+            .shared_fields
             .borrow_mut()
             .insert("host".into(), serde_json::json!("some-host"));
         // No config set — should not panic

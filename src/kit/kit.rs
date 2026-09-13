@@ -31,9 +31,9 @@ use crate::i18n::tr;
 #[cfg(feature = "encryption")]
 use super::EncryptedBlob;
 use super::TypeMap;
-use super::{DependencyGraph, GraphError, ModuleEntry};
 #[cfg(feature = "toggle")]
 use super::toggle::ToggleBackend;
+use super::{DependencyGraph, GraphError, ModuleEntry};
 
 #[cfg(feature = "lifecycle")]
 type ShutdownCallback = Box<dyn Fn(&TypeMap)>;
@@ -131,9 +131,8 @@ type EncryptedConfigMap = RefCell<HashMap<TypeId, VersionedBlob>>;
 /// closure can be invoked through a shared borrow — so when a lazy build
 /// fails, the very same closure can be put back into its slot and the slot
 /// stays retryable instead of degrading into a permanent `MissingCapability`.
-pub(crate) type LazyBuildFn = Box<
-    dyn Fn(&Kit) -> Result<Box<dyn Any>, Box<dyn std::error::Error + Send + 'static>>,
->;
+pub(crate) type LazyBuildFn =
+    Box<dyn Fn(&Kit) -> Result<Box<dyn Any>, Box<dyn std::error::Error + Send + 'static>>>;
 
 /// A lazy construction slot: holds a `build_fn` and a `OnceLock` cache cell.
 /// The builder is invoked on first access; the result is cached in the
@@ -547,7 +546,12 @@ impl Kit {
 
         // One implementation per interface type. Report the module that
         // already occupies the interface, not the rejected newcomer.
-        if let Some((owner, _)) = self.interface.interface_builders.borrow().get(&interface_id) {
+        if let Some((owner, _)) = self
+            .interface
+            .interface_builders
+            .borrow()
+            .get(&interface_id)
+        {
             return Err(TraitKitError::AlreadyRegistered { module: owner });
         }
 
@@ -570,7 +574,8 @@ impl Kit {
             #[cfg(feature = "decorator")]
             let cap = {
                 let boxed = kit.apply_decorators(
-                    kit.decorator.decorator_module_to_cap
+                    kit.decorator
+                        .decorator_module_to_cap
                         .borrow()
                         .get(&TypeId::of::<M>())
                         .copied()
@@ -585,7 +590,8 @@ impl Kit {
             Ok(Box::new(iface) as Box<dyn Any>)
         });
 
-        self.interface.interface_builders
+        self.interface
+            .interface_builders
             .borrow_mut()
             .insert(interface_id, (M::NAME, build_fn));
         Ok(())
@@ -608,10 +614,11 @@ impl Kit {
             .borrow_mut()
             .insert(TypeId::of::<M>(), Box::new(capability));
         #[cfg(feature = "report")]
-        self.report.push_override_record(super::report::OverrideRecord {
-            module: M::NAME,
-            source: "override_module",
-        });
+        self.report
+            .push_override_record(super::report::OverrideRecord {
+                module: M::NAME,
+                source: "override_module",
+            });
     }
 
     /// Override a module's capability with a pre-built value, but still
@@ -648,10 +655,11 @@ impl Kit {
             .borrow_mut()
             .insert(TypeId::of::<M>(), Box::new(capability));
         #[cfg(feature = "report")]
-        self.report.push_override_record(super::report::OverrideRecord {
-            module: M::NAME,
-            source: "override_module_strict",
-        });
+        self.report
+            .push_override_record(super::report::OverrideRecord {
+                module: M::NAME,
+                source: "override_module_strict",
+            });
         Ok(())
     }
 
@@ -749,7 +757,8 @@ impl Kit {
     #[cfg(feature = "confers")]
     pub fn snapshot_config<C: Clone + 'static>(&self) -> bool {
         if let Some(config) = self.configs.get_cloned::<C>() {
-            self.confers.config_snapshots
+            self.confers
+                .config_snapshots
                 .borrow_mut()
                 .insert(TypeId::of::<C>(), Box::new(config));
             true
@@ -795,7 +804,8 @@ impl Kit {
     /// Check if a snapshot exists for configuration type `C`.
     #[cfg(feature = "confers")]
     pub fn has_snapshot<C: 'static>(&self) -> bool {
-        self.confers.config_snapshots
+        self.confers
+            .config_snapshots
             .borrow()
             .contains_key(&TypeId::of::<C>())
     }
@@ -850,6 +860,10 @@ impl Kit {
     /// Returns `TraitKitError::CycleDetected` if a dependency cycle is found.
     /// Returns `TraitKitError::MissingCapability` if a build function is missing for a sorted module.
     /// Returns `TraitKitError::BuildFailed` if a module's `build` callback returns an error.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "build 的拓扑校验/能力构建/接口装配/生命周期登记为同一事务的顺序阶段，拆分会散落状态所有权"
+    )]
     pub fn build(self) -> Result<Kit<Ready>, TraitKitError> {
         let sorted = match self.graph.validate() {
             Ok(sorted) => sorted,
@@ -889,11 +903,21 @@ impl Kit {
 
         // Extract ready_callbacks before moving self
         #[cfg(feature = "lifecycle")]
-        let ready_callbacks: Vec<(TypeId, ReadyCallback)> =
-            { self.lifecycle.ready_callbacks.borrow_mut().drain(..).collect() };
+        let ready_callbacks: Vec<(TypeId, ReadyCallback)> = {
+            self.lifecycle
+                .ready_callbacks
+                .borrow_mut()
+                .drain(..)
+                .collect()
+        };
         #[cfg(feature = "lifecycle")]
-        let shutdown_callbacks: Vec<(TypeId, ShutdownCallback)> =
-            { self.lifecycle.shutdown_callbacks.borrow_mut().drain(..).collect() };
+        let shutdown_callbacks: Vec<(TypeId, ShutdownCallback)> = {
+            self.lifecycle
+                .shutdown_callbacks
+                .borrow_mut()
+                .drain(..)
+                .collect()
+        };
         #[cfg(feature = "lifecycle")]
         // Stable topological sort so `shutdown()`'s reverse iteration really
         // runs in reverse topological order: dependents (consumers) shut down
@@ -911,8 +935,9 @@ impl Kit {
         // Structural build time stops here (lifecycle on_ready callbacks are
         // excluded from the report's total).
         #[cfg(feature = "report")]
-        self.report
-            .set_total_elapsed_us(report_build_start.elapsed().as_micros() as u64);
+        self.report.set_total_elapsed_us(
+            u64::try_from(report_build_start.elapsed().as_micros()).unwrap_or(u64::MAX),
+        );
 
         // merge module-owned FTL fragments matching the active locale
         // into the kit-local overlay catalog (must happen before `self.i18n`
@@ -1065,11 +1090,12 @@ impl Kit {
                     #[cfg(feature = "report")]
                     self.report.push_built(
                         module_name,
-                        report_start.elapsed().as_micros() as u64,
+                        u64::try_from(report_start.elapsed().as_micros()).unwrap_or(u64::MAX),
                         report_deps,
                     );
                     if let Some(event_start) = event_start {
-                        let elapsed_us = event_start.elapsed().as_micros() as u64;
+                        let elapsed_us =
+                            u64::try_from(event_start.elapsed().as_micros()).unwrap_or(u64::MAX);
                         self.publish_event(super::events::KitEvent::ModuleBuilt {
                             module: module_name,
                             elapsed_us,
@@ -1199,8 +1225,12 @@ impl Kit {
     /// whose `TypeId` always differs from the unsized `dyn Interface`.
     #[cfg(feature = "interface")]
     fn build_interface_modules(&self) -> Result<(), TraitKitError> {
-        let interfaces: Vec<(TypeId, (&'static str, BuildFn))> =
-            self.interface.interface_builders.borrow_mut().drain().collect();
+        let interfaces: Vec<(TypeId, (&'static str, BuildFn))> = self
+            .interface
+            .interface_builders
+            .borrow_mut()
+            .drain()
+            .collect();
         for (interface_id, (_owner, build_fn)) in interfaces {
             let boxed = (build_fn)(self).map_err(|e| TraitKitError::BuildFailed {
                 context: tr("trait-kit-diag-interface", &[]),
@@ -1252,7 +1282,8 @@ impl Kit {
                 M::on_shutdown(cap_ref);
             }
         });
-        self.lifecycle.shutdown_callbacks
+        self.lifecycle
+            .shutdown_callbacks
             .borrow_mut()
             .push((TypeId::of::<M>(), shutdown_cb));
 
@@ -1263,7 +1294,8 @@ impl Kit {
                 source: Box::new(e),
             })
         });
-        self.lifecycle.ready_callbacks
+        self.lifecycle
+            .ready_callbacks
             .borrow_mut()
             .push((TypeId::of::<M>(), ready_cb));
     }
@@ -1291,7 +1323,8 @@ impl Kit {
                 },
             }
         });
-        self.health.health_checkers
+        self.health
+            .health_checkers
             .borrow_mut()
             .insert(TypeId::of::<M>(), (M::NAME, checker));
     }
@@ -1417,14 +1450,11 @@ impl Kit {
             .versions
             .borrow_mut()
             .insert(M::NAME, M::VERSION);
-        self.negotiate
-            .requirements
-            .borrow_mut()
-            .extend(
-                M::required_versions()
-                    .iter()
-                    .map(|(dep, min)| (M::NAME, *dep, *min)),
-            );
+        self.negotiate.requirements.borrow_mut().extend(
+            M::required_versions()
+                .iter()
+                .map(|(dep, min)| (M::NAME, *dep, *min)),
+        );
     }
 
     #[cfg(not(feature = "negotiate"))]
@@ -1469,25 +1499,19 @@ impl Kit {
 
     // ─── Observation Ports ─────────────────────────────────────────────
 
-    /// Inject a [`MetricsPort`] for recording counters/gauges/histograms.
+    /// Inject a [`MetricsPort`](crate::kit::ports::MetricsPort) for recording counters/gauges/histograms.
     ///
     /// The port is stored as `Option<Arc<dyn MetricsPort>>`. Pass `None` to
     /// explicitly disable metrics, or omit this call entirely (default is `None`).
-    pub fn with_metrics_port(
-        &mut self,
-        port: impl Into<super::ports::OptionalMetricsPort>,
-    ) {
+    pub fn with_metrics_port(&mut self, port: impl Into<super::ports::OptionalMetricsPort>) {
         *self.ports.metrics_port.borrow_mut() = port.into();
     }
 
-    /// Inject a [`LogPort`] for structured log recording.
+    /// Inject a [`LogPort`](crate::kit::ports::LogPort) for structured log recording.
     ///
     /// The port is stored as `Option<Arc<dyn LogPort>>`. Pass `None` to
     /// explicitly disable logging, or omit this call entirely (default is `None`).
-    pub fn with_log_port(
-        &mut self,
-        port: impl Into<super::ports::OptionalLogPort>,
-    ) {
+    pub fn with_log_port(&mut self, port: impl Into<super::ports::OptionalLogPort>) {
         *self.ports.log_port.borrow_mut() = port.into();
     }
 
@@ -1520,14 +1544,16 @@ impl Kit {
             let decorated = decorator(*cap);
             Box::new(decorated) as Box<dyn Any>
         });
-        self.decorator.decorators
+        self.decorator
+            .decorators
             .borrow_mut()
             .entry(TypeId::of::<M::Capability>())
             .or_default()
             .push(wrapper);
         // Record module TypeId → capability TypeId mapping so
         // `build_eager_modules()` can look up decorators by module TypeId.
-        self.decorator.decorator_module_to_cap
+        self.decorator
+            .decorator_module_to_cap
             .borrow_mut()
             .insert(TypeId::of::<M>(), TypeId::of::<M::Capability>());
     }
@@ -1580,7 +1606,6 @@ impl<S> Kit<S> {
         current
     }
 
-
     /// Inject an [`EventBus`](super::events::EventBus) that receives runtime
     /// lifecycle events: module builds, health samples, config changes.
     ///
@@ -1631,19 +1656,22 @@ impl<S> Kit<S> {
     {
         let type_id = TypeId::of::<M>();
 
-        if let Some(arc) = self.capabilities.get_cloned_by_type_id::<std::sync::Arc<T>>(type_id) {
+        if let Some(arc) = self
+            .capabilities
+            .get_cloned_by_type_id::<std::sync::Arc<T>>(type_id)
+        {
             return Ok(arc);
         }
 
-        if let Some(slot) = self.lazy_slots.borrow().get(&type_id) {
-            if let Some(boxed) = slot.cell.get() {
-                if let Some(arc) = boxed.downcast_ref::<std::sync::Arc<T>>().cloned() {
-                    return Ok(arc);
-                }
-                return Err(TraitKitError::CapabilityTypeMismatch {
-                    key: M::NAME.to_string(),
-                });
+        if let Some(slot) = self.lazy_slots.borrow().get(&type_id)
+            && let Some(boxed) = slot.cell.get()
+        {
+            if let Some(arc) = boxed.downcast_ref::<std::sync::Arc<T>>().cloned() {
+                return Ok(arc);
             }
+            return Err(TraitKitError::CapabilityTypeMismatch {
+                key: M::NAME.to_string(),
+            });
         }
 
         if self.capabilities.contains_by_type_id(type_id) {
@@ -1696,12 +1724,12 @@ impl<S> Kit<S> {
         }
 
         // 2b. a lazy-slot cache value exists but the downcast failed.
-        if let Some(slot) = self.lazy_slots.borrow().get(&type_id) {
-            if slot.cell.get().is_some() {
-                return Err(TraitKitError::CapabilityTypeMismatch {
-                    key: M::NAME.to_string(),
-                });
-            }
+        if let Some(slot) = self.lazy_slots.borrow().get(&type_id)
+            && slot.cell.get().is_some()
+        {
+            return Err(TraitKitError::CapabilityTypeMismatch {
+                key: M::NAME.to_string(),
+            });
         }
 
         // 3. Lazy slots — first-access construction (cell empty, builder exists)
@@ -1763,7 +1791,12 @@ impl<S> Kit<S> {
             // documented downcast-mismatch panic, is frozen by e2e DEC-07.)
             #[cfg(feature = "decorator")]
             let boxed = {
-                let mapped_cap = self.decorator.decorator_module_to_cap.borrow().get(&type_id).copied();
+                let mapped_cap = self
+                    .decorator
+                    .decorator_module_to_cap
+                    .borrow()
+                    .get(&type_id)
+                    .copied();
                 match mapped_cap {
                     Some(cap_type_id) => self.apply_decorators(cap_type_id, boxed),
                     None => boxed,
@@ -1868,7 +1901,8 @@ impl<S> Kit<S> {
     #[cfg(feature = "reload")]
     pub fn subscribe<C: 'static>(&self, callback: impl Fn() + 'static) {
         let callback: Rc<dyn Fn()> = Rc::new(callback);
-        self.reload.subscribers
+        self.reload
+            .subscribers
             .borrow_mut()
             .entry(TypeId::of::<C>())
             .or_default()
@@ -1902,10 +1936,11 @@ impl<S> Kit<S> {
         self.configs.insert(config);
         // Clone individual Rc pointers (ref-count increment only) with
         // pre-allocated Vec to avoid a full `.cloned()` pass.
-        let callbacks: Vec<Rc<dyn Fn()>> = match self.reload.subscribers.borrow().get(&TypeId::of::<C>()) {
-            Some(subs) => subs.iter().map(Rc::clone).collect(),
-            None => Vec::new(),
-        };
+        let callbacks: Vec<Rc<dyn Fn()>> =
+            match self.reload.subscribers.borrow().get(&TypeId::of::<C>()) {
+                Some(subs) => subs.iter().map(Rc::clone).collect(),
+                None => Vec::new(),
+            };
         for cb in &callbacks {
             cb();
         }
@@ -1967,7 +2002,7 @@ impl Kit {
     ///
     /// # Errors
     ///
-    /// Encrypt and store a config value using an injected [`KeyProvider`].
+    /// Encrypt and store a config value using an injected [`KeyProvider`](crate::kit::config::KeyProvider).
     /// The key is pulled from the provider at call time, never
     /// hardcoded at the call site.
     ///
@@ -1993,6 +2028,11 @@ impl Kit {
 
     /// Returns `TraitKitError::BuildFailed` if serialization, key derivation, or
     /// encryption fails.
+    ///
+    /// # Errors
+    ///
+    /// Propagates serialization / key-derivation / encryption failures as
+    /// `TraitKitError::BuildFailed`.
     #[cfg(feature = "encryption")]
     pub fn set_encrypted<C>(&self, value: &C, master_key: &[u8]) -> Result<(), TraitKitError>
     where
@@ -2044,22 +2084,21 @@ impl Kit {
             source: Box::new(e),
         })?;
 
-        self.encryption.encrypted_configs
-            .borrow_mut()
-            .insert(
-                TypeId::of::<C>(),
-                VersionedBlob {
-                    key_version: INITIAL_KEY_VERSION,
-                    blob: EncryptedBlob::new(nonce, ciphertext),
-                },
-            );
+        self.encryption.encrypted_configs.borrow_mut().insert(
+            TypeId::of::<C>(),
+            VersionedBlob {
+                key_version: INITIAL_KEY_VERSION,
+                blob: EncryptedBlob::new(nonce, ciphertext),
+            },
+        );
         Ok(())
     }
 
     /// Check if an encrypted config of type `C` is registered.
     #[cfg(feature = "encryption")]
     pub fn contains_encrypted<C: super::ModuleConfig>(&self) -> bool {
-        self.encryption.encrypted_configs
+        self.encryption
+            .encrypted_configs
             .borrow()
             .contains_key(&TypeId::of::<C>())
     }
@@ -2084,15 +2123,14 @@ impl Kit {
         C: super::ModuleConfig + serde::Serialize,
     {
         self.set_encrypted::<C>(value, master_key)?;
-        if key_version != INITIAL_KEY_VERSION {
-            if let Some(entry) = self
+        if key_version != INITIAL_KEY_VERSION
+            && let Some(entry) = self
                 .encryption
                 .encrypted_configs
                 .borrow_mut()
                 .get_mut(&TypeId::of::<C>())
-            {
-                entry.key_version = key_version;
-            }
+        {
+            entry.key_version = key_version;
         }
         Ok(())
     }
@@ -2306,8 +2344,12 @@ impl Kit<Ready> {
     /// Requires the `lifecycle` feature.
     #[cfg(feature = "lifecycle")]
     pub fn shutdown(&self) {
-        let callbacks: Vec<(TypeId, ShutdownCallback)> =
-            self.lifecycle.shutdown_callbacks.borrow_mut().drain(..).collect();
+        let callbacks: Vec<(TypeId, ShutdownCallback)> = self
+            .lifecycle
+            .shutdown_callbacks
+            .borrow_mut()
+            .drain(..)
+            .collect();
         // Reverse order: last built → first shut down
         for (_type_id, callback) in callbacks.iter().rev() {
             // Contract: a failed shutdown does not block other modules.
@@ -2415,7 +2457,7 @@ impl Kit<Ready> {
     }
 
     /// Aggregate the health of all registered checkers into a structured
-    /// [`HealthAggregate`]: worst-of overall status plus per-module
+    /// [`HealthAggregate`](crate::core::health::HealthAggregate): worst-of overall status plus per-module
     /// entries, ready for a `/healthz` endpoint.
     ///
     /// Requires the `health` and `report` features. Serialize with
@@ -2522,7 +2564,6 @@ impl Kit<Ready> {
     pub fn create_scope_from(self: &std::rc::Rc<Self>) -> super::scope::Scope {
         super::scope::Scope::with_parent(std::rc::Rc::downgrade(self))
     }
-
 
     /// Raw module-owned FTL fragments collected at registration time
     /// (`(locale, ftl_source)` pairs, registration order).
@@ -2671,7 +2712,6 @@ impl Kit<Ready> {
         })
     }
 
-
     /// Current key-version envelope of the stored encrypted config `C`.
     ///
     /// # Errors
@@ -2768,8 +2808,11 @@ impl Kit<Ready> {
 
         // Decrypt with the old key (fail closed on mismatch).
         let mut old_field_key = derive_kit_field_key(old_master_key, C::PATH, "rotate_master_key")?;
-        let decrypted =
-            XChaCha20Crypto::new().decrypt(stored.blob.nonce(), stored.blob.ciphertext(), &old_field_key);
+        let decrypted = XChaCha20Crypto::new().decrypt(
+            stored.blob.nonce(),
+            stored.blob.ciphertext(),
+            &old_field_key,
+        );
         zeroize_bytes(&mut old_field_key);
         let mut plaintext = decrypted.map_err(|e| TraitKitError::BuildFailed {
             context: "rotate_master_key (old key)".into(),
@@ -2777,8 +2820,7 @@ impl Kit<Ready> {
         })?;
 
         // Re-encrypt under the new key generation.
-        let mut new_field_key =
-            derive_kit_field_key(new_master_key, C::PATH, "rotate_master_key")?;
+        let mut new_field_key = derive_kit_field_key(new_master_key, C::PATH, "rotate_master_key")?;
         let encrypted = XChaCha20Crypto::new().encrypt(&plaintext, &new_field_key);
         zeroize_bytes(&mut plaintext);
         zeroize_bytes(&mut new_field_key);
@@ -2788,27 +2830,25 @@ impl Kit<Ready> {
         })?;
 
         let new_version = stored.key_version.saturating_add(1);
-        self.encryption.encrypted_configs
-            .borrow_mut()
-            .insert(
-                TypeId::of::<C>(),
-                VersionedBlob {
-                    key_version: new_version,
-                    blob: EncryptedBlob::new(nonce, ciphertext),
-                },
-            );
+        self.encryption.encrypted_configs.borrow_mut().insert(
+            TypeId::of::<C>(),
+            VersionedBlob {
+                key_version: new_version,
+                blob: EncryptedBlob::new(nonce, ciphertext),
+            },
+        );
         Ok(new_version)
     }
 
     // ─── Observation Port Accessors ────────────────────────────────────
 
-    /// Retrieve the injected [`MetricsPort`], if any.
+    /// Retrieve the injected [`MetricsPort`](crate::kit::ports::MetricsPort), if any.
     #[must_use]
     pub fn metrics_port(&self) -> super::ports::OptionalMetricsPort {
         self.ports.metrics_port.borrow().clone()
     }
 
-    /// Retrieve the injected [`LogPort`], if any.
+    /// Retrieve the injected [`LogPort`](crate::kit::ports::LogPort), if any.
     #[must_use]
     pub fn log_port(&self) -> super::ports::OptionalLogPort {
         self.ports.log_port.borrow().clone()
@@ -2872,7 +2912,10 @@ mod i18n_module_tests {
                     "zh-CN",
                     "greet-hello = 你好，{ $name }！\ngreet-only = 模块私有消息",
                 ),
-                ("en-US", "greet-hello = Hello, { $name }!\ngreet-only = module-private message"),
+                (
+                    "en-US",
+                    "greet-hello = Hello, { $name }!\ngreet-only = module-private message",
+                ),
             ]
         }
     }
@@ -2934,16 +2977,16 @@ mod i18n_module_tests {
         let ready = kit.build().expect("build ok");
 
         // Built-in catalog key resolved through the fallback path.
-        let msg = ready.module_tr(
-            "trait-kit-error-missing-capability",
-            &[("key", "some-key")],
-        );
+        let msg = ready.module_tr("trait-kit-error-missing-capability", &[("key", "some-key")]);
         assert!(
             msg.contains("some-key") && msg != "trait-kit-error-missing-capability",
             "fallback must reach the global catalog: {msg}"
         );
         // Unknown key everywhere → returned verbatim.
-        assert_eq!(ready.module_tr("no-such-key-anywhere", &[]), "no-such-key-anywhere");
+        assert_eq!(
+            ready.module_tr("no-such-key-anywhere", &[]),
+            "no-such-key-anywhere"
+        );
     }
 
     #[test]
@@ -2959,8 +3002,8 @@ mod i18n_module_tests {
 #[cfg(test)]
 mod event_bus_tests {
     use crate::core::{AutoBuilder, ModuleMeta};
-    use crate::kit::events::{KitEvent, MemoryEventBus};
     use crate::kit::Kit;
+    use crate::kit::events::{KitEvent, MemoryEventBus};
     use std::sync::{Arc, Mutex};
 
     #[derive(Debug, Clone)]
@@ -2992,8 +3035,10 @@ mod event_bus_tests {
     impl ModuleMeta for BusTop {
         const NAME: &'static str = "bus-top";
         fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-            static DEPS: &[(&str, std::any::TypeId)] =
-                &[(<BusLeaf as ModuleMeta>::NAME, std::any::TypeId::of::<BusLeaf>())];
+            static DEPS: &[(&str, std::any::TypeId)] = &[(
+                <BusLeaf as ModuleMeta>::NAME,
+                std::any::TypeId::of::<BusLeaf>(),
+            )];
             DEPS
         }
     }
@@ -3018,7 +3063,9 @@ mod event_bus_tests {
         });
 
         let mut kit = Kit::new();
-        kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>));
+        kit.with_event_bus(Some(
+            Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>
+        ));
         kit.register::<BusTop>().expect("register top");
         kit.register::<BusLeaf>().expect("register leaf");
         let ready = kit.build().expect("build ok");
@@ -3076,7 +3123,9 @@ mod event_bus_tests {
         });
 
         let mut kit = Kit::new();
-        kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>));
+        kit.with_event_bus(Some(
+            Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>
+        ));
         kit.register::<BusSick>().expect("register");
         kit.register_health_check::<BusSick>();
         let ready = kit.build().expect("build ok");
@@ -3129,7 +3178,10 @@ mod require_error_kind_tests {
         let kit = Kit::new().build().expect("build ok");
         let err = kit.require::<KindModule>().unwrap_err();
         assert_eq!(err.kind(), ErrorKind::Missing);
-        assert!(matches!(err, crate::TraitKitError::MissingCapability { .. }));
+        assert!(matches!(
+            err,
+            crate::TraitKitError::MissingCapability { .. }
+        ));
     }
 
     #[test]
@@ -3227,7 +3279,10 @@ mod get_arc_tests {
     fn get_arc_missing_module_returns_missing() {
         let kit = Kit::new().build().expect("build ok");
         let err = kit.get_arc::<ArcModule, ArcCap>().unwrap_err();
-        assert!(matches!(err, crate::TraitKitError::MissingCapability { .. }));
+        assert!(matches!(
+            err,
+            crate::TraitKitError::MissingCapability { .. }
+        ));
         assert_eq!(err.kind(), crate::ErrorKind::Missing);
     }
 
@@ -3238,9 +3293,10 @@ mod get_arc_tests {
         let mut kit = Kit::new();
         kit.register::<ArcModule>().expect("register");
         let ready = kit.build().expect("build ok");
-        ready
-            .capabilities
-            .insert_boxed(std::any::TypeId::of::<ArcModule>(), Box::new(ArcCap { value: 1 }));
+        ready.capabilities.insert_boxed(
+            std::any::TypeId::of::<ArcModule>(),
+            Box::new(ArcCap { value: 1 }),
+        );
         let err = ready.get_arc::<ArcModule, ArcCap>().unwrap_err();
         assert_eq!(err.kind(), crate::ErrorKind::TypeMismatch);
     }
@@ -3284,9 +3340,7 @@ mod config_arc_tests {
     fn async_config_arc_zero_clone_reads() {
         use crate::kit::AsyncKit;
         let kit = AsyncKit::new();
-        kit.set_config_arc(SnapshotConfig {
-            values: vec![9],
-        });
+        kit.set_config_arc(SnapshotConfig { values: vec![9] });
         let a = kit.config_arc::<SnapshotConfig>().expect("arc");
         let b = kit.config_arc::<SnapshotConfig>().expect("arc");
         assert!(Arc::ptr_eq(&a, &b));
@@ -3295,8 +3349,8 @@ mod config_arc_tests {
 
 #[cfg(test)]
 mod config_audit_event_tests {
-    use crate::kit::events::{KitEvent, MemoryEventBus};
     use crate::kit::Kit;
+    use crate::kit::events::{KitEvent, MemoryEventBus};
     use std::sync::{Arc, Mutex};
 
     #[derive(Debug, Clone)]
@@ -3314,7 +3368,9 @@ mod config_audit_event_tests {
         });
 
         let mut kit = Kit::new();
-        kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>));
+        kit.with_event_bus(Some(
+            Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>
+        ));
 
         kit.set_config(AuditConfig);
         kit.set_config(AuditConfig);
@@ -3335,15 +3391,6 @@ mod config_audit_event_tests {
     #[cfg(feature = "reload")]
     #[test]
     fn reload_config_publishes_reload_audit() {
-        let bus = Arc::new(MemoryEventBus::new());
-        let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let sink = Arc::clone(&log);
-        bus.subscribe(move |event| {
-            if let KitEvent::ConfigChanged { summary, .. } = event {
-                sink.lock().unwrap().push(summary.clone());
-            }
-        });
-
         struct ReloadableConfig;
         impl crate::kit::Configurable for ReloadableConfig {
             fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
@@ -3361,8 +3408,19 @@ mod config_audit_event_tests {
             }
         }
 
+        let bus = Arc::new(MemoryEventBus::new());
+        let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&log);
+        bus.subscribe(move |event| {
+            if let KitEvent::ConfigChanged { summary, .. } = event {
+                sink.lock().unwrap().push(summary.clone());
+            }
+        });
+
         let mut kit = Kit::new();
-        kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>));
+        kit.with_event_bus(Some(
+            Arc::clone(&bus) as Arc<dyn crate::kit::events::EventBus>
+        ));
         kit.reload_config::<ReloadableConfig>().expect("reload ok");
 
         let entries = log.lock().unwrap();
@@ -3410,7 +3468,12 @@ mod try_decorate_tests {
             .try_decorate::<DecModule>(|cap| Arc::new(PlainCap(cap.0 + 100)))
             .expect_err("unregistered target must fail at registration time");
         assert!(
-            matches!(err, crate::TraitKitError::DecoratorTargetMissing { module: "dec-module" }),
+            matches!(
+                err,
+                crate::TraitKitError::DecoratorTargetMissing {
+                    module: "dec-module"
+                }
+            ),
             "got: {err:?}"
         );
         assert_eq!(err.kind(), crate::ErrorKind::Other);
@@ -3471,7 +3534,10 @@ mod key_rotation_tests {
         )
         .expect("set with version");
         let ready = kit.build().expect("build ok");
-        assert_eq!(ready.encrypted_key_version::<RotationConfig>().expect("v"), 3);
+        assert_eq!(
+            ready.encrypted_key_version::<RotationConfig>().expect("v"),
+            3
+        );
 
         // Version-checked read succeeds with the right envelope...
         let plain: RotationConfig = ready
@@ -3535,13 +3601,8 @@ mod key_rotation_tests {
     #[test]
     fn rotate_rejects_short_new_key() {
         let kit = Kit::new();
-        kit.set_encrypted(
-            &RotationConfig {
-                secret: "x".into(),
-            },
-            &[1u8; 32],
-        )
-        .expect("set");
+        kit.set_encrypted(&RotationConfig { secret: "x".into() }, &[1u8; 32])
+            .expect("set");
         let ready = kit.build().expect("build ok");
         let err = ready
             .rotate_master_key::<RotationConfig>(&[1u8; 32], &[3u8; 8])
@@ -3672,8 +3733,13 @@ mod negotiate_tests {
         let mut kit = Kit::new();
         kit.register::<UndeclaredProvider>().expect("provider");
         kit.register::<ConsumerOfUndeclared>().expect("consumer");
-        let err = kit.build().expect_err("default 0.0.0 version fails negotiation");
-        assert!(matches!(err, crate::TraitKitError::VersionIncompatible { .. }));
+        let err = kit
+            .build()
+            .expect_err("default 0.0.0 version fails negotiation");
+        assert!(matches!(
+            err,
+            crate::TraitKitError::VersionIncompatible { .. }
+        ));
 
         // Without any requirements there is no behavior change.
         let mut kit = Kit::new();

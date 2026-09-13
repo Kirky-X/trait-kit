@@ -112,7 +112,8 @@ fn main() {
         initial_hits: 0,
         healthy_threshold: 1,
     });
-    kit2.register::<CacheModule>().expect("register CacheModule");
+    kit2.register::<CacheModule>()
+        .expect("register CacheModule");
     kit2.register_health_check::<CacheModule>();
 
     let kit2 = kit2.build().expect("build should succeed");
@@ -121,10 +122,7 @@ fn main() {
         .health_check::<CacheModule>()
         .expect("health_check should succeed");
     println!("Cache health (scenario 2): {status2:?}");
-    assert!(
-        !status2.is_healthy(),
-        "expected Degraded, got {status2:?}"
-    );
+    assert!(!status2.is_healthy(), "expected Degraded, got {status2:?}");
     match &status2 {
         HealthStatus::Degraded { detail } => {
             assert!(

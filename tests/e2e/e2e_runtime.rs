@@ -31,9 +31,7 @@ fn e2e_shutdown_timed_out_into_result_and_display() {
     assert!(!result.phases[0].is_ok(), "StopRequests 应标记 timed_out");
     assert!(result.phases[1].is_ok() && result.phases[2].is_ok());
 
-    let err = result
-        .into_result()
-        .expect_err("存在超时阶段时应返回 Err");
+    let err = result.into_result().expect_err("存在超时阶段时应返回 Err");
     match &err {
         TraitKitError::ShutdownTimedOut { phases } => {
             assert_eq!(phases, &[ShutdownPhase::StopRequests]);
@@ -62,9 +60,7 @@ fn e2e_shutdown_global_timeout_display_contains_all_phases() {
     assert_eq!(result.len(), 3);
     assert!(!result.is_ok(), "三阶段应全部超时");
 
-    let err = result
-        .into_result()
-        .expect_err("全部超时应返回 Err");
+    let err = result.into_result().expect_err("全部超时应返回 Err");
     let msg = err.to_string();
     for name in [
         ShutdownPhase::StopRequests,

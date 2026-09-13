@@ -1540,11 +1540,11 @@ mod all_features_smoke_e2e {
 // 防止 dbnexus/inklog 类编译盲区在本仓复发：断言 observer 回调在
 // Kit 构建路径中被触发，且 Kit<Ready> 保留完整能力表。
 
-#[cfg(all(feature = "observer"))]
+#[cfg(feature = "observer")]
 mod kit_observer_e2e {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::Duration;
     use trait_kit::core::observer::BuildObserver;
 
@@ -1574,10 +1574,16 @@ mod kit_observer_e2e {
     }
     impl BuildObserver for TrackingObserver {
         fn on_module_start(&self, name: &'static str) {
-            self.built_modules.lock().unwrap().push(format!("start:{name}"));
+            self.built_modules
+                .lock()
+                .unwrap()
+                .push(format!("start:{name}"));
         }
         fn on_module_built(&self, name: &'static str, _elapsed: Duration) {
-            self.built_modules.lock().unwrap().push(format!("built:{name}"));
+            self.built_modules
+                .lock()
+                .unwrap()
+                .push(format!("built:{name}"));
             self.build_count.fetch_add(1, Ordering::SeqCst);
         }
     }

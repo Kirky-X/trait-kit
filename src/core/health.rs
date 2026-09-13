@@ -602,7 +602,9 @@ mod history_tests {
         let history = ready.health_history();
         assert_eq!(history.len(), 3, "ring retains only the newest samples");
         assert!(
-            history.windows(2).all(|w| w[0].sampled_at <= w[1].sampled_at),
+            history
+                .windows(2)
+                .all(|w| w[0].sampled_at <= w[1].sampled_at),
             "history is oldest-first"
         );
         assert_eq!(history[0].module, "hist-module");

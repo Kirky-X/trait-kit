@@ -7,7 +7,7 @@
 //! Kit owns its own modules and dependency graph (validated independently at
 //! `build()`), and the parent only sees the [`SubKitHandle`] capability —
 //! capabilities stay namespaced inside the child instead of polluting the
-//! parent's flat TypeMap.
+//! parent's flat `TypeMap`.
 //!
 //! Usage:
 //!
@@ -36,6 +36,7 @@ pub trait SubKitSpec: 'static {
     /// Optional parent-level dependencies: declared like `ModuleMeta::
     /// dependencies` so the parent's graph validates the cross-Kit edges
     /// (`DependencyMissing` is reported at parent `build()`).
+    #[must_use]
     fn dependencies() -> &'static [(&'static str, TypeId)] {
         &[]
     }
@@ -106,7 +107,9 @@ impl<S: SubKitSpec> AutoBuilder for SubKitModule<S> {
         let mut child = Kit::new();
         S::compose(&mut child);
         let ready = child.build()?;
-        Ok(SubKitHandle { kit: Rc::new(ready) })
+        Ok(SubKitHandle {
+            kit: Rc::new(ready),
+        })
     }
 }
 
@@ -171,10 +174,14 @@ mod tests {
     #[test]
     fn sub_kit_builds_and_resolves_namespaced_capabilities() {
         let mut parent = Kit::new();
-        parent.register::<SubKitModule<DataSliceSpec>>().expect("register sub-kit");
+        parent
+            .register::<SubKitModule<DataSliceSpec>>()
+            .expect("register sub-kit");
         let ready = parent.build().expect("parent build ok");
 
-        let handle = ready.require::<SubKitModule<DataSliceSpec>>().expect("handle");
+        let handle = ready
+            .require::<SubKitModule<DataSliceSpec>>()
+            .expect("handle");
         // Child internal DI resolved inside the namespace.
         let top = handle.require::<ChildTop>().expect("child top");
         assert_eq!(top.0, 11);
@@ -185,7 +192,9 @@ mod tests {
     #[test]
     fn capabilities_stay_namespaced_inside_child() {
         let mut parent = Kit::new();
-        parent.register::<SubKitModule<DataSliceSpec>>().expect("register");
+        parent
+            .register::<SubKitModule<DataSliceSpec>>()
+            .expect("register");
         let ready = parent.build().expect("build ok");
 
         // Parent has no direct visibility into child capabilities...
@@ -194,7 +203,9 @@ mod tests {
             "child capabilities must not leak into the parent namespace"
         );
         // ...and the handle's require cannot see parent modules either.
-        let handle = ready.require::<SubKitModule<DataSliceSpec>>().expect("handle");
+        let handle = ready
+            .require::<SubKitModule<DataSliceSpec>>()
+            .expect("handle");
         assert!(!handle.contains::<SubKitModule<DataSliceSpec>>());
     }
 
@@ -204,8 +215,7 @@ mod tests {
         impl ModuleMeta for CycA {
             const NAME: &'static str = "cyc-a";
             fn dependencies() -> &'static [(&'static str, TypeId)] {
-                static DEPS: &[(&str, TypeId)] =
-                    &[("cyc-b", TypeId::of::<CycB>())];
+                static DEPS: &[(&str, TypeId)] = &[("cyc-b", TypeId::of::<CycB>())];
                 DEPS
             }
         }
@@ -220,8 +230,7 @@ mod tests {
         impl ModuleMeta for CycB {
             const NAME: &'static str = "cyc-b";
             fn dependencies() -> &'static [(&'static str, TypeId)] {
-                static DEPS: &[(&str, TypeId)] =
-                    &[("cyc-a", TypeId::of::<CycA>())];
+                static DEPS: &[(&str, TypeId)] = &[("cyc-a", TypeId::of::<CycA>())];
                 DEPS
             }
         }
@@ -243,8 +252,12 @@ mod tests {
         }
 
         let mut parent = Kit::new();
-        parent.register::<SubKitModule<CyclicSpec>>().expect("register");
-        let err = parent.build().expect_err("child cycle must fail parent build");
+        parent
+            .register::<SubKitModule<CyclicSpec>>()
+            .expect("register");
+        let err = parent
+            .build()
+            .expect_err("child cycle must fail parent build");
         let msg = err.to_string();
         assert!(
             msg.contains("cyclic-slice"),
@@ -271,25 +284,39 @@ mod tests {
             const NAME: &'static str = "dependent-slice";
             fn compose(_kit: &mut Kit) {}
             fn dependencies() -> &'static [(&'static str, TypeId)] {
-                static DEPS: &[(&str, TypeId)] =
-                    &[(<ParentDepProvider as ModuleMeta>::NAME, TypeId::of::<ParentDepProvider>())];
+                static DEPS: &[(&str, TypeId)] = &[(
+                    <ParentDepProvider as ModuleMeta>::NAME,
+                    TypeId::of::<ParentDepProvider>(),
+                )];
                 DEPS
             }
         }
 
         // Missing parent dep → DependencyMissing at parent build.
         let mut parent = Kit::new();
-        parent.register::<SubKitModule<DependentSpec>>().expect("register");
+        parent
+            .register::<SubKitModule<DependentSpec>>()
+            .expect("register");
         let err = parent.build().expect_err("missing cross-kit dep");
         assert!(
-            matches!(err, TraitKitError::DependencyMissing { module: "dependent-slice", .. }),
+            matches!(
+                err,
+                TraitKitError::DependencyMissing {
+                    module: "dependent-slice",
+                    ..
+                }
+            ),
             "cross-Kit dependency validated in the parent graph: {err:?}"
         );
 
         // Registered parent dep → build succeeds.
         let mut parent = Kit::new();
-        parent.register::<ParentDepProvider>().expect("register dep");
-        parent.register::<SubKitModule<DependentSpec>>().expect("register");
+        parent
+            .register::<ParentDepProvider>()
+            .expect("register dep");
+        parent
+            .register::<SubKitModule<DependentSpec>>()
+            .expect("register");
         parent.build().expect("build ok with dep present");
     }
 }

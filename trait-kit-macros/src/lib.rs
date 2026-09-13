@@ -14,7 +14,7 @@
 //! - `name = "literal"` — override the diagnostic module name. Default: the
 //!   struct identifier verbatim.
 //! - `deps(TypeA, TypeB)` (or `deps = [TypeA, TypeB]`) — declare dependencies
-//!   as a list of module types implementing [`ModuleMeta`]. Each dependency
+//!   as a list of module types implementing `ModuleMeta`. Each dependency
 //!   contributes `(Dep::NAME, TypeId::of::<Dep>())`, byte-for-byte identical
 //!   to the hand-written form.
 //!
@@ -40,7 +40,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::{parenthesized, bracketed, parse_macro_input, token, Ident, LitStr, Token, Type};
+use syn::{Ident, LitStr, Token, Type, bracketed, parenthesized, parse_macro_input, token};
 
 /// Parsed contents of the `#[module(...)]` helper attribute.
 #[derive(Default)]

@@ -76,9 +76,12 @@ pub trait EventBus: Send + Sync + 'static {
 /// A failing (panicking) subscriber is isolated: the panic is caught so other
 /// subscribers still receive the event and `publish` never unwinds into the
 /// Kit's build path.
+/// 事件回调的克隆快照（`publish` 在锁外扇出，见其文档）
+type SubscriberSlot = std::sync::Arc<dyn Fn(&KitEvent) + Send + Sync>;
+
 #[derive(Default)]
 pub struct MemoryEventBus {
-    subscribers: Mutex<Vec<std::sync::Arc<dyn Fn(&KitEvent) + Send + Sync>>>,
+    subscribers: Mutex<Vec<SubscriberSlot>>,
 }
 
 impl MemoryEventBus {
@@ -90,6 +93,11 @@ impl MemoryEventBus {
 
     /// Register a subscriber. Receives every published event, in publish
     /// order, synchronously inside `publish`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the subscriber mutex is poisoned (a subscriber panicked
+    /// while holding it, e.g. inside another callback).
     pub fn subscribe(&self, subscriber: impl Fn(&KitEvent) + Send + Sync + 'static) {
         self.subscribers
             .lock()
@@ -129,8 +137,8 @@ pub type OptionalEventBus = Option<std::sync::Arc<dyn EventBus>>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn memory_bus_fans_out_to_all_subscribers_in_order() {
@@ -151,8 +159,14 @@ mod tests {
             }
         });
 
-        bus.publish(KitEvent::ModuleBuilt { module: "a", elapsed_us: 1 });
-        bus.publish(KitEvent::ConfigChanged { key: "k".into(), summary: "set".into() });
+        bus.publish(KitEvent::ModuleBuilt {
+            module: "a",
+            elapsed_us: 1,
+        });
+        bus.publish(KitEvent::ConfigChanged {
+            key: "k".into(),
+            summary: "set".into(),
+        });
 
         let seen = log.lock().unwrap();
         assert_eq!(seen.len(), 2);
@@ -170,8 +184,15 @@ mod tests {
             count2.fetch_add(1, Ordering::SeqCst);
         });
 
-        bus.publish(KitEvent::ConfigChanged { key: "k".into(), summary: "set".into() });
-        assert_eq!(count.load(Ordering::SeqCst), 1, "second subscriber still ran");
+        bus.publish(KitEvent::ConfigChanged {
+            key: "k".into(),
+            summary: "set".into(),
+        });
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "second subscriber still ran"
+        );
     }
 
     #[test]
@@ -195,7 +216,10 @@ mod tests {
             }
         });
 
-        bus.publish(KitEvent::ModuleBuilt { module: "a", elapsed_us: 1 });
+        bus.publish(KitEvent::ModuleBuilt {
+            module: "a",
+            elapsed_us: 1,
+        });
         assert_eq!(
             count.load(Ordering::SeqCst),
             1,
@@ -205,22 +229,42 @@ mod tests {
 
     #[test]
     fn noop_bus_publishes_without_effect() {
-        NoOpEventBus.publish(KitEvent::ModuleBuilt { module: "x", elapsed_us: 0 });
         // Compile-check: NoOpEventBus is Send + Sync + zero-sized.
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<NoOpEventBus>();
+
+        NoOpEventBus.publish(KitEvent::ModuleBuilt {
+            module: "x",
+            elapsed_us: 0,
+        });
         assert_eq!(std::mem::size_of::<NoOpEventBus>(), 0);
     }
 
     #[test]
     fn event_kind_names_are_stable() {
-        assert_eq!(KitEvent::ModuleBuilt { module: "m", elapsed_us: 1 }.kind(), "module_built");
         assert_eq!(
-            KitEvent::HealthChanged { module: "m", status: "healthy", detail: None }.kind(),
+            KitEvent::ModuleBuilt {
+                module: "m",
+                elapsed_us: 1
+            }
+            .kind(),
+            "module_built"
+        );
+        assert_eq!(
+            KitEvent::HealthChanged {
+                module: "m",
+                status: "healthy",
+                detail: None
+            }
+            .kind(),
             "health_changed"
         );
         assert_eq!(
-            KitEvent::ConfigChanged { key: "k".into(), summary: "s".into() }.kind(),
+            KitEvent::ConfigChanged {
+                key: "k".into(),
+                summary: "s".into()
+            }
+            .kind(),
             "config_changed"
         );
     }

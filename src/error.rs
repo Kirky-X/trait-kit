@@ -100,6 +100,10 @@ pub enum TraitKitError {
 }
 
 impl fmt::Display for TraitKitError {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "全变体手写 Display（i18n 消息模板），拆分子函数只会割裂模板与变体的对应关系"
+    )]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CycleDetected { cycle } => {
@@ -320,7 +324,11 @@ mod tests {
             ErrorKind::Other
         ));
         assert!(matches!(
-            TraitKitError::DependencyMissing { module: "m", missing: "d" }.kind(),
+            TraitKitError::DependencyMissing {
+                module: "m",
+                missing: "d"
+            }
+            .kind(),
             ErrorKind::Other
         ));
         assert!(matches!(

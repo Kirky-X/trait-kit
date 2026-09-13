@@ -82,10 +82,8 @@ fn derived_name_override_matches_hand_written_convention() {
 fn derived_dependencies_match_hand_written_type_ids() {
     // Hand-written side: ManualLeaf declares no deps. A hand-written top
     // module would declare `[(ManualLeaf::NAME, TypeId::of::<ManualLeaf>())]`.
-    let expected: &[(&'static str, TypeId)] = &[(
-        <ManualLeaf as ModuleMeta>::NAME,
-        TypeId::of::<ManualLeaf>(),
-    )];
+    let expected: &[(&'static str, TypeId)] =
+        &[(<ManualLeaf as ModuleMeta>::NAME, TypeId::of::<ManualLeaf>())];
     assert_eq!(
         <DerivedTop as ModuleMeta>::dependencies(),
         expected,
@@ -110,7 +108,10 @@ fn derived_module_behaves_identically_in_kit() {
     kit.register::<DerivedTop>().expect("register derived top");
     let ready = kit.build().expect("build ok");
     let cap = ready.require::<DerivedTop>().expect("require derived");
-    assert_eq!(cap.0, 2, "dependency injection through derived module works");
+    assert_eq!(
+        cap.0, 2,
+        "dependency injection through derived module works"
+    );
 
     // The graph validates the derived module's declared deps: requiring the
     // leaf capability resolves the same singleton the derived module saw.

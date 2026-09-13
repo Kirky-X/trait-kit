@@ -99,7 +99,10 @@ impl TypeMap {
     /// returned together. For the clone-based variant see
     /// [`get_cloned_by_type_id`](Self::get_cloned_by_type_id).
     #[cfg(any(feature = "lifecycle", feature = "health"))]
-    #[allow(unsafe_code, reason = "lifetime re-anchoring of the downcast reference")]
+    #[allow(
+        unsafe_code,
+        reason = "lifetime re-anchoring of the downcast reference"
+    )]
     #[allow(
         clippy::type_complexity,
         reason = "return type bundles the RefCell guard with the downcast reference"

@@ -573,7 +573,6 @@ mod interpolate_string_tests {
     }
 }
 
-
 /// Zeroizing master-key container.
 ///
 /// Owns the key bytes and volatile-zeroes them on drop, so a provider's key
@@ -675,12 +674,13 @@ where
     P: confers::secret::SecretKeyProvider,
 {
     fn master_key(&self) -> Result<KeyBytes, crate::error::TraitKitError> {
-        let secret = self.inner.get_key().map_err(|e| {
-            crate::error::TraitKitError::BuildFailed {
-                context: format!("key provider ({})", self.inner.provider_type()),
-                source: Box::new(e),
-            }
-        })?;
+        let secret =
+            self.inner
+                .get_key()
+                .map_err(|e| crate::error::TraitKitError::BuildFailed {
+                    context: format!("key provider ({})", self.inner.provider_type()),
+                    source: Box::new(e),
+                })?;
         Ok(KeyBytes::from(secret.as_slice().to_vec()))
     }
 
@@ -712,9 +712,7 @@ mod key_provider_tests {
     /// Fixed 32-byte confers provider mock (no env mutation needed).
     struct FixedConfersProvider;
     impl confers::secret::SecretKeyProvider for FixedConfersProvider {
-        fn get_key(
-            &self,
-        ) -> Result<confers::SecretBytes, confers::CryptoError> {
+        fn get_key(&self) -> Result<confers::SecretBytes, confers::CryptoError> {
             Ok(confers::SecretBytes::new(vec![7u8; 32]))
         }
         fn provider_type(&self) -> &'static str {
@@ -759,9 +757,12 @@ mod key_provider_tests {
     fn failing_provider_fails_closed() {
         let kit = Kit::new();
         let err = kit
-            .set_encrypted_with_key_provider(&SecretConfig {
-                password: "x".into(),
-            }, &BrokenProvider)
+            .set_encrypted_with_key_provider(
+                &SecretConfig {
+                    password: "x".into(),
+                },
+                &BrokenProvider,
+            )
             .expect_err("must fail closed");
         assert_eq!(err.kind(), crate::ErrorKind::InitFailed);
         let ready = kit.build().expect("build ok");

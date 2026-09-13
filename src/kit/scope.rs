@@ -567,7 +567,6 @@ mod tests {
         assert_eq!(format!("{e}"), "scope error");
     }
 
-
     #[test]
     fn parent_query_resolves_parent_capability_and_shares_singleton() {
         use std::rc::Rc;
@@ -598,13 +597,14 @@ mod tests {
 
     #[test]
     fn parent_query_none_without_parent_or_missing_module() {
+        use std::rc::Rc;
+
         let scope = Scope::new();
         assert!(
             scope.parent::<ScopeModule>().is_none(),
             "scope without parent → None"
         );
 
-        use std::rc::Rc;
         let kit = Rc::new(crate::kit::Kit::new().build().expect("build ok"));
         let scope = kit.create_scope_from();
         assert!(

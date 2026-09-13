@@ -30,7 +30,11 @@ fn _assert_core_api() {
     fn assert_error(e: trait_kit::TraitKitError) -> trait_kit::TraitKitResult<()> {
         Err(e)
     }
-    let _ = (module_meta::<GateModule>, auto_builder::<GateModule>, assert_error);
+    let _ = (
+        module_meta::<GateModule>,
+        auto_builder::<GateModule>,
+        assert_error,
+    );
 
     // Kit 注册面（docs: Kit<Unbuilt> 表）：register → build → require。
     fn full_flow(mut kit: trait_kit::kit::Kit) -> trait_kit::TraitKitResult<GateCap> {
@@ -53,9 +57,7 @@ fn _assert_core_api() {
     // 声明式宏（docs: 声明式宏）——真实展开以验证宏导出可用。
     struct GateMacroModule;
     trait_kit::impl_module_meta!(GateMacroModule, "gate-macro-module");
-    trait_kit::impl_auto_builder!(GateMacroModule, GateCap, GateError, |_kit| {
-        Ok(GateCap)
-    });
+    trait_kit::impl_auto_builder!(GateMacroModule, GateCap, GateError, |_kit| Ok(GateCap));
     let _ = <GateMacroModule as trait_kit::core::ModuleMeta>::NAME;
 
     // i18n（docs: i18n API）——`tr()` 与 `I18nManager` 始终可用。
@@ -247,7 +249,10 @@ fn api_reference_documented_feature_items_resolve() {
     #[cfg(feature = "async")]
     {
         _assert_async_api();
-        assert!(doc.contains("AsyncAutoBuilder"), "doc must list AsyncAutoBuilder");
+        assert!(
+            doc.contains("AsyncAutoBuilder"),
+            "doc must list AsyncAutoBuilder"
+        );
         assert!(doc.contains("AsyncKit"), "doc must list AsyncKit");
     }
     #[cfg(feature = "health")]
@@ -264,7 +269,10 @@ fn api_reference_documented_feature_items_resolve() {
     #[cfg(feature = "interface")]
     {
         _assert_interface_api();
-        assert!(doc.contains("InterfaceBuilder"), "doc must list InterfaceBuilder");
+        assert!(
+            doc.contains("InterfaceBuilder"),
+            "doc must list InterfaceBuilder"
+        );
     }
     #[cfg(feature = "observer")]
     {
@@ -286,7 +294,11 @@ fn api_reference_documented_feature_items_resolve() {
 fn doc_does_not_reference_removed_apis() {
     // rc3 收尾已删除死链（reload 死链剪除等）；文档不得回引已不存在的 API。
     let doc = api_reference_md();
-    let removed = ["register_on_toggle(", "health_prometheus(", "manifest_json("];
+    let removed = [
+        "register_on_toggle(",
+        "health_prometheus(",
+        "manifest_json(",
+    ];
     for ghost in removed {
         assert!(
             !doc.contains(ghost),

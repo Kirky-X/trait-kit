@@ -37,9 +37,9 @@ use std::sync::OnceLock;
 #[cfg(feature = "i18n")]
 use icu::collator::CollatorBorrowed;
 #[cfg(feature = "i18n")]
-use icu::datetime::fieldsets::YMD;
-#[cfg(feature = "i18n")]
 use icu::datetime::DateTimeFormatter;
+#[cfg(feature = "i18n")]
+use icu::datetime::fieldsets::YMD;
 #[cfg(feature = "i18n")]
 use icu::decimal::DecimalFormatter;
 #[cfg(feature = "i18n")]
@@ -273,7 +273,9 @@ impl I18nManager {
         let manager = Self::build(locale);
         // 并发竞争中败者直接复用胜者的实例（与上方快路径语义一致）。
         if GLOBAL_I18N.set(manager).is_err() {
-            return GLOBAL_I18N.get().expect("winner just initialized the manager");
+            return GLOBAL_I18N
+                .get()
+                .expect("winner just initialized the manager");
         }
         GLOBAL_I18N.get().unwrap()
     }
@@ -395,10 +397,7 @@ mod tests {
         // 不得被后续 args 替换污染（旧实现按顺序 String::replace 会把
         // `{ $source }` 替换为 BOOM）。
         let catalog = MessageCatalog::parse("build = { $context }: { $source }");
-        let result = catalog.translate(
-            "build",
-            &[("context", "{ $source }"), ("source", "BOOM")],
-        );
+        let result = catalog.translate("build", &[("context", "{ $source }"), ("source", "BOOM")]);
         assert_eq!(result, "{ $source }: BOOM");
     }
 
