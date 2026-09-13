@@ -58,10 +58,7 @@
 
 ### 明确的线程安全边界
 
-| 类型 | Send | Sync | 内部实现 |
-|---|---|---|---|
-| `Kit<S>` / `TypeMap` / `Scope` | ✗ | ✗ | `RefCell`（单线程，无数据竞争） |
-| `AsyncKit<S>` / `AsyncTypeMap` / `AsyncScope` | ✓ | ✓ | `Arc<RwLock>` |
+同步侧（`Kit` / `TypeMap` / `Scope`）基于 `RefCell`，单线程 `!Send + !Sync`；异步侧（`AsyncKit` / `AsyncTypeMap` / `AsyncScope`）基于 `Arc<RwLock>`，`Send + Sync`。逐类型的 Send/Sync 对照表见 [架构文档 · 线程安全模型](ARCHITECTURE.md#-线程安全模型)。
 
 编译器强制 `Kit` 不可跨线程共享，从类型层面排除了该误用。
 

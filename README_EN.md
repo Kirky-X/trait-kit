@@ -39,9 +39,6 @@ Modules declare a contract via `ModuleMeta` + `AutoBuilder`; the Kit centralizes
 - [📚 Documentation](#-documentation)
 - [💻 Examples](#-examples)
 - [🏗️ Architecture](#️-architecture)
-- [🔄 Build Lifecycle](#-build-lifecycle)
-- [⚙️ Configuration: confers Integration](#️-configuration-confers-integration)
-- [💡 Why trait-kit?](#-why-trait-kit)
 - [🧪 Testing](#-testing)
 - [📊 Performance](#-performance)
 - [🔒 Security](#-security)
@@ -101,6 +98,18 @@ Modules declare a contract via `ModuleMeta` + `AutoBuilder`; the Kit centralizes
 - **Event bus and observation ports** (always available, no feature gate): `KitEvent` / `EventBus` lifecycle events and injectable `MetricsPort` / `LogPort`, with zero-cost `NoOp` defaults.
 
 </details>
+
+### 💡 Why trait-kit?
+
+Compared with common dependency-wiring approaches, trait-kit sits between "raw manual wiring" and "full DI framework":
+
+| Approach | Pros | Cons |
+| --- | --- | --- |
+| **Manual wiring** | Simple, no deps. | Ad-hoc patterns, inconsistent per project. |
+| **trait-kit** | Standard pattern, type-safe, lightweight. | You still wire dependencies explicitly. |
+| **Full DI (shaku etc.)** | Auto-resolved, less glue code. | Heavier deps, magic, harder to debug. |
+
+trait-kit gives you the **standardization** of a DI framework with the **explicitness** of manual wiring.
 
 ---
 
@@ -385,7 +394,7 @@ The workspace diagram, dependency-graph validation, data flow, thread-safety mod
 
 ---
 
-## 🔄 Build Lifecycle
+### 🔄 Build Lifecycle
 
 All capability retrieval happens after `build()`: registration methods live on `Kit<Unbuilt>`, retrieval methods on `Kit<Ready>`, and "require before build" is ruled out at compile time (asserted by trybuild UI tests in `tests/ui/`).
 
@@ -398,7 +407,7 @@ The actual execution path inside `build()` (missing-dep check → cycle detectio
 
 ---
 
-## ⚙️ Configuration: confers Integration
+### ⚙️ Configuration: confers Integration
 
 trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.6 via three-level feature flags; each level inherits the previous one, forming a layered capability system.
 
@@ -441,20 +450,6 @@ kit.inject_shared::<DbConfig>()?;       // inject into DbConfig
 
 - `trait-kit-derive` provides the `#[derive(ConfigInherit)]` and `#[derive(SharedConfig)]` macros; shared fields use `serde_json::Value` to preserve type information.
 - `AsyncKit` offers a fully symmetric `Send + Sync` config API.
-
----
-
-## 💡 Why trait-kit?
-
-trait-kit sits between "raw manual wiring" and "full DI framework":
-
-| Approach | Pros | Cons |
-| --- | --- | --- |
-| **Manual wiring** | Simple, no deps. | Ad-hoc patterns, inconsistent per project. |
-| **trait-kit** | Standard pattern, type-safe, lightweight. | You still wire dependencies explicitly. |
-| **Full DI (shaku etc.)** | Auto-resolved, less glue code. | Heavier deps, magic, harder to debug. |
-
-trait-kit gives you the **standardization** of a DI framework with the **explicitness** of manual wiring.
 
 ---
 
