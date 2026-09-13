@@ -380,7 +380,7 @@ cargo run -p trait-kit-examples --example <名称> --features <特性>
 
 ## 🏗️ 架构
 
-trait-kit workspace 由四个成员组成：主 crate `trait-kit`、过程宏 crate `trait-kit-derive` 与 `trait-kit-macros`、示例 crate `trait-kit-examples`；主 crate 的 `src/` 分 `core` 接口层、`kit` 能力管理中心、`i18n` 国际化三层。
+trait-kit workspace 由四个成员组成：主 crate `trait-kit`、过程宏 crate `trait-kit-macros` 与 `trait-kit-macros`、示例 crate `trait-kit-examples`；主 crate 的 `src/` 分 `core` 接口层、`kit` 能力管理中心、`i18n` 国际化三层。
 
 **核心设计**：
 
@@ -415,13 +415,13 @@ trait-kit 通过三级 feature flag 集成 [`confers`](https://crates.io/crates/
 | 2. 模块配置元数据 | `confers` | `ModuleConfig` trait 声明 `PATH` 与 `default_value()`，将配置类型绑定到模块配置路径 |
 | 3. 热重载 | `reload` | `subscribe::<C>()` 订阅 + `reload_config::<C>()` 重载并通知订阅者 |
 | 4. 加密存储 | `encryption` | `set_encrypted` / `get_encrypted`：XChaCha20-Poly1305 认证加密，密钥经 HKDF 从主密钥与 `ModuleConfig::PATH` 派生 |
-| 5. 配置继承 | `confers` + `trait-kit-derive` | 四层继承体系：`merge_json_deep` 深合并 → `ConfigInherit` 编译期安全字段覆盖 → `SharedConfig` 跨类型共享字段 → `populate_defaults` 零配置默认值 |
+| 5. 配置继承 | `confers` + `trait-kit-macros` | 四层继承体系：`merge_json_deep` 深合并 → `ConfigInherit` 编译期安全字段覆盖 → `SharedConfig` 跨类型共享字段 → `populate_defaults` 零配置默认值 |
 
 配置加载与配置继承的典型用法（完整可运行版本见 `confers_loader` 与 `config_inheritance` 示例）：
 
 ```rust,ignore
 use trait_kit::prelude::*;
-use trait_kit_derive::{ConfigInherit, SharedConfig};
+use trait_kit_macros::{ConfigInherit, SharedConfig};
 
 // 第一/二级：derive 配置加载 + 模块配置元数据
 #[derive(Debug, Clone, serde::Deserialize, confers::Config)]
@@ -446,7 +446,7 @@ kit.extract_shared::<AppConfig>()?;     // 提取共享字段
 kit.inject_shared::<DbConfig>()?;       // 注入到 DbConfig
 ```
 
-- `trait-kit-derive` 提供 `#[derive(ConfigInherit)]` 与 `#[derive(SharedConfig)]` 宏，共享字段以 `serde_json::Value` 保留类型信息。
+- `trait-kit-macros` 提供 `#[derive(ConfigInherit)]` 与 `#[derive(SharedConfig)]` 宏，共享字段以 `serde_json::Value` 保留类型信息。
 - `AsyncKit` 提供完全对称的 `Send + Sync` 配置 API。
 
 ---
@@ -586,7 +586,7 @@ Copyright (c) 2026 Kirky.X
 - [`confers`](https://crates.io/crates/confers) — 配置加载、热重载与加密存储的底层能力。
 - [ICU4X](https://github.com/unicode-org/icu4x) — 国际化格式化（数字/日期/复数/排序）。
 - [Project Fluent](https://projectfluent.org/) — Fluent FTL 消息本地化方案。
-- [syn](https://github.com/dtolnay/syn) / [quote](https://github.com/dtolnay/quote) / [proc-macro2](https://github.com/dtolnay/proc-macro2) — 过程宏基础设施（`trait-kit-derive` 与 `trait-kit-macros`）。
+- [syn](https://github.com/dtolnay/syn) / [quote](https://github.com/dtolnay/quote) / [proc-macro2](https://github.com/dtolnay/proc-macro2) — 过程宏基础设施（`trait-kit-macros` 与 `trait-kit-macros`）。
 - [Rust 社区](https://www.rust-lang.org/community) — 优秀的语言生态与工具链。
 
 ---

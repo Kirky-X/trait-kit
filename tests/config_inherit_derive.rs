@@ -3,7 +3,7 @@
 #![cfg(feature = "confers")]
 
 use trait_kit::kit::{ConfigInherit, Kit};
-use trait_kit_derive::ConfigInherit;
+use trait_kit_macros::ConfigInherit;
 
 // ── Basic derive ──
 

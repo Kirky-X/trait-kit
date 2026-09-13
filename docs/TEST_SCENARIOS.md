@@ -2,7 +2,7 @@
 
 > 适用版本：trait-kit **0.5.0-rc.2**（矩阵编写与对账基线；0.5.0-rc.3 起 feature 面扩展见 [CHANGELOG](CHANGELOG.md)，场景口径不变）
 > 用途：穷举全部验收场景，作为 `tests/e2e/` E2E 测试的对账基线。
-> 编写依据（只读核对）：`Cargo.toml [features]`、`src/lib.rs` 导出面、`src/core`（meta/macros/health/lifecycle/observer）、`src/kit`（kit/graph/typemap/config/scope/toggle/shutdown/async_kit/async_typemap）、`src/i18n`（FTL 目录 + ICU4X）、`trait-kit-derive`（ConfigInherit/SharedConfig）、`tests/`、`tests/ui/`（3 个 trybuild 用例）、`examples/`（20 个示例）。
+> 编写依据（只读核对）：`Cargo.toml [features]`、`src/lib.rs` 导出面、`src/core`（meta/macros/health/lifecycle/observer）、`src/kit`（kit/graph/typemap/config/scope/toggle/shutdown/async_kit/async_typemap）、`src/i18n`（FTL 目录 + ICU4X）、`trait-kit-macros`（ConfigInherit/SharedConfig）、`tests/`、`tests/ui/`（3 个 trybuild 用例）、`examples/`（20 个示例）。
 > 所有引用的既有测试名均经 `grep` 核实存在。
 > 组合兼容性经 `cargo check --all-features` 实测通过（exit 0）。
 >
@@ -77,7 +77,7 @@
 | 2 | 注册与构建（typestate） | REG | — | `kit::{Kit, Unbuilt, Ready}`、`register / register_lazy / register_multi / register_if / override_module / override_module_strict / build` |
 | 3 | 能力获取 | CAP | — | `Kit::require / optional / require_ref / require_all / contains / contains_config / factory` |
 | 4 | 依赖图 | DEP | — | `kit::{DependencyGraph, GraphError, ModuleEntry}`、`graph_dot / graph_mermaid` |
-| 5 | 配置中心 | CFG | confers | `Configurable / ModuleConfig / Validatable / ValidationError / ConfigInherit / SharedConfig`、`set_config / config / load_config / load_and_validate / load_config_with / load_config_or_default / snapshot_config / restore_config / has_snapshot / populate_defaults / merge_config / extract_shared / inject_shared`、自由函数 `interpolate_json_value / merge_json_deep`、派生宏 `ConfigInherit / SharedConfig`（trait-kit-derive） |
+| 5 | 配置中心 | CFG | confers | `Configurable / ModuleConfig / Validatable / ValidationError / ConfigInherit / SharedConfig`、`set_config / config / load_config / load_and_validate / load_config_with / load_config_or_default / snapshot_config / restore_config / has_snapshot / populate_defaults / merge_config / extract_shared / inject_shared`、自由函数 `interpolate_json_value / merge_json_deep`、派生宏 `ConfigInherit / SharedConfig`（trait-kit-macros） |
 | 6 | 热重载 | RLD | reload（→confers，Kit 自有 SubscriberMap） | `Kit::subscribe / reload_config` |
 | 7 | 加密存储 | ENC | encryption（→confers→confers/encryption） | `Kit::set_encrypted / get_encrypted / contains_encrypted`、`EncryptedBlob`、再导出 `XChaCha20Crypto / derive_field_key` |
 | 8 | 接口/实现分离 | ITF | interface | `register_as / resolve`、`core::{Interface, InterfaceBuilder}` |
@@ -405,7 +405,7 @@
 |----|---------|------|-------------|---------|---------|---------|
 | PRE-01 | `prelude::*` 的 async 导出与 `async_kit` 原生标记类型同一（防 `Ready`/`Unbuilt` sync/async 错绑回归） | 正常 | async | 无 | `src/prelude.rs::prelude_async_kit_compiles`、`prelude_async_markers_match_async_kit_markers` | tests/e2e/e2e_async.rs |
 | PRE-02 | confers trait 经 prelude/kit 双路径可达（`Configurable`/`Validatable`/`ModuleConfig`/`SharedConfig`/`ConfigInherit`），`confers::Config` derive 再导出可用 | 正常 | confers | 无 | `tests/basic.rs::derive_config_macro_re_exported`、`tests/config_inherit_derive.rs`（`use trait_kit::kit::ConfigInherit`） | tests/e2e/e2e_config.rs |
-| PRE-03 | 派生宏（`ConfigInherit`/`SharedConfig`）不随 prelude 导出，需显式依赖 `trait-kit-derive` 的文档契约保持（防误迁移） | 边界 | confers | 无 | `src/prelude.rs`（NOTE 注释）+ `tests/config_inherit_derive.rs::derive_config_inherit_generates_override_type` | tests/e2e/e2e_presets.rs（编译面） |
+| PRE-03 | 派生宏（`ConfigInherit`/`SharedConfig`）不随 prelude 导出，需显式依赖 `trait-kit-macros` 的文档契约保持（防误迁移） | 边界 | confers | 无 | `src/prelude.rs`（NOTE 注释）+ `tests/config_inherit_derive.rs::derive_config_inherit_generates_override_type` | tests/e2e/e2e_presets.rs（编译面） |
 
 ### 2.20 feature 组合交互（CMP，15 条）
 

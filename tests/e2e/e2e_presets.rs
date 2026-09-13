@@ -311,18 +311,19 @@ fn tgl09_toggle_module_is_implemented() {
     );
 }
 
-/// PRE-03 编译面核对：派生宏（ConfigInherit/SharedConfig）不随 prelude
-/// 导出——prelude.rs 无 trait_kit_derive 的 pub use（文档契约 NOTE 在位）。
+/// PRE-03 编译面核对：派生宏（Module/ConfigInherit/SharedConfig）不随
+/// prelude 导出——prelude.rs 无 trait_kit_macros 的 pub use（用户显式
+/// 依赖 trait-kit-macros 使用派生宏，宏包为 opt-in）。
 #[test]
 fn pre03_derive_macros_not_reexported_via_prelude() {
     let prelude = include_str!("../../src/prelude.rs");
     assert!(
-        !prelude.contains("pub use trait_kit_derive::"),
-        "prelude 不得导出 trait-kit-derive 派生宏（用户需显式依赖 derive crate）"
+        !prelude.contains("pub use trait_kit_macros::"),
+        "prelude 不得导出 trait-kit-macros 派生宏（宏包保持 opt-in，不强制 syn 依赖）"
     );
     let manifest = include_str!("../../Cargo.toml");
     assert!(
-        manifest.contains("trait-kit-derive"),
-        "derive crate 应保持 workspace 成员"
+        manifest.contains("trait-kit-macros"),
+        "宏包应保持 workspace 成员（derive 宏的唯一提供方）"
     );
 }

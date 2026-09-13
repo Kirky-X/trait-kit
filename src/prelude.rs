@@ -26,8 +26,8 @@ pub use crate::kit::SharedConfig;
 #[cfg(feature = "confers")]
 pub use crate::kit::Validatable;
 
-// NOTE: derive macros (ConfigInherit, SharedConfig) live in `trait-kit-derive`.
-// Add `trait-kit-derive` to your Cargo.toml to use #[derive(ConfigInherit)]
+// NOTE: derive macros (ConfigInherit, SharedConfig) live in `trait-kit-macros`.
+// Add `trait-kit-macros` to your Cargo.toml to use #[derive(ConfigInherit)]
 // and #[derive(SharedConfig)].
 
 #[cfg(all(feature = "lifecycle", feature = "async"))]

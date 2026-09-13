@@ -2612,7 +2612,7 @@ dependencies = [
 
 [[package]]
 name = "trait-kit"
-version = "0.5.0-rc.4"
+version = "0.5.0-rc.5"
 dependencies = [
  "async-trait",
  "confers",
@@ -2624,34 +2624,25 @@ dependencies = [
  "static_assertions",
  "sys-locale",
  "thiserror",
- "trait-kit-derive",
+ "trait-kit-macros",
  "trybuild",
  "writeable",
 ]
 
 [[package]]
-name = "trait-kit-derive"
-version = "0.5.0-rc.4"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "trait-kit-examples"
-version = "0.5.0-rc.4"
+version = "0.5.0-rc.5"
 dependencies = [
  "confers",
  "serde",
  "serde_json",
  "trait-kit",
- "trait-kit-derive",
+ "trait-kit-macros",
 ]
 
 [[package]]
 name = "trait-kit-macros"
-version = "0.5.0-rc.4"
+version = "0.5.0-rc.5"
 dependencies = [
  "proc-macro2",
  "quote",

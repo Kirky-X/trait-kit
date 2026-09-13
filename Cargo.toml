@@ -15,7 +15,7 @@ readme = "README.md"
 workspace = true
 
 [workspace.package]
-version = "0.5.0-rc.4"
+version = "0.5.0-rc.5"
 edition = "2024"
 rust-version = "1.97.1"
 authors = ["Kirky.X"]
@@ -50,7 +50,7 @@ criterion = { version = "0.7", default-features = false, features = [
 ] }
 async-trait = "0.1"
 serde_json = { workspace = true }
-trait-kit-derive = { version = "0.5.0-rc.4", path = "trait-kit-derive" }
+trait-kit-macros = { version = "0.5.0-rc.5", path = "trait-kit-macros" }
 
 [[bench]]
 name = "kit_bench"
@@ -163,7 +163,7 @@ path = "tests/e2e/e2e_runtime.rs"
 
 [workspace]
 resolver = "2"
-members = [".", "examples", "trait-kit-derive", "trait-kit-macros"]
+members = [".", "examples", "trait-kit-macros"]
 default-members = ["."]
 
 [profile.release]

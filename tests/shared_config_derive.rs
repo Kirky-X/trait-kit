@@ -3,7 +3,7 @@
 #![cfg(feature = "confers")]
 
 use trait_kit::kit::{Kit, SharedConfig};
-use trait_kit_derive::SharedConfig;
+use trait_kit_macros::SharedConfig;
 
 // ── Basic derive ──
 

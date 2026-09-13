@@ -84,8 +84,8 @@ pub use presets::remote::{
 #[cfg(feature = "compose")]
 pub use sub_kit::{SubKitHandle, SubKitModule, SubKitSpec};
 
-// NOTE: derive macros (ConfigInherit, SharedConfig) live in `trait-kit-derive`.
-// Users add `trait-kit-derive` as a dependency to use #[derive(ConfigInherit)]
+// NOTE: derive macros (Module, ConfigInherit, SharedConfig) live in `trait-kit-macros`.
+// Users add `trait-kit-macros` as a dependency to use the derives.
 // and #[derive(SharedConfig)]. The traits are re-exported above.
 
 #[cfg(feature = "encryption")]

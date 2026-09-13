@@ -9,7 +9,7 @@
 //! ```
 
 use trait_kit::kit::{Kit, ModuleConfig};
-use trait_kit_derive::{ConfigInherit, SharedConfig};
+use trait_kit_macros::{ConfigInherit, SharedConfig};
 
 // ── Layer 1: ModuleConfig — zero-config defaults ──
 

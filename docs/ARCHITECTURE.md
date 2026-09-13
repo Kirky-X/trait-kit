@@ -27,7 +27,7 @@ trait-kit workspace 由四个成员组成。主 crate 的 `src/` 分三层：`co
 flowchart TD
     subgraph ws["trait-kit workspace"]
         TK["trait-kit 主 crate<br/>core / kit / i18n"]
-        DER["trait-kit-derive<br/>ConfigInherit + SharedConfig"]
+        DER["trait-kit-macros<br/>Module + ConfigInherit + SharedConfig"]
         MAC["trait-kit-macros<br/>derive Module"]
         EX["trait-kit-examples<br/>20 个可运行示例"]
     end

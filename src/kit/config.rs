@@ -141,7 +141,7 @@ impl std::error::Error for ValidationError {}
 /// where each field is wrapped in `Option<T>`. Only fields set to `Some`
 /// in the override are applied; `None` fields leave the original value intact.
 ///
-/// Designed for use with `#[derive(ConfigInherit)]` from `trait-kit-derive`,
+/// Designed for use with `#[derive(ConfigInherit)]` from `trait-kit-macros`,
 /// which auto-generates the `Override` type and `apply_override` implementation.
 ///
 /// # Example (manual implementation)
@@ -182,7 +182,7 @@ pub trait ConfigInherit: Clone + 'static {
 /// Uses `serde_json::Value` (not `String`) to preserve type information and
 /// avoid parse failures.
 ///
-/// Designed for use with `#[derive(SharedConfig)]` from `trait-kit-derive`,
+/// Designed for use with `#[derive(SharedConfig)]` from `trait-kit-macros`,
 /// which parses `#[shared(field1, field2)]` attributes to auto-generate
 /// both methods.
 #[cfg(feature = "confers")]

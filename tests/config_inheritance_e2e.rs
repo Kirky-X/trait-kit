@@ -4,7 +4,7 @@
 #![cfg(feature = "confers")]
 
 use trait_kit::kit::{Kit, ModuleConfig};
-use trait_kit_derive::{ConfigInherit, SharedConfig};
+use trait_kit_macros::{ConfigInherit, SharedConfig};
 
 // ── Project B's database config ──
 

@@ -259,7 +259,7 @@ fmt.format_date(2026, 9, 10)?;
 | `ShutdownCoordinator`, `ShutdownPhase`, `ShutdownPhaseResult`, `ShutdownResult` | `shutdown` |
 | `AsyncShutdownCoordinator` | `shutdown` + `async` |
 
-> derive 宏（`#[derive(ConfigInherit)]` / `#[derive(SharedConfig)]`）不随 prelude 导出，需在 `Cargo.toml` 中显式依赖 `trait-kit-derive`。
+> derive 宏（`#[derive(ConfigInherit)]` / `#[derive(SharedConfig)]`）不随 prelude 导出，需在 `Cargo.toml` 中显式依赖 `trait-kit-macros`。
 
 ---
 
@@ -309,7 +309,7 @@ pub trait ConfigInherit: Clone + 'static {
 ```
 
 - `Kit::merge_config::<C>(ovr)` — 应用字段覆盖
-- `#[derive(ConfigInherit)]` — 自动生成 Override 类型（`trait-kit-derive`）
+- `#[derive(ConfigInherit)]` — 自动生成 Override 类型（`trait-kit-macros`）
 - `#[config_inherit(nested)]` — 嵌套字段递归委托
 
 #### `SharedConfig` trait

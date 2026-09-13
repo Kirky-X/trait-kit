@@ -241,11 +241,11 @@ let decrypted: AppConfig = kit.get_encrypted(&master_key)?;  // 错误密钥会�
 
 ### 配置继承 `confers`
 
-四层配置继承体系支持跨模块/跨项目的配置复用（`trait-kit-derive` 提供 `ConfigInherit` / `SharedConfig` derive 宏）：
+四层配置继承体系支持跨模块/跨项目的配置复用（`trait-kit-macros` 提供 `ConfigInherit` / `SharedConfig` derive 宏）：
 
 ```rust,ignore
 use trait_kit::kit::{Kit, ModuleConfig};
-use trait_kit_derive::{ConfigInherit, SharedConfig};
+use trait_kit_macros::{ConfigInherit, SharedConfig};
 
 #[derive(Clone, ConfigInherit, SharedConfig)]
 #[shared(host, port)]
