@@ -56,32 +56,28 @@
 
 ## ✨ 功能特性
 
-<div align="center">
-
-<table>
+<table style="width:100%; border-collapse: collapse">
 <tr>
-<td width="50%">🧩 <b>标准模块接口</b><br><sub><code>ModuleMeta</code> + <code>AutoBuilder</code> 定义统一契约，<code>impl_module_meta!</code> / <code>impl_auto_builder!</code> 宏一行声明模块。</sub></td>
-<td width="50%">🏗️ <b>Typestate 构建验证</b><br><sub><code>Kit&lt;Unbuilt&gt;</code> 注册模块与配置，<code>build()</code> 做依赖图校验（缺失依赖 + 环检测）后返回 <code>Kit&lt;Ready&gt;</code>，错误在启动前暴露。</sub></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🧩 <b>标准模块接口</b><br><span style="color:#64748B"><code>ModuleMeta</code> + <code>AutoBuilder</code> 定义统一契约，<code>impl_module_meta!</code> / <code>impl_auto_builder!</code> 宏一行声明模块。</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🏗️ <b>Typestate 构建验证</b><br><span style="color:#64748B"><code>Kit&lt;Unbuilt&gt;</code> 注册模块与配置，<code>build()</code> 做依赖图校验（缺失依赖 + 环检测）后返回 <code>Kit&lt;Ready&gt;</code>，错误在启动前暴露。</span></td>
 </tr>
 <tr>
-<td width="50%">🔎 <b>类型安全能力检索</b><br><sub>能力按模块类型存储与检索（<code>kit.require::&lt;M&gt;()</code>），无字符串键、无 downcast、无运行时查找表。</sub></td>
-<td width="50%">🗂️ <b>配置中心</b><br><sub><code>set_config</code> / <code>config::&lt;C&gt;</code> 基于 <code>TypeId</code> 键的 <code>TypeMap</code> 存取类型化配置。</sub></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🔎 <b>类型安全能力检索</b><br><span style="color:#64748B">能力按模块类型存储与检索（<code>kit.require::&lt;M&gt;()</code>），无字符串键、无 downcast、无运行时查找表。</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🗂️ <b>配置中心</b><br><span style="color:#64748B"><code>set_config</code> / <code>config::&lt;C&gt;</code> 基于 <code>TypeId</code> 键的 <code>TypeMap</code> 存取类型化配置。</span></td>
 </tr>
 <tr>
-<td width="50%">⚙️ <b>confers 配置集成</b><br><sub>三级 feature 继承接入 <a href="https://crates.io/crates/confers">confers</a>：derive 宏配置加载、热重载订阅、XChaCha20-Poly1305 加密存储。</sub></td>
-<td width="50%">🌐 <b>AsyncKit 异步支持</b><br><sub><code>async</code> feature 提供 <code>Send + Sync</code> 的 <code>AsyncKit</code>，适配连接池、HTTP 客户端等异步初始化场景。</sub></td>
+<td width="50%" style="vertical-align:top; padding: 12px">⚙️ <b>confers 配置集成</b><br><span style="color:#64748B">三级 feature 继承接入 <a href="https://crates.io/crates/confers">confers</a>：derive 宏配置加载、热重载订阅、XChaCha20-Poly1305 加密存储。</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🌐 <b>AsyncKit 异步支持</b><br><span style="color:#64748B"><code>async</code> feature 提供 <code>Send + Sync</code> 的 <code>AsyncKit</code>，适配连接池、HTTP 客户端等异步初始化场景。</span></td>
 </tr>
 <tr>
-<td width="50%">🩺 <b>运行时可观测</b><br><sub><code>lifecycle</code> 生命周期钩子、<code>health</code> 健康检查、<code>observer</code> 构建回调、<code>shutdown</code> 分阶段优雅关闭。</sub></td>
-<td width="50%">🌍 <b>ICU4X 国际化</b><br><sub>区域感知的数字 / 日期 / 复数 / 排序格式化，内置 Fluent FTL 中英文消息翻译（<code>tr()</code>）。</sub></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🩺 <b>运行时可观测</b><br><span style="color:#64748B"><code>lifecycle</code> 生命周期钩子、<code>health</code> 健康检查、<code>observer</code> 构建回调、<code>shutdown</code> 分阶段优雅关闭。</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🌍 <b>ICU4X 国际化</b><br><span style="color:#64748B">区域感知的数字 / 日期 / 复数 / 排序格式化，内置 Fluent FTL 中英文消息翻译（<code>tr()</code>）。</span></td>
 </tr>
 <tr>
-<td width="50%">🧱 <b>极简默认依赖</b><br><sub><code>default = []</code> 零默认依赖；<code>confers</code>、<code>serde</code>、<code>serde_json</code>、<code>icu</code> 等全部为可选依赖并经 feature 门控。</sub></td>
-<td width="50%">🚫 <b>无 unsafe</b><br><sub>整个 crate 标注 <code>#![deny(unsafe_code)]</code>，编译期强制排除 <code>unsafe</code>。</sub></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🧱 <b>极简默认依赖</b><br><span style="color:#64748B"><code>default = []</code> 零默认依赖；<code>confers</code>、<code>serde</code>、<code>serde_json</code>、<code>icu</code> 等全部为可选依赖并经 feature 门控。</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🚫 <b>无 unsafe</b><br><span style="color:#64748B">整个 crate 标注 <code>#![deny(unsafe_code)]</code>，编译期强制排除 <code>unsafe</code>。</span></td>
 </tr>
 </table>
-
-</div>
 
 <details>
 <summary>更多能力（注册模式、构建报告、组合与协商）</summary>
