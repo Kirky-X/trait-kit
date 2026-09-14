@@ -950,7 +950,7 @@ mod toggle_decorator_e2e {
     }
 }
 
-// ─── CMP-10：shutdown + decorator 关闭次序 ─────────────────────────────
+// ─── shutdown + decorator 关闭次序 ─────────────────────────────
 //
 // 语义固化：被装饰模块关闭时，装饰层先于核心层释放（Drop 外层先于内层），
 // 且 `Lifecycle::on_shutdown` 接收到的是装饰后的最外层能力。
@@ -1085,7 +1085,7 @@ mod shutdown_decorator_e2e {
     }
 }
 
-// ─── CMP-11：toggle + scope 开关门控作用域 ─────────────────────────────
+// ─── toggle + scope 开关门控作用域 ─────────────────────────────
 
 #[cfg(all(feature = "toggle", feature = "scope"))]
 mod toggle_scope_e2e {
@@ -1134,7 +1134,7 @@ mod toggle_scope_e2e {
     }
 }
 
-// ─── CMP-12：interface + decorator interface 构建路径装饰 ───────────────
+// ─── interface + decorator interface 构建路径装饰 ───────────────
 //
 // DEC-04 契约：装饰器须覆盖全部四条构建路径（eager/lazy/multi/interface）。
 // register_as 路径的装饰按能力类型（`M::Capability`）在 `into_interface`
@@ -1200,7 +1200,7 @@ mod interface_decorator_e2e {
     }
 }
 
-// ─── CMP-13：encryption + reload 双链共存 ──────────────────────────────
+// ─── encryption + reload 双链共存 ──────────────────────────────
 
 #[cfg(all(feature = "encryption", feature = "reload"))]
 mod encryption_reload_e2e {
@@ -1279,7 +1279,7 @@ mod encryption_reload_e2e {
     }
 }
 
-// ─── CMP-15：全 feature 行为级烟囱 ─────────────────────────────────────
+// ─── 全 feature 行为级烟囱 ─────────────────────────────────────
 
 #[cfg(all(
     feature = "async",
@@ -1535,7 +1535,7 @@ mod all_features_smoke_e2e {
     const SMOKE_KEY: [u8; 32] = *b"0123456789abcdef0123456789abcdef";
 }
 
-// ─── CMP-16：kit + observer 组合（BuildObserver 在 kit feature 下可用）──
+// ─── kit + observer 组合（BuildObserver 在 kit feature 下可用）──
 //
 // 防止 dbnexus/inklog 类编译盲区在本仓复发：断言 observer 回调在
 // Kit 构建路径中被触发，且 Kit<Ready> 保留完整能力表。

@@ -23,11 +23,11 @@
 // - OBS-01..04 → src/core/observer.rs、src/kit/kit.rs 内联测试、
 //   tests/e2e_feature_combinations.rs::e2e_observer_notified_on_build
 // - OBS-06（observer+decorator）→ e2e_feature_combinations.rs
-// - OBS-07 / DEC-08（async 面）→ tests/e2e_async.rs
+// - DEC-08（async 面）→ tests/e2e_async.rs
 
 #![cfg(any(feature = "lifecycle", feature = "health", feature = "observer"))]
 
-// ─── LCY-05 / LCY-07：生命周期 ─────────────────────────────────────────
+// ─── 生命周期 ─────────────────────────────────────────
 
 #[cfg(feature = "lifecycle")]
 mod lifecycle_hooks_e2e {
@@ -91,7 +91,7 @@ mod lifecycle_hooks_e2e {
         fn on_shutdown(_cap: &Arc<u32>) {}
     }
 
-    /// LCY-07：on_ready 拓扑序——base → mid → top（被依赖者先 ready）。
+    /// on_ready 拓扑序——base → mid → top（被依赖者先 ready）。
     #[test]
     fn e2e_on_ready_runs_in_topological_order() {
         READY_ORDER.lock().unwrap().clear();
@@ -112,7 +112,7 @@ mod lifecycle_hooks_e2e {
         );
     }
 
-    // LCY-05：中间模块 on_shutdown panic，首尾回调仍全部执行。
+    // 中间模块 on_shutdown panic，首尾回调仍全部执行。
 
     static SHUTDOWN_COUNT: AtomicUsize = AtomicUsize::new(0);
 
@@ -170,7 +170,7 @@ mod lifecycle_hooks_e2e {
         }
     }
 
-    /// LCY-05：失败关闭不阻断——panicky-mod 的 panic 被
+    /// 失败关闭不阻断——panicky-mod 的 panic 被
     /// `Kit::shutdown` 内部 catch_unwind 隔离，其余模块回调全执行。
     #[test]
     fn e2e_failed_on_shutdown_does_not_block_others() {
@@ -198,7 +198,7 @@ mod lifecycle_hooks_e2e {
     }
 }
 
-// ─── HLT-07：checker 找不到 capability 的防御分支 ──────────────────────
+// ─── checker 找不到 capability 的防御分支 ──────────────────────
 
 #[cfg(feature = "health")]
 mod health_defensive_e2e {
@@ -242,7 +242,7 @@ mod health_defensive_e2e {
         }
     }
 
-    /// HLT-07：register_health_check 的类型系统不强制模块已注册；
+    /// register_health_check 的类型系统不强制模块已注册；
     /// 对未注册模块，checker 在 TypeMap 中找不到 capability →
     /// `Unhealthy { detail: "capability not found" }`（防御分支）。
     #[test]
@@ -277,7 +277,7 @@ mod health_defensive_e2e {
     }
 }
 
-// ─── OBS-05：多 observer 注册序 ────────────────────────────────────────
+// ─── 多 observer 注册序 ────────────────────────────────────────
 
 #[cfg(feature = "observer")]
 mod observer_registration_order_e2e {
@@ -310,7 +310,7 @@ mod observer_registration_order_e2e {
         fn on_build_error(&self, _name: &'static str, _err: &TraitKitError) {}
     }
 
-    /// OBS-05：多个 observer 全部收到同一事件，且遍历序 == 注册序。
+    /// 多个 observer 全部收到同一事件，且遍历序 == 注册序。
     #[test]
     fn e2e_multiple_observers_all_notified_in_registration_order() {
         let log = Arc::new(std::sync::Mutex::new(Vec::new()));

@@ -20,7 +20,7 @@
 
 use trait_kit::kit::config::{XChaCha20Crypto, derive_field_key};
 
-/// ENC-11：HKDF info 绑定 `version:PATH`——不同 PATH 隔离、同参确定、
+/// HKDF info 绑定 `version:PATH`——不同 PATH 隔离、同参确定、
 /// 版本标签参与派生。
 #[test]
 fn e2e_field_key_derivation_path_isolation() {
@@ -45,7 +45,7 @@ fn e2e_field_key_derivation_path_isolation() {
     assert_eq!(db.len(), 32, "字段密钥应为 32 字节 XChaCha20 密钥");
 }
 
-/// ENC-12：再导出原语 roundtrip——`encrypt` 产出 (nonce, ciphertext)，
+/// 再导出原语 roundtrip——`encrypt` 产出 (nonce, ciphertext)，
 /// `decrypt(nonce, ciphertext, key)` 还原明文；错误密钥解密失败。
 #[test]
 fn e2e_reexported_crypto_roundtrip_via_trait_kit_path() {

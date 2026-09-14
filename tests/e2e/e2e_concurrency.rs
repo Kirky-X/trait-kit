@@ -9,12 +9,12 @@
 //   RLD-07 测试）
 //
 // 其余 CCY 域场景既有覆盖充分，此处仅声明引用、不重复固化：
-// - CCY-01/02 → src/kit/async_typemap.rs（cross_thread_access_does_not_panic、
+// - 02 → src/kit/async_typemap.rs（cross_thread_access_does_not_panic、
 //   arc_clone_shares_state）、src/kit/async_kit.rs（async_kit_concurrent_registration）
 // - CCY-03（sync Kit !Sync 设计边界）→ tests/basic.rs 顶部的
 //   `assert_not_impl_any!(Kit<Unbuilt>: Sync)` / `Kit<Ready>: Sync`
 //   编译期静态断言固化（等效落点，比 trybuild 更快且稳定）
-// - CCY-04/05/07 → tests/e2e_advanced.rs（c06 100 模块 / c07 20 配置类型 /
+// - 05/07 → tests/e2e_advanced.rs（c06 100 模块 / c07 20 配置类型 /
 //   c15 1MB 加密大值）
 #![cfg(feature = "reload")]
 

@@ -10,7 +10,7 @@
 //
 // 覆盖场景 ID（docs/TEST_SCENARIOS.md §2.22 / §2.14 / §2.19）：
 // - PRS-01 `--no-default-features`（default=[]）core API 门禁测试化
-// - PRS-02/04/05 13 个 feature 名单与依赖链展开断言（运行时解析
+// - 04/05 13 个 feature 名单与依赖链展开断言（运行时解析
 //   Cargo.toml [features] 固化，组合矩阵的实际逐组合执行见
 //   reviews/acceptance-report.md 台账）
 // - PRS-03 `--all-features` 门禁测试化（cfg 全 13 项正向断言段）
@@ -20,7 +20,7 @@
 // - PRE-03 派生宏不随 prelude 导出的文档契约核对
 //
 // 其余引用声明：PRS-01 的 no-feature 行为组 →
-// tests/e2e_feature_combinations.rs::e2e_no_feature_*；PRS-04/05 的行为面
+// tests/e2e_feature_combinations.rs::e2e_no_feature_*；05 的行为面
 // → e2e_confers_plus_reload / e2e_confers_plus_encryption。
 
 use std::collections::HashMap;
@@ -28,7 +28,7 @@ use trait_kit::impl_module_meta;
 use trait_kit::prelude::*;
 
 /// 解析 workspace 根 Cargo.toml 的 `[features]` 段（dep: 前缀剔除、
-/// 引号与逗号规整）。供 PRS-02/04/05 的展开断言使用。
+/// 引号与逗号规整）。供 04/05 的展开断言使用。
 fn parse_features() -> HashMap<String, Vec<String>> {
     let manifest = include_str!("../../Cargo.toml");
     let mut features: HashMap<String, Vec<String>> = HashMap::new();
@@ -92,7 +92,7 @@ fn prs01_no_default_features_core_api_gate() {
     assert!(ready.graph_mermaid().contains("bare-mod"));
 }
 
-/// PRS-02：feature 名单完整（与 Cargo.toml [features] 一致）。
+/// feature 名单完整（与 Cargo.toml [features] 一致）。
 /// rc4 批次新增 report/presets/compose/presets-remote/negotiate 五项（13 → 18）。
 #[test]
 fn prs02_feature_table_lists_all_features() {
@@ -138,7 +138,7 @@ fn prs02_feature_table_lists_all_features() {
     );
 }
 
-/// PRS-04：依赖链自动生效——`reload` 展开含 `confers`（已剪除 `confers/watch` 死链）。
+/// 依赖链自动生效——`reload` 展开含 `confers`（已剪除 `confers/watch` 死链）。
 #[test]
 fn prs04_reload_chain_expansion() {
     let features = parse_features();
@@ -153,7 +153,7 @@ fn prs04_reload_chain_expansion() {
     );
 }
 
-/// PRS-05：依赖链自动生效——`encryption` 展开含 `confers` 与
+/// 依赖链自动生效——`encryption` 展开含 `confers` 与
 /// `confers/encryption`（XChaCha20 原语经再导出可用，行为面见
 /// tests/e2e_encryption.rs）。
 #[test]
@@ -197,7 +197,7 @@ fn prs03_all_features_gate_reached() {
     assert_eq!(features.len(), 19, "18 feature + default 空集");
 }
 
-/// PRS-06：examples crate 20 个示例全部显式 `[[example]]` 注册，且
+/// examples crate 20 个示例全部显式 `[[example]]` 注册，且
 /// required-features 引用 examples crate 自身的 feature 名单
 /// （逐示例 `cargo check -p trait-kit-examples --features <组合>` 的
 /// 执行记录见 reviews/acceptance-report.md）。

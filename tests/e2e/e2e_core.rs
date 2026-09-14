@@ -17,7 +17,7 @@
 // - REG-19（typestate 编译期违规）→ tests/compile_fail.rs 驱动 tests/ui/ 三例；
 //   sync Kit `!Sync` 设计边界（CCY-03）由 tests/basic.rs 顶部的
 //   `assert_not_impl_any!` 编译期断言固化（等效落点）
-// - CAP-01/03..10/12 → tests/basic.rs、src/kit/kit.rs、tests/e2e_advanced.rs
+// - 03..10/12 → tests/basic.rs、src/kit/kit.rs、tests/e2e_advanced.rs
 // - DEP-01..10 → src/kit/graph.rs 内联测试、tests/basic.rs
 // - ERR-01..05/08 → src/error.rs 内联测试；ERR-06 → tests/e2e_hooks.rs；
 //   ERR-07 → tests/e2e_runtime.rs；ERR-09 → tests/e2e_i18n_en.rs（en 回退）
@@ -51,7 +51,7 @@ impl AutoBuilder for PresentMod {
     }
 }
 
-/// CAP-02：Ready 态 `require` 未注册模块 → `MissingCapability{key=NAME}`。
+/// Ready 态 `require` 未注册模块 → `MissingCapability{key=NAME}`。
 #[test]
 fn e2e_require_unregistered_returns_missing_capability() {
     let mut kit = Kit::new();
@@ -79,7 +79,7 @@ fn e2e_contains_false_for_unregistered() {
     assert!(!ready.contains::<UnregisteredMod>());
 }
 
-/// CAP-11：factory 闭包内 `M::build` 返回 Err → `BuildFailed{context=NAME}`
+/// factory 闭包内 `M::build` 返回 Err → `BuildFailed{context=NAME}`
 /// 传播，source 保留底层错误语义（不吞错、不替换型别）。
 struct FailingMod;
 impl_module_meta!(FailingMod, "failing-mod");

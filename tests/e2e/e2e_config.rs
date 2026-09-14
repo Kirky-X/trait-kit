@@ -74,7 +74,7 @@ impl Configurable for FreshCfg {
     }
 }
 
-// ─── RLD-07：require_ref 借用与配置写入的真实行为 ───────────────────────
+// ─── require_ref 借用与配置写入的真实行为 ───────────────────────
 
 struct RefCapMod;
 impl_module_meta!(RefCapMod, "ref-cap-mod");

@@ -31,13 +31,13 @@ fn sample_source() -> Box<dyn std::error::Error + Send + 'static> {
     Box::new(std::io::Error::other("inner boom"))
 }
 
-/// ERR-09：8 个枚举变体在 en 目录下逐一可读（消息 id 全覆盖）。
+/// 8 个枚举变体在 en 目录下逐一可读（消息 id 全覆盖）。
 #[test]
 fn e2e_error_display_all_variants_english() {
     ensure_en();
     assert_eq!(I18nManager::global().unwrap().locale_tag(), "en");
 
-    // ERR-01：CycleDetected 含全部环上模块名。
+    // CycleDetected 含全部环上模块名。
     let msg = TraitKitError::CycleDetected {
         cycle: vec!["mod-a", "mod-b"],
     }
@@ -51,7 +51,7 @@ fn e2e_error_display_all_variants_english() {
         "got '{msg}'"
     );
 
-    // ERR-02：DependencyMissing 同时含发起模块与缺失依赖。
+    // DependencyMissing 同时含发起模块与缺失依赖。
     let msg = TraitKitError::DependencyMissing {
         module: "db",
         missing: "logger",
@@ -60,12 +60,12 @@ fn e2e_error_display_all_variants_english() {
     assert!(msg.contains("depends on"), "got '{msg}'");
     assert!(msg.contains("db") && msg.contains("logger"), "got '{msg}'");
 
-    // ERR-03：AlreadyRegistered 含模块名。
+    // AlreadyRegistered 含模块名。
     let msg = TraitKitError::AlreadyRegistered { module: "dup" }.to_string();
     assert!(msg.contains("is already registered"), "got '{msg}'");
     assert!(msg.contains("dup"), "got '{msg}'");
 
-    // ERR-04：BuildFailed 含 context 与底层 source 文本。
+    // BuildFailed 含 context 与底层 source 文本。
     let msg = TraitKitError::BuildFailed {
         context: "svc".into(),
         source: sample_source(),
@@ -77,7 +77,7 @@ fn e2e_error_display_all_variants_english() {
         "got '{msg}'"
     );
 
-    // ERR-05：MissingCapability / MissingConfig 含 key。
+    // MissingCapability / MissingConfig 含 key。
     let msg = TraitKitError::MissingCapability {
         key: "cap-k".into(),
     }
@@ -95,7 +95,7 @@ fn e2e_error_display_all_variants_english() {
         "got '{msg}'"
     );
 
-    // ERR-06：LifecycleFailed 含 context 与 source。
+    // LifecycleFailed 含 context 与 source。
     // 该变体由 `lifecycle` feature 门控（error.rs 中 #[cfg]），未启用时
     // 编译期跳过本段（仅 `--features i18n` 等组合下）。
     #[cfg(feature = "lifecycle")]

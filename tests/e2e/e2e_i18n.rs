@@ -33,7 +33,7 @@ mod i18n_shutdown_e2e {
 
     use super::ensure_zh;
 
-    /// CMP-14：`ShutdownTimedOut` 的 Display 经 `tr()` 查询 zh 目录，
+    /// `ShutdownTimedOut` 的 Display 经 `tr()` 查询 zh 目录，
     /// 超时阶段名以 `as_str()` 原文嵌入本地化模板。
     #[test]
     fn e2e_i18n_shutdown_timed_out_display_localized_zh() {

@@ -38,7 +38,7 @@ fn e2e_shutdown_timed_out_into_result_and_display() {
         }
         other => panic!("应变体为 ShutdownTimedOut：got {other:?}"),
     }
-    // ERR-07：Display 含超时阶段可读名（as_str 原文，locale 无关）。
+    // Display 含超时阶段可读名（as_str 原文，locale 无关）。
     let msg = err.to_string();
     assert!(
         msg.contains("stop_requests"),

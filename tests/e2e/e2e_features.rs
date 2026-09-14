@@ -16,7 +16,7 @@ use std::sync::Arc;
 use trait_kit::impl_module_meta;
 use trait_kit::prelude::*;
 
-// ─── DEC-03：多装饰器洋葱式叠加 ────────────────────────────────────────
+// ─── 多装饰器洋葱式叠加 ────────────────────────────────────────
 
 struct OnionMod;
 impl_module_meta!(OnionMod, "onion-mod");
@@ -44,7 +44,7 @@ fn e2e_decorator_onion_order_registration_sequence() {
     );
 }
 
-// ─── DEC-04：lazy / multi / interface 构建路径装饰 ─────────────────────
+// ─── lazy / multi / interface 构建路径装饰 ─────────────────────
 
 struct LazyDeco;
 impl_module_meta!(LazyDeco, "lazy-deco");
@@ -162,7 +162,7 @@ fn e2e_decorator_applies_on_interface_path() {
     );
 }
 
-// ─── DEC-07：装饰器 panic 语义固化 ─────────────────────────────────────
+// ─── 装饰器 panic 语义固化 ─────────────────────────────────────
 
 /// 装饰器闭包自身 panic：panic 穿透 build() 传播给调用方。
 #[test]

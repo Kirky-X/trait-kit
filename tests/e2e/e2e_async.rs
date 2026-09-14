@@ -31,7 +31,7 @@ fn block_on<F: Future>(future: F) -> F::Output {
     }
 }
 
-// ─── ASK-13：异步构建取消安全 ──────────────────────────────────────────
+// ─── 异步构建取消安全 ──────────────────────────────────────────
 
 static ASK13_STARTED: AtomicU32 = AtomicU32::new(0);
 static ASK13_COMPLETED: AtomicU32 = AtomicU32::new(0);
@@ -115,7 +115,7 @@ fn e2e_async_build_future_drop_is_cancel_safe() {
     assert_eq!(ASK13_COMPLETED.load(Ordering::SeqCst), 1);
 }
 
-// ─── DEC-08：AsyncKit::decorate 与 sync 行为一致 ───────────────────────
+// ─── AsyncKit::decorate 与 sync 行为一致 ───────────────────────
 
 struct AsyncDecoMod;
 impl_module_meta!(AsyncDecoMod, "async-deco-mod");
@@ -145,7 +145,7 @@ fn e2e_async_kit_decorate_matches_sync_semantics() {
     );
 }
 
-// ─── HLT-09：async 面健康检查与 sync 同构 ──────────────────────
+// ─── async 面健康检查与 sync 同构 ──────────────────────
 
 #[cfg(feature = "health")]
 mod async_health_isomorphism_e2e {
@@ -220,7 +220,7 @@ mod async_health_isomorphism_e2e {
         }
     }
 
-    /// HLT-09：同逻辑 checker 在 sync/async 两条产品线上产出同型报告；
+    /// 同逻辑 checker 在 sync/async 两条产品线上产出同型报告；
     /// 未注册 checker 的错误口径同型（MissingConfig{key=NAME}）。
     #[test]
     fn e2e_async_health_report_isomorphic_to_sync() {
