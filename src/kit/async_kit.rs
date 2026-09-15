@@ -24,6 +24,9 @@
 //! 5. decorator：按 `decorator_module_to_cap` 映射应用（async 侧全部在
 //!    `build()` 时应用，无 lazy 路径）。
 //! 6. factory：typestate cast + 编译期 size/align 布局断言。
+//! 7. negotiate：register 时登记声明版本/最低版本要求，`build()` 在依赖图
+//!    校验后、构建开始前校验（sync 侧语义一致；async 侧无 override 路径，
+//!    登记点仅 `register`）。
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -109,22 +112,42 @@ struct ConfersFields {
     config_snapshots: Arc<RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>,
 }
 
-/// 已登记的 reload 回调（线程安全闭包）
-type ReloadSubscriber = Arc<dyn Fn() + Send + Sync>;
-
 /// Fields gated behind the `reload` feature (async counterpart).
 #[cfg(feature = "reload")]
 #[derive(Default)]
 struct ReloadFields {
-    /// Thread-safe subscriber map: `Arc<dyn Fn() + Send + Sync>` instead of `Rc<dyn Fn()>`.
+    /// 已登记的 reload 回调（线程安全闭包）
+    ///
+    /// `Arc<dyn Fn() + Send + Sync>` instead of `Rc<dyn Fn()>`.
     subscribers: Arc<RwLock<HashMap<TypeId, Vec<ReloadSubscriber>>>>,
 }
+
+/// 已登记的 reload 回调（线程安全闭包）；仅 `reload` 特性下使用。
+#[cfg(feature = "reload")]
+type ReloadSubscriber = Arc<dyn Fn() + Send + Sync>;
 
 /// Fields gated behind the `encryption` feature (async counterpart).
 #[cfg(feature = "encryption")]
 #[derive(Default)]
 struct EncryptionFields {
     encrypted_configs: Arc<RwLock<HashMap<TypeId, super::EncryptedBlob>>>,
+}
+
+/// 模块名 → 声明的能力版本（`ModuleMeta::VERSION`）共享表。
+#[cfg(feature = "negotiate")]
+type AsyncVersionTable = Arc<RwLock<HashMap<&'static str, &'static str>>>;
+/// (`consumer`, `dependency`, `min_version`) 最低版本要求列表。
+#[cfg(feature = "negotiate")]
+type AsyncRequirementList = Arc<RwLock<Vec<(&'static str, &'static str, &'static str)>>>;
+
+/// Fields gated behind the `negotiate` feature (async counterpart of the
+/// sync `Kit`'s `NegotiateFields` — identical semantics, `RwLock` instead
+/// of `RefCell`).
+#[cfg(feature = "negotiate")]
+#[derive(Default)]
+struct AsyncNegotiateFields {
+    versions: AsyncVersionTable,
+    requirements: AsyncRequirementList,
 }
 
 /// Fields for observation ports (always present, no feature gate).
@@ -320,6 +343,8 @@ pub struct AsyncKit<S = Unbuilt> {
     reload: ReloadFields,
     #[cfg(feature = "encryption")]
     encryption: EncryptionFields,
+    #[cfg(feature = "negotiate")]
+    negotiate: AsyncNegotiateFields,
     ports: PortsFields,
     /// Max concurrently-polled module builds per topological layer.
     max_concurrency: usize,
@@ -352,6 +377,8 @@ impl AsyncKit {
             reload: ReloadFields::default(),
             #[cfg(feature = "encryption")]
             encryption: EncryptionFields::default(),
+            #[cfg(feature = "negotiate")]
+            negotiate: AsyncNegotiateFields::default(),
             ports: PortsFields::default(),
             max_concurrency: usize::MAX,
             _state: PhantomData,
@@ -401,6 +428,65 @@ impl AsyncKit {
                 "AsyncKit builders lock poisoned: another thread panicked while holding the lock",
             )
             .insert(TypeId::of::<M>(), build_fn);
+
+        // 版本协商登记（negotiate feature）：记录声明版本与最低版本要求，
+        // 语义与 sync Kit 的 `record_module_versions` 对齐。
+        #[cfg(feature = "negotiate")]
+        {
+            self.negotiate
+                .versions
+                .write()
+                .expect("AsyncKit negotiate versions lock poisoned")
+                .insert(M::NAME, M::VERSION);
+            self.negotiate
+                .requirements
+                .write()
+                .expect("AsyncKit negotiate requirements lock poisoned")
+                .extend(
+                    M::required_versions()
+                        .iter()
+                        .map(|(dep, min)| (M::NAME, *dep, *min)),
+                );
+        }
+        Ok(())
+    }
+
+    /// Semver-compat validation pass（`negotiate` feature）：每条最低版本
+    /// 要求必须被提供方声明版本满足。提供方未声明（未注册或版本缺省
+    /// `"0.0.0"`）时——前者是依赖图的事（DependencyMissing），此处仅对
+    /// 已声明提供方协商，后者视为不满足（与 sync Kit 语义一致）。
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TraitKitError::VersionIncompatible`] on the first
+    /// unsatisfied requirement.
+    #[cfg(feature = "negotiate")]
+    fn validate_version_requirements(&self) -> Result<(), TraitKitError> {
+        let requirements = self
+            .negotiate
+            .requirements
+            .read()
+            .expect("AsyncKit negotiate requirements lock poisoned");
+        let versions = self
+            .negotiate
+            .versions
+            .read()
+            .expect("AsyncKit negotiate versions lock poisoned");
+        for (consumer, dep, min) in requirements.iter() {
+            // Absent dependencies are the graph's job (DependencyMissing);
+            // here we only negotiate against declared providers.
+            let Some(provided) = versions.get(*dep) else {
+                continue;
+            };
+            if !crate::core::semver_compatible(provided, min) {
+                return Err(TraitKitError::VersionIncompatible {
+                    module: consumer,
+                    dependency: dep,
+                    required: min,
+                    provided,
+                });
+            }
+        }
         Ok(())
     }
 
@@ -532,6 +618,12 @@ impl AsyncKit {
                 return Err(TraitKitError::CycleDetected { cycle });
             }
         };
+
+        // 1.5 版本协商（negotiate feature）：依赖图就绪后、构建开始前，
+        //     校验每条最低版本要求是否被提供方声明版本满足。语义与
+        //     sync Kit 的 `validate_version_requirements` 对齐。
+        #[cfg(feature = "negotiate")]
+        self.validate_version_requirements()?;
 
         // 2. Extract all builders from the Arc<RwLock<…>> in a single
         //    write-lock acquisition (instead of one lock per module in the
@@ -711,6 +803,8 @@ impl AsyncKit {
             reload: self.reload,
             #[cfg(feature = "encryption")]
             encryption: self.encryption,
+            #[cfg(feature = "negotiate")]
+            negotiate: self.negotiate,
             ports: self.ports,
             max_concurrency: self.max_concurrency,
             _state: PhantomData::<Ready>,
@@ -3923,5 +4017,109 @@ mod concurrency_tests {
             leaf_pos < top_pos,
             "dependency must complete first: {order:?}"
         );
+    }
+
+    // ─── negotiate（版本协商，async 侧）────────────────────────────────────
+
+    #[derive(Debug, Clone)]
+    struct VerCap;
+
+    #[derive(Debug)]
+    struct VerError;
+    impl std::fmt::Display for VerError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "ver error")
+        }
+    }
+    impl std::error::Error for VerError {}
+
+    struct VerProvider;
+    impl ModuleMeta for VerProvider {
+        const NAME: &'static str = "ver-provider";
+        const VERSION: &'static str = "1.2.0";
+    }
+    impl AsyncAutoBuilder for VerProvider {
+        type Capability = Arc<VerCap>;
+        type Error = VerError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(Arc::new(VerCap)) })
+        }
+    }
+
+    struct VerSatisfiedConsumer;
+    impl ModuleMeta for VerSatisfiedConsumer {
+        const NAME: &'static str = "ver-consumer-ok";
+        fn required_versions() -> &'static [(&'static str, &'static str)] {
+            &[("ver-provider", "1.1.0")]
+        }
+    }
+    impl AsyncAutoBuilder for VerSatisfiedConsumer {
+        type Capability = Arc<VerCap>;
+        type Error = VerError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(Arc::new(VerCap)) })
+        }
+    }
+
+    struct VerGreedyConsumer;
+    impl ModuleMeta for VerGreedyConsumer {
+        const NAME: &'static str = "ver-consumer-greedy";
+        fn required_versions() -> &'static [(&'static str, &'static str)] {
+            &[("ver-provider", "2.0.0")]
+        }
+    }
+    impl AsyncAutoBuilder for VerGreedyConsumer {
+        type Capability = Arc<VerCap>;
+        type Error = VerError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(Arc::new(VerCap)) })
+        }
+    }
+
+    #[test]
+    fn negotiate_satisfied_requirement_builds() {
+        let mut kit = AsyncKit::new();
+        kit.register::<VerProvider>().expect("provider");
+        kit.register::<VerSatisfiedConsumer>().expect("consumer");
+        let kit = block_on(kit.build()).expect("1.2.0 satisfies >= 1.1.0");
+        let _ = kit;
+    }
+
+    #[test]
+    fn negotiate_unsatisfied_requirement_fails_build() {
+        let mut kit = AsyncKit::new();
+        kit.register::<VerProvider>().expect("provider");
+        kit.register::<VerGreedyConsumer>().expect("consumer");
+        let Err(err) = block_on(kit.build()) else {
+            panic!("2.0.0 required but 1.2.0 provided — build must fail");
+        };
+        assert!(
+            err.to_string().contains("ver-provider"),
+            "错误应指名提供方: {err}"
+        );
+        assert!(
+            err.to_string().contains("1.2.0") && err.to_string().contains("2.0.0"),
+            "错误应同时携带 required/provided 版本: {err}"
+        );
+    }
+
+    #[test]
+    fn negotiate_missing_provider_is_graphs_job_not_negotiate() {
+        // 消费方要求一个未注册模块的最低版本：协商跳过（提供方未声明），
+        // 由依赖图报告 DependencyMissing（若图上有依赖边）或构建通过
+        // （仅版本要求、无依赖边时——与 sync Kit 语义一致）。
+        let mut kit = AsyncKit::new();
+        kit.register::<VerSatisfiedConsumer>().expect("consumer");
+        let kit = block_on(kit.build()).expect("未声明提供方 → 协商跳过");
+        let _ = kit;
     }
 }
