@@ -117,8 +117,12 @@ fn e2e_async_build_future_drop_is_cancel_safe() {
 
 // ─── AsyncKit::decorate 与 sync 行为一致 ───────────────────────
 
+// 仅 decorator 特性下的用例消费该模块，定义随用例同门控避免 dead_code 告警
+#[cfg(feature = "decorator")]
 struct AsyncDecoMod;
+#[cfg(feature = "decorator")]
 impl_module_meta!(AsyncDecoMod, "async-deco-mod");
+#[cfg(feature = "decorator")]
 impl AsyncAutoBuilder for AsyncDecoMod {
     type Capability = std::sync::Arc<u32>;
     type Error = TraitKitError;

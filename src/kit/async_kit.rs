@@ -2181,10 +2181,10 @@ mod tests {
         assert_send_sync::<AsyncKit>();
     }
 
-    // --- MED-002: Send-ness assertions for TraitKitError and build() result ---
+    // --- Send-ness assertions for TraitKitError and build() result ---
 
-    /// Verifies HIGH-001: `TraitKitError` is `Send` (so it can cross
-    /// `tokio::spawn` boundaries). Before HIGH-001, `TraitKitError::BuildFailed::source`
+    /// Verifies `TraitKitError` is `Send` (so it can cross
+    /// `tokio::spawn` boundaries). Before `TraitKitError::BuildFailed::source`
     /// was `Box<dyn Error>` (without `+ Send`), which made the entire enum
     /// `!Send` and blocked `tokio::spawn(async move { kit.build().await })`.
     #[test]
@@ -2193,7 +2193,7 @@ mod tests {
         assert_send::<TraitKitError>();
     }
 
-    /// Verifies HIGH-001: `AsyncKit::build()`'s return type is `Send`, so the
+    /// Verifies `AsyncKit::build()`'s return type is `Send`, so the
     /// spawned future's output satisfies `tokio::spawn`'s `Send` requirement
     /// on a multi-threaded runtime.
     #[test]
@@ -2953,12 +2953,12 @@ mod async_lifecycle_tests {
     }
 
     // ── 逆拓扑关闭顺序的回归钉子见文件后部 `async_shutdown_async_runs_in_
-    //    reverse_topological_order`（MED-004）。──
+    //    reverse_topological_order`。──
 
     /// `shutdown_async()` 是 one-shot：async hook registry 被 drain，二次调用
     /// 为 no-op，`on_shutdown` 恰好执行一次。（原测试直插私有字段
     /// `shutdown_callbacks` 钉 sync `shutdown()` 的 one-shot 行为；sync 入口
-    /// 已随 MED-003 删除——async 清理唯一入口是 `shutdown_async()`。）
+    /// 已随 删除 ——async 清理唯一入口是 `shutdown_async()`。）
     #[test]
     fn async_shutdown_async_is_one_shot_second_call_is_noop() {
         // 测试内专用计数器：避免共享 static 计数器受其他测试干扰，
@@ -3003,7 +3003,7 @@ mod async_lifecycle_tests {
         );
     }
 
-    /// MED-004 回归钉子：钩子在 `build()` 时按依赖图拓扑索引稳定排序，
+    /// 回归钉子：钩子在 `build()` 时按依赖图拓扑索引稳定排序，
     /// `shutdown_async()` 逆序 drain 后依赖者（dependent）先于被依赖者
     /// （dep）关闭——文档承诺的 "reverse topological order" 由此为真。
     #[test]
