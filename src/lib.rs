@@ -52,7 +52,7 @@ pub use kit::{ShutdownCoordinator, ShutdownPhase, ShutdownPhaseResult, ShutdownR
 /// Shared test helpers for async test modules (`block_on` executor + `MockError`).
 ///
 /// Extracted to deduplicate between `core::meta::async_tests` and
-/// `kit::async_kit::tests` (audit LOW-003). Gated on `async` feature because
+/// `kit::async_kit::tests`. Gated on `async` feature because
 /// both consumer test mods are `#[cfg(all(test, feature = "async"))]`.
 #[cfg(all(test, feature = "async"))]
 pub(crate) mod test_helpers {
