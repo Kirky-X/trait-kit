@@ -36,8 +36,8 @@ use super::kit::{Kit, LazyBuildFn, LazySlot, Ready};
 /// `!Send + !Sync`. It is designed for single-threaded, per-request use.
 /// For a thread-safe async counterpart, see [`AsyncScope`].
 ///
-/// Requires the `scope` feature.
-#[cfg(feature = "scope")]
+/// Requires the `request-scope` feature.
+#[cfg(feature = "request-scope")]
 pub struct Scope {
     lazy_slots: RefCell<HashMap<TypeId, LazySlot>>,
     /// Optional parent context: `Weak` on purpose (cycle guard — the scope
@@ -45,7 +45,7 @@ pub struct Scope {
     parent: Option<std::rc::Weak<Kit<Ready>>>,
 }
 
-#[cfg(feature = "scope")]
+#[cfg(feature = "request-scope")]
 impl Scope {
     /// Create a new empty scope.
     #[must_use]
@@ -203,7 +203,7 @@ impl Scope {
     }
 }
 
-#[cfg(feature = "scope")]
+#[cfg(feature = "request-scope")]
 impl Default for Scope {
     fn default() -> Self {
         Self::new()
@@ -216,7 +216,7 @@ impl Default for Scope {
 
 // ─── AsyncScope ─────────────────────────────────────────────────────────────
 
-#[cfg(all(feature = "scope", feature = "async"))]
+#[cfg(all(feature = "request-scope", feature = "async"))]
 mod async_scope {
     use std::any::TypeId;
 
@@ -315,10 +315,10 @@ mod async_scope {
     }
 }
 
-#[cfg(all(feature = "scope", feature = "async"))]
+#[cfg(all(feature = "request-scope", feature = "async"))]
 pub use async_scope::AsyncScope;
 
-#[cfg(all(test, feature = "scope"))]
+#[cfg(all(test, feature = "request-scope"))]
 mod tests {
     use super::*;
     use crate::core::{AutoBuilder, ModuleMeta};
@@ -641,7 +641,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "scope", feature = "async"))]
+#[cfg(all(test, feature = "request-scope", feature = "async"))]
 mod async_tests {
     use super::*;
     use crate::core::{AsyncAutoBuilder, ModuleMeta};

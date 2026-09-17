@@ -267,7 +267,7 @@ mod decorator_e2e {
 
 // ─── scope：作用域依赖 ─────────────────────────────────────────────────
 
-#[cfg(feature = "scope")]
+#[cfg(feature = "request-scope")]
 mod scope_e2e {
     use super::*;
 
@@ -432,7 +432,7 @@ mod i18n_e2e {
 
 // ─── interface：接口/实现分离 ───────────────────────────────────────────
 
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 mod interface_e2e {
     use std::sync::Arc;
     use trait_kit::core::InterfaceBuilder;
@@ -887,7 +887,7 @@ mod observer_decorator_e2e {
     }
 }
 
-#[cfg(all(feature = "scope", feature = "lifecycle"))]
+#[cfg(all(feature = "request-scope", feature = "lifecycle"))]
 mod scope_lifecycle_e2e {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -1087,7 +1087,7 @@ mod shutdown_decorator_e2e {
 
 // ─── toggle + scope 开关门控作用域 ─────────────────────────────
 
-#[cfg(all(feature = "toggle", feature = "scope"))]
+#[cfg(all(feature = "toggle", feature = "request-scope"))]
 mod toggle_scope_e2e {
     use super::*;
 
@@ -1140,7 +1140,7 @@ mod toggle_scope_e2e {
 // register_as 路径的装饰按能力类型（`M::Capability`）在 `into_interface`
 // 转换之前应用，`resolve` 取回的是装饰后的接口对象。
 
-#[cfg(all(feature = "interface", feature = "decorator"))]
+#[cfg(all(feature = "di", feature = "decorator"))]
 mod interface_decorator_e2e {
     use super::*;
     use trait_kit::core::InterfaceBuilder;
@@ -1286,10 +1286,10 @@ mod encryption_reload_e2e {
     feature = "confers",
     feature = "reload",
     feature = "encryption",
-    feature = "interface",
+    feature = "di",
     feature = "lifecycle",
     feature = "health",
-    feature = "scope",
+    feature = "request-scope",
     feature = "toggle",
     feature = "observer",
     feature = "decorator",

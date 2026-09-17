@@ -672,7 +672,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "interface"))]
+#[cfg(all(test, feature = "di"))]
 mod interface_tests {
     use super::super::*;
     use crate::core::{InterfaceBuilder, ModuleMeta};
@@ -1366,7 +1366,7 @@ mod factory_tests {
     }
 }
 
-#[cfg(all(test, feature = "scope"))]
+#[cfg(all(test, feature = "request-scope"))]
 mod scope_tests {
     use super::super::*;
     use crate::core::ModuleMeta;

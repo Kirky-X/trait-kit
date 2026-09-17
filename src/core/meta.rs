@@ -6,7 +6,7 @@
 use std::future::Future;
 #[cfg(feature = "async")]
 use std::pin::Pin;
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 use std::sync::Arc;
 
 /// Metadata trait for module registration.
@@ -127,13 +127,13 @@ pub trait AutoBuilder: ModuleMeta {
 /// Marker trait for interface/implementation separation.
 ///
 /// Automatically implemented for all `'static` types (including `?Sized`
-/// trait objects like `dyn MyTrait`). Used by the `interface` feature to
+/// trait objects like `dyn MyTrait`). Used by the `di` feature to
 /// enable `register_as<M, I>()` and `resolve<I>()` for type-erased
 /// dependency injection behind a `dyn Trait` interface.
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 pub trait Interface: 'static {}
 
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 impl<T: ?Sized + 'static> Interface for T {}
 
 /// Extension trait for interface/implementation separation.
@@ -144,10 +144,10 @@ impl<T: ?Sized + 'static> Interface for T {}
 /// type erasure, converting the concrete capability into
 /// `Arc<Self::Interface>`.
 ///
-/// Used by `register_as<M>()` and `resolve<I>()` behind the `interface`
+/// Used by `register_as<M>()` and `resolve<I>()` behind the `di`
 /// feature. This trait does **not** modify [`AutoBuilder`], so existing
 /// module impls are unaffected.
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 pub trait InterfaceBuilder: ModuleMeta {
     /// The interface type (e.g., `dyn Logger`). Must be `?Sized + 'static`.
     type Interface: ?Sized + 'static;
@@ -294,7 +294,7 @@ mod async_tests {
     }
 }
 
-#[cfg(all(test, feature = "interface"))]
+#[cfg(all(test, feature = "di"))]
 mod interface_tests {
     use super::*;
 
@@ -327,7 +327,7 @@ mod interface_tests {
     }
 }
 
-#[cfg(all(test, feature = "interface"))]
+#[cfg(all(test, feature = "di"))]
 mod interface_builder_tests {
     use super::*;
     use crate::kit::Kit;

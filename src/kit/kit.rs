@@ -154,8 +154,8 @@ pub(crate) struct LazySlot {
 // 变化；空态构造集中在 `Kit::new()`，直接复用各子结构的 `derive(Default)`
 // （`RefCell<T: Default>` 等均可派生）。
 
-/// Fields gated behind the `interface` feature.
-#[cfg(feature = "interface")]
+/// Fields gated behind the `di` feature.
+#[cfg(feature = "di")]
 #[derive(Default)]
 struct InterfaceFields {
     interface_builders: RefCell<HashMap<TypeId, (&'static str, BuildFn)>>,
@@ -246,8 +246,8 @@ struct DecoratorFields {
     decorator_module_to_cap: RefCell<HashMap<TypeId, TypeId>>,
 }
 
-/// Fields gated behind the `negotiate` feature.
-#[cfg(feature = "negotiate")]
+/// Fields gated behind the `version-negotiation` feature.
+#[cfg(feature = "version-negotiation")]
 #[derive(Default)]
 struct NegotiateFields {
     /// Module name → declared capability version.
@@ -305,7 +305,7 @@ pub struct Kit<S = Unbuilt> {
     /// Built into `capabilities` during `build()`. Values carry the
     /// owning module's name so duplicate-interface errors can name the
     /// module that already occupies the interface.
-    #[cfg(feature = "interface")]
+    #[cfg(feature = "di")]
     interface: InterfaceFields,
     graph: DependencyGraph,
     configs: TypeMap,
@@ -326,7 +326,7 @@ pub struct Kit<S = Unbuilt> {
     observer: ObserverFields,
     #[cfg(feature = "decorator")]
     decorator: DecoratorFields,
-    #[cfg(feature = "negotiate")]
+    #[cfg(feature = "version-negotiation")]
     negotiate: NegotiateFields,
     #[cfg(feature = "i18n")]
     i18n: I18nFields,
@@ -347,7 +347,7 @@ impl Kit {
             lazy_slots: RefCell::new(HashMap::new()),
             multi_builders: RefCell::new(HashMap::new()),
             multi_capabilities: RefCell::new(HashMap::new()),
-            #[cfg(feature = "interface")]
+            #[cfg(feature = "di")]
             interface: InterfaceFields::default(),
             graph: DependencyGraph::new(),
             configs: TypeMap::new(),
@@ -370,7 +370,7 @@ impl Kit {
             observer: ObserverFields::default(),
             #[cfg(feature = "decorator")]
             decorator: DecoratorFields::default(),
-            #[cfg(feature = "negotiate")]
+            #[cfg(feature = "version-negotiation")]
             negotiate: NegotiateFields::default(),
             #[cfg(feature = "i18n")]
             i18n: I18nFields::default(),
@@ -537,7 +537,7 @@ impl Kit {
     /// With the `decorator` feature, panics at build time if a registered
     /// decorator's internal `downcast` fails due to a type mismatch (should
     /// never happen when `decorate::<M>()` is used with the same module).
-    #[cfg(feature = "interface")]
+    #[cfg(feature = "di")]
     pub fn register_as<M>(&mut self) -> Result<(), TraitKitError>
     where
         M: crate::core::InterfaceBuilder,
@@ -885,7 +885,7 @@ impl Kit {
 
         // semver-compat negotiation between declared requirements and
         // provider versions, before any module builds.
-        #[cfg(feature = "negotiate")]
+        #[cfg(feature = "version-negotiation")]
         self.validate_version_requirements()?;
 
         // Phase 1: Build eager modules (overrides + build_fn in topo order)
@@ -898,7 +898,7 @@ impl Kit {
         self.build_multi_bindings()?;
 
         // Phase 4: Build interface modules
-        #[cfg(feature = "interface")]
+        #[cfg(feature = "di")]
         self.build_interface_modules()?;
 
         // Extract ready_callbacks before moving self
@@ -968,7 +968,7 @@ impl Kit {
             lazy_slots: self.lazy_slots,
             multi_builders: self.multi_builders,
             multi_capabilities: self.multi_capabilities,
-            #[cfg(feature = "interface")]
+            #[cfg(feature = "di")]
             interface: self.interface,
             graph: self.graph,
             configs: self.configs,
@@ -992,7 +992,7 @@ impl Kit {
             observer: self.observer,
             #[cfg(feature = "decorator")]
             decorator: self.decorator,
-            #[cfg(feature = "negotiate")]
+            #[cfg(feature = "version-negotiation")]
             negotiate: self.negotiate,
             #[cfg(feature = "i18n")]
             i18n: self.i18n,
@@ -1223,7 +1223,7 @@ impl Kit {
     /// mechanism as the eager / lazy / multi paths. A lookup by interface
     /// `TypeId` here can never match: `decorate` keys by `M::Capability`,
     /// whose `TypeId` always differs from the unsized `dyn Interface`.
-    #[cfg(feature = "interface")]
+    #[cfg(feature = "di")]
     fn build_interface_modules(&self) -> Result<(), TraitKitError> {
         let interfaces: Vec<(TypeId, (&'static str, BuildFn))> = self
             .interface
@@ -1443,8 +1443,8 @@ impl Kit {
     fn record_module_i18n<M: crate::core::ModuleMeta>(&self) {}
 
     /// Record `M`'s declared version and its minimum-version requirements.
-    /// Zero code without the `negotiate` feature.
-    #[cfg(feature = "negotiate")]
+    /// Zero code without the `version-negotiation` feature.
+    #[cfg(feature = "version-negotiation")]
     fn record_module_versions<M: crate::core::ModuleMeta>(&self) {
         self.negotiate
             .versions
@@ -1457,14 +1457,14 @@ impl Kit {
         );
     }
 
-    #[cfg(not(feature = "negotiate"))]
+    #[cfg(not(feature = "version-negotiation"))]
     // 泛型桩从不被调用也不会触发 dead_code；仅 clippy 需放行未用的 self。
     #[allow(clippy::unused_self)] // signature parity with the negotiate arm
     fn record_module_versions<M: crate::core::ModuleMeta>(&self) {}
 
     /// Semver-compat validation pass: every declared requirement must
     /// be satisfied by the provider's declared version.
-    #[cfg(feature = "negotiate")]
+    #[cfg(feature = "version-negotiation")]
     fn validate_version_requirements(&self) -> Result<(), TraitKitError> {
         let requirements = self.negotiate.requirements.borrow();
         let versions = self.negotiate.versions.borrow();
@@ -1966,7 +1966,7 @@ impl<S> Kit<S> {
     ///
     /// Returns `TraitKitError::MissingCapability` if the interface has not
     /// been registered or built.
-    #[cfg(feature = "interface")]
+    #[cfg(feature = "di")]
     pub fn resolve<I>(&self) -> Result<std::sync::Arc<I>, TraitKitError>
     where
         I: ?Sized + 'static,
@@ -2542,8 +2542,8 @@ impl Kit<Ready> {
 
     /// Create a new empty scope for per-request instance isolation.
     ///
-    /// Requires the `scope` feature.
-    #[cfg(feature = "scope")]
+    /// Requires the `request-scope` feature.
+    #[cfg(feature = "request-scope")]
     #[must_use]
     pub fn create_scope(&self) -> super::scope::Scope {
         super::scope::Scope::new()
@@ -2557,9 +2557,9 @@ impl Kit<Ready> {
     /// the parent invalidates parent queries instead of creating a retain
     /// cycle — cycle protection by construction.
     ///
-    /// Requires the `scope` feature. `Kit` is `!Sync`, so the `Rc` here is a
+    /// Requires the `request-scope` feature. `Kit` is `!Sync`, so the `Rc` here is a
     /// single-threaded owner — consistent with the sync thread model.
-    #[cfg(feature = "scope")]
+    #[cfg(feature = "request-scope")]
     #[must_use]
     pub fn create_scope_from(self: &std::rc::Rc<Self>) -> super::scope::Scope {
         super::scope::Scope::with_parent(std::rc::Rc::downgrade(self))
@@ -3611,7 +3611,7 @@ mod key_rotation_tests {
     }
 }
 
-#[cfg(all(test, feature = "negotiate"))]
+#[cfg(all(test, feature = "version-negotiation"))]
 mod negotiate_tests {
     use crate::core::{AutoBuilder, ModuleMeta};
     use crate::error::ErrorKind;

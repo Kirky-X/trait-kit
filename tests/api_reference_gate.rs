@@ -171,12 +171,12 @@ fn _assert_health_api() {
     let _ = (status, checker::<GateHealthModule>);
 }
 
-#[cfg(feature = "scope")]
+#[cfg(feature = "request-scope")]
 fn _assert_scope_api() {
     let _scope: trait_kit::kit::Scope = trait_kit::kit::Scope::new();
 }
 
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 fn _assert_interface_api() {
     // `Interface` 是 blanket trait；`InterfaceBuilder` 需要完整的擦除实现，
     // 这里以方法签名存在性 + 文档收录作为门禁口径。
@@ -239,8 +239,8 @@ fn api_reference_documented_feature_items_resolve() {
     #[cfg(any(
         feature = "async",
         feature = "health",
-        feature = "scope",
-        feature = "interface",
+        feature = "request-scope",
+        feature = "di",
         feature = "observer",
         feature = "confers"
     ))]
@@ -261,12 +261,12 @@ fn api_reference_documented_feature_items_resolve() {
         assert!(doc.contains("HealthStatus"), "doc must list HealthStatus");
         assert!(doc.contains("HealthCheck"), "doc must list HealthCheck");
     }
-    #[cfg(feature = "scope")]
+    #[cfg(feature = "request-scope")]
     {
         _assert_scope_api();
         assert!(doc.contains("`Scope`"), "doc must list Scope");
     }
-    #[cfg(feature = "interface")]
+    #[cfg(feature = "di")]
     {
         _assert_interface_api();
         assert!(

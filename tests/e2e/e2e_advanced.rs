@@ -1600,7 +1600,7 @@ mod async_scenarios {
 // Interface feature scenarios
 // =============================================================================
 
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 mod interface_scenarios {
     use super::*;
     use std::sync::Arc;

@@ -11,6 +11,10 @@ keywords = ["module", "trait", "capability", "kit", "interface"]
 categories = ["rust-patterns", "development-tools"]
 readme = "README.md"
 
+# docs.rs 文档需覆盖全部 feature 门控 API（本项目无互斥 feature，all-features 安全）。
+[package.metadata.docs.rs]
+all-features = true
+
 [lints]
 workspace = true
 
@@ -36,7 +40,7 @@ trait-kit = { path = ".", default-features = false }
 confers = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-icu = { version = "2.2", optional = true }
+icu = { version = "2.3", optional = true }
 writeable = { version = "0.6", optional = true }
 sys-locale = { version = "0.3", optional = true }
 
@@ -45,7 +49,7 @@ thiserror = { version = "2.0", default-features = false }
 serial_test = "4.0"
 static_assertions = "1.1"
 trybuild = "1.0"
-criterion = { version = "0.7", default-features = false, features = [
+criterion = { version = "0.8", default-features = false, features = [
     "cargo_bench_support",
 ] }
 async-trait = "0.1"
@@ -64,20 +68,28 @@ required-features = ["toggle"]
 default = []
 # AsyncKit: Send + Sync async capability management (no extra deps, Rust native async).
 async = []
-# Config integration: Store + ModuleConfig trait + derive macro re-export.
+# Config integration: Store + ModuleConfig trait, plus re-export of confers'
+# `Config` derive macro. The proc-macro crate `trait-kit-macros` is NOT wired
+# through this feature — users add `trait-kit-macros` as a direct dependency
+# to use its derives (see src/kit/mod.rs).
 confers = ["dep:confers", "dep:serde", "dep:serde_json", "confers/feature-toggle"]
 # Hot-reload subscription (Kit 自有 SubscriberMap，不再拉入 confers/watch 的 notify-debouncer-full)。
 reload = ["confers"]
 # Encrypted config storage (maps to confers `encryption` feature).
-encryption = ["confers", "confers/encryption"]
+# 文档声称的三层继承链 `encryption` → `reload` → `confers` 在此定义成立。
+encryption = ["reload", "confers", "confers/encryption"]
 # Interface/implementation separation: register_as / resolve behind a feature gate.
-interface = []
+di = []
+# Deprecated alias of `di`.
+interface = ["di"]
 # Lifecycle hooks: on_ready (post-build) + on_shutdown (cleanup).
 lifecycle = []
 # Health check: per-module health status reporting.
 health = []
 # Scoped dependencies: per-request instance isolation.
-scope = []
+request-scope = []
+# Deprecated alias of `request-scope`.
+scope = ["request-scope"]
 # Feature toggle: runtime module enable/disable via string-keyed HashMap.
 toggle = []
 # Build observability: observer callbacks during module construction.
@@ -103,7 +115,9 @@ compose = []
 presets-remote = ["presets", "confers/remote"]
 # Capability version negotiation: ModuleMeta::VERSION vs required_versions
 # semver-compat validation at build() time.
-negotiate = []
+version-negotiation = []
+# Deprecated alias of `version-negotiation`.
+negotiate = ["version-negotiation"]
 
 # E2E 测试源文件位于 tests/e2e/（Cargo 不自动发现子目录文件），显式注册：
 # 目标二进制名保持 e2e_*（`cargo test --test e2e_core` 等命令不变）；

@@ -134,16 +134,16 @@ struct EncryptionFields {
 }
 
 /// 模块名 → 声明的能力版本（`ModuleMeta::VERSION`）共享表。
-#[cfg(feature = "negotiate")]
+#[cfg(feature = "version-negotiation")]
 type AsyncVersionTable = Arc<RwLock<HashMap<&'static str, &'static str>>>;
 /// (`consumer`, `dependency`, `min_version`) 最低版本要求列表。
-#[cfg(feature = "negotiate")]
+#[cfg(feature = "version-negotiation")]
 type AsyncRequirementList = Arc<RwLock<Vec<(&'static str, &'static str, &'static str)>>>;
 
-/// Fields gated behind the `negotiate` feature (async counterpart of the
+/// Fields gated behind the `version-negotiation` feature (async counterpart of the
 /// sync `Kit`'s `NegotiateFields` — identical semantics, `RwLock` instead
 /// of `RefCell`).
-#[cfg(feature = "negotiate")]
+#[cfg(feature = "version-negotiation")]
 #[derive(Default)]
 struct AsyncNegotiateFields {
     versions: AsyncVersionTable,
@@ -343,7 +343,7 @@ pub struct AsyncKit<S = Unbuilt> {
     reload: ReloadFields,
     #[cfg(feature = "encryption")]
     encryption: EncryptionFields,
-    #[cfg(feature = "negotiate")]
+    #[cfg(feature = "version-negotiation")]
     negotiate: AsyncNegotiateFields,
     ports: PortsFields,
     /// Max concurrently-polled module builds per topological layer.
@@ -377,7 +377,7 @@ impl AsyncKit {
             reload: ReloadFields::default(),
             #[cfg(feature = "encryption")]
             encryption: EncryptionFields::default(),
-            #[cfg(feature = "negotiate")]
+            #[cfg(feature = "version-negotiation")]
             negotiate: AsyncNegotiateFields::default(),
             ports: PortsFields::default(),
             max_concurrency: usize::MAX,
@@ -429,9 +429,9 @@ impl AsyncKit {
             )
             .insert(TypeId::of::<M>(), build_fn);
 
-        // 版本协商登记（negotiate feature）：记录声明版本与最低版本要求，
+        // 版本协商登记（version-negotiation feature）：记录声明版本与最低版本要求，
         // 语义与 sync Kit 的 `record_module_versions` 对齐。
-        #[cfg(feature = "negotiate")]
+        #[cfg(feature = "version-negotiation")]
         {
             self.negotiate
                 .versions
@@ -451,7 +451,7 @@ impl AsyncKit {
         Ok(())
     }
 
-    /// Semver-compat validation pass（`negotiate` feature）：每条最低版本
+    /// Semver-compat validation pass（`version-negotiation` feature）：每条最低版本
     /// 要求必须被提供方声明版本满足。提供方未声明（未注册或版本缺省
     /// `"0.0.0"`）时——前者是依赖图的事（DependencyMissing），此处仅对
     /// 已声明提供方协商，后者视为不满足（与 sync Kit 语义一致）。
@@ -460,7 +460,7 @@ impl AsyncKit {
     ///
     /// Returns [`TraitKitError::VersionIncompatible`] on the first
     /// unsatisfied requirement.
-    #[cfg(feature = "negotiate")]
+    #[cfg(feature = "version-negotiation")]
     fn validate_version_requirements(&self) -> Result<(), TraitKitError> {
         let requirements = self
             .negotiate
@@ -619,10 +619,10 @@ impl AsyncKit {
             }
         };
 
-        // 1.5 版本协商（negotiate feature）：依赖图就绪后、构建开始前，
+        // 1.5 版本协商（version-negotiation feature）：依赖图就绪后、构建开始前，
         //     校验每条最低版本要求是否被提供方声明版本满足。语义与
         //     sync Kit 的 `validate_version_requirements` 对齐。
-        #[cfg(feature = "negotiate")]
+        #[cfg(feature = "version-negotiation")]
         self.validate_version_requirements()?;
 
         // 2. Extract all builders from the Arc<RwLock<…>> in a single
@@ -803,7 +803,7 @@ impl AsyncKit {
             reload: self.reload,
             #[cfg(feature = "encryption")]
             encryption: self.encryption,
-            #[cfg(feature = "negotiate")]
+            #[cfg(feature = "version-negotiation")]
             negotiate: self.negotiate,
             ports: self.ports,
             max_concurrency: self.max_concurrency,
@@ -1360,8 +1360,8 @@ impl AsyncKit<Ready> {
 
     /// Create a new empty async scope.
     ///
-    /// Requires the `scope` feature.
-    #[cfg(feature = "scope")]
+    /// Requires the `request-scope` feature.
+    #[cfg(feature = "request-scope")]
     #[must_use]
     pub fn create_scope(&self) -> super::scope::AsyncScope {
         super::scope::AsyncScope::new()
@@ -3308,7 +3308,7 @@ mod async_factory_tests {
     }
 }
 
-#[cfg(all(test, feature = "scope"))]
+#[cfg(all(test, feature = "request-scope"))]
 mod async_scope_tests {
     use super::*;
     use crate::core::ModuleMeta;

@@ -27,7 +27,7 @@ pub mod observer;
 pub use meta::AsyncAutoBuilder;
 pub(crate) use meta::BuildFn;
 pub use meta::{AutoBuilder, ModuleMeta, semver_compatible};
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 pub use meta::{Interface, InterfaceBuilder};
 
 #[cfg(all(feature = "lifecycle", feature = "async"))]

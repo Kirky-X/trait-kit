@@ -30,11 +30,11 @@ pub use graph::{DependencyGraph, GraphError, ModuleEntry};
 pub use kit::{Kit, Ready, Unbuilt};
 pub(crate) use typemap::TypeMap;
 
-#[cfg(feature = "scope")]
+#[cfg(feature = "request-scope")]
 pub mod scope;
-#[cfg(all(feature = "scope", feature = "async"))]
+#[cfg(all(feature = "request-scope", feature = "async"))]
 pub use scope::AsyncScope;
-#[cfg(feature = "scope")]
+#[cfg(feature = "request-scope")]
 pub use scope::Scope;
 
 #[cfg(feature = "toggle")]

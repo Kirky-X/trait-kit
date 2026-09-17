@@ -43,9 +43,9 @@ pub use crate::core::{HealthCheck, HealthStatus};
 #[cfg(feature = "observer")]
 pub use crate::core::BuildObserver;
 
-#[cfg(all(feature = "scope", feature = "async"))]
+#[cfg(all(feature = "request-scope", feature = "async"))]
 pub use crate::kit::AsyncScope;
-#[cfg(feature = "scope")]
+#[cfg(feature = "request-scope")]
 pub use crate::kit::Scope;
 
 #[cfg(all(feature = "shutdown", feature = "async"))]

@@ -39,9 +39,9 @@ pub use core::{HealthCheck, HealthStatus};
 #[cfg(feature = "observer")]
 pub use core::BuildObserver;
 
-#[cfg(all(feature = "scope", feature = "async"))]
+#[cfg(all(feature = "request-scope", feature = "async"))]
 pub use kit::AsyncScope;
-#[cfg(feature = "scope")]
+#[cfg(feature = "request-scope")]
 pub use kit::Scope;
 
 #[cfg(all(feature = "shutdown", feature = "async"))]

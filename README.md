@@ -83,14 +83,14 @@
 <summary>更多能力（注册模式、构建报告、组合与协商）</summary>
 
 - **灵活注册模式**：`register_lazy`（首次 `require` 时构建并缓存）、`register_multi` + `require_all`（多绑定聚合）、`register_if`（运行时谓词）、`override_module`（测试注入）、`factory::<M>()`（每次调用创建新实例）。
-- **接口/实现分离**（`interface`）：`register_as` / `resolve::<dyn Trait>()` 类型擦除注册与检索。
-- **作用域依赖**（`scope`）：`Scope` / `AsyncScope` 每请求实例隔离。
+- **接口/实现分离**（`di`）：`register_as` / `resolve::<dyn Trait>()` 类型擦除注册与检索。
+- **作用域依赖**（`request-scope`）：`Scope` / `AsyncScope` 每请求实例隔离。
 - **特性开关**（`toggle`）：`enable_toggle` / `is_toggle_enabled` / `register_if_toggle` 运行时字符串键控启停。
 - **模块装饰器**（`decorator`）：`decorate::<M>(fn)` 构建后能力包装/增强。
 - **结构化构建报告**（`report`）：`BuildReport` JSON 导出与依赖图 `graph_dot()` / `graph_mermaid()` 导出。
 - **预设模块**（`presets` / `presets-remote`）：`ConfersConfigModule` 将 confers 配置中心纳入 Kit 模块体系，支持远程配置源。
 - **子 Kit 组合**（`compose`）：子 `Kit` 以单一模块身份注册进父 `Kit`，能力命名空间隔离。
-- **版本协商**（`negotiate`）：`ModuleMeta::VERSION` 与 `required_versions` 在 `build()` 时做 semver 兼容校验。
+- **版本协商**（`version-negotiation`）：`ModuleMeta::VERSION` 与 `required_versions` 在 `build()` 时做 semver 兼容校验。
 - **事件总线与观测端口**（默认可用，无 feature 门控）：`KitEvent` / `EventBus` 生命周期事件与 `MetricsPort` / `LogPort` 注入式观测，默认 `NoOp` 实现零开销。
 
 </details>
@@ -296,10 +296,10 @@ fn main() {
 <tr><td><code>confers</code></td><td><code>dep:confers</code>, <code>dep:serde</code>, <code>dep:serde_json</code>, <code>confers/feature-toggle</code></td><td><code>Configurable</code> + <code>ModuleConfig</code> trait + <code>Config</code> derive 宏再导出。</td><td>—</td></tr>
 <tr><td><code>reload</code></td><td><code>confers</code></td><td><code>subscribe</code> / <code>reload_config</code> 热重载订阅。</td><td>—</td></tr>
 <tr><td><code>encryption</code></td><td><code>confers</code>, <code>confers/encryption</code></td><td><code>set_encrypted</code> / <code>get_encrypted</code> 加密配置存储。</td><td>—</td></tr>
-<tr><td><code>interface</code></td><td>—</td><td>接口/实现分离：<code>register_as</code> / <code>resolve</code> 支持 <code>dyn Trait</code> 类型擦除。</td><td>—</td></tr>
+<tr><td><code>di</code></td><td>—</td><td>接口/实现分离：<code>register_as</code> / <code>resolve</code> 支持 <code>dyn Trait</code> 类型擦除。</td><td>—</td></tr>
 <tr><td><code>lifecycle</code></td><td>—</td><td>生命周期钩子：<code>on_ready</code>（构建后）+ <code>on_shutdown</code>（清理）。</td><td>—</td></tr>
 <tr><td><code>health</code></td><td>—</td><td>健康检查：<code>HealthCheck</code> trait + <code>HealthStatus</code> 状态报告。</td><td>—</td></tr>
-<tr><td><code>scope</code></td><td>—</td><td>作用域依赖：<code>Scope</code> / <code>AsyncScope</code> 每请求实例隔离。</td><td>—</td></tr>
+<tr><td><code>request-scope</code></td><td>—</td><td>作用域依赖：<code>Scope</code> / <code>AsyncScope</code> 每请求实例隔离。</td><td>—</td></tr>
 <tr><td><code>toggle</code></td><td>—</td><td>特性开关：运行时字符串键控的模块启用/禁用。</td><td>—</td></tr>
 <tr><td><code>observer</code></td><td>—</td><td>构建可观测：<code>BuildObserver</code> 回调（开始/完成/错误）。</td><td>—</td></tr>
 <tr><td><code>decorator</code></td><td>—</td><td>模块装饰器：构建后能力包装/增强。</td><td>—</td></tr>
@@ -309,16 +309,18 @@ fn main() {
 <tr><td><code>presets</code></td><td><code>confers</code></td><td>预设模块包：<code>ConfersConfigModule</code>（配置中心作为 Kit 模块）+ 组合 builder。</td><td>—</td></tr>
 <tr><td><code>compose</code></td><td>—</td><td>子 Kit 组合：子 <code>Kit</code> 注册为父 <code>Kit</code> 的单一模块（能力命名空间隔离 + 跨 Kit 依赖校验）。</td><td>—</td></tr>
 <tr><td><code>presets-remote</code></td><td><code>presets</code>, <code>confers/remote</code></td><td>远程配置桥接：<code>ConfersConfigModule</code> 走 confers 远程 <code>AsyncSource</code>（仅 <code>AsyncKit</code>）。</td><td>—</td></tr>
-<tr><td><code>negotiate</code></td><td>—</td><td>能力版本协商：<code>ModuleMeta::VERSION</code> 与 <code>required_versions</code> 在 <code>build()</code> 时做 semver 兼容校验。</td><td>—</td></tr>
+<tr><td><code>version-negotiation</code></td><td>—</td><td>能力版本协商：<code>ModuleMeta::VERSION</code> 与 <code>required_versions</code> 在 <code>build()</code> 时做 semver 兼容校验。</td><td>—</td></tr>
 </table>
 
 </div>
+
+向后兼容别名：旧 feature 名 `interface` / `scope` / `negotiate` 仍可启用，分别转发到 `di` / `request-scope` / `version-negotiation`（已标记 deprecated，新代码请使用新名）。
 
 在 `Cargo.toml` 中启用所需级别：
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.5.0-rc.3", features = ["encryption"] }
+trait-kit = { version = "0.5.0-rc.5", features = ["encryption"] }
 ```
 
 ---

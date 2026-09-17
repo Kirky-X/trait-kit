@@ -76,28 +76,28 @@ impl AutoBuilder for MultiDecoB {
     }
 }
 
-// 以下 Gate 系列仅被 interface 路径测试使用，整体随 interface feature 门控。
-#[cfg(feature = "interface")]
+// 以下 Gate 系列仅被 interface 路径测试使用，整体随 di feature 门控。
+#[cfg(feature = "di")]
 trait Gate: Send + Sync + 'static {
     fn open(&self) -> bool;
 }
 
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 struct GateCap {
     open: bool,
 }
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 impl Gate for GateCap {
     fn open(&self) -> bool {
         self.open
     }
 }
 
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 struct GateModule;
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 impl_module_meta!(GateModule, "gate-mod");
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 impl AutoBuilder for GateModule {
     type Capability = Arc<GateCap>;
     type Error = TraitKitError;
@@ -105,7 +105,7 @@ impl AutoBuilder for GateModule {
         Ok(Arc::new(GateCap { open: false }))
     }
 }
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 impl trait_kit::core::InterfaceBuilder for GateModule {
     type Interface = dyn Gate;
     type Capability = Arc<GateCap>;
@@ -146,7 +146,7 @@ fn e2e_decorator_applies_on_multi_binding_path() {
 }
 
 /// interface 路径：register_as 构建产物在 into_interface 前被装饰。
-#[cfg(feature = "interface")]
+#[cfg(feature = "di")]
 #[test]
 fn e2e_decorator_applies_on_interface_path() {
     let mut kit = Kit::new();
