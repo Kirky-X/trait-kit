@@ -12,7 +12,7 @@ workspace = true
 
 [dependencies]
 trait-kit = { workspace = true }
-trait-kit-macros = { path = "../trait-kit-macros" }
+trait-kit-macros = { version = "0.5.0-rc.5", path = "../trait-kit-macros" }
 # serde + confers are direct deps because #[derive(Config)] expands to code that
 # references confers::* / serde::* paths from the *caller's* crate.
 serde = { workspace = true, optional = true }
