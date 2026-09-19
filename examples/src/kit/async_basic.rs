@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! Async feature — AsyncKit<Unbuilt> → AsyncKit<Ready> typestate flow.
 //!

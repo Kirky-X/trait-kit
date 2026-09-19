@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! Generic type-keyed map backed by `RefCell<HashMap<TypeId, Box<dyn Any>>>`.
 //!

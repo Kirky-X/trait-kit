@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //
 // 穷举特性组合 E2E 测试：每个 feature 独立 + 关键多特性组合。

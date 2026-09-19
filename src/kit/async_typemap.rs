@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! Send + Sync type-keyed map backed by `Arc<RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>`.
 //!

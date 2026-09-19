@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! Compile-fail tests: verify that typestate misuse produces compile errors.
 //!

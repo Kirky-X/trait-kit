@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! Sub-Kit composition: register a whole child `Kit` as a single
 //! module in a parent `Kit`.
