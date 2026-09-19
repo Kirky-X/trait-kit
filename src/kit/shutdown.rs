@@ -463,15 +463,12 @@ impl AsyncShutdownCoordinator {
     ///
     /// 当内部 `RwLock` 中毒时返回 `TraitKitError::BuildFailed`。
     pub fn set_global_timeout(&self, timeout: Duration) -> Result<(), TraitKitError> {
-        let mut global = self
-            .global_timeout
-            .write()
-            .map_err(|_| {
-                lock_poisoned(tr(
-                    "trait-kit-error-lock-poisoned-operation",
-                    &[("operation", "set_global_timeout")],
-                ))
-            })?;
+        let mut global = self.global_timeout.write().map_err(|_| {
+            lock_poisoned(tr(
+                "trait-kit-error-lock-poisoned-operation",
+                &[("operation", "set_global_timeout")],
+            ))
+        })?;
         *global = Some(timeout);
         Ok(())
     }
@@ -490,7 +487,10 @@ impl AsyncShutdownCoordinator {
         let mut phases = self.phases.write().map_err(|_| {
             lock_poisoned(tr(
                 "trait-kit-error-lock-poisoned-operation-phase",
-                &[("operation", "set_phase_timeout"), ("phase", phase.as_str())],
+                &[
+                    ("operation", "set_phase_timeout"),
+                    ("phase", phase.as_str()),
+                ],
             ))
         })?;
         phases[idx].timeout = timeout;
@@ -542,15 +542,12 @@ impl AsyncShutdownCoordinator {
     #[must_use = "shutdown returns phase result; ignoring it may hide timeout events"]
     pub async fn shutdown(&self) -> Result<ShutdownResult, TraitKitError> {
         let global_start = Instant::now();
-        let global_timeout = *self
-            .global_timeout
-            .read()
-            .map_err(|_| {
-                lock_poisoned(tr(
-                    "trait-kit-error-lock-poisoned-operation",
-                    &[("operation", "shutdown")],
-                ))
-            })?;
+        let global_timeout = *self.global_timeout.read().map_err(|_| {
+            lock_poisoned(tr(
+                "trait-kit-error-lock-poisoned-operation",
+                &[("operation", "shutdown")],
+            ))
+        })?;
         // 全局截止时刻：None 表示无全局超时
         let deadline = global_timeout.map(|t| global_start + t);
         let mut phases = Vec::with_capacity(3);

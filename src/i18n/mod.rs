@@ -268,10 +268,8 @@ impl MessageCatalog {
                 })
                 .unwrap_or_else(|| message_id.to_string()),
             #[cfg(feature = "i18n")]
-            Self::Overlay { bundle } => {
-                format_from_custom_bundle(bundle, message_id, args)
-                    .unwrap_or_else(|| message_id.to_string())
-            }
+            Self::Overlay { bundle } => format_from_custom_bundle(bundle, message_id, args)
+                .unwrap_or_else(|| message_id.to_string()),
         }
     }
 }
@@ -436,9 +434,9 @@ mod tests {
             .map(|(key, _)| key.trim())
             .filter(|key| {
                 !key.is_empty()
-                    && key.chars().all(|c| {
-                        c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'
-                    })
+                    && key
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
             })
             .collect()
     }
@@ -523,7 +521,10 @@ mod tests {
     fn overlay_catalog_resolves_overrides_and_falls_back_to_key() {
         let catalog = MessageCatalog::parse(
             "en",
-            &["ovk-a = Alpha { $n }\novk-b = Beta", "ovk-a = Alpha2 { $n }"],
+            &[
+                "ovk-a = Alpha { $n }\novk-b = Beta",
+                "ovk-a = Alpha2 { $n }",
+            ],
         );
         assert_eq!(
             catalog.translate("ovk-a", &[("n", "1")]),

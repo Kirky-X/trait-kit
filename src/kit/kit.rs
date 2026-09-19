@@ -778,14 +778,15 @@ impl Kit {
     #[cfg(feature = "confers")]
     pub fn restore_config<C: Clone + 'static>(&self) -> Result<(), TraitKitError> {
         let snapshots = self.confers.config_snapshots.borrow();
-        let boxed = snapshots.get(&TypeId::of::<C>()).ok_or_else(|| {
-            TraitKitError::MissingConfig {
-                key: crate::i18n::tr(
-                    "trait-kit-error-no-snapshot",
-                    &[("key", std::any::type_name::<C>())],
-                ),
-            }
-        })?;
+        let boxed =
+            snapshots
+                .get(&TypeId::of::<C>())
+                .ok_or_else(|| TraitKitError::MissingConfig {
+                    key: crate::i18n::tr(
+                        "trait-kit-error-no-snapshot",
+                        &[("key", std::any::type_name::<C>())],
+                    ),
+                })?;
         let config =
             boxed
                 .downcast_ref::<C>()

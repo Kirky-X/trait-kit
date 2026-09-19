@@ -1566,14 +1566,15 @@ impl AsyncKit {
             .config_snapshots
             .read()
             .expect("config_snapshots lock poisoned");
-        let boxed = snapshots.get(&TypeId::of::<C>()).ok_or_else(|| {
-            TraitKitError::MissingConfig {
-                key: crate::i18n::tr(
-                    "trait-kit-error-no-snapshot",
-                    &[("key", std::any::type_name::<C>())],
-                ),
-            }
-        })?;
+        let boxed =
+            snapshots
+                .get(&TypeId::of::<C>())
+                .ok_or_else(|| TraitKitError::MissingConfig {
+                    key: crate::i18n::tr(
+                        "trait-kit-error-no-snapshot",
+                        &[("key", std::any::type_name::<C>())],
+                    ),
+                })?;
         let config =
             boxed
                 .downcast_ref::<C>()
