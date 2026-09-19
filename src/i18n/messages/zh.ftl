@@ -17,7 +17,23 @@ trait-kit-error-lifecycle-failed = `{ $context }` 生命周期钩子失败: { $s
 
 trait-kit-error-shutdown-timed-out = 优雅关闭在以下阶段超时: { $phases }
 
-trait-kit-error-config-validation-failed = `{ $context }` 配置验证失败: { $errors }
+trait-kit-error-decorator-target-missing = 装饰目标模块 `{ $module }` 未注册（注册时校验）
+
+trait-kit-error-version-incompatible = 模块 `{ $module }` 要求能力 `{ $dependency }` >= { $required }，但提供方声明为 { $provided }
+
+trait-kit-preset-remote-load-failed = 远程配置源加载失败: { $message }
+
+# 锁中毒文案（关闭协调器的 context 片段与 source）
+
+trait-kit-error-lock-poisoned-source = 读写锁中毒
+
+trait-kit-error-lock-poisoned-phase = 关闭阶段 `{ $phase }`
+
+trait-kit-error-lock-poisoned-operation = 关闭协调器 `{ $operation }`
+
+trait-kit-error-lock-poisoned-operation-phase = 关闭协调器 `{ $operation }`（阶段 `{ $phase }`）
+
+trait-kit-error-config-validation-failed = 配置验证失败: { $errors }
 
 trait-kit-error-no-snapshot = 未找到 `{ $key }` 的配置快照
 

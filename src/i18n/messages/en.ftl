@@ -17,7 +17,23 @@ trait-kit-error-lifecycle-failed = lifecycle hook failed for `{ $context }`: { $
 
 trait-kit-error-shutdown-timed-out = graceful shutdown timed out in phases: { $phases }
 
-trait-kit-error-config-validation-failed = config validation failed for `{ $context }`: { $errors }
+trait-kit-error-decorator-target-missing = decorator target module `{ $module }` is not registered (checked at registration time)
+
+trait-kit-error-version-incompatible = module `{ $module }` requires capability `{ $dependency }` >= { $required }, but the provider declares { $provided }
+
+trait-kit-preset-remote-load-failed = remote config source failed: { $message }
+
+# lock-poisoned scaffolding (shutdown coordinator context fragments + source)
+
+trait-kit-error-lock-poisoned-source = RwLock poisoned
+
+trait-kit-error-lock-poisoned-phase = shutdown phase `{ $phase }`
+
+trait-kit-error-lock-poisoned-operation = shutdown coordinator `{ $operation }`
+
+trait-kit-error-lock-poisoned-operation-phase = shutdown coordinator `{ $operation }` on phase `{ $phase }`
+
+trait-kit-error-config-validation-failed = config validation failed: { $errors }
 
 trait-kit-error-no-snapshot = no snapshot found for `{ $key }`
 

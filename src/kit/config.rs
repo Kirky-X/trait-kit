@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! Configuration loader trait for the "loader pattern" integration with confers.
 //!
@@ -128,7 +128,15 @@ impl From<Vec<String>> for ValidationError {
 #[cfg(feature = "confers")]
 impl std::fmt::Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "validation failed: {}", self.errors.join("; "))
+        let errors = self.errors.join("; ");
+        write!(
+            f,
+            "{}",
+            crate::i18n::tr(
+                "trait-kit-error-config-validation-failed",
+                &[("errors", errors.as_str())],
+            )
+        )
     }
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! Preset module packages: ready-made modules for common integration
 //! needs.
@@ -17,6 +17,7 @@ use confers::ConfigProvider;
 
 use crate::core::{AutoBuilder, ModuleMeta};
 use crate::error::TraitKitError;
+use crate::i18n::tr;
 use crate::kit::Kit;
 
 // ─── Provider slot ──────────────────────────────────────────────────────────
@@ -149,7 +150,14 @@ impl std::fmt::Display for PresetError {
                  register_confers_config(kit, provider) first"
             ),
             #[cfg(feature = "presets-remote")]
-            Self::RemoteLoad { message } => write!(f, "remote config source failed: {message}"),
+            Self::RemoteLoad { message } => write!(
+                f,
+                "{}",
+                tr(
+                    "trait-kit-preset-remote-load-failed",
+                    &[("message", message.as_str())],
+                )
+            ),
         }
     }
 }

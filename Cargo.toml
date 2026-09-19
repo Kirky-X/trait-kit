@@ -22,7 +22,7 @@ workspace = true
 version = "0.5.0-rc.5"
 edition = "2024"
 rust-version = "1.97.1"
-authors = ["Kirky.X"]
+authors = ["Kirky-X <Kirky-X@outlook.com>"]
 repository = "https://github.com/Kirky-X/trait-kit.git"
 license = "MIT"
 
@@ -31,7 +31,7 @@ license = "MIT"
 [workspace.lints.clippy]
 
 [workspace.dependencies]
-confers = { version = "0.6.0-rc.4", default-features = false }
+confers = { version = "0.6.0-rc.4", path = "../confers", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 trait-kit = { path = ".", default-features = false }
@@ -40,9 +40,13 @@ trait-kit = { path = ".", default-features = false }
 confers = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-icu = { version = "2.3", optional = true }
+icu = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
 writeable = { version = "0.6", optional = true }
 sys-locale = { version = "0.3", optional = true }
+# Fluent FTL message translation (concurrent bundle). Always on: `tr()` /
+# `I18nManager` work with or without the `i18n` feature (en-US fallback).
+fluent-bundle = "0.16"
+unic-langid = "0.9"
 
 [dev-dependencies]
 thiserror = { version = "2.0", default-features = false }
@@ -98,8 +102,10 @@ observer = []
 decorator = []
 # Graceful shutdown coordinator: phased shutdown with hook registration + timeout.
 shutdown = []
-# ICU4X locale-aware formatting (number/date/plural/collation).
-# Without this feature, `tr()` and `I18nManager` still work (lightweight FTL translation).
+# ICU4X locale-aware formatting (number/date/plural/collation) + system
+# locale detection. Fluent message translation (`tr()` / `I18nManager`) is
+# feature-independent: without this feature it still works with the en-US
+# fallback locale.
 i18n = ["dep:icu", "dep:writeable", "dep:sys-locale"]
 # Structured build report (build_report JSON), health aggregate JSON export,
 # and contract manifest export. Pulls serde + serde_json.

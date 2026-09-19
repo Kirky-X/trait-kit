@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //
 // i18n 组合 E2E 测试（独立测试进程：全局 I18nManager 为进程级 OnceLock

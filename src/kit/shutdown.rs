@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! 优雅关闭协调器 — 分阶段有序关闭 + 超时强退
 //!
@@ -29,6 +29,7 @@ use std::cell::RefCell;
 use std::sync::{Arc, RwLock};
 
 use crate::error::TraitKitError;
+use crate::i18n::tr;
 
 /// 关闭阶段，按枚举定义顺序依次执行。
 ///
@@ -398,12 +399,16 @@ impl AsyncPhaseConfig {
 }
 
 /// 异步协调器锁中毒 → `TraitKitError::BuildFailed` 的统一映射，
-/// `context` 说明发生中毒的操作。
+/// `context` 说明发生中毒的操作（经 [`tr`] 本地化的名词短语，嵌入
+/// `failed to build \`{context}\`` 模板）；source 文案同样经 [`tr`] 输出。
 #[cfg(feature = "async")]
 fn lock_poisoned(context: String) -> TraitKitError {
     TraitKitError::BuildFailed {
         context,
-        source: Box::new(std::io::Error::other("RwLock poisoned")),
+        source: Box::new(std::io::Error::other(tr(
+            "trait-kit-error-lock-poisoned-source",
+            &[],
+        ))),
     }
 }
 
@@ -458,9 +463,15 @@ impl AsyncShutdownCoordinator {
     ///
     /// 当内部 `RwLock` 中毒时返回 `TraitKitError::BuildFailed`。
     pub fn set_global_timeout(&self, timeout: Duration) -> Result<(), TraitKitError> {
-        let mut global = self.global_timeout.write().map_err(|_| {
-            lock_poisoned(String::from("shutdown coordinator `set_global_timeout`"))
-        })?;
+        let mut global = self
+            .global_timeout
+            .write()
+            .map_err(|_| {
+                lock_poisoned(tr(
+                    "trait-kit-error-lock-poisoned-operation",
+                    &[("operation", "set_global_timeout")],
+                ))
+            })?;
         *global = Some(timeout);
         Ok(())
     }
@@ -477,9 +488,9 @@ impl AsyncShutdownCoordinator {
     ) -> Result<(), TraitKitError> {
         let idx = phase.index();
         let mut phases = self.phases.write().map_err(|_| {
-            lock_poisoned(format!(
-                "shutdown coordinator `set_phase_timeout` on phase `{}`",
-                phase.as_str()
+            lock_poisoned(tr(
+                "trait-kit-error-lock-poisoned-operation-phase",
+                &[("operation", "set_phase_timeout"), ("phase", phase.as_str())],
             ))
         })?;
         phases[idx].timeout = timeout;
@@ -507,7 +518,12 @@ impl AsyncShutdownCoordinator {
         // F 的返回类型已是擦除后的 trait object，直接 Box 一次即可
         self.phases
             .write()
-            .map_err(|_| lock_poisoned(format!("shutdown phase `{}`", phase.as_str())))?
+            .map_err(|_| {
+                lock_poisoned(tr(
+                    "trait-kit-error-lock-poisoned-phase",
+                    &[("phase", phase.as_str())],
+                ))
+            })?
             .get_mut(idx)
             .expect("index in range")
             .hooks
@@ -529,7 +545,12 @@ impl AsyncShutdownCoordinator {
         let global_timeout = *self
             .global_timeout
             .read()
-            .map_err(|_| lock_poisoned(String::from("shutdown coordinator `shutdown`")))?;
+            .map_err(|_| {
+                lock_poisoned(tr(
+                    "trait-kit-error-lock-poisoned-operation",
+                    &[("operation", "shutdown")],
+                ))
+            })?;
         // 全局截止时刻：None 表示无全局超时
         let deadline = global_timeout.map(|t| global_start + t);
         let mut phases = Vec::with_capacity(3);
@@ -577,9 +598,9 @@ impl AsyncShutdownCoordinator {
         // 单次写锁同时取出钩子与阶段超时
         let (hooks, timeout) = {
             let mut phases = self.phases.write().map_err(|_| {
-                lock_poisoned(format!(
-                    "shutdown coordinator `execute_phase` on phase `{}`",
-                    phase.as_str()
+                lock_poisoned(tr(
+                    "trait-kit-error-lock-poisoned-operation-phase",
+                    &[("operation", "execute_phase"), ("phase", phase.as_str())],
                 ))
             })?;
             let hooks = std::mem::take(&mut phases[idx].hooks);

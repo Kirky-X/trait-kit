@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! Kit — the capability and configuration management center.
 //!
@@ -778,12 +778,14 @@ impl Kit {
     #[cfg(feature = "confers")]
     pub fn restore_config<C: Clone + 'static>(&self) -> Result<(), TraitKitError> {
         let snapshots = self.confers.config_snapshots.borrow();
-        let boxed =
-            snapshots
-                .get(&TypeId::of::<C>())
-                .ok_or_else(|| TraitKitError::MissingConfig {
-                    key: format!("{} (snapshot)", std::any::type_name::<C>()),
-                })?;
+        let boxed = snapshots.get(&TypeId::of::<C>()).ok_or_else(|| {
+            TraitKitError::MissingConfig {
+                key: crate::i18n::tr(
+                    "trait-kit-error-no-snapshot",
+                    &[("key", std::any::type_name::<C>())],
+                ),
+            }
+        })?;
         let config =
             boxed
                 .downcast_ref::<C>()
@@ -947,17 +949,17 @@ impl Kit {
             let locale = crate::i18n::I18nManager::init().locale_tag().to_lowercase();
             let want_zh = locale.starts_with("zh");
             let fragments = self.i18n.module_ftl.borrow();
-            let merged = fragments
+            let matching: Vec<&str> = fragments
                 .iter()
                 .filter(|(loc, _)| loc.to_lowercase().starts_with("zh") == want_zh)
                 .map(|(_, ftl)| *ftl)
-                .collect::<Vec<_>>()
-                .join("\n");
+                .collect();
             drop(fragments);
-            *self.i18n.module_catalog.borrow_mut() = if merged.is_empty() {
+            *self.i18n.module_catalog.borrow_mut() = if matching.is_empty() {
                 None
             } else {
-                Some(crate::i18n::MessageCatalog::parse(&merged))
+                let lang = if want_zh { "zh" } else { "en" };
+                Some(crate::i18n::MessageCatalog::parse(lang, &matching))
             };
         }
 

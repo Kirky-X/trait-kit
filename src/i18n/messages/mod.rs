@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! 嵌入 FTL 消息文件内容，供 `I18nManager` 在编译时加载。
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! `AsyncKit` — the async capability and configuration management center.
 //!
@@ -1566,12 +1566,14 @@ impl AsyncKit {
             .config_snapshots
             .read()
             .expect("config_snapshots lock poisoned");
-        let boxed =
-            snapshots
-                .get(&TypeId::of::<C>())
-                .ok_or_else(|| TraitKitError::MissingConfig {
-                    key: format!("{} (snapshot)", std::any::type_name::<C>()),
-                })?;
+        let boxed = snapshots.get(&TypeId::of::<C>()).ok_or_else(|| {
+            TraitKitError::MissingConfig {
+                key: crate::i18n::tr(
+                    "trait-kit-error-no-snapshot",
+                    &[("key", std::any::type_name::<C>())],
+                ),
+            }
+        })?;
         let config =
             boxed
                 .downcast_ref::<C>()
@@ -3688,7 +3690,7 @@ mod async_config_inheritance_tests {
             max_connections: 20,
         });
 
-        // Set AppConfig with different host/port
+        // Set AsyncAppConfig with different host/port
         kit.set_config(AsyncAppConfig {
             host: "app-host".into(),
             port: 8080,
@@ -3698,7 +3700,7 @@ mod async_config_inheritance_tests {
         // Extract from DbConfig → overlay
         kit.extract_shared::<AsyncDbConfig>();
 
-        // Inject overlay → AppConfig (overrides host/port)
+        // Inject overlay → AsyncAppConfig (overrides host/port)
         kit.inject_shared::<AsyncAppConfig>();
 
         let app_cfg: AsyncAppConfig = kit.config().unwrap();

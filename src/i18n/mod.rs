@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! 国际化（i18n）支持 — Fluent FTL 消息翻译 + ICU4X 本地化格式化。
 //!
@@ -30,9 +30,12 @@
 mod i18n_impl;
 mod messages;
 
-use std::collections::HashMap;
 use std::fmt;
 use std::sync::OnceLock;
+
+use fluent_bundle::concurrent::FluentBundle;
+use fluent_bundle::{FluentArgs, FluentResource, FluentValue};
+use unic_langid::LanguageIdentifier;
 
 #[cfg(feature = "i18n")]
 use icu::collator::CollatorBorrowed;
@@ -138,91 +141,156 @@ pub struct I18nFormatter {
     pub(crate) date_formatter: DateTimeFormatter<YMD>,
 }
 
-// ─── MessageCatalog（轻量级 FTL 消息翻译） ──────────────────────────────────
+// ─── Fluent 消息目录（fluent-bundle concurrent 双束） ────────────────────────
 
-/// 轻量级 FTL 消息目录。
+/// 全局英文（回退）束：进程级共享，首次访问时从内嵌 `EN_FTL` 构建。
+static EN_BUNDLE: OnceLock<FluentBundle<FluentResource>> = OnceLock::new();
+
+/// 全局中文束：进程级共享，首次访问时从内嵌 `ZH_FTL` 构建。
+static ZH_BUNDLE: OnceLock<FluentBundle<FluentResource>> = OnceLock::new();
+
+/// 从 FTL 源构建并发（`Send + Sync`）Fluent 束。
 ///
-/// 解析 Fluent FTL 格式的 `key = value` 消息，支持 `{ $var }` 变量替换。
-/// 无需 `fluent-bundle` 运行时，避免自引用结构问题。
+/// 解析失败不 panic：`try_new` 返回的部分资源照常入束（损坏消息由
+/// Fluent 在查询时按语义降级），与统一 i18n 参考基线一致。
+fn build_bundle(lang: &str, ftl: &str) -> FluentBundle<FluentResource> {
+    let resource = FluentResource::try_new(ftl.to_string()).unwrap_or_else(|e| e.0);
+    let langid: LanguageIdentifier = lang
+        .parse()
+        .unwrap_or_else(|_| "en".parse().expect("'en' is a valid language identifier"));
+    let mut bundle = FluentBundle::new_concurrent(vec![langid]);
+    // 关闭 Unicode 隔离符，避免插值文本两侧被 \u{2068}/\u{2069} 包裹。
+    bundle.set_use_isolating(false);
+    bundle
+        .add_resource(resource)
+        .expect("single FTL resource should add without conflict");
+    bundle
+}
+
+/// 从任意（非全局 static）束中格式化一条消息；key 缺失返回 `None`。
+fn format_from_custom_bundle(
+    bundle: &FluentBundle<FluentResource>,
+    message_id: &str,
+    args: &[(&str, &str)],
+) -> Option<String> {
+    let msg = bundle.get_message(message_id)?;
+    let pattern = msg.value()?;
+    let mut fluent_args = FluentArgs::new();
+    for (name, value) in args {
+        fluent_args.set(*name, FluentValue::from(*value));
+    }
+    let mut errors = vec![];
+    Some(
+        bundle
+            .format_pattern(pattern, Some(&fluent_args), &mut errors)
+            .to_string(),
+    )
+}
+
+/// 从指定语言的全局束中格式化一条消息；key 缺失返回 `None`。
 ///
-/// # 宽松解析行为与已知限制
+/// 未知语言（非 `zh`）一律归 en 束——回退终结于 en。
+fn format_from_bundle(lang: &str, message_id: &str, args: &[(&str, &str)]) -> Option<String> {
+    let bundle = match lang {
+        "zh" => ZH_BUNDLE.get_or_init(|| build_bundle("zh", messages::ZH_FTL)),
+        _ => EN_BUNDLE.get_or_init(|| build_bundle("en", messages::EN_FTL)),
+    };
+    format_from_custom_bundle(bundle, message_id, args)
+}
+
+/// Fluent 消息目录（完整 Fluent 语法，由 `fluent-bundle` 支撑）。
 ///
-/// [`parse`](Self::parse) 逐行扫描，**静默丢弃**无法解析的内容，不做任何
-/// 报错或日志。已知限制：
+/// 两种形态：
 ///
-/// - 不支持多行消息（Fluent 的缩进续行）；
-/// - 不支持嵌套 placeholder 与 selector（`.match` 等 Fluent 结构）；
-/// - 不含 `=` 的行被直接忽略；
-/// - 含 `=` 的续行会被误当作独立消息，解析出一个假 key。
-#[derive(Debug)]
-pub(crate) struct MessageCatalog {
-    messages: HashMap<String, String>,
+/// - [`MessageCatalog::global`]：进程级 EN/ZH 双束（[`OnceLock`] 缓存），
+///   查询链为当前语言束 → en 束 → key 本身；
+/// - [`MessageCatalog::parse`]：Kit 模块 overlay 目录（运行时 FTL 片段），
+///   自包含，缺 key 返回 key 本身（由 `Kit::module_tr` 再回退全局目录）。
+pub(crate) enum MessageCatalog {
+    /// 全局双束目录（`I18nManager` 持有）。
+    Global {
+        /// 语言束选择：`"zh"` 或 `"en"`（一切未知语言归 en）。
+        lang: &'static str,
+    },
+    /// Kit 模块 overlay 目录（持有独立构建的束；仅 `i18n` feature 的
+    /// `Kit::module_tr` 使用）。
+    #[cfg(feature = "i18n")]
+    Overlay {
+        /// 由模块 FTL 片段合并构建的束。
+        bundle: FluentBundle<FluentResource>,
+    },
 }
 
 impl MessageCatalog {
-    /// 从 FTL 格式字符串解析消息目录。
+    /// 全局目录：小写化 locale 标签以 `zh` 开头选 zh 束，其余（含未知
+    /// 语言）一律归 en 束。
+    pub(crate) fn global(locale_tag: &str) -> Self {
+        let lang = if locale_tag.starts_with("zh") {
+            "zh"
+        } else {
+            "en"
+        };
+        Self::Global { lang }
+    }
+
+    /// 从 FTL 片段解析 Kit overlay 目录（完整 Fluent 语法）。
     ///
-    /// 支持的格式（宽松逐行解析，见类型文档的限制说明）：
-    /// - `# 注释行`（忽略）
-    /// - 空行（忽略）
-    /// - `message-id = 消息文本`（解析为 key-value）
-    /// - 不含 `=` 的行（静默丢弃）
-    pub(crate) fn parse(ftl: &str) -> Self {
-        let mut messages = HashMap::new();
-        for line in ftl.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            if let Some((key, value)) = line.split_once('=') {
-                messages.insert(key.trim().to_string(), value.trim().to_string());
-            }
+    /// 每个片段独立入束且后入者覆盖先入者（`add_resource_overriding`，
+    /// 与旧实现跨片段"最后写入获胜"语义一致）。解析失败的行按 Fluent
+    /// 语义静默降级，不 panic。
+    #[cfg(feature = "i18n")]
+    pub(crate) fn parse(lang: &'static str, ftl_fragments: &[&str]) -> Self {
+        let langid: LanguageIdentifier = lang
+            .parse()
+            .unwrap_or_else(|_| "en".parse().expect("'en' is a valid language identifier"));
+        let mut bundle = FluentBundle::new_concurrent(vec![langid]);
+        bundle.set_use_isolating(false);
+        for fragment in ftl_fragments {
+            let resource = FluentResource::try_new((*fragment).to_string()).unwrap_or_else(|e| e.0);
+            bundle.add_resource_overriding(resource);
         }
-        Self { messages }
+        Self::Overlay { bundle }
     }
 
     /// 翻译消息 key，带参数替换。
     ///
-    /// `{ $var }` 占位符被替换为 `args` 中对应的值，花括号内空白数量不限
-    /// （`{$var}` / `{ $var }` / `{  $var  }` 等价）。
-    ///
-    /// 替换为单遍扫描：命中占位符后插入值并跳过整段，插入的参数值
-    /// **不会被再次扫描**，因此参数值中形如 `{ $other }` 的文本按字面
-    /// 保留（不存在按顺序 `replace` 时的注入污染问题）。未知 key、非
-    /// `$key` 形式或无配对 `}` 的花括号均按字面保留。
-    ///
-    /// 如果消息 key 不存在，返回 key 本身作为 fallback。
+    /// `{ $var }` 占位符由 Fluent 引擎解析。全局目录查询链为当前语言 →
+    /// en → key 本身；overlay 目录缺 key 返回 key 本身。任何路径不 panic。
     pub(crate) fn translate(&self, message_id: &str, args: &[(&str, &str)]) -> String {
-        let Some(template) = self.messages.get(message_id) else {
-            return message_id.to_string();
-        };
-        let mut result = String::with_capacity(template.len());
-        let mut rest = template.as_str();
-        while let Some(open) = rest.find('{') {
-            result.push_str(&rest[..open]);
-            // 找与该 `{` 配对的 `}`；找不到则按字面保留 `{` 并继续扫描。
-            let Some(close) = rest[open + 1..].find('}') else {
-                result.push('{');
-                rest = &rest[open + 1..];
-                continue;
-            };
-            let inner = rest[open + 1..open + 1 + close].trim();
-            let replaced = inner.strip_prefix('$').and_then(|key| {
-                args.iter()
-                    .find(|&&(arg_key, _)| arg_key == key)
-                    .map(|&(_, value)| value)
-            });
-            if let Some(value) = replaced {
-                result.push_str(value);
-                rest = &rest[open + 1 + close + 1..];
-            } else {
-                // 非占位符或未知 key：按字面保留 `{`，从其后继续扫描。
-                result.push('{');
-                rest = &rest[open + 1..];
+        match self {
+            Self::Global { lang } => format_from_bundle(lang, message_id, args)
+                .or_else(|| {
+                    if *lang == "en" {
+                        None
+                    } else {
+                        format_from_bundle("en", message_id, args)
+                    }
+                })
+                .unwrap_or_else(|| message_id.to_string()),
+            #[cfg(feature = "i18n")]
+            Self::Overlay { bundle } => {
+                format_from_custom_bundle(bundle, message_id, args)
+                    .unwrap_or_else(|| message_id.to_string())
             }
         }
-        result.push_str(rest);
-        result
+    }
+}
+
+impl fmt::Debug for MessageCatalog {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // FluentBundle 未实现 Debug：只输出形态与语言摘要。
+        match self {
+            Self::Global { lang } => f
+                .debug_struct("MessageCatalog")
+                .field("kind", &"global")
+                .field("lang", lang)
+                .finish(),
+            #[cfg(feature = "i18n")]
+            Self::Overlay { .. } => f
+                .debug_struct("MessageCatalog")
+                .field("kind", &"overlay")
+                .finish(),
+        }
     }
 }
 
@@ -303,19 +371,14 @@ impl I18nManager {
         &self.locale_tag
     }
 
-    /// 内部构造：根据 locale 选择 FTL 内容并解析。
+    /// 内部构造：根据 locale 选择全局语言束。
     ///
-    /// `locale_tag` 存储小写化后的标签，保证与 FTL 目录选择
+    /// `locale_tag` 存储小写化后的标签，保证与语言束选择
     /// （同样基于小写判断）使用同一形态。
     fn build(locale: &str) -> Self {
         let normalized = locale.to_lowercase();
-        let ftl_content = if normalized.starts_with("zh") {
-            messages::ZH_FTL
-        } else {
-            messages::EN_FTL
-        };
         Self {
-            catalog: MessageCatalog::parse(ftl_content),
+            catalog: MessageCatalog::global(&normalized),
             locale_tag: normalized,
         }
     }
@@ -360,67 +423,116 @@ mod tests {
 
     use serial_test::serial;
 
-    // ─── MessageCatalog 测试 ────────────────────────────────────────────────
+    // ─── Fluent 目录守卫测试 ────────────────────────────────────────────────
+    //
+    // 断言经 format_from_bundle / 局部 MessageCatalog 直接指定语言，
+    // 不触碰全局 GLOBAL_I18N 单例，并行执行安全。
 
+    /// FTL 键集合提取：逐行取 `key = ` 前缀（守卫用宽松匹配，键字符集
+    /// 限定 `[a-z0-9-]`，跳过续行/文本行）。
+    fn ftl_keys(ftl: &'static str) -> std::collections::BTreeSet<&'static str> {
+        ftl.lines()
+            .filter_map(|line| line.split_once('='))
+            .map(|(key, _)| key.trim())
+            .filter(|key| {
+                !key.is_empty()
+                    && key.chars().all(|c| {
+                        c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'
+                    })
+            })
+            .collect()
+    }
+
+    /// 守卫：EN/ZH FTL 键集合必须一致（键齐性）。
     #[test]
-    fn catalog_parse_simple_ftl() {
-        let catalog = MessageCatalog::parse("hello = Hello, world!\nbye = Goodbye!");
-        assert_eq!(catalog.translate("hello", &[]), "Hello, world!");
-        assert_eq!(catalog.translate("bye", &[]), "Goodbye!");
+    fn ftl_key_parity_en_zh() {
+        let en = ftl_keys(messages::EN_FTL);
+        let zh = ftl_keys(messages::ZH_FTL);
+        assert!(!en.is_empty(), "EN FTL must yield keys");
+        let missing_in_zh: Vec<_> = en.difference(&zh).collect();
+        let missing_in_en: Vec<_> = zh.difference(&en).collect();
+        assert!(
+            missing_in_zh.is_empty() && missing_in_en.is_empty(),
+            "EN/ZH key sets diverge: missing_in_zh={missing_in_zh:?} \
+             missing_in_en={missing_in_en:?}"
+        );
     }
 
     #[test]
-    fn catalog_parse_skips_comments_and_blanks() {
-        let ftl = "# comment\n\nkey = value\n# another comment\n";
-        let catalog = MessageCatalog::parse(ftl);
-        assert_eq!(catalog.translate("key", &[]), "value");
+    fn bundle_en_and_zh_lookup_with_args() {
+        assert_eq!(
+            format_from_bundle(
+                "en",
+                "trait-kit-error-already-registered",
+                &[("module", "m")],
+            )
+            .as_deref(),
+            Some("module `m` is already registered"),
+        );
+        assert_eq!(
+            format_from_bundle(
+                "zh",
+                "trait-kit-error-missing-capability",
+                &[("key", "cap")],
+            )
+            .as_deref(),
+            Some("缺少能力 `cap`"),
+        );
+    }
+
+    /// 守卫：未知语言回退 en 束，不 panic。
+    #[test]
+    fn bundle_unknown_lang_falls_back_to_en_bundle() {
+        assert_eq!(
+            format_from_bundle(
+                "ar",
+                "trait-kit-error-missing-capability",
+                &[("key", "cap")],
+            )
+            .as_deref(),
+            Some("missing capability `cap`"),
+        );
+    }
+
+    /// 守卫：缺 key 不 panic——束查询返 `None`，目录翻译返 key 本身。
+    #[test]
+    fn bundle_missing_key_returns_none_and_translate_returns_key() {
+        assert_eq!(format_from_bundle("en", "nonexistent-key", &[]), None);
+        assert_eq!(format_from_bundle("zh", "nonexistent-key", &[]), None);
+        let catalog = MessageCatalog::global("zh");
+        assert_eq!(catalog.translate("nonexistent-key", &[]), "nonexistent-key");
     }
 
     #[test]
-    fn catalog_translate_with_variables() {
-        let catalog = MessageCatalog::parse("greet = Hello, { $name }!");
-        let result = catalog.translate("greet", &[("name", "World")]);
-        assert_eq!(result, "Hello, World!");
+    fn bundle_arg_value_is_not_reparsed_as_pattern() {
+        // Fluent 单遍解析：参数值中的 "{ $context }" 按字面插入，不会被
+        // 再次解析（与旧实现的单遍扫描注入防护语义一致）。
+        let out = format_from_bundle(
+            "en",
+            "trait-kit-error-build-failed",
+            &[("context", "ctx"), ("source", "{ $context } injected")],
+        );
+        assert_eq!(
+            out.as_deref(),
+            Some("failed to build `ctx`: { $context } injected"),
+        );
     }
 
+    #[cfg(feature = "i18n")]
     #[test]
-    fn catalog_translate_unknown_key_returns_key() {
-        let catalog = MessageCatalog::parse("key = value");
-        assert_eq!(catalog.translate("unknown", &[]), "unknown");
-    }
-
-    // ─── translate() 单遍扫描替换行为 ───────────────────────────────────────
-
-    #[test]
-    fn catalog_translate_arg_value_is_not_rescanned() {
-        // 注入防护：前一 arg 的值含 `{ $source }` 字样时，必须原样保留，
-        // 不得被后续 args 替换污染（旧实现按顺序 String::replace 会把
-        // `{ $source }` 替换为 BOOM）。
-        let catalog = MessageCatalog::parse("build = { $context }: { $source }");
-        let result = catalog.translate("build", &[("context", "{ $source }"), ("source", "BOOM")]);
-        assert_eq!(result, "{ $source }: BOOM");
-    }
-
-    #[test]
-    fn catalog_translate_placeholder_spacing_variants() {
-        // `{$key}` / `{  $key  }` 等空格变体均应替换成功。
-        let catalog = MessageCatalog::parse("msg = [{$x}] [{ $y }] [{  $z  }]");
-        let result = catalog.translate("msg", &[("x", "1"), ("y", "2"), ("z", "3")]);
-        assert_eq!(result, "[1] [2] [3]");
-    }
-
-    #[test]
-    fn catalog_translate_unknown_or_non_placeholder_braces_kept_literal() {
-        let catalog = MessageCatalog::parse("msg = hi { $known } { $unknown } {literal} {}");
-        let result = catalog.translate("msg", &[("known", "K")]);
-        assert_eq!(result, "hi K { $unknown } {literal} {}");
-    }
-
-    #[test]
-    fn catalog_translate_unclosed_brace_kept_literal() {
-        let catalog = MessageCatalog::parse("msg = o{ops and trailing {");
-        let result = catalog.translate("msg", &[]);
-        assert_eq!(result, "o{ops and trailing {");
+    fn overlay_catalog_resolves_overrides_and_falls_back_to_key() {
+        let catalog = MessageCatalog::parse(
+            "en",
+            &["ovk-a = Alpha { $n }\novk-b = Beta", "ovk-a = Alpha2 { $n }"],
+        );
+        assert_eq!(
+            catalog.translate("ovk-a", &[("n", "1")]),
+            "Alpha2 1",
+            "跨片段同名消息应后入者覆盖先入者"
+        );
+        assert_eq!(catalog.translate("ovk-b", &[]), "Beta");
+        // overlay 缺 key 返 key 本身（由 Kit::module_tr 再回退全局目录）。
+        assert_eq!(catalog.translate("ovk-missing", &[]), "ovk-missing");
     }
 
     // ─── I18nManager 测试 ───────────────────────────────────────────────────
