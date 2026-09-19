@@ -184,19 +184,19 @@ use trait_kit::kit::Config;
 
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, Config)]
 #[config(env_prefix = "APP_")]
-struct AppConfig {
+struct TraitKitConfig {
     #[config(default = "localhost".to_string())]
     host: String,
 }
 
-impl Configurable for AppConfig {
+impl Configurable for TraitKitConfig {
     fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
-        Ok(AppConfig::load_sync()?)
+        Ok(TraitKitConfig::load_sync()?)
     }
 }
 
 let mut kit = Kit::new();
-kit.load_config::<AppConfig>()?;   // 从环境变量/默认值加载
+kit.load_config::<TraitKitConfig>()?;   // 从环境变量/默认值加载
 ```
 
 配套 API：
@@ -216,7 +216,7 @@ kit.load_config::<AppConfig>()?;   // 从环境变量/默认值加载
 ```rust,ignore
 use trait_kit::kit::config::ModuleConfig;
 
-impl ModuleConfig for AppConfig {
+impl ModuleConfig for TraitKitConfig {
     const PATH: &'static str = "config/app.toml";
     fn default_value() -> Self {
         Self { host: "localhost".to_string() }
@@ -230,13 +230,13 @@ impl ModuleConfig for AppConfig {
 
 ```rust,ignore
 let mut kit = Kit::new();
-let secret = AppConfig { host: "production-db".to_string() };
+let secret = TraitKitConfig { host: "production-db".to_string() };
 let master_key = [0u8; 32]; // 32 字节主密钥（演示用，生产环境请从密钥管理服务获取）
 
 kit.set_encrypted(&secret, &master_key)?;
 let kit = kit.build()?;
 
-let decrypted: AppConfig = kit.get_encrypted(&master_key)?;  // 错误密钥会失败
+let decrypted: TraitKitConfig = kit.get_encrypted(&master_key)?;  // 错误密钥会失败
 ```
 
 ### 配置继承 `confers`
@@ -257,7 +257,7 @@ struct DbConfig {
 
 let mut kit = Kit::new();
 kit.populate_defaults::<DbConfig>();       // 零配置默认值
-kit.extract_shared::<AppConfig>();         // 从 AppConfig 提取共享字段
+kit.extract_shared::<TraitKitConfig>();         // 从 TraitKitConfig 提取共享字段
 kit.inject_shared::<DbConfig>();           // 注入到 DbConfig
 kit.merge_config::<DbConfig>(ovr);         // 编译期安全字段覆盖
 ```

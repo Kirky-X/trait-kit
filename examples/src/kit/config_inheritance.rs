@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! Config inheritance example: demonstrates the four-layer config inheritance
 //! system (merge_json_deep → ConfigInherit → SharedConfig → populate_defaults).
@@ -44,11 +44,11 @@ struct RedisConfig {
     db_index: u8,
 }
 
-// ── Layer 3: AppConfig — the "source of truth" for shared fields ──
+// ── Layer 3: TraitKitConfig — the "source of truth" for shared fields ──
 
 #[derive(Clone, Debug, PartialEq, SharedConfig)]
 #[shared(host, port)]
-struct AppConfig {
+struct TraitKitConfig {
     host: String,
     port: u16,
     app_name: String,
@@ -64,16 +64,16 @@ fn main() {
     let db: DbConfig = kit.config().unwrap();
     println!("  DbConfig before inheritance: {db:?}");
 
-    // ── Step 2: Set AppConfig (the shared field source) ──
-    kit.set_config(AppConfig {
+    // ── Step 2: Set TraitKitConfig (the shared field source) ──
+    kit.set_config(TraitKitConfig {
         host: "prod.example.com".into(),
         port: 8080,
         app_name: "My Production App".into(),
     });
 
-    // ── Step 3: Extract shared fields from AppConfig → overlay ──
-    kit.extract_shared::<AppConfig>();
-    println!("\nShared fields extracted from AppConfig");
+    // ── Step 3: Extract shared fields from TraitKitConfig → overlay ──
+    kit.extract_shared::<TraitKitConfig>();
+    println!("\nShared fields extracted from TraitKitConfig");
 
     // ── Step 4: Inject shared fields into DbConfig ──
     kit.inject_shared::<DbConfig>();
@@ -108,8 +108,8 @@ fn main() {
 
     let redis: RedisConfig = kit.config().unwrap();
     println!("\n  RedisConfig after injection: {redis:?}");
-    assert_eq!(redis.host, "prod.example.com"); // inherited from AppConfig
-    assert_eq!(redis.port, 8080); // inherited from AppConfig
+    assert_eq!(redis.host, "prod.example.com"); // inherited from TraitKitConfig
+    assert_eq!(redis.port, 8080); // inherited from TraitKitConfig
 
     println!("\n✅ Config inheritance demo completed successfully!");
 }

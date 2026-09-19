@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //
 // feature 编译矩阵 / 结构契约 E2E 测试。
@@ -93,7 +93,8 @@ fn prs01_no_default_features_core_api_gate() {
 }
 
 /// feature 名单完整（与 Cargo.toml [features] 一致）。
-/// rc4 批次新增 report/presets/compose/presets-remote/negotiate 五项（13 → 18）。
+/// rc4 批次新增 report/presets/compose/presets-remote/negotiate 五项（13 → 18）；
+/// rc5 批次新增 di/request-scope/version-negotiation 三项（18 → 21）。
 #[test]
 fn prs02_feature_table_lists_all_features() {
     let features = parse_features();
@@ -104,6 +105,7 @@ fn prs02_feature_table_lists_all_features() {
         "compose",
         "confers",
         "decorator",
+        "di",
         "encryption",
         "health",
         "i18n",
@@ -115,9 +117,11 @@ fn prs02_feature_table_lists_all_features() {
         "presets-remote",
         "reload",
         "report",
+        "request-scope",
         "scope",
         "shutdown",
         "toggle",
+        "version-negotiation",
     ];
     for f in expected {
         assert!(
@@ -134,7 +138,7 @@ fn prs02_feature_table_lists_all_features() {
     assert_eq!(
         names.len(),
         expected.len() + 1,
-        "[features] 段应恰含 18 个 feature + default：got {names:?}"
+        "[features] 段应恰含 21 个 feature + default：got {names:?}"
     );
 }
 
@@ -168,7 +172,7 @@ fn prs05_encryption_chain_expansion() {
     );
 }
 
-/// PRS-03 门禁测试化：`--all-features` 下全部 18 项激活。
+/// PRS-03 门禁测试化：`--all-features` 下全部 21 项激活。
 /// 该测试仅在全 feature 组合编译时存在（cfg 段即门禁本体）。
 #[cfg(all(
     feature = "async",
@@ -192,9 +196,9 @@ fn prs05_encryption_chain_expansion() {
 ))]
 #[test]
 fn prs03_all_features_gate_reached() {
-    // 能编译并执行到此处 = 18 项 feature 全部激活。
+    // 能编译并执行到此处 = 21 项 feature 全部激活。
     let features = parse_features();
-    assert_eq!(features.len(), 19, "18 feature + default 空集");
+    assert_eq!(features.len(), 22, "21 feature + default 空集");
 }
 
 /// examples crate 20 个示例全部显式 `[[example]]` 注册，且

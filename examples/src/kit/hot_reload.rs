@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! `reload` feature — subscribe + reload_config.
 //!
@@ -13,11 +13,11 @@ use std::rc::Rc;
 use trait_kit::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct AppConfig {
+struct TraitKitConfig {
     value: u32,
 }
 
-impl Configurable for AppConfig {
+impl Configurable for TraitKitConfig {
     fn load() -> Result<Self, Box<dyn Error + Send>> {
         Ok(Self { value: 42 })
     }
@@ -27,12 +27,12 @@ fn main() {
     let kit = Kit::new();
     let counter = Rc::new(Cell::new(0u32));
     let counter_clone = Rc::clone(&counter);
-    kit.subscribe::<AppConfig>(move || {
+    kit.subscribe::<TraitKitConfig>(move || {
         counter_clone.set(counter_clone.get() + 1);
     });
 
     // reload_config is available on Kit<Unbuilt> (matches test pattern).
-    kit.reload_config::<AppConfig>()
+    kit.reload_config::<TraitKitConfig>()
         .expect("reload should succeed");
     assert_eq!(
         counter.get(),
@@ -41,7 +41,7 @@ fn main() {
     );
 
     let kit = kit.build().expect("build should succeed");
-    let config: AppConfig = kit.config().expect("config should be retrievable");
+    let config: TraitKitConfig = kit.config().expect("config should be retrievable");
     assert_eq!(
         config.value, 42,
         "reload should have stored the loaded value"

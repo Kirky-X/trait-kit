@@ -428,7 +428,7 @@ use trait_kit_derive::{ConfigInherit, SharedConfig};
 // Levels 1-2: derive-based config loading + module config metadata
 #[derive(Debug, Clone, serde::Deserialize, confers::Config)]
 #[config(env_prefix = "APP_")]
-struct AppConfig {
+struct TraitKitConfig {
     #[config(default = "localhost".to_string())]
     host: String,
 }
@@ -442,9 +442,9 @@ struct DbConfig {
 }
 
 let mut kit = Kit::new();
-kit.load_config::<AppConfig>()?;        // load from env/defaults via confers
+kit.load_config::<TraitKitConfig>()?;        // load from env/defaults via confers
 kit.populate_defaults::<DbConfig>()?;   // zero-config defaults
-kit.extract_shared::<AppConfig>()?;     // extract shared fields
+kit.extract_shared::<TraitKitConfig>()?;     // extract shared fields
 kit.inject_shared::<DbConfig>()?;       // inject into DbConfig
 ```
 

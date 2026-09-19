@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
+
 //! End-to-end integration test: simulates project A using project B,
 //! where B's config inherits shared fields from A's config.
 
@@ -33,7 +36,7 @@ impl ModuleConfig for DbConfig {
 
 #[derive(Clone, Debug, PartialEq, SharedConfig)]
 #[shared(host, port)]
-struct AppConfig {
+struct TraitKitConfig {
     host: String,
     port: u16,
     app_name: String,
@@ -51,7 +54,7 @@ struct CacheConfig {
 }
 
 /// Simulates the full config inheritance flow:
-/// 1. Project A loads its AppConfig with production values
+/// 1. Project A loads its TraitKitConfig with production values
 /// 2. Project A loads its CacheConfig
 /// 3. Project B's DbConfig starts with defaults (populate_defaults)
 /// 4. A extracts shared fields → overlay
@@ -62,7 +65,7 @@ fn e2e_config_inheritance_a_b_project_scenario() {
     let kit = Kit::new();
 
     // Step 1: Project A sets its application config
-    kit.set_config(AppConfig {
+    kit.set_config(TraitKitConfig {
         host: "prod.example.com".into(),
         port: 8080,
         app_name: "production-app".into(),
@@ -86,8 +89,8 @@ fn e2e_config_inheritance_a_b_project_scenario() {
     assert_eq!(db_before.host, "localhost");
     assert_eq!(db_before.port, 3306);
 
-    // Step 4: Extract shared fields from AppConfig (last extractor wins)
-    kit.extract_shared::<AppConfig>();
+    // Step 4: Extract shared fields from TraitKitConfig (last extractor wins)
+    kit.extract_shared::<TraitKitConfig>();
 
     // Also extract from CacheConfig — this overrides host/port in the overlay
     kit.extract_shared::<CacheConfig>();
@@ -104,8 +107,8 @@ fn e2e_config_inheritance_a_b_project_scenario() {
     assert_eq!(db_after.max_connections, 10);
     assert_eq!(db_after.database, "mydb");
 
-    // Verify AppConfig is unchanged
-    let app: AppConfig = kit.config().unwrap();
+    // Verify TraitKitConfig is unchanged
+    let app: TraitKitConfig = kit.config().unwrap();
     assert_eq!(app.host, "prod.example.com");
     assert_eq!(app.app_name, "production-app");
 
@@ -120,8 +123,8 @@ fn e2e_config_inheritance_a_b_project_scenario() {
 fn e2e_merge_config_then_shared_inheritance() {
     let kit = Kit::new();
 
-    // Set AppConfig
-    kit.set_config(AppConfig {
+    // Set TraitKitConfig
+    kit.set_config(TraitKitConfig {
         host: "shared-host".into(),
         port: 9090,
         app_name: "test-app".into(),
@@ -145,11 +148,11 @@ fn e2e_merge_config_then_shared_inheritance() {
     assert_eq!(db.max_connections, 100); // overridden
     assert_eq!(db.database, "production_db"); // overridden
 
-    // Now extract shared from AppConfig and inject into DbConfig
-    kit.extract_shared::<AppConfig>();
+    // Now extract shared from TraitKitConfig and inject into DbConfig
+    kit.extract_shared::<TraitKitConfig>();
     kit.inject_shared::<DbConfig>();
 
-    // DbConfig should now have AppConfig's host/port
+    // DbConfig should now have TraitKitConfig's host/port
     let db_final: DbConfig = kit.config().unwrap();
     assert_eq!(db_final.host, "shared-host"); // from shared
     assert_eq!(db_final.port, 9090); // from shared

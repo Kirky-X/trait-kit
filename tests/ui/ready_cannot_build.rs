@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
+
 // Kit<Ready> cannot call build() — typestate enforces Unbuilt-only.
 use std::sync::Arc;
 use trait_kit::prelude::*;

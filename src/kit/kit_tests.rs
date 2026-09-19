@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
+
 // Unit tests for `crate::kit::kit`, split out of kit.rs for readability.
 //
 // Path note: declared in kit.rs as `#[cfg(test)] #[path = "kit_tests.rs"] mod kit_tests;`,

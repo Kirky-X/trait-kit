@@ -424,7 +424,7 @@ use trait_kit_macros::{ConfigInherit, SharedConfig};
 // 第一/二级：derive 配置加载 + 模块配置元数据
 #[derive(Debug, Clone, serde::Deserialize, confers::Config)]
 #[config(env_prefix = "APP_")]
-struct AppConfig {
+struct TraitKitConfig {
     #[config(default = "localhost".to_string())]
     host: String,
 }
@@ -438,9 +438,9 @@ struct DbConfig {
 }
 
 let mut kit = Kit::new();
-kit.load_config::<AppConfig>()?;        // 经 confers 从环境变量/默认值加载
+kit.load_config::<TraitKitConfig>()?;        // 经 confers 从环境变量/默认值加载
 kit.populate_defaults::<DbConfig>()?;   // 零配置默认值
-kit.extract_shared::<AppConfig>()?;     // 提取共享字段
+kit.extract_shared::<TraitKitConfig>()?;     // 提取共享字段
 kit.inject_shared::<DbConfig>()?;       // 注入到 DbConfig
 ```
 

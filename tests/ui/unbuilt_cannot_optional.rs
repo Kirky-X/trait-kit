@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
+
 // Kit<Unbuilt> cannot call optional() — typestate enforces Ready-only.
 use std::sync::Arc;
 use trait_kit::prelude::*;

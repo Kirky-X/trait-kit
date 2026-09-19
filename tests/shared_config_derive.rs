@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
+
 //! Integration tests for `#[derive(SharedConfig)]`.
 
 #![cfg(feature = "confers")]
@@ -115,7 +118,7 @@ fn derive_shared_config_kit_extract_inject_flow() {
     // Extract from DbConfig
     kit.extract_shared::<DerivedDbConfig>();
 
-    // Inject into AppConfig
+    // Inject into DerivedAppConfig
     kit.inject_shared::<DerivedAppConfig>();
 
     let app_cfg: DerivedAppConfig = kit.config().unwrap();

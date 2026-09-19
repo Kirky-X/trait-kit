@@ -574,21 +574,21 @@ use trait_kit::kit::Config;
 
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, Config)]
 #[config(env_prefix = "APP_")]
-struct AppConfig {
+struct TraitKitConfig {
     #[config(default = "localhost".to_string())]
     host: String,
 }
 
-impl Configurable for AppConfig {
+impl Configurable for TraitKitConfig {
     fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
-        Ok(AppConfig::load_sync()?)
+        Ok(TraitKitConfig::load_sync()?)
     }
 }
 
 let mut kit = Kit::new();
-kit.load_config::<AppConfig>()?;  // 通过 confers 从环境变量/默认值加载
+kit.load_config::<TraitKitConfig>()?;  // 通过 confers 从环境变量/默认值加载
 let kit = kit.build()?;
-let config: AppConfig = kit.config()?;
+let config: TraitKitConfig = kit.config()?;
 ```
 
 ### 更多示例

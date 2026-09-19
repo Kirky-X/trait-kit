@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! Error types for Kit operations.
 
@@ -135,8 +135,11 @@ impl fmt::Display for TraitKitError {
             }
             Self::DecoratorTargetMissing { module } => write!(
                 f,
-                "decorator target module `{module}` is not registered \
-                 (checked at registration time)",
+                "{}",
+                tr(
+                    "trait-kit-error-decorator-target-missing",
+                    &[("module", *module)],
+                ),
             ),
             Self::VersionIncompatible {
                 module,
@@ -145,8 +148,16 @@ impl fmt::Display for TraitKitError {
                 provided,
             } => write!(
                 f,
-                "module `{module}` requires capability `{dependency}` >= {required}, \
-                 but the provider declares {provided}"
+                "{}",
+                tr(
+                    "trait-kit-error-version-incompatible",
+                    &[
+                        ("module", *module),
+                        ("dependency", *dependency),
+                        ("required", *required),
+                        ("provided", *provided),
+                    ],
+                ),
             ),
             Self::BuildFailed { context, source } => {
                 let source_str = source.to_string();

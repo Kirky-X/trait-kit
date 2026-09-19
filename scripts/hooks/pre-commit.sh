@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Copyright © 2026 Kirky.X
+# Copyright (c) 2026 Kirky.X🌠
+# SPDX-License-Identifier: MIT
 # Pre-commit hook: 终极 7 阶段检查（Pre-flight → Format → Static Analysis → Dependency → Doc → Spell → Test）
 # 触发：git commit
 # 标准：零错误、零告警、全检查、自动修复

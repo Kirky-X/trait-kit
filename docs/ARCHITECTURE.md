@@ -170,7 +170,7 @@ graph TB
     Layer4 --> Layer3 --> Layer2 --> Layer1
 ```
 
-**数据流**：`AppConfig` → `extract_shared` → `shared_fields overlay` → `inject_shared` → `DbConfig`
+**数据流**：`TraitKitConfig` → `extract_shared` → `shared_fields overlay` → `inject_shared` → `DbConfig`
 
 ## 🔄 数据流
 

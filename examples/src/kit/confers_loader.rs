@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! Level 1: `confers` feature — Configurable + load_config.
 //!
@@ -14,18 +14,18 @@ use trait_kit::prelude::*;
 // behind the `confers` feature.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, confers::Config)]
 #[config(env_prefix = "TRAIT_KIT_EXAMPLE_")]
-struct AppConfig {
+struct TraitKitConfig {
     #[config(default = "localhost".to_string())]
     host: String,
     #[config(default = 8080)]
     port: u16,
 }
 
-impl Configurable for AppConfig {
+impl Configurable for TraitKitConfig {
     fn load() -> Result<Self, Box<dyn Error + Send>> {
         // ConfigError from confers is not Send, so we can't use `?` directly
         // with Box<dyn Error + Send>. Bridge via io::Error which is Send.
-        AppConfig::load_sync().map_err(|e| -> Box<dyn Error + Send> {
+        TraitKitConfig::load_sync().map_err(|e| -> Box<dyn Error + Send> {
             Box::new(std::io::Error::other(e.to_string()))
         })
     }
@@ -36,10 +36,10 @@ fn main() {
 
     // 1. No env override — load_sync() falls back to #[config(default)].
     let kit = Kit::new();
-    kit.load_config::<AppConfig>()
+    kit.load_config::<TraitKitConfig>()
         .expect("load_config should fall back to defaults");
     let kit = kit.build().expect("build should succeed");
-    let config: AppConfig = kit.config().expect("config should be retrievable");
+    let config: TraitKitConfig = kit.config().expect("config should be retrievable");
     println!(
         "Loaded (defaults): host={}, port={}",
         config.host, config.port
@@ -52,10 +52,10 @@ fn main() {
     //    demonstrate env override in this example.)
     unsafe { std::env::set_var("TRAIT_KIT_EXAMPLE_HOST", "10.0.0.1") };
     let kit2 = Kit::new();
-    kit2.load_config::<AppConfig>()
+    kit2.load_config::<TraitKitConfig>()
         .expect("load_config should pick up env override");
     let kit2 = kit2.build().expect("build should succeed");
-    let config2: AppConfig = kit2.config().expect("config should be retrievable");
+    let config2: TraitKitConfig = kit2.config().expect("config should be retrievable");
     println!(
         "Loaded (env override): host={}, port={}",
         config2.host, config2.port

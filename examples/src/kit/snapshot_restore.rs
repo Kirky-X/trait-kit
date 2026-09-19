@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Kirky.X
+// Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 //! Snapshot & Restore — 配置快照与回滚。
 //!
@@ -13,7 +13,7 @@
 use trait_kit::prelude::*;
 
 #[derive(Clone, Debug, PartialEq)]
-struct AppConfig {
+struct TraitKitConfig {
     debug: bool,
     log_level: String,
 }
@@ -22,35 +22,35 @@ fn main() {
     let kit = Kit::new();
 
     // ── Step 1: set initial config ──────────────────────────────────────
-    kit.set_config(AppConfig {
+    kit.set_config(TraitKitConfig {
         debug: false,
         log_level: "info".into(),
     });
-    let current: AppConfig = kit.config().expect("config should exist");
+    let current: TraitKitConfig = kit.config().expect("config should exist");
     assert!(!current.debug);
     assert_eq!(current.log_level, "info");
     println!("Step 1: initial config — debug=false, log_level=info");
 
     // ── Step 2: snapshot the current config ─────────────────────────────
-    let snapped = kit.snapshot_config::<AppConfig>();
+    let snapped = kit.snapshot_config::<TraitKitConfig>();
     assert!(snapped, "snapshot should succeed when config exists");
-    assert!(kit.has_snapshot::<AppConfig>());
+    assert!(kit.has_snapshot::<TraitKitConfig>());
     println!("Step 2: snapshot created");
 
     // ── Step 3: override config (e.g. hot-reload scenario) ──────────────
-    kit.set_config(AppConfig {
+    kit.set_config(TraitKitConfig {
         debug: true,
         log_level: "trace".into(),
     });
-    let updated: AppConfig = kit.config().expect("config should exist");
+    let updated: TraitKitConfig = kit.config().expect("config should exist");
     assert!(updated.debug);
     assert_eq!(updated.log_level, "trace");
     println!("Step 3: config overridden — debug=true, log_level=trace");
 
     // ── Step 4: restore to snapshot ─────────────────────────────────────
-    kit.restore_config::<AppConfig>()
+    kit.restore_config::<TraitKitConfig>()
         .expect("restore should succeed");
-    let restored: AppConfig = kit.config().expect("config should exist after restore");
+    let restored: TraitKitConfig = kit.config().expect("config should exist after restore");
     assert!(!restored.debug);
     assert_eq!(restored.log_level, "info");
     println!("Step 4: restored — debug=false, log_level=info");
