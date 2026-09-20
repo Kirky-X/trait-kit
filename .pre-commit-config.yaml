@@ -22,8 +22,12 @@ repos:
     rev: v1.5.0
     hooks:
       - id: detect-secrets
-        args: [--exclude-files, tests/, --exclude-files, examples/]
-        exclude: '^Cargo\.lock$'
+        # --baseline: .secrets.baseline 记录已人工核实的误报(测试夹具/文档占位符,
+        # 以及 .gitleaks.toml 中作为「假 key 检测样本」有意保留的字面量);
+        # 带 --baseline 时基线内的发现放行, 基线外的新发现仍阻断
+        args: [--baseline, .secrets.baseline, --exclude-files, tests/, --exclude-files, examples/]
+        # 自排除: 基线文件本身(内含凭证哈希)与锁文件不参与扫描
+        exclude: '^(Cargo\.lock|\.secrets\.baseline)$'
 
   - repo: https://github.com/crate-ci/typos
     rev: v1.28.0
