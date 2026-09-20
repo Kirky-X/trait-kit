@@ -400,7 +400,8 @@ impl AsyncPhaseConfig {
 
 /// 异步协调器锁中毒 → `TraitKitError::BuildFailed` 的统一映射，
 /// `context` 说明发生中毒的操作（经 [`tr`] 本地化的名词短语，嵌入
-/// `failed to build \`{context}\`` 模板）；source 文案同样经 [`tr`] 输出。
+/// `failed to build {context}` 模板，其中 `{context}` 渲染时以反引号包裹）；
+/// source 文案同样经 [`tr`] 输出。
 #[cfg(feature = "async")]
 fn lock_poisoned(context: String) -> TraitKitError {
     TraitKitError::BuildFailed {
