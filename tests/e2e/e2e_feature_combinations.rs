@@ -1477,8 +1477,8 @@ mod all_features_smoke_e2e {
         // ── async 面：AsyncKit 同烟囱最小打通 ──
         let mut akit = AsyncKit::new();
         akit.register::<AsyncSmoke>().unwrap();
-        let aready = block_on(akit.build()).unwrap();
-        assert_eq!(aready.require::<AsyncSmoke>().unwrap().val, 21);
+        let already = block_on(akit.build()).unwrap();
+        assert_eq!(already.require::<AsyncSmoke>().unwrap().val, 21);
 
         // ── i18n：全局翻译便捷函数（默认 locale，不锁定语言）──
         let mgr = I18nManager::init();
