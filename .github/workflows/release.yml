@@ -70,6 +70,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@4716b85f2fac3e324e64fa2810f6b5c3905760a5 # 1.97.1
         if: env.HAS_CARGO_TOKEN == 'true' || env.HAS_CRATES_TOKEN == 'true'
 
+      - name: Publish trait-kit-macros (依赖,必须先于主 crate)
+        if: env.HAS_CARGO_TOKEN == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        working-directory: trait-kit-macros
+        run: cargo publish
+        # 本地/重跑路径已发布时撞车属幂等成功，不阻断 Release 交付
+        continue-on-error: true
+
+      - name: Wait for crates.io index
+        if: env.HAS_CARGO_TOKEN == 'true'
+        run: sleep 30
+
       - name: Publish trait-kit (cargo token)
         if: env.HAS_CARGO_TOKEN == 'true'
         env:
@@ -85,3 +98,19 @@ jobs:
         run: cargo publish --all-features
         # 本地/重跑路径已发布时撞车属幂等成功，不阻断 Release 交付
         continue-on-error: true
+
+      # 发布步骤带 continue-on-error(幂等重跑),但版本最终必须可查——
+      # 否则此处硬失败,防止"绿色 Release 实际没发出去"的静默漏发。
+      - name: Verify on crates.io
+        if: always()
+        run: |
+          sleep 15
+          for crate in trait-kit trait-kit-macros; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              "https://crates.io/api/v1/crates/${crate}/0.5.0-rc.6")
+            echo "${crate}: HTTP ${CODE}"
+            if [ "$CODE" != "200" ]; then
+              echo "::error::${crate} 0.5.0-rc.6 未出现在 crates.io"
+              exit 1
+            fi
+          done
