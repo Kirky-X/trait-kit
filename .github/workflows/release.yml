@@ -104,13 +104,19 @@ jobs:
       - name: Verify on crates.io
         if: always()
         run: |
-          sleep 15
           for crate in trait-kit trait-kit-macros; do
-            CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-              "https://crates.io/api/v1/crates/${crate}/0.5.0-rc.6")
-            echo "${crate}: HTTP ${CODE}"
-            if [ "$CODE" != "200" ]; then
-              echo "::error::${crate} 0.5.0-rc.6 未出现在 crates.io"
+            ok=""
+            for i in 1 2 3 4 5; do
+              sleep 20
+              # crates.io API 必须带 User-Agent,否则 403
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" -H 'User-Agent: kirky-x-release-verify' \
+                "https://crates.io/api/v1/crates/${crate}/0.5.0-rc.6")
+              echo "try$i ${crate}: HTTP ${CODE}"
+              if [ "$CODE" = "200" ]; then ok=1; break; fi
+              if [ "$CODE" != "403" ]; then break; fi
+            done
+            if [ -z "$ok" ]; then
+              echo "::error::${crate} 0.5.0-rc.6 未出现在 crates.io(HTTP ${CODE})"
               exit 1
             fi
           done
