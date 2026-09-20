@@ -575,7 +575,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 80
 
 本项目基于 **MIT + Commons Clause** 许可证发布：MIT 主许可之上附加 Commons Clause v1.0 条件，未经许可方单独书面授权不得销售本软件；属于 source-available 许可证，商业使用需单独授权。详见 [LICENSE](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE)。
 
-Copyright (c) 2026 Kirky.X
+Copyright (c) 2026 Kirky.X🌠
 
 ---
 

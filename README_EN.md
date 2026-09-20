@@ -579,7 +579,7 @@ See [CHANGELOG.md](docs/CHANGELOG.md). Recent highlights:
 
 This project is licensed under **MIT + Commons Clause**: the MIT license with the additional Commons Clause v1.0 condition, which excludes selling the Software without separate written authorization from the Licensor; it is a source-available license, and commercial use requires separate authorization. See [LICENSE](LICENSE).
 
-Copyright (c) 2026 Kirky.X
+Copyright (c) 2026 Kirky.X🌠
 
 ---
 
