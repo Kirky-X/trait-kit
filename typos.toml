@@ -1,0 +1,25 @@
+# typos 配置 — 排除清单 + 词表白名单（修复 pre-commit 门禁摩擦）
+#
+# 背景：pre-commit 的 typos 钩子（crate-ci/typos v1.28）默认带 `--write-changes`，
+# 命中即原地改写文件。本仓的生成资产与 trybuild 反向夹具属于「机器生成 / 故意写错」的内容，
+# 一旦被拼写纠正会直接摧毁测试本意或整体重写生成产物。
+#
+# 本文件只做最小范围的排除与词级放行：不放宽钩子 args、不删除钩子。
+
+[files]
+extend-exclude = [
+  # 生成资产：docs/assets/trait-kit.svg 是构建产物（内嵌编码后的绘制数据），
+  # 全文 202 行皆为机器生成的字符串，拼写检查只会产生误报并整体重写该文件。
+  "docs/assets/*.svg",
+
+  # trybuild 反向夹具：trait-kit-macros/tests/ui/ 下的 .rs 是「故意写错」的编译失败用例，
+  # .stderr 是 trybuild 自动生成/覆盖的错误信息快照（原样保留夹具中的拼写）。
+  # 对它们做拼写纠正会摧毁测试本意，并使 .stderr 断言随之失配。
+  "trait-kit-macros/tests/ui/*",
+]
+
+[default.extend-words]
+# trybuild 夹具 module_unknown_arg.rs 中故意把 `name` 写成 `nmae`，
+# 用于断言宏对未知参数的报错信息（"unknown `module` argument `nmae`; expected `name` or `deps`"）。
+# 该词在此作为「有意误拼」放行；目录级 exclude 是主要防线，此处为纵深防御。
+nmae = "nmae"
