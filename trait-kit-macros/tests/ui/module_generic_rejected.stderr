@@ -1,5 +1,5 @@
 error: #[derive(Module)] does not support generic structs: module types must be concrete so they can be keyed by TypeId in the Kit dependency graph
- --> tests/ui/module_generic_rejected.rs:6:21
+ --> tests/ui/module_generic_rejected.rs:9:21
   |
-6 | struct GenericModule<T> {
+9 | struct GenericModule<T> {
   |                     ^
