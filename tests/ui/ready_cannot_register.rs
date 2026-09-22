@@ -2,11 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 // Kit<Ready> cannot call register() — typestate enforces Unbuilt-only.
+//
+// The fixture must produce exactly one error (the E0599 below). Explicit
+// `ModuleMeta` impl instead of `impl_module_meta!`: the macro is not
+// re-exported by the prelude, and a "cannot find macro" failure would
+// cascade into E0277s whose "other types implement this trait" suggestions
+// depend on which feature-gated impls exist in the current build.
 use std::sync::Arc;
 use trait_kit::prelude::*;
 
 struct MyModule;
-impl_module_meta!(MyModule, "my-module");
+impl ModuleMeta for MyModule {
+    const NAME: &'static str = "my-module";
+}
 impl AutoBuilder for MyModule {
     type Capability = Arc<u32>;
     type Error = TraitKitError;

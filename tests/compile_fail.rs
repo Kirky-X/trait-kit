@@ -2,10 +2,15 @@
 // SPDX-License-Identifier: MIT
 //! Compile-fail tests: verify that typestate misuse produces compile errors.
 //!
-//! 快照（tests/ui/*.stderr）在 `async` feature 启用的语义下录制：E0599 候选
-//! 列表包含仅在该 feature 下进入 prelude 的 `AsyncAutoBuilder`。feature 集
-//! 不同会让 rustc 诊断文本漂移，因此仅在 `async` 启用时运行快照比对——
-//! 实测 default 与 `--features async` / `--all-features` 在此门控下结果一致。
+//! 快照（tests/ui/*.stderr）仅在 `async` 启用时运行比对，原因：E0599 候选
+//! 列表包含仅在该 feature 下存在并进入 prelude 的 `AsyncAutoBuilder`。
+//!
+//! 漂移模型（写 fixtures 时必须遵守，见 ui/*.rs 头部注释）：每个 fixture
+//! 必须恰好产生一个错误——被测的 typestate E0599。若 fixture 里出现任何
+//! 附带错误（如宏缺失级联出的 E0277），rustc 的 "other types implement
+//! this trait" 建议会列出当前构建中真实存在的 impl，随 presets/compose
+//! 等 feature 门控漂移，导致部分特性组合下快照必然失配（曾因此只在
+//! `--all-features` 下通过）。
 
 #[cfg(feature = "async")]
 #[test]
