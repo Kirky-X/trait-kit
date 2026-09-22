@@ -390,6 +390,8 @@ pub trait AsyncAutoBuilder: ModuleMeta {
 | `with_max_concurrency(limit)` | 按拓扑分层并发构建的并发上限 |
 | `create_scope()` | 创建异步作用域 |
 | `AsyncKit<Ready>` 配置面 | `load_config` 系列、`subscribe` / `reload_config`、`snapshot_config` / `restore_config`、`set_encrypted` / `get_encrypted` 与同步 Kit 能力一致 |
+| `build_report()` `report` | 结构化构建报告（JSON），与同步 `Kit<Ready>` 对位；async 构建状态集仅 `built`（无 override/lazy 面） |
+| `contract_manifest()` `report` | 契约清单导出（NAME/VERSION/capability/deps），与同步 `Kit<Ready>` 对位 |
 
 ### `interface` — 接口/实现分离
 

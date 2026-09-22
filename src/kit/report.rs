@@ -12,6 +12,9 @@
 
 use std::cell::RefCell;
 
+#[cfg(feature = "async")]
+use std::sync::Mutex;
+
 use serde::Serialize;
 
 /// Feature-gated fields aggregated on `Kit` (same pattern as `ObserverFields`).
@@ -96,6 +99,100 @@ impl ReportFields {
             modules: self.modules.borrow().clone(),
             overrides: self.overrides.borrow().clone(),
             total_elapsed_us: *self.total_elapsed_us.borrow(),
+            ..BuildReport::default()
+        }
+    }
+}
+
+/// Feature-gated fields aggregated on `AsyncKit` — the `Mutex` counterpart
+/// of [`ReportFields`]. The async kit is a documented `Send + Sync` type, so
+/// the `RefCell` original cannot be reused; locking is confined to the build
+/// path (one short critical section per module), while `AsyncKit<Ready>`
+/// reads the snapshot once via `build_report()`.
+#[cfg(feature = "async")]
+#[derive(Default)]
+pub(crate) struct AsyncReportFields {
+    /// Per-module build records in build-completion order.
+    modules: Mutex<Vec<ModuleReportEntry>>,
+    /// Topological order (module names) captured after `graph.validate()`.
+    topo_order: Mutex<Vec<&'static str>>,
+    /// Total wall time of `build()` (set when build finishes).
+    total_elapsed_us: Mutex<Option<u64>>,
+    /// Contract entries captured at registration time.
+    contract: Mutex<Vec<ContractEntry>>,
+}
+
+#[cfg(feature = "async")]
+impl AsyncReportFields {
+    /// Record a module built from its `build_fn` (with construction time).
+    pub(crate) fn push_built(&self, name: &'static str, elapsed_us: u64, deps: Vec<&'static str>) {
+        self.modules
+            .lock()
+            .expect("AsyncKit report modules lock poisoned")
+            .push(ModuleReportEntry {
+                name,
+                state: ModuleBuildState::Built,
+                deps,
+                elapsed_us: Some(elapsed_us),
+            });
+    }
+
+    /// Record the validated topological order (module names).
+    pub(crate) fn set_topo_order(&self, names: Vec<&'static str>) {
+        *self
+            .topo_order
+            .lock()
+            .expect("AsyncKit report topo_order lock poisoned") = names;
+    }
+
+    /// Record the total `build()` wall time in microseconds.
+    pub(crate) fn set_total_elapsed_us(&self, us: u64) {
+        *self
+            .total_elapsed_us
+            .lock()
+            .expect("AsyncKit report total_elapsed_us lock poisoned") = Some(us);
+    }
+
+    /// Record a module contract entry (name, version, capability, deps).
+    pub(crate) fn push_contract(&self, entry: ContractEntry) {
+        self.contract
+            .lock()
+            .expect("AsyncKit report contract lock poisoned")
+            .push(entry);
+    }
+
+    /// Snapshot the registered module contracts.
+    pub(crate) fn contract_snapshot(&self) -> ContractManifest {
+        ContractManifest {
+            schema_version: CONTRACT_SCHEMA_VERSION,
+            modules: self
+                .contract
+                .lock()
+                .expect("AsyncKit report contract lock poisoned")
+                .clone(),
+        }
+    }
+
+    /// Snapshot the accumulated build facts into a [`BuildReport`].
+    ///
+    /// `overrides` is always empty: the `override_module` family is a
+    /// sync-only surface, so async builds have no override records.
+    pub(crate) fn snapshot(&self) -> BuildReport {
+        BuildReport {
+            topo_order: self
+                .topo_order
+                .lock()
+                .expect("AsyncKit report topo_order lock poisoned")
+                .clone(),
+            modules: self
+                .modules
+                .lock()
+                .expect("AsyncKit report modules lock poisoned")
+                .clone(),
+            total_elapsed_us: *self
+                .total_elapsed_us
+                .lock()
+                .expect("AsyncKit report total_elapsed_us lock poisoned"),
             ..BuildReport::default()
         }
     }
@@ -508,5 +605,47 @@ mod contract_manifest_tests {
         assert_eq!(value["schema_version"], 1);
         assert_eq!(value["modules"][0]["module"], "manifest-leaf");
         assert_eq!(value["modules"][0]["version"], "2.1.0");
+    }
+}
+
+#[cfg(all(test, feature = "async"))]
+mod async_report_fields_tests {
+    use super::*;
+
+    #[test]
+    fn async_report_fields_accumulate_and_snapshot() {
+        let fields = AsyncReportFields::default();
+        fields.push_built("a", 12, vec![]);
+        fields.push_built("b", 34, vec!["a"]);
+        fields.set_topo_order(vec!["a", "b"]);
+        fields.set_total_elapsed_us(100);
+        fields.push_contract(ContractEntry {
+            module: "a",
+            version: "1.0.0",
+            capability: "Cap",
+            deps: vec![],
+        });
+
+        let report = fields.snapshot();
+        assert_eq!(report.schema_version, SCHEMA_VERSION);
+        assert_eq!(report.modules.len(), 2);
+        assert_eq!(report.modules[0].name, "a");
+        assert_eq!(report.modules[0].state, ModuleBuildState::Built);
+        assert_eq!(report.modules[0].elapsed_us, Some(12));
+        assert_eq!(report.modules[1].deps, vec!["a"]);
+        assert_eq!(report.topo_order, vec!["a", "b"]);
+        assert_eq!(report.total_elapsed_us, Some(100));
+        assert!(report.overrides.is_empty(), "async has no override surface");
+
+        let manifest = fields.contract_snapshot();
+        assert_eq!(manifest.schema_version, CONTRACT_SCHEMA_VERSION);
+        assert_eq!(manifest.modules.len(), 1);
+        assert_eq!(manifest.modules[0].module, "a");
+    }
+
+    #[test]
+    fn async_report_fields_are_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<AsyncReportFields>();
     }
 }

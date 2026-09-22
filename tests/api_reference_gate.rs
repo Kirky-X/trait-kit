@@ -160,6 +160,20 @@ fn _assert_async_api() {
         kit.require::<GateAsyncModule>()
     }
     let _ = (async_auto_builder::<GateAsyncModule>, ready_requires);
+
+    // report 特性：AsyncKit<Ready> 构建报告访问器（与同步 Kit<Ready> 对位）。
+    #[cfg(feature = "report")]
+    {
+        fn async_report_accessors(
+            kit: &trait_kit::kit::AsyncKit<trait_kit::kit::AsyncReady>,
+        ) -> (u32, u32) {
+            (
+                kit.build_report().schema_version,
+                kit.contract_manifest().schema_version,
+            )
+        }
+        let _ = async_report_accessors;
+    }
 }
 
 #[cfg(feature = "health")]
@@ -254,6 +268,17 @@ fn api_reference_documented_feature_items_resolve() {
             "doc must list AsyncAutoBuilder"
         );
         assert!(doc.contains("AsyncKit"), "doc must list AsyncKit");
+    }
+    #[cfg(all(feature = "async", feature = "report"))]
+    {
+        assert!(
+            doc.contains("`build_report()` `report`"),
+            "doc must list async build_report()"
+        );
+        assert!(
+            doc.contains("`contract_manifest()` `report`"),
+            "doc must list async contract_manifest()"
+        );
     }
     #[cfg(feature = "health")]
     {

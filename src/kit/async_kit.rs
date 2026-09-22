@@ -345,6 +345,8 @@ pub struct AsyncKit<S = Unbuilt> {
     encryption: EncryptionFields,
     #[cfg(feature = "version-negotiation")]
     negotiate: AsyncNegotiateFields,
+    #[cfg(feature = "report")]
+    report: super::report::AsyncReportFields,
     ports: PortsFields,
     /// Max concurrently-polled module builds per topological layer.
     max_concurrency: usize,
@@ -379,6 +381,8 @@ impl AsyncKit {
             encryption: EncryptionFields::default(),
             #[cfg(feature = "version-negotiation")]
             negotiate: AsyncNegotiateFields::default(),
+            #[cfg(feature = "report")]
+            report: super::report::AsyncReportFields::default(),
             ports: PortsFields::default(),
             max_concurrency: usize::MAX,
             _state: PhantomData,
@@ -428,6 +432,16 @@ impl AsyncKit {
                 "AsyncKit builders lock poisoned: another thread panicked while holding the lock",
             )
             .insert(TypeId::of::<M>(), build_fn);
+
+        // Report: capture the module contract at registration time (mirrors
+        // the sync `Kit::register` recording point).
+        #[cfg(feature = "report")]
+        self.report.push_contract(super::report::ContractEntry {
+            module: M::NAME,
+            version: M::VERSION,
+            capability: std::any::type_name::<M::Capability>(),
+            deps: M::dependencies().iter().map(|(n, _)| *n).collect(),
+        });
 
         // 版本协商登记（version-negotiation feature）：记录声明版本与最低版本要求，
         // 语义与 sync Kit 的 `record_module_versions` 对齐。
@@ -619,6 +633,19 @@ impl AsyncKit {
             }
         };
 
+        // Report: capture the validated topological order and the overall
+        // build start time. Zero code exists without `report` (mirrors the
+        // sync `Kit::build` recording points).
+        #[cfg(feature = "report")]
+        self.report.set_topo_order(
+            sorted
+                .iter()
+                .map(|id| self.graph.name_of(*id).unwrap_or("<unknown>"))
+                .collect(),
+        );
+        #[cfg(feature = "report")]
+        let report_build_start = std::time::Instant::now();
+
         // 1.5 版本协商（version-negotiation feature）：依赖图就绪后、构建开始前，
         //     校验每条最低版本要求是否被提供方声明版本满足。语义与
         //     sync Kit 的 `validate_version_requirements` 对齐。
@@ -650,12 +677,12 @@ impl AsyncKit {
                 .is_some()
         };
         // Per-module wall timing is taken only when a consumer exists.
-        #[allow(unused_mut, unused_assignments)]
-        let mut timing_enabled = event_bus_present;
-        #[cfg(feature = "observer")]
-        {
-            timing_enabled = true;
-        }
+        // (Single expression instead of per-feature cfg assignment blocks:
+        // with two+ consumers enabled, the earlier assignments would be
+        // dead stores under -D warnings.)
+        #[allow(unused_mut)]
+        let mut timing_enabled =
+            event_bus_present || cfg!(feature = "observer") || cfg!(feature = "report");
         let layers = topo_layers(&self.graph, &sorted);
         for layer in layers {
             // Materialize the layer's futures up front (lazy — nothing runs
@@ -711,6 +738,21 @@ impl AsyncKit {
                             self.apply_decorators(cap_type_id, boxed)
                         };
                         self.capabilities.insert_boxed(type_id, boxed);
+                        // Report: record the module fact in completion order.
+                        // This loop is the serial post-`batch.await` section,
+                        // so the report state has no concurrent writers. The
+                        // elapsed time measures from when the build future was
+                        // queued (same semantic as the observer/event-bus
+                        // consumers above).
+                        #[cfg(feature = "report")]
+                        {
+                            let report_deps = self.graph.dependency_names(type_id);
+                            let report_elapsed_us = started_at.map_or(0, |t| {
+                                u64::try_from(t.elapsed().as_micros()).unwrap_or(u64::MAX)
+                            });
+                            self.report
+                                .push_built(module_name, report_elapsed_us, report_deps);
+                        }
                         #[cfg(feature = "observer")]
                         {
                             let observers = self.observer.observers.read().expect("lock poisoned");
@@ -748,6 +790,13 @@ impl AsyncKit {
                 }
             }
         }
+
+        // Report: record the total structural build wall time — excludes the
+        // Ready transition and on_ready callbacks (mirrors the sync `Kit`).
+        #[cfg(feature = "report")]
+        self.report.set_total_elapsed_us(
+            u64::try_from(report_build_start.elapsed().as_micros()).unwrap_or(u64::MAX),
+        );
 
         // 4. Transition to Ready: reuse all containers, swap the state marker.
         //    `builders` was drained (not moved) above; the empty map is reused.
@@ -805,6 +854,8 @@ impl AsyncKit {
             encryption: self.encryption,
             #[cfg(feature = "version-negotiation")]
             negotiate: self.negotiate,
+            #[cfg(feature = "report")]
+            report: self.report,
             ports: self.ports,
             max_concurrency: self.max_concurrency,
             _state: PhantomData::<Ready>,
@@ -1309,6 +1360,32 @@ impl AsyncKit<Ready> {
             }
         }
         report
+    }
+
+    /// Structured, machine-readable build report.
+    ///
+    /// Async counterpart of `Kit<Ready>::build_report`: per-module records
+    /// in build-completion order (async builds only ever produce `Built`
+    /// entries — the override/lazy surfaces are sync-only), the validated
+    /// topological order, and the total structural build time. Serialize
+    /// with
+    /// [`BuildReport::to_json`](crate::kit::report::BuildReport::to_json).
+    ///
+    /// Requires the `report` feature.
+    #[cfg(feature = "report")]
+    #[must_use]
+    pub fn build_report(&self) -> super::report::BuildReport {
+        self.report.snapshot()
+    }
+
+    /// Machine-readable contract manifest of all registered modules.
+    ///
+    /// Async counterpart of `Kit<Ready>::contract_manifest`. Requires the
+    /// `report` feature.
+    #[cfg(feature = "report")]
+    #[must_use]
+    pub fn contract_manifest(&self) -> super::report::ContractManifest {
+        self.report.contract_snapshot()
     }
 
     // ─── Factory Pattern ───────────────────────────────────────────────
@@ -4036,11 +4113,16 @@ mod concurrency_tests {
     }
     impl std::error::Error for VerError {}
 
+    // 仅供下方两个 `version-negotiation` 门控用例使用；无该特性时随之
+    // 编译剔除，避免 dead_code（任意特性组合纪律）。
+    #[cfg(feature = "version-negotiation")]
     struct VerProvider;
+    #[cfg(feature = "version-negotiation")]
     impl ModuleMeta for VerProvider {
         const NAME: &'static str = "ver-provider";
         const VERSION: &'static str = "1.2.0";
     }
+    #[cfg(feature = "version-negotiation")]
     impl AsyncAutoBuilder for VerProvider {
         type Capability = Arc<VerCap>;
         type Error = VerError;
@@ -4070,13 +4152,16 @@ mod concurrency_tests {
         }
     }
 
+    #[cfg(feature = "version-negotiation")]
     struct VerGreedyConsumer;
+    #[cfg(feature = "version-negotiation")]
     impl ModuleMeta for VerGreedyConsumer {
         const NAME: &'static str = "ver-consumer-greedy";
         fn required_versions() -> &'static [(&'static str, &'static str)] {
             &[("ver-provider", "2.0.0")]
         }
     }
+    #[cfg(feature = "version-negotiation")]
     impl AsyncAutoBuilder for VerGreedyConsumer {
         type Capability = Arc<VerCap>;
         type Error = VerError;
@@ -4088,6 +4173,10 @@ mod concurrency_tests {
         }
     }
 
+    // 这两个用例的断言依赖 `validate_version_requirements` 真正运行，
+    // 只能在 `version-negotiation` 特性下编译；否则 `build()` 不协商，
+    // "satisfied" 空转、"unsatisfied" 必假失败（任意特性组合纪律）。
+    #[cfg(feature = "version-negotiation")]
     #[test]
     fn negotiate_satisfied_requirement_builds() {
         let mut kit = AsyncKit::new();
@@ -4097,6 +4186,7 @@ mod concurrency_tests {
         let _ = kit;
     }
 
+    #[cfg(feature = "version-negotiation")]
     #[test]
     fn negotiate_unsatisfied_requirement_fails_build() {
         let mut kit = AsyncKit::new();
@@ -4124,5 +4214,202 @@ mod concurrency_tests {
         kit.register::<VerSatisfiedConsumer>().expect("consumer");
         let kit = block_on(kit.build()).expect("未声明提供方 → 协商跳过");
         let _ = kit;
+    }
+}
+
+// ─── AsyncKit build-report (`report` feature) tests ────────────────────
+
+#[cfg(all(test, feature = "report"))]
+mod async_report_tests {
+    use super::{AsyncKit, Ready, Unbuilt};
+    use crate::core::{AsyncAutoBuilder, ModuleMeta};
+    use crate::test_helpers::{MockError, block_on};
+    use std::any::TypeId;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct RptCap(u32);
+
+    struct RptAsyncLeaf;
+
+    impl ModuleMeta for RptAsyncLeaf {
+        const NAME: &'static str = "rpt-async-leaf";
+        const VERSION: &'static str = "1.2.0";
+    }
+
+    impl AsyncAutoBuilder for RptAsyncLeaf {
+        type Capability = Arc<RptCap>;
+        type Error = MockError;
+
+        fn build<'a>(
+            kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
+            let _ = kit;
+            Box::pin(async { Ok(Arc::new(RptCap(1))) })
+        }
+    }
+
+    struct RptAsyncTop;
+
+    impl ModuleMeta for RptAsyncTop {
+        const NAME: &'static str = "rpt-async-top";
+        const VERSION: &'static str = "0.4.0";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            static DEPS: &[(&str, TypeId)] = &[(
+                <RptAsyncLeaf as ModuleMeta>::NAME,
+                TypeId::of::<RptAsyncLeaf>(),
+            )];
+            DEPS
+        }
+    }
+
+    impl AsyncAutoBuilder for RptAsyncTop {
+        type Capability = Arc<RptCap>;
+        type Error = MockError;
+
+        fn build<'a>(
+            kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
+            Box::pin(async move {
+                let leaf = kit
+                    .require::<RptAsyncLeaf>()
+                    .map_err(|_| MockError::Failed("leaf gone".to_string()))?;
+                Ok(Arc::new(RptCap(leaf.0 + 1)))
+            })
+        }
+    }
+
+    fn two_module_kit() -> AsyncKit {
+        let mut kit = AsyncKit::new();
+        kit.register::<RptAsyncTop>().expect("register top");
+        kit.register::<RptAsyncLeaf>().expect("register leaf");
+        kit
+    }
+
+    fn build_two_modules() -> AsyncKit<Ready> {
+        block_on(two_module_kit().build()).expect("build ok")
+    }
+
+    #[test]
+    fn async_build_report_accessor_exposes_snapshot_schema() {
+        let built = build_two_modules();
+        let report = built.build_report();
+        assert_eq!(report.schema_version, 1);
+        let manifest = built.contract_manifest();
+        assert_eq!(manifest.schema_version, 1);
+    }
+
+    #[test]
+    fn async_build_report_records_topo_order_and_total_elapsed() {
+        let built = build_two_modules();
+        let report = built.build_report();
+        assert_eq!(report.topo_order.len(), 2);
+        let leaf_pos = report
+            .topo_order
+            .iter()
+            .position(|n| *n == "rpt-async-leaf")
+            .expect("leaf in topo order");
+        let top_pos = report
+            .topo_order
+            .iter()
+            .position(|n| *n == "rpt-async-top")
+            .expect("top in topo order");
+        assert!(leaf_pos < top_pos, "dependency must precede dependent");
+        assert!(
+            report.total_elapsed_us.is_some(),
+            "total wall time recorded"
+        );
+    }
+
+    #[test]
+    fn async_build_report_lists_built_modules_with_deps_and_timing() {
+        let built = build_two_modules();
+        let report = built.build_report();
+        assert_eq!(report.modules.len(), 2);
+        for entry in &report.modules {
+            assert_eq!(entry.state, crate::kit::report::ModuleBuildState::Built);
+            assert!(
+                entry.elapsed_us.is_some(),
+                "built entry carries construction time"
+            );
+        }
+        let top = report
+            .modules
+            .iter()
+            .find(|m| m.name == "rpt-async-top")
+            .expect("top entry");
+        assert_eq!(top.deps, vec!["rpt-async-leaf"]);
+        let leaf = report
+            .modules
+            .iter()
+            .find(|m| m.name == "rpt-async-leaf")
+            .expect("leaf entry");
+        assert!(leaf.deps.is_empty());
+    }
+
+    #[test]
+    fn async_build_report_json_round_trips() {
+        let built = build_two_modules();
+        let json = built.build_report().to_json().expect("serialize report");
+        let value = crate::kit::report::BuildReport::from_json_str(&json).expect("valid JSON");
+        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["modules"].as_array().map(Vec::len), Some(2));
+        let top = value["modules"]
+            .as_array()
+            .expect("array")
+            .iter()
+            .find(|m| m["name"] == "rpt-async-top")
+            .cloned()
+            .expect("top entry");
+        assert_eq!(top["state"], "built");
+        assert!(top["elapsed_us"].as_u64().is_some());
+    }
+
+    #[test]
+    fn async_contract_manifest_lists_versions_capabilities_and_deps() {
+        let built = build_two_modules();
+        let manifest = built.contract_manifest();
+        assert_eq!(manifest.schema_version, 1);
+        assert_eq!(manifest.modules.len(), 2);
+
+        let leaf = manifest
+            .modules
+            .iter()
+            .find(|m| m.module == "rpt-async-leaf")
+            .expect("leaf entry");
+        assert_eq!(leaf.version, "1.2.0");
+        assert!(
+            leaf.capability.contains("RptCap"),
+            "capability type name: {}",
+            leaf.capability
+        );
+        assert!(leaf.deps.is_empty());
+
+        let top = manifest
+            .modules
+            .iter()
+            .find(|m| m.module == "rpt-async-top")
+            .expect("top entry");
+        assert_eq!(top.version, "0.4.0");
+        assert!(
+            top.capability.contains("RptCap"),
+            "capability type name: {}",
+            top.capability
+        );
+        assert_eq!(top.deps, vec!["rpt-async-leaf"]);
+    }
+
+    #[test]
+    fn async_kit_stays_send_sync_with_report_feature() {
+        // The whole point of `AsyncReportFields` (Mutex) over the sync
+        // `ReportFields` (RefCell): the async kit must remain `Send + Sync`
+        // under every state marker even with the report field present.
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<AsyncKit<Unbuilt>>();
+        assert_send_sync::<AsyncKit<Ready>>();
     }
 }
