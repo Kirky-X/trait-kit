@@ -55,32 +55,77 @@ pub trait ModuleMeta: 'static {
     }
 }
 
-/// Semver compatibility check: `provided` satisfies `required` iff
-/// they share the same major version and `provided >= required` on the
-/// `(major, minor, patch)` tuple. Pre-release/build suffixes (`-rc.1`,
-/// `+meta`) are stripped before comparison; missing components default to 0.
+/// Semver compatibility check: `provided` satisfies `required` iff they
+/// share the same major version and `provided >= required` under semver
+/// §11 ordering — prerelease identifiers compare per rule 11.4 (numeric
+/// segments numerically, alphanumeric lexically, numeric < alphanumeric,
+/// shorter otherwise-equal prefix sorts lower); a prerelease never
+/// satisfies a bare-release requirement (cargo rule); build metadata
+/// (`+meta`) is ignored entirely. Missing components default to 0.
 #[must_use]
 pub fn semver_compatible(provided: &str, required: &str) -> bool {
-    let (provided, provided_pre) = parse_semver(provided);
-    let (required, required_pre) = parse_semver(required);
-    if provided.0 != required.0 {
+    let (provided_base, provided_pre) = parse_semver(provided);
+    let (required_base, required_pre) = parse_semver(required);
+    if provided_base.0 != required_base.0 {
         return false;
     }
-    // Semver ordering: a pre-release sorts below the bare release.
-    if provided_pre && !required_pre {
-        return false;
+    match (provided_pre, required_pre) {
+        // A prerelease never satisfies a release requirement.
+        (Some(_), None) => false,
+        // A release satisfies any requirement whose base it meets.
+        (None, _) => provided_base >= required_base,
+        // Prerelease vs prerelease: same base → compare identifiers;
+        // different bases → fall back to base ordering.
+        (Some(p), Some(r)) => {
+            if provided_base == required_base {
+                cmp_prerelease(p, r) != std::cmp::Ordering::Less
+            } else {
+                provided_base >= required_base
+            }
+        }
     }
-    provided >= required
 }
 
-fn parse_semver(v: &str) -> ((u64, u64, u64), bool) {
-    let has_prerelease = v.contains('-');
-    let base = v.split(['-', '+']).next().unwrap_or(v);
+fn parse_semver(v: &str) -> ((u64, u64, u64), Option<&str>) {
+    // Strip build metadata first: everything from '+' on is ignored, so a
+    // '-' inside build metadata no longer masquerades as a prerelease.
+    let base = v.split('+').next().unwrap_or(v);
+    let (base, pre) = match base.split_once('-') {
+        Some((b, p)) => (b, Some(p)),
+        None => (base, None),
+    };
     let mut parts = base.split('.');
     let major = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
     let minor = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
     let patch = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
-    ((major, minor, patch), has_prerelease)
+    ((major, minor, patch), pre)
+}
+
+/// Compare two prerelease strings per semver §11.4.
+fn cmp_prerelease(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let mut ai = a.split('.');
+    let mut bi = b.split('.');
+    loop {
+        match (ai.next(), bi.next()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(x), Some(y)) => {
+                let xn = x.parse::<u64>().ok();
+                let yn = y.parse::<u64>().ok();
+                let ord = match (xn, yn) {
+                    (Some(nx), Some(ny)) => nx.cmp(&ny),
+                    (Some(_), None) => Ordering::Less,
+                    (None, Some(_)) => Ordering::Greater,
+                    (None, None) => x.cmp(y),
+                };
+                if ord != Ordering::Equal {
+                    return ord;
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -103,6 +148,41 @@ mod semver_tests {
             !compat("1.1.0-rc.1", "1.1.0"),
             "prerelease sorts below release"
         );
+    }
+
+    /// build metadata 必须先剥离再判定 prerelease：
+    /// 修复前 `v.contains('-')` 会把 `+build-2` 里的 `-` 误判为 prerelease。
+    #[test]
+    fn build_metadata_is_stripped_before_prerelease_check() {
+        assert!(compat("1.0.0+build-2", "1.0.0"), "build metadata ignored");
+        assert!(compat("1.0.0", "1.0.0+build-2"));
+    }
+
+    /// prerelease 标识符比较遵循 semver §11.4：数字段数值比较、
+    /// 字母数字段 ASCII 字典序、数字段 < 字母数字段、等长前缀段少者小。
+    #[test]
+    fn prerelease_identifiers_compare_per_semver_11() {
+        assert!(!compat("1.2.0-rc.1", "1.2.0-rc.2"), "rc.1 < rc.2");
+        assert!(compat("1.2.0-rc.2", "1.2.0-rc.1"));
+        assert!(compat("1.2.0-rc.1", "1.2.0-rc.1"));
+        assert!(
+            compat("1.2.0-rc.10", "1.2.0-rc.2"),
+            "numeric identifiers compare numerically: rc.10 > rc.2"
+        );
+        assert!(!compat("1.2.0-rc.2", "1.2.0-rc.10"));
+        assert!(
+            !compat("1.2.0-alpha", "1.2.0-alpha.1"),
+            "shorter prefix sorts lower"
+        );
+        assert!(compat("1.2.0-alpha.1", "1.2.0-alpha"));
+        assert!(!compat("1.2.0-2", "1.2.0-alpha"), "numeric < alphanumeric");
+        assert!(compat("1.2.0-alpha", "1.2.0-2"));
+    }
+
+    /// release 版本满足 prerelease 最低版要求。
+    #[test]
+    fn release_satisfies_prerelease_minimum() {
+        assert!(compat("1.1", "1.1.0-rc.1"));
     }
 }
 
