@@ -2631,3 +2631,348 @@ mod config_inheritance_tests {
         assert_eq!(db2.host, "post-merge");
     }
 }
+
+/// 版本协商四注册路径奇偶性测试（fix-audit-defects-r1 批次 A）。
+///
+/// 缺陷现状（Red）：`record_module_versions` 仅在 `register()` 调用，
+/// lazy/multi/as 三条路径的 `VERSION`/`required_versions` 不进入协商记录，
+/// `validate_version_requirements` 对未登记 provider 静默跳过（fail-open）。
+/// 修复后 4 条负路径全部返回 `VersionIncompatible`。
+#[cfg(all(feature = "version-negotiation", feature = "di"))]
+mod negotiation_parity_tests {
+    use super::super::*;
+    use crate::core::{AutoBuilder, InterfaceBuilder, ModuleMeta};
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
+
+    // === 共用 consumer 能力与错误 ===
+
+    type ParityCap = Arc<AtomicUsize>;
+
+    fn parity_cap() -> ParityCap {
+        Arc::new(AtomicUsize::new(0))
+    }
+
+    // === 四个 provider（VERSION = "1.0.0"）===
+
+    struct ParityEagerProvider;
+    impl ModuleMeta for ParityEagerProvider {
+        const NAME: &'static str = "parity-eager";
+        const VERSION: &'static str = "1.0.0";
+    }
+    impl AutoBuilder for ParityEagerProvider {
+        type Capability = ParityCap;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<ParityCap, TraitKitError> {
+            Ok(parity_cap())
+        }
+    }
+
+    struct ParityLazyProvider;
+    impl ModuleMeta for ParityLazyProvider {
+        const NAME: &'static str = "parity-lazy";
+        const VERSION: &'static str = "1.0.0";
+    }
+    impl AutoBuilder for ParityLazyProvider {
+        type Capability = ParityCap;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<ParityCap, TraitKitError> {
+            Ok(parity_cap())
+        }
+    }
+
+    struct ParityMultiProvider;
+    impl ModuleMeta for ParityMultiProvider {
+        const NAME: &'static str = "parity-multi";
+        const VERSION: &'static str = "1.0.0";
+    }
+    impl AutoBuilder for ParityMultiProvider {
+        type Capability = ParityCap;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<ParityCap, TraitKitError> {
+            Ok(parity_cap())
+        }
+    }
+
+    trait ParityGreet: 'static {
+        /// 占位方法仅用于证明接口可经 `Arc<dyn ParityGreet>` 擦除调用。
+        #[allow(dead_code)]
+        fn ping(&self) -> u32;
+    }
+
+    struct ParityGreeter;
+    impl ParityGreet for ParityGreeter {
+        fn ping(&self) -> u32 {
+            1
+        }
+    }
+
+    struct ParityAsProvider;
+    impl ModuleMeta for ParityAsProvider {
+        const NAME: &'static str = "parity-as";
+        const VERSION: &'static str = "1.0.0";
+    }
+    impl InterfaceBuilder for ParityAsProvider {
+        type Interface = dyn ParityGreet;
+        type Capability = Arc<ParityGreeter>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<ParityGreeter>, TraitKitError> {
+            Ok(Arc::new(ParityGreeter))
+        }
+        fn into_interface(cap: Arc<ParityGreeter>) -> Arc<dyn ParityGreet> {
+            cap
+        }
+    }
+
+    // === 四个 consumer（各要求对应 provider >= "2.0.0"）===
+
+    macro_rules! parity_consumer {
+        ($ty:ident, $name:literal, $provider:ty, $min:literal) => {
+            struct $ty;
+            impl ModuleMeta for $ty {
+                const NAME: &'static str = $name;
+                fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                    static DEPS: &[(&str, std::any::TypeId)] = &[(
+                        <$provider as ModuleMeta>::NAME,
+                        std::any::TypeId::of::<$provider>(),
+                    )];
+                    DEPS
+                }
+                fn required_versions() -> &'static [(&'static str, &'static str)] {
+                    static REQ: &[(&str, &str)] = &[(<$provider as ModuleMeta>::NAME, $min)];
+                    &REQ
+                }
+            }
+            impl AutoBuilder for $ty {
+                type Capability = ParityCap;
+                type Error = TraitKitError;
+                fn build(_kit: &Kit) -> Result<ParityCap, TraitKitError> {
+                    Ok(parity_cap())
+                }
+            }
+        };
+    }
+
+    parity_consumer!(
+        ParityEagerConsumer,
+        "parity-eager-consumer",
+        ParityEagerProvider,
+        "2.0.0"
+    );
+    parity_consumer!(
+        ParityLazyConsumer,
+        "parity-lazy-consumer",
+        ParityLazyProvider,
+        "2.0.0"
+    );
+    parity_consumer!(
+        ParityMultiConsumer,
+        "parity-multi-consumer",
+        ParityMultiProvider,
+        "2.0.0"
+    );
+    parity_consumer!(
+        ParityAsConsumer,
+        "parity-as-consumer",
+        ParityAsProvider,
+        "2.0.0"
+    );
+
+    /// 断言 build 失败且错误为 VersionIncompatible（required/provided 由调用方给定）。
+    fn assert_version_incompatible(
+        result: Result<Kit<Ready>, TraitKitError>,
+        consumer: &'static str,
+        expected_required: &str,
+        expected_provided: &str,
+    ) {
+        match result {
+            Err(TraitKitError::VersionIncompatible {
+                module,
+                dependency: _,
+                required,
+                provided,
+            }) => {
+                assert_eq!(module, consumer);
+                assert_eq!(required, expected_required);
+                assert_eq!(provided, expected_provided);
+            }
+            other => {
+                panic!("expected VersionIncompatible for consumer `{consumer}`, got: {other:?}")
+            }
+        }
+    }
+
+    #[test]
+    fn negotiation_catches_incompatible_eager_provider() {
+        let mut kit = Kit::new();
+        kit.register::<ParityEagerProvider>().unwrap();
+        kit.register::<ParityEagerConsumer>().unwrap();
+        assert_version_incompatible(kit.build(), "parity-eager-consumer", "2.0.0", "1.0.0");
+    }
+
+    #[test]
+    fn negotiation_catches_incompatible_lazy_provider() {
+        let mut kit = Kit::new();
+        kit.register_lazy::<ParityLazyProvider>().unwrap();
+        kit.register::<ParityLazyConsumer>().unwrap();
+        assert_version_incompatible(kit.build(), "parity-lazy-consumer", "2.0.0", "1.0.0");
+    }
+
+    #[test]
+    fn negotiation_catches_incompatible_multi_provider() {
+        let mut kit = Kit::new();
+        kit.register_multi::<ParityMultiProvider>().unwrap();
+        kit.register::<ParityMultiConsumer>().unwrap();
+        assert_version_incompatible(kit.build(), "parity-multi-consumer", "2.0.0", "1.0.0");
+    }
+
+    #[test]
+    fn negotiation_catches_incompatible_as_provider() {
+        let mut kit = Kit::new();
+        kit.register_as::<ParityAsProvider>().unwrap();
+        kit.register::<ParityAsConsumer>().unwrap();
+        assert_version_incompatible(kit.build(), "parity-as-consumer", "2.0.0", "1.0.0");
+    }
+
+    // === 正路径回归守卫 ===
+
+    struct PosLazyProvider;
+    impl ModuleMeta for PosLazyProvider {
+        const NAME: &'static str = "pos-lazy";
+        const VERSION: &'static str = "1.2.0";
+    }
+    impl AutoBuilder for PosLazyProvider {
+        type Capability = ParityCap;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<ParityCap, TraitKitError> {
+            Ok(parity_cap())
+        }
+    }
+
+    parity_consumer!(
+        PosLazyConsumer,
+        "pos-lazy-consumer",
+        PosLazyProvider,
+        "1.0.0"
+    );
+
+    struct PreEagerProvider;
+    impl ModuleMeta for PreEagerProvider {
+        const NAME: &'static str = "pre-eager";
+        const VERSION: &'static str = "1.1.0-rc.1";
+    }
+    impl AutoBuilder for PreEagerProvider {
+        type Capability = ParityCap;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<ParityCap, TraitKitError> {
+            Ok(parity_cap())
+        }
+    }
+
+    parity_consumer!(
+        PreEagerConsumer,
+        "pre-eager-consumer",
+        PreEagerProvider,
+        "1.0.0"
+    );
+
+    /// 同 major 且 provider >= 最低版本：lazy provider 满足要求，build 成功。
+    #[test]
+    fn negotiation_accepts_compatible_lazy_provider() {
+        let mut kit = Kit::new();
+        kit.register_lazy::<PosLazyProvider>().unwrap();
+        kit.register::<PosLazyConsumer>().unwrap();
+        let ready = kit.build().expect("1.2.0 >= 1.0.0 must pass");
+        let _ = ready.require::<PosLazyProvider>().expect("lazy build");
+    }
+
+    /// prerelease provider 对 release 最低版要求：保持 cargo 规则，判定不兼容。
+    #[test]
+    fn negotiation_rejects_prerelease_provider_for_release_requirement() {
+        let mut kit = Kit::new();
+        kit.register::<PreEagerProvider>().unwrap();
+        kit.register::<PreEagerConsumer>().unwrap();
+        assert_version_incompatible(kit.build(), "pre-eager-consumer", "1.0.0", "1.1.0-rc.1");
+    }
+
+    /// `register_as` 模块的 `i18n_ftl()` 片段必须在 `build()` 后被收集
+    /// （修复前 `register_as` 不调用 `record_module_i18n`，片段被静默丢弃）。
+    #[cfg(feature = "i18n")]
+    mod as_i18n_tests {
+        use super::*;
+
+        struct AsI18nProvider;
+        impl ModuleMeta for AsI18nProvider {
+            const NAME: &'static str = "as-i18n";
+            const VERSION: &'static str = "1.0.0";
+            fn i18n_ftl() -> &'static [(&'static str, &'static str)] {
+                &[("en-US", "as-i18n-hello = Hello from as module")]
+            }
+        }
+        impl InterfaceBuilder for AsI18nProvider {
+            type Interface = dyn ParityGreet;
+            type Capability = Arc<ParityGreeter>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Arc<ParityGreeter>, TraitKitError> {
+                Ok(Arc::new(ParityGreeter))
+            }
+            fn into_interface(cap: Arc<ParityGreeter>) -> Arc<dyn ParityGreet> {
+                cap
+            }
+        }
+
+        #[test]
+        fn register_as_collects_module_ftl_fragments() {
+            let mut kit = Kit::new();
+            kit.register_as::<AsI18nProvider>().unwrap();
+            let ready = kit.build().unwrap();
+            let fragments = ready.i18n_module_ftl();
+            assert!(
+                fragments
+                    .iter()
+                    .any(|(loc, ftl)| *loc == "en-US" && ftl.contains("as-i18n-hello")),
+                "register_as module FTL fragments must be collected, got: {fragments:?}"
+            );
+        }
+    }
+
+    /// contract manifest 必须覆盖全部四条注册路径
+    /// （修复前仅 `register()` 推送 ContractEntry，lazy/multi/as 缺席）。
+    #[cfg(feature = "report")]
+    mod contract_parity_tests {
+        use super::*;
+
+        #[test]
+        fn contract_manifest_covers_all_registration_paths() {
+            let mut kit = Kit::new();
+            kit.register::<ParityEagerProvider>().unwrap();
+            kit.register_lazy::<ParityLazyProvider>().unwrap();
+            kit.register_multi::<ParityMultiProvider>().unwrap();
+            kit.register_as::<ParityAsProvider>().unwrap();
+            let ready = kit.build().unwrap();
+            let manifest = ready.contract_manifest();
+            let find = |name: &str| {
+                manifest
+                    .modules
+                    .iter()
+                    .find(|e| e.module == name)
+                    .unwrap_or_else(|| panic!("contract entry for `{name}` missing"))
+            };
+            for name in ["parity-eager", "parity-lazy", "parity-multi", "parity-as"] {
+                assert_eq!(find(name).version, "1.0.0", "entry `{name}` version");
+            }
+            // register_as 的对外能力是接口类型（dyn ParityGreet）
+            assert!(
+                find("parity-as").capability.contains("ParityGreet"),
+                "as-path capability must name the interface type, got: {}",
+                find("parity-as").capability
+            );
+            // 其余路径记具体能力类型（type_name 输出真实类型 Atomic<usize>，非别名）
+            assert!(
+                find("parity-lazy").capability.contains("Atomic"),
+                "lazy capability must name the concrete type, got: {}",
+                find("parity-lazy").capability
+            );
+        }
+    }
+}

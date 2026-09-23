@@ -408,13 +408,7 @@ impl Kit {
             .insert(TypeId::of::<M>(), build_fn);
         self.record_module_i18n::<M>();
         self.record_module_versions::<M>();
-        #[cfg(feature = "report")]
-        self.report.push_contract(super::report::ContractEntry {
-            module: M::NAME,
-            version: M::VERSION,
-            capability: std::any::type_name::<M::Capability>(),
-            deps: M::dependencies().iter().map(|(n, _)| *n).collect(),
-        });
+        self.record_module_contract::<M>(std::any::type_name::<M::Capability>());
         Ok(())
     }
 
@@ -458,6 +452,8 @@ impl Kit {
             .borrow_mut()
             .insert(TypeId::of::<M>(), build_fn);
         self.record_module_i18n::<M>();
+        self.record_module_versions::<M>();
+        self.record_module_contract::<M>(std::any::type_name::<M::Capability>());
         Ok(())
     }
 
@@ -511,6 +507,8 @@ impl Kit {
             .or_default()
             .push(build_fn);
         self.record_module_i18n::<M>();
+        self.record_module_versions::<M>();
+        self.record_module_contract::<M>(std::any::type_name::<M::Capability>());
         Ok(())
     }
 
@@ -594,6 +592,10 @@ impl Kit {
             .interface_builders
             .borrow_mut()
             .insert(interface_id, (M::NAME, build_fn));
+        self.record_module_i18n::<M>();
+        self.record_module_versions::<M>();
+        // 对外能力是接口类型（dyn Trait），契约记接口而非具体能力类型。
+        self.record_module_contract::<M>(std::any::type_name::<M::Interface>());
         Ok(())
     }
 
@@ -1464,6 +1466,27 @@ impl Kit {
     // 泛型桩从不被调用也不会触发 dead_code；仅 clippy 需放行未用的 self。
     #[allow(clippy::unused_self)] // signature parity with the negotiate arm
     fn record_module_versions<M: crate::core::ModuleMeta>(&self) {}
+
+    /// Record `M`'s contract entry for the build report (`report` feature).
+    ///
+    /// `capability` is supplied by the caller so each registration path can
+    /// describe its own outward-facing capability: concrete capability type
+    /// for `register`/`register_lazy`/`register_multi`, interface type for
+    /// `register_as` (the `dyn Trait` is what consumers resolve).
+    #[cfg(feature = "report")]
+    fn record_module_contract<M: crate::core::ModuleMeta>(&self, capability: &'static str) {
+        self.report.push_contract(super::report::ContractEntry {
+            module: M::NAME,
+            version: M::VERSION,
+            capability,
+            deps: M::dependencies().iter().map(|(n, _)| *n).collect(),
+        });
+    }
+
+    #[cfg(not(feature = "report"))]
+    // 泛型桩从不被调用也不会触发 dead_code；仅 clippy 需放行未用的 self。
+    #[allow(clippy::unused_self)] // signature parity with the report arm
+    fn record_module_contract<M: crate::core::ModuleMeta>(&self, _capability: &'static str) {}
 
     /// Semver-compat validation pass: every declared requirement must
     /// be satisfied by the provider's declared version.
