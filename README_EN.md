@@ -77,7 +77,7 @@ Modules declare a contract via `ModuleMeta` + `AutoBuilder`; the Kit centralizes
 </tr>
 <tr>
 <td width="50%">🧱 <b>Minimal Default Dependencies</b><br><sub><code>default = []</code>: zero default dependencies; <code>confers</code>, <code>serde</code>, <code>serde_json</code>, <code>icu</code>, etc. are all optional and feature-gated.</sub></td>
-<td width="50%">🚫 <b>No unsafe</b><br><sub>The entire crate carries <code>#![deny(unsafe_code)]</code>, enforced at compile time.</sub></td>
+<td width="50%">🚫 <b>unsafe denied by default</b><br><sub><code>#![deny(unsafe_code)]</code> is enforced crate-wide; only 6 locally audited exemptions exist (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, RefCell-guard lifetime re-anchoring ×2.</sub></td>
 </tr>
 </table>
 
@@ -505,7 +505,7 @@ Baseline numbers, the measurement environment, and reproduction commands live in
 ## 🔒 Security
 
 - **Vulnerability reporting**: do not open public issues; use GitHub's private [Security Advisories](https://github.com/Kirky-X/trait-kit/security/advisories/new) channel ("Report a vulnerability"). The maintainer commits to acknowledging reports within 48 hours and providing an initial assessment within 7 days (see [SECURITY.md](docs/SECURITY.md)).
-- **No unsafe**: `#![deny(unsafe_code)]` is enforced crate-wide.
+- **unsafe denied by default**: `#![deny(unsafe_code)]` is enforced crate-wide; only 6 locally audited exemptions (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, RefCell-guard lifetime re-anchoring ×2.
 - **Compile-time misuse prevention**: typestate turns "require before build" into a compile error; the dependency graph is checked for missing deps and cycles at `build()`.
 - **Explicit thread-safety boundary**: the sync `Kit` is `!Sync` (compiler-enforced, see the `static_assertions` assertions); use `AsyncKit` (`Send + Sync`) for multi-threading.
 - **Encrypted config storage** (`encryption`): XChaCha20-Poly1305 AEAD with field keys derived via HKDF from the master key and `ModuleConfig::PATH`; `EncryptedBlob`'s `Debug` implementation never leaks encrypted material.

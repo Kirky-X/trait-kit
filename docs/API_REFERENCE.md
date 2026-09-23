@@ -118,13 +118,13 @@ pub trait AutoBuilder: ModuleMeta {
 
 | 方法 | Feature | 说明 |
 |---|---|---|
-| `require::<M>()` | — | 检索能力（Clone，缺失则报错） |
-| `require_ref::<M>()` | — | 零拷贝检索（返回 `Ref<'_, Cap>`） |
-| `get_arc::<M, T>()` | — | `Arc` 能力免克隆检索（返回 `Arc<T>`，同指针） |
-| `optional::<M>()` | — | 可选检索（返回 `Option`） |
+| `require::<M>()` | — | 检索能力（Clone，缺失则报错；`register_lazy` 模块首次调用触发构建并缓存） |
+| `require_ref::<M>()` | — | 零拷贝检索（返回 `Ref<'_, Cap>`；lazy 模块构建后可借） |
+| `get_arc::<M, T>()` | — | `Arc` 能力免克隆检索（返回 `Arc<T>`，同指针；兼容 lazy 缓存） |
+| `optional::<M>()` | — | 可选检索（返回 `Option`；兼容 lazy 缓存） |
 | `require_all::<M>()` | — | 检索所有多绑定能力 |
 | `resolve::<I>()` | `interface` | 按接口类型检索 `Arc<I>` |
-| `contains::<M>()` | — | 检查能力是否存在 |
+| `contains::<M>()` | — | 检查能力是否已构建（兼容 lazy 缓存） |
 | `contains_config::<C>()` | — | 检查配置是否存在 |
 | `config::<C>()` | — | 检索配置（Clone） |
 | `config_arc::<C>()` | — | 以 `Arc` 快照检索配置 |

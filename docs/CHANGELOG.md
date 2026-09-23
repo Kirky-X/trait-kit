@@ -29,7 +29,19 @@
 
 ## [Unreleased]
 
-_暂无未发布变更。_
+### Fixed
+
+- **版本协商四路径奇偶**（fix-audit-defects-r1 批次 A）：`register_lazy`/`register_multi`/`register_as` 此前不登记 `ModuleMeta::VERSION` 与 `required_versions`，版本冲突被静默跳过（fail-open）；现四条注册路径统一登记，`build()` 对任何路径的不兼容版本返回 `VersionIncompatible`
+- **register_as i18n/契约登记**：`register_as` 此前丢弃模块 `i18n_ftl()` 片段且不入 contract manifest；现与 eager 路径一致（contract 的 capability 字段记接口类型名）
+- **lazy 检索口径统一**（批次 B）：`contains`/`optional`/`require_ref` 此前对 `register_lazy` 模块 `require()` 后的缓存失明；现与 `require`/`get_arc` 口径一致——"已构建即可见"，且全部只读查询不触发 lazy 构建
+- **关闭协调器 hook panic 隔离**（批次 C）：`ShutdownCoordinator`（sync）与 `AsyncShutdownCoordinator`（async，经零依赖 `CatchUnwindFuture`）的单个 hook panic 不再中断关闭流程，计数进 `ShutdownPhaseResult::hook_failures`
+- **lazy builder panic 可恢复**（批次 C）：`Kit::require` 与 `Scope::require` 的首建路径 builder（或 decorator）panic 被隔离为 `BuildFailed`（含 panic 摘要），builder 放回槽位保持可重试
+- **semver 边界**（批次 D）：build metadata（`+build-x`）不再被误判为 prerelease；prerelease 标识符按 semver §11.4 比较（`rc.1` < `rc.2`、数字段数值比较、数字段 < 字母数字段）
+
+### Changed
+
+- **API**：`ShutdownPhaseResult` 新增 `hook_failures: usize` 字段（结构体字面量构造方需同步）；`is_ok()` 语义收紧为 `!timed_out && hook_failures == 0`，`into_result()` 对"仅 hook panic"场景返回 `BuildFailed`
+- **文档**：README/README_EN/SECURITY 的"无 unsafe"表述修正为"默认禁用 + 6 处经审计豁免"；API_REFERENCE 补 lazy 模块检索口径
 
 ---
 

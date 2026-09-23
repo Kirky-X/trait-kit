@@ -44,9 +44,9 @@
 
 以下是 trait-kit 中真实存在的安全相关机制（均可从源码与 CHANGELOG 验证）：
 
-### 无 unsafe 代码
+### 默认禁用 unsafe 代码
 
-整个 crate 标注 `#![deny(unsafe_code)]`，编译期强制排除未定义行为的主要来源之一。依赖图校验、类型检索等均以安全 Rust 实现。
+整个 crate 标注 `#![deny(unsafe_code)]`，编译期强制排除未定义行为的主要来源之一。依赖图校验、类型检索等均以安全 Rust 实现。现存 6 处经 SAFETY 论证与 code review 的局部豁免（`#[allow(unsafe_code)]`）：typestate 布局断言 cast ×3（`Kit`/`AsyncKit` 的 require/factory 路径）、volatile 密钥清零 ×1、`TypeMap` guard 生命周期重锚 ×2——每处均附 SAFETY 注释并纳入 review 门禁。
 
 ### 类型安全的能力检索
 
