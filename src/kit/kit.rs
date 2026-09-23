@@ -98,6 +98,19 @@ pub(crate) fn zeroize_bytes(buf: &mut [u8]) {
     std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
 }
 
+/// Extract a printable summary from a panic payload.
+///
+/// Used to turn an isolated panic into a `BuildFailed` source message.
+pub(crate) fn panic_payload_summary(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "non-string panic payload".to_string()
+    }
+}
+
 /// Marker type for the unbuilt state.
 pub struct Unbuilt;
 
@@ -1787,10 +1800,38 @@ impl<S> Kit<S> {
             #[allow(unsafe_code)]
             let kit_ref: &Kit = unsafe { &*std::ptr::from_ref(self).cast::<Kit>() };
             // `LazyBuildFn` is an `Fn` closure: the call only borrows it, so
-            // the same builder remains available for the failure path below.
-            let boxed = match builder(kit_ref) {
-                Ok(boxed) => boxed,
-                Err(e) => {
+            // the same builder remains available for the failure paths below.
+            // Panic isolation: a panicking builder (or decorator) must not
+            // unwind out of `require()` — the builder is put back so the
+            // slot stays retryable, mirroring the `Err` path.
+            let build_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let boxed = builder(kit_ref)?;
+                // Apply decorators only when THIS module was decorated: resolve
+                // the capability TypeId through the module→capability mapping
+                // recorded by `decorate()`. Falling back to
+                // `TypeId::of::<M::Capability>()` alone would over-apply the
+                // decorators to any other module that merely shares the same
+                // capability type. (The eager path keeps its unmapped fallback
+                // by module TypeId — its observable behavior, including the
+                // documented downcast-mismatch panic, is frozen by e2e DEC-07.)
+                #[cfg(feature = "decorator")]
+                let boxed = {
+                    let mapped_cap = self
+                        .decorator
+                        .decorator_module_to_cap
+                        .borrow()
+                        .get(&type_id)
+                        .copied();
+                    match mapped_cap {
+                        Some(cap_type_id) => self.apply_decorators(cap_type_id, boxed),
+                        None => boxed,
+                    }
+                };
+                Ok(boxed)
+            }));
+            let boxed = match build_result {
+                Ok(Ok(boxed)) => boxed,
+                Ok(Err(e)) => {
                     // Restore the builder so the slot stays retryable: dropping
                     // it here would degrade every later require() into a
                     // permanent MissingCapability and lose the original error.
@@ -1802,26 +1843,17 @@ impl<S> Kit<S> {
                         source: e,
                     });
                 }
-            };
-            // Apply decorators only when THIS module was decorated: resolve
-            // the capability TypeId through the module→capability mapping
-            // recorded by `decorate()`. Falling back to
-            // `TypeId::of::<M::Capability>()` alone would over-apply the
-            // decorators to any other module that merely shares the same
-            // capability type. (The eager path keeps its unmapped fallback
-            // by module TypeId — its observable behavior, including the
-            // documented downcast-mismatch panic, is frozen by e2e DEC-07.)
-            #[cfg(feature = "decorator")]
-            let boxed = {
-                let mapped_cap = self
-                    .decorator
-                    .decorator_module_to_cap
-                    .borrow()
-                    .get(&type_id)
-                    .copied();
-                match mapped_cap {
-                    Some(cap_type_id) => self.apply_decorators(cap_type_id, boxed),
-                    None => boxed,
+                Err(payload) => {
+                    // Panic path: same restore contract, panic summary as source.
+                    if let Some(slot) = self.lazy_slots.borrow_mut().get_mut(&type_id) {
+                        slot.builder = Some(builder);
+                    }
+                    return Err(TraitKitError::BuildFailed {
+                        context: M::NAME.to_string(),
+                        source: Box::new(std::io::Error::other(panic_payload_summary(
+                            payload.as_ref(),
+                        ))),
+                    });
                 }
             };
             // Cache in OnceLock for future require() / require_ref() calls

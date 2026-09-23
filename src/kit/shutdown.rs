@@ -22,6 +22,8 @@
 use std::future::Future;
 #[cfg(feature = "async")]
 use std::pin::Pin;
+#[cfg(feature = "async")]
+use std::task::Poll;
 use std::time::{Duration, Instant};
 
 use std::cell::RefCell;
@@ -217,6 +219,7 @@ impl ShutdownCoordinator {
                     // 阶段被整体跳过、未执行任何钩子：elapsed 语义为"该阶段
                     // 实际耗时"，故为零（而非全局已流逝时间）。
                     elapsed: Duration::ZERO,
+                    hook_failures: 0,
                 });
                 continue;
             }
@@ -233,6 +236,10 @@ impl ShutdownCoordinator {
     /// 超时为软限制：在每个钩子**启动前**检查阶段超时与全局截止
     /// （`deadline`），超预算则停止本阶段剩余钩子并返回 `timed_out`；
     /// 运行中的钩子不可被中断（同步模型限制），保证粒度为"hook 之间"。
+    ///
+    /// 单个 hook 的 panic 被隔离（`catch_unwind`）：计数进 `hook_failures`
+    /// 后继续执行剩余钩子，保证"关闭流程必须走完"（与 `Kit::shutdown` 的
+    /// 生命周期回调隔离标准一致）。
     fn execute_phase(
         &self,
         phase: ShutdownPhase,
@@ -249,6 +256,7 @@ impl ShutdownCoordinator {
             (hooks, timeout)
         };
 
+        let mut hook_failures = 0usize;
         for hook in hooks {
             // 钩子启动前的最后检查：阶段超时或全局超时（软限制，"hook 之间"粒度）
             if matches!(
@@ -259,15 +267,19 @@ impl ShutdownCoordinator {
                     phase,
                     timed_out: true,
                     elapsed: start.elapsed(),
+                    hook_failures,
                 };
             }
-            hook();
+            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(hook)).is_err() {
+                hook_failures += 1;
+            }
         }
 
         ShutdownPhaseResult {
             phase,
             timed_out: false,
             elapsed: start.elapsed(),
+            hook_failures,
         }
     }
 }
@@ -301,25 +313,29 @@ pub struct ShutdownPhaseResult {
     pub timed_out: bool,
     /// 该阶段实际耗时。
     pub elapsed: Duration,
+    /// 该阶段内 panic 被隔离的 hook 数量（`fix-audit-defects-r1` 起：
+    /// 单个 hook panic 不再中断整个关闭流程，只计数并继续）。
+    pub hook_failures: usize,
 }
 
 impl Default for ShutdownPhaseResult {
-    /// 默认值：首阶段、未超时、零耗时（`ShutdownPhase` 为枚举，无 `Default`，
-    /// 故手写实现而非 derive）。
+    /// 默认值：首阶段、未超时、零耗时、零 hook 失败（`ShutdownPhase` 为
+    /// 枚举，无 `Default`，故手写实现而非 derive）。
     fn default() -> Self {
         Self {
             phase: ShutdownPhase::StopRequests,
             timed_out: false,
             elapsed: Duration::ZERO,
+            hook_failures: 0,
         }
     }
 }
 
 impl ShutdownPhaseResult {
-    /// 检查该阶段是否正常完成。
+    /// 检查该阶段是否正常完成：未超时 **且** 没有 hook panic。
     #[must_use]
     pub fn is_ok(&self) -> bool {
-        !self.timed_out
+        !self.timed_out && self.hook_failures == 0
     }
 }
 
@@ -347,19 +363,28 @@ impl ShutdownResult {
             .collect()
     }
 
-    /// 转换为 `TraitKitResult`。若有任何阶段超时，返回 `ShutdownTimedOut` 错误。
+    /// 转换为 `TraitKitResult`。若有任何阶段超时或 hook panic，返回错误。
     ///
     /// # Errors
     ///
-    /// 当任何阶段超时时返回 `TraitKitError::ShutdownTimedOut`。
+    /// 当任何阶段超时时返回 `TraitKitError::ShutdownTimedOut`；当只有
+    /// hook panic（无超时阶段）时返回 `TraitKitError::BuildFailed`，
+    /// 错误信息包含被隔离的 hook 数量。
     pub fn into_result(self) -> Result<Self, TraitKitError> {
         if self.is_ok() {
-            Ok(self)
-        } else {
-            Err(TraitKitError::ShutdownTimedOut {
-                phases: self.timed_out_phases(),
-            })
+            return Ok(self);
         }
+        let timed_out = self.timed_out_phases();
+        if !timed_out.is_empty() {
+            return Err(TraitKitError::ShutdownTimedOut { phases: timed_out });
+        }
+        let failures: usize = self.phases.iter().map(|p| p.hook_failures).sum();
+        Err(TraitKitError::BuildFailed {
+            context: "shutdown".into(),
+            source: Box::new(std::io::Error::other(format!(
+                "{failures} shutdown hook(s) panicked and were isolated"
+            ))),
+        })
     }
 }
 
@@ -386,6 +411,33 @@ type AsyncShutdownHook =
 struct AsyncPhaseConfig {
     hooks: Vec<AsyncShutdownHook>,
     timeout: Duration,
+}
+
+/// poll 级 panic 隔离包装：把 hook future 的 panic 转为 `Err(payload)`。
+///
+/// `Pin<Box<dyn Future>>` 本身 `Unpin`，包装器按值持有并直接轮询，
+/// 无需 pin 投影、无 unsafe（`async` feature 保持零依赖，不引入
+/// `futures-util::FutureExt::catch_unwind`）。
+#[cfg(feature = "async")]
+struct CatchUnwindFuture {
+    inner: Pin<Box<dyn Future<Output = ()> + Send>>,
+}
+
+#[cfg(feature = "async")]
+impl Future for CatchUnwindFuture {
+    type Output = Result<(), Box<dyn std::any::Any + Send>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        // Self: Unpin（唯一字段 `Pin<Box<..>>` 是 Unpin），可直接解引用。
+        let this = &mut *self;
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            this.inner.as_mut().poll(cx)
+        })) {
+            Ok(Poll::Ready(())) => Poll::Ready(Ok(())),
+            Ok(Poll::Pending) => Poll::Pending,
+            Err(payload) => Poll::Ready(Err(payload)),
+        }
+    }
 }
 
 #[cfg(feature = "async")]
@@ -562,6 +614,7 @@ impl AsyncShutdownCoordinator {
                     // 阶段被整体跳过、未执行任何钩子：elapsed 语义为"该阶段
                     // 实际耗时"，故为零（而非全局已流逝时间）。
                     elapsed: Duration::ZERO,
+                    hook_failures: 0,
                 });
                 continue;
             }
@@ -581,6 +634,9 @@ impl AsyncShutdownCoordinator {
     /// 超时为软限制：在每个钩子**启动前**检查阶段超时与全局截止
     /// （`deadline`），超预算则停止本阶段剩余钩子并返回 `timed_out`；
     /// 运行中的钩子不可被中断，保证粒度为"hook 之间"。
+    ///
+    /// 单个 hook 的 panic 被隔离（`CatchUnwindFuture`，poll 级
+    /// `catch_unwind`）：计数进 `hook_failures` 后继续执行剩余钩子。
     ///
     /// # Errors
     ///
@@ -606,6 +662,7 @@ impl AsyncShutdownCoordinator {
             (hooks, timeout)
         };
 
+        let mut hook_failures = 0usize;
         for hook in hooks {
             // 钩子启动前的最后检查：阶段超时或全局超时（软限制，"hook 之间"粒度）
             if matches!(
@@ -616,15 +673,20 @@ impl AsyncShutdownCoordinator {
                     phase,
                     timed_out: true,
                     elapsed: start.elapsed(),
+                    hook_failures,
                 });
             }
-            hook().await;
+            let outcome = (CatchUnwindFuture { inner: hook() }).await;
+            if outcome.is_err() {
+                hook_failures += 1;
+            }
         }
 
         Ok(ShutdownPhaseResult {
             phase,
             timed_out: false,
             elapsed: start.elapsed(),
+            hook_failures,
         })
     }
 }
@@ -843,11 +905,13 @@ mod tests {
             phase: ShutdownPhase::DrainQueue,
             timed_out: true,
             elapsed: Duration::from_millis(5),
+            hook_failures: 0,
         };
         let b = ShutdownPhaseResult {
             phase: ShutdownPhase::DrainQueue,
             timed_out: true,
             elapsed: Duration::from_millis(5),
+            hook_failures: 0,
         };
         let c = ShutdownPhaseResult {
             timed_out: false,
@@ -861,6 +925,7 @@ mod tests {
                 phase: ShutdownPhase::StopRequests,
                 timed_out: false,
                 elapsed: Duration::ZERO,
+                hook_failures: 0,
             }
         );
 
@@ -892,16 +957,19 @@ mod tests {
                     phase: ShutdownPhase::StopRequests,
                     timed_out: false,
                     elapsed: Duration::from_millis(1),
+                    hook_failures: 0,
                 },
                 ShutdownPhaseResult {
                     phase: ShutdownPhase::DrainQueue,
                     timed_out: false,
                     elapsed: Duration::from_millis(1),
+                    hook_failures: 0,
                 },
                 ShutdownPhaseResult {
                     phase: ShutdownPhase::CloseConnections,
                     timed_out: false,
                     elapsed: Duration::from_millis(1),
+                    hook_failures: 0,
                 },
             ],
         };
@@ -918,16 +986,19 @@ mod tests {
                     phase: ShutdownPhase::StopRequests,
                     timed_out: false,
                     elapsed: Duration::from_millis(1),
+                    hook_failures: 0,
                 },
                 ShutdownPhaseResult {
                     phase: ShutdownPhase::DrainQueue,
                     timed_out: true,
                     elapsed: Duration::from_secs(30),
+                    hook_failures: 0,
                 },
                 ShutdownPhaseResult {
                     phase: ShutdownPhase::CloseConnections,
                     timed_out: false,
                     elapsed: Duration::from_millis(1),
+                    hook_failures: 0,
                 },
             ],
         };
@@ -992,6 +1063,52 @@ mod tests {
         // 第二次 shutdown — 钩子已被 drain，不应再执行
         let _ = coord.shutdown();
         assert_eq!(CALL_COUNT.load(Ordering::SeqCst), 1);
+    }
+
+    /// 一个 hook panic 不得中断整个关闭流程：后续 hook 与阶段照常执行，
+    /// 失败计数记入该阶段结果（fix-audit-defects-r1 批次 C / T012）。
+    #[test]
+    fn shutdown_coordinator_isolates_panicking_hook() {
+        use std::sync::Arc;
+
+        let coord = ShutdownCoordinator::new();
+        let ran_after = Arc::new(AtomicUsize::new(0));
+        let ran_after2 = Arc::clone(&ran_after);
+        let ran_late_phase = Arc::new(AtomicUsize::new(0));
+        let ran_late_phase2 = Arc::clone(&ran_late_phase);
+
+        // 第一阶段：panic hook → 后续阶段必须照常
+        coord.register_hook(ShutdownPhase::StopRequests, || {
+            panic!("hook boom");
+        });
+        // 同阶段后续 hook 必须继续执行
+        coord.register_hook(ShutdownPhase::StopRequests, move || {
+            ran_after2.fetch_add(1, Ordering::SeqCst);
+        });
+        // 下一阶段必须照常执行
+        coord.register_hook(ShutdownPhase::DrainQueue, move || {
+            ran_late_phase2.fetch_add(1, Ordering::SeqCst);
+        });
+
+        let result = coord.shutdown();
+        assert_eq!(
+            ran_after.load(Ordering::SeqCst),
+            1,
+            "同阶段 panic 之后的 hook 仍须执行"
+        );
+        assert_eq!(
+            ran_late_phase.load(Ordering::SeqCst),
+            1,
+            "panic 之后的阶段仍须执行"
+        );
+        let stop = result
+            .phases
+            .iter()
+            .find(|p| p.phase == ShutdownPhase::StopRequests)
+            .expect("StopRequests phase result");
+        assert_eq!(stop.hook_failures, 1, "恰好一个 panic hook 被计数");
+        assert!(!stop.is_ok(), "hook 失败后该阶段 is_ok 必须为 false");
+        assert!(!result.is_ok(), "整体 is_ok 必须反映 hook 失败");
     }
 }
 
@@ -1200,6 +1317,50 @@ mod async_tests {
             // 第二次 shutdown — 钩子已被 drain，不应再执行
             coord.shutdown().await.unwrap();
             assert_eq!(CALL_COUNT.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    /// async 侧 hook panic 同样被隔离：后续 hook 与阶段照常执行，
+    /// 失败计数进 `hook_failures`（fix-audit-defects-r1 批次 C / T014）。
+    #[test]
+    fn async_shutdown_isolates_panicking_hook() {
+        use std::sync::Arc;
+
+        block_on(async {
+            let coord = AsyncShutdownCoordinator::new();
+            let ran_after = Arc::new(AtomicUsize::new(0));
+            let ran_after2 = Arc::clone(&ran_after);
+
+            coord
+                .register_hook(ShutdownPhase::StopRequests, || {
+                    Box::pin(async {
+                        panic!("async hook boom");
+                    })
+                })
+                .unwrap();
+            coord
+                .register_hook(ShutdownPhase::StopRequests, move || {
+                    let r = Arc::clone(&ran_after2);
+                    Box::pin(async move {
+                        r.fetch_add(1, Ordering::SeqCst);
+                    })
+                })
+                .unwrap();
+
+            let result = coord.shutdown().await.unwrap();
+            assert_eq!(
+                ran_after.load(Ordering::SeqCst),
+                1,
+                "同阶段 panic 之后的 hook 仍须执行"
+            );
+            let stop = result
+                .phases
+                .iter()
+                .find(|p| p.phase == ShutdownPhase::StopRequests)
+                .expect("StopRequests phase result");
+            assert_eq!(stop.hook_failures, 1, "恰好一个 panic hook 被计数");
+            assert!(!stop.is_ok());
+            assert!(!result.is_ok());
         });
     }
 }

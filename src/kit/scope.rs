@@ -158,10 +158,15 @@ impl Scope {
             // Create a minimal empty Kit for the build callback.
             let temp_kit = crate::kit::Kit::new();
             // `LazyBuildFn` is an `Fn` closure: the call only borrows it, so
-            // the same builder remains available for the failure path below.
-            let boxed = match builder(&temp_kit) {
-                Ok(boxed) => boxed,
-                Err(e) => {
+            // the same builder remains available for the failure paths below.
+            // Panic isolation: a panicking builder must not unwind out of
+            // `require()` — the builder is put back so the slot stays
+            // retryable, mirroring the `Err` path.
+            let build_result =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| builder(&temp_kit)));
+            let boxed = match build_result {
+                Ok(Ok(boxed)) => boxed,
+                Ok(Err(e)) => {
                     // Restore the builder so the slot stays retryable: a
                     // failed build must not degrade later require() calls
                     // into a permanent MissingCapability.
@@ -171,6 +176,18 @@ impl Scope {
                     return Err(TraitKitError::BuildFailed {
                         context: M::NAME.to_string(),
                         source: e,
+                    });
+                }
+                Err(payload) => {
+                    // Panic path: same restore contract, panic summary as source.
+                    if let Some(slot) = self.lazy_slots.borrow_mut().get_mut(&type_id) {
+                        slot.builder = Some(builder);
+                    }
+                    return Err(TraitKitError::BuildFailed {
+                        context: M::NAME.to_string(),
+                        source: Box::new(std::io::Error::other(super::kit::panic_payload_summary(
+                            payload.as_ref(),
+                        ))),
                     });
                 }
             };
@@ -638,6 +655,44 @@ mod tests {
     fn scope_module_dependencies_empty() {
         let deps = ScopeModule::dependencies();
         assert!(deps.is_empty());
+    }
+
+    /// scope builder panic：首次 require 返回 `BuildFailed`（含 panic 摘要），
+    /// builder 放回后重试可成功（fix-audit-defects-r1 批次 C / T016）。
+    #[test]
+    fn scope_builder_panic_keeps_slot_retryable() {
+        struct PanicThenOkScopeModule;
+        impl ModuleMeta for PanicThenOkScopeModule {
+            const NAME: &'static str = "scope-panic-then-ok";
+        }
+        impl AutoBuilder for PanicThenOkScopeModule {
+            type Capability = Arc<ScopeCap>;
+            type Error = ScopeTestError;
+            fn build(_kit: &crate::kit::Kit) -> Result<Arc<ScopeCap>, ScopeTestError> {
+                static CALLS: AtomicUsize = AtomicUsize::new(0);
+                // 首次调用 panic、后续成功（断言式写法满足 clippy::only_panic_in）
+                assert_ne!(CALLS.fetch_add(1, Ordering::SeqCst), 0, "scope build boom");
+                Ok(Arc::new(ScopeCap { id: 99 }))
+            }
+        }
+
+        let mut scope = Scope::new();
+        scope
+            .register::<PanicThenOkScopeModule>()
+            .expect("register");
+
+        let err = scope
+            .require::<PanicThenOkScopeModule>()
+            .expect_err("first require must surface the panic as BuildFailed");
+        assert!(
+            err.to_string().contains("scope build boom"),
+            "error must contain the panic summary, got: {err}"
+        );
+
+        let cap = scope
+            .require::<PanicThenOkScopeModule>()
+            .expect("retry after panic must rebuild");
+        assert_eq!(cap.id, 99);
     }
 }
 

@@ -2410,16 +2410,19 @@ mod shutdown_scenarios {
                     phase: ShutdownPhase::StopRequests,
                     timed_out: false,
                     elapsed: Duration::from_millis(1),
+                    hook_failures: 0,
                 },
                 ShutdownPhaseResult {
                     phase: ShutdownPhase::DrainQueue,
                     timed_out: false,
                     elapsed: Duration::from_millis(1),
+                    hook_failures: 0,
                 },
                 ShutdownPhaseResult {
                     phase: ShutdownPhase::CloseConnections,
                     timed_out: false,
                     elapsed: Duration::from_millis(1),
+                    hook_failures: 0,
                 },
             ],
         };
@@ -2431,16 +2434,19 @@ mod shutdown_scenarios {
                     phase: ShutdownPhase::StopRequests,
                     timed_out: false,
                     elapsed: Duration::from_millis(1),
+                    hook_failures: 0,
                 },
                 ShutdownPhaseResult {
                     phase: ShutdownPhase::DrainQueue,
                     timed_out: true,
                     elapsed: Duration::from_secs(30),
+                    hook_failures: 0,
                 },
                 ShutdownPhaseResult {
                     phase: ShutdownPhase::CloseConnections,
                     timed_out: false,
                     elapsed: Duration::from_millis(1),
+                    hook_failures: 0,
                 },
             ],
         };

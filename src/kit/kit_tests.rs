@@ -3057,3 +3057,54 @@ mod lazy_retrieval_semantics_tests {
         assert_eq!(svc.v, 7);
     }
 }
+
+/// lazy builder panic 恢复（fix-audit-defects-r1 批次 C / T015）。
+///
+/// 缺陷现状（Red）：`require()` 首建路径 take 出 builder 后只在返回 `Err`
+/// 的分支放回；builder panic（或 decorator `.expect` panic）会 unwind 跳过
+/// 恢复逻辑，槽位 builder 永久丢失，后续 `require` 降级为 `MissingCapability`。
+mod lazy_builder_panic_tests {
+    use super::super::*;
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct PanicThenOkModule;
+    impl ModuleMeta for PanicThenOkModule {
+        const NAME: &'static str = "panic-then-ok";
+    }
+    impl AutoBuilder for PanicThenOkModule {
+        type Capability = Arc<AtomicUsize>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            static CALLS: AtomicUsize = AtomicUsize::new(0);
+            // 首次调用 panic、后续成功（断言式写法满足 clippy::only_panic_in）
+            assert_ne!(CALLS.fetch_add(1, Ordering::SeqCst), 0, "build boom");
+            Ok(Arc::new(AtomicUsize::new(42)))
+        }
+    }
+
+    /// builder panic 必须转为 `BuildFailed`（含 panic 摘要），且 builder
+    /// 被放回槽位：条件恢复后重试 `require()` 可成功。
+    #[test]
+    fn lazy_builder_panic_keeps_slot_retryable() {
+        let mut kit = Kit::new();
+        kit.register_lazy::<PanicThenOkModule>().unwrap();
+        let ready = kit.build().unwrap();
+
+        let err = ready
+            .require::<PanicThenOkModule>()
+            .expect_err("first require must surface the panic as BuildFailed");
+        assert!(
+            err.to_string().contains("build boom"),
+            "error must contain the panic summary, got: {err}"
+        );
+        assert_eq!(err.kind(), crate::error::ErrorKind::InitFailed);
+
+        // builder 已放回：重试成功
+        let cap = ready
+            .require::<PanicThenOkModule>()
+            .expect("retry after panic must rebuild");
+        assert_eq!(cap.load(Ordering::SeqCst), 42);
+    }
+}
