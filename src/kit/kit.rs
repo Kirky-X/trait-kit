@@ -1689,9 +1689,7 @@ impl<S> Kit<S> {
             return Ok(arc);
         }
 
-        if let Some(slot) = self.lazy_slots.borrow().get(&type_id)
-            && let Some(boxed) = slot.cell.get()
-        {
+        if let Some(boxed) = self.lazy_cached_boxed(type_id) {
             if let Some(arc) = boxed.downcast_ref::<std::sync::Arc<T>>().cloned() {
                 return Ok(arc);
             }
@@ -1750,9 +1748,7 @@ impl<S> Kit<S> {
         }
 
         // 2b. a lazy-slot cache value exists but the downcast failed.
-        if let Some(slot) = self.lazy_slots.borrow().get(&type_id)
-            && slot.cell.get().is_some()
-        {
+        if self.lazy_cached_boxed(type_id).is_some() {
             return Err(TraitKitError::CapabilityTypeMismatch {
                 key: M::NAME.to_string(),
             });
@@ -1845,14 +1841,25 @@ impl<S> Kit<S> {
         })
     }
 
+    /// Borrow the cached lazy-slot value (read-only; never triggers a build).
+    ///
+    /// Returns the boxed value together with the `RefCell` guard that keeps
+    /// it alive. `None` when the module has no lazy slot or the slot has not
+    /// been built yet.
+    fn lazy_cached_boxed(&self, type_id: TypeId) -> Option<std::cell::Ref<'_, Box<dyn Any>>> {
+        let guard = self.lazy_slots.borrow();
+        std::cell::Ref::filter_map(guard, |map| {
+            map.get(&type_id).and_then(|slot| slot.cell.get())
+        })
+        .ok()
+    }
+
     /// Extracted helper: retrieve a cached lazy-slot value without rebuilding.
     /// Consolidates the duplicate lazy-cache lookup pattern in `require()`.
     fn get_lazy_cached<M: AutoBuilder>(&self, type_id: TypeId) -> Option<M::Capability> {
-        self.lazy_slots
-            .borrow()
-            .get(&type_id)
-            .and_then(|slot| slot.cell.get())
-            .and_then(|b| b.downcast_ref::<M::Capability>().cloned())
+        self.lazy_cached_boxed(type_id)?
+            .downcast_ref::<M::Capability>()
+            .cloned()
     }
 
     /// Retrieve all capabilities registered via `register_multi` for the
@@ -2267,10 +2274,20 @@ impl<S> Kit<S> {
 
 impl Kit<Ready> {
     /// Retrieve an optional capability. Returns `None` if not built.
+    ///
+    /// Read-only: never triggers a lazy build. For `register_lazy` modules
+    /// the cached value becomes visible after the first `require()`.
     pub fn optional<M: AutoBuilder>(&self) -> Option<M::Capability> {
         let type_id = TypeId::of::<M>();
-        self.capabilities
+        if let Some(cap) = self
+            .capabilities
             .get_cloned_by_type_id::<M::Capability>(type_id)
+        {
+            return Some(cap);
+        }
+        self.lazy_cached_boxed(type_id)?
+            .downcast_ref::<M::Capability>()
+            .cloned()
     }
 
     /// Retrieve a capability by reference, avoiding `Clone`.
@@ -2281,9 +2298,13 @@ impl Kit<Ready> {
     /// any mutating method will panic (`borrow_mut` conflict). Keep the
     /// `Ref` lifetime short.
     ///
+    /// Read-only: never triggers a lazy build. For `register_lazy` modules
+    /// the cached value is borrowable after the first `require()`.
+    ///
     /// # Errors
     ///
-    /// Returns `TraitKitError::MissingCapability` if the module has not been built.
+    /// Returns `TraitKitError::MissingCapability` if the module has not
+    /// been built (including a lazy module whose builder has not run yet).
     pub fn require_ref<M: AutoBuilder>(
         &self,
     ) -> Result<std::cell::Ref<'_, M::Capability>, TraitKitError>
@@ -2293,23 +2314,43 @@ impl Kit<Ready> {
         use std::cell::Ref;
 
         let type_id = TypeId::of::<M>();
-        if !self.capabilities.contains_by_type_id(type_id) {
-            return Err(TraitKitError::MissingCapability {
+        if self.capabilities.contains_by_type_id(type_id) {
+            return Ref::filter_map(self.capabilities.inner_ref(), |map| {
+                map.get(&type_id)
+                    .and_then(|b| b.downcast_ref::<M::Capability>())
+            })
+            .map_err(|_| TraitKitError::MissingCapability {
                 key: M::NAME.to_string(),
             });
         }
-        Ref::filter_map(self.capabilities.inner_ref(), |map| {
-            map.get(&type_id)
-                .and_then(|b| b.downcast_ref::<M::Capability>())
-        })
-        .map_err(|_| TraitKitError::MissingCapability {
-            key: M::NAME.to_string(),
-        })
+        // Lazy fallback: re-anchor the OnceLock cache guard into a typed
+        // `Ref` (filter_map chain, no unsafe).
+        match self.lazy_cached_boxed(type_id) {
+            Some(boxed) => {
+                Ref::filter_map(boxed, |b| b.downcast_ref::<M::Capability>()).map_err(|_| {
+                    TraitKitError::MissingCapability {
+                        key: M::NAME.to_string(),
+                    }
+                })
+            }
+            None => Err(TraitKitError::MissingCapability {
+                key: M::NAME.to_string(),
+            }),
+        }
     }
 
     /// Check if a capability has been built.
+    ///
+    /// Read-only: never triggers a lazy build. For `register_lazy` modules
+    /// this turns `true` after the first `require()` cached the value.
     pub fn contains<M: AutoBuilder>(&self) -> bool {
-        self.capabilities.contains_by_type_id(TypeId::of::<M>())
+        let type_id = TypeId::of::<M>();
+        if self.capabilities.contains_by_type_id(type_id) {
+            return true;
+        }
+        self.lazy_cached_boxed(type_id)
+            .and_then(|boxed| boxed.downcast_ref::<M::Capability>().cloned())
+            .is_some()
     }
 
     /// Check if a config is registered.

@@ -319,4 +319,48 @@ mod tests {
             .expect("register");
         parent.build().expect("build ok with dep present");
     }
+
+    /// 子 Kit 内 lazy 模块 `require()` 后，`SubKitHandle::contains` 必须可见
+    /// （委托 `Kit::contains` 的 lazy 回退；修复前失明返回 false）。
+    #[test]
+    fn sub_kit_lazy_capability_visible_after_require() {
+        struct LazyLeaf;
+        impl ModuleMeta for LazyLeaf {
+            const NAME: &'static str = "lazy-leaf";
+        }
+        impl AutoBuilder for LazyLeaf {
+            type Capability = Arc<ChildCap>;
+            type Error = ChildError;
+            fn build(_kit: &Kit) -> Result<Self::Capability, ChildError> {
+                Ok(Arc::new(ChildCap(5)))
+            }
+        }
+
+        struct LazySliceSpec;
+        impl SubKitSpec for LazySliceSpec {
+            const NAME: &'static str = "lazy-slice";
+            fn compose(kit: &mut Kit) {
+                kit.register_lazy::<LazyLeaf>().expect("lazy leaf");
+            }
+        }
+
+        let mut parent = Kit::new();
+        parent
+            .register::<SubKitModule<LazySliceSpec>>()
+            .expect("register");
+        let ready = parent.build().expect("build ok");
+        let handle = ready
+            .require::<SubKitModule<LazySliceSpec>>()
+            .expect("handle");
+
+        // require 前不可见（查询不触发构建）
+        assert!(!handle.contains::<LazyLeaf>());
+        let cap = handle.require::<LazyLeaf>().expect("lazy build in child");
+        assert_eq!(cap.0, 5);
+        // require 后 contains 必须可见
+        assert!(
+            handle.contains::<LazyLeaf>(),
+            "SubKitHandle::contains must see a built lazy module"
+        );
+    }
 }

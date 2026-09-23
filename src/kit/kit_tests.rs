@@ -2976,3 +2976,84 @@ mod negotiation_parity_tests {
         }
     }
 }
+
+/// lazy 能力检索口径统一测试（fix-audit-defects-r1 批次 B）。
+///
+/// 缺陷现状（Red）：`contains`/`optional`/`require_ref` 只查 `capabilities`，
+/// 对 `register_lazy` 模块 `require()` 构建后的 `OnceLock` 缓存失明（`get_arc`
+/// 已正确回退 lazy 缓存），五条检索 API 口径互相矛盾。
+mod lazy_retrieval_semantics_tests {
+    use super::super::*;
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use std::sync::Arc;
+
+    struct LazyService {
+        v: u32,
+    }
+
+    macro_rules! lazy_service_module {
+        ($ty:ident, $name:literal) => {
+            struct $ty;
+            impl ModuleMeta for $ty {
+                const NAME: &'static str = $name;
+            }
+            impl AutoBuilder for $ty {
+                type Capability = Arc<LazyService>;
+                type Error = TraitKitError;
+                fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+                    Ok(Arc::new(LazyService { v: 7 }))
+                }
+            }
+        };
+    }
+
+    lazy_service_module!(LazyServiceModule, "lazy-service");
+    lazy_service_module!(LazyUntouchedModule, "lazy-untouched");
+
+    /// `require()` 构建后的 lazy 模块必须对全部只读检索 API 可见。
+    #[test]
+    fn built_lazy_module_visible_via_all_read_apis() {
+        let mut kit = Kit::new();
+        kit.register_lazy::<LazyServiceModule>().unwrap();
+        let ready = kit.build().unwrap();
+
+        let svc = ready
+            .require::<LazyServiceModule>()
+            .expect("first require builds");
+        assert_eq!(svc.v, 7);
+
+        // 修复前：contains=false / optional=None / require_ref=Err（只查 capabilities）
+        assert!(
+            ready.contains::<LazyServiceModule>(),
+            "contains must see a built lazy module"
+        );
+        let opt = ready.optional::<LazyServiceModule>();
+        assert!(opt.is_some(), "optional must see the cached lazy module");
+        assert_eq!(opt.as_ref().unwrap().v, 7);
+        let r = ready
+            .require_ref::<LazyServiceModule>()
+            .expect("require_ref must see the cached lazy module");
+        assert_eq!(r.v, 7);
+        let arc = ready
+            .get_arc::<LazyServiceModule, LazyService>()
+            .expect("get_arc already supports the lazy cache");
+        assert_eq!(arc.v, 7);
+    }
+
+    /// 只读检索 API 不得触发 lazy 构建，也不得消耗 builder。
+    #[test]
+    fn read_apis_do_not_trigger_lazy_build() {
+        let mut kit = Kit::new();
+        kit.register_lazy::<LazyUntouchedModule>().unwrap();
+        let ready = kit.build().unwrap();
+
+        assert!(!ready.contains::<LazyUntouchedModule>());
+        assert!(ready.optional::<LazyUntouchedModule>().is_none());
+        assert!(ready.require_ref::<LazyUntouchedModule>().is_err());
+        // 查询后 builder 仍在：require 仍能首建
+        let svc = ready
+            .require::<LazyUntouchedModule>()
+            .expect("builder must survive read-only queries");
+        assert_eq!(svc.v, 7);
+    }
+}
