@@ -3108,3 +3108,82 @@ mod lazy_builder_panic_tests {
         assert_eq!(cap.load(Ordering::SeqCst), 42);
     }
 }
+
+/// 复查（review）跟进修复测试：contains 类型统一（L1）与
+/// `require_ref` lazy 守卫借用冲突的契约钉住（M1）。
+mod review_followup_tests {
+    use super::super::*;
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
+
+    struct FxModule;
+    impl ModuleMeta for FxModule {
+        const NAME: &'static str = "fx-module";
+    }
+    impl AutoBuilder for FxModule {
+        type Capability = Arc<AtomicUsize>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            Ok(Arc::new(AtomicUsize::new(0)))
+        }
+    }
+
+    macro_rules! fx_lazy_module {
+        ($ty:ident, $name:literal) => {
+            struct $ty;
+            impl ModuleMeta for $ty {
+                const NAME: &'static str = $name;
+            }
+            impl AutoBuilder for $ty {
+                type Capability = Arc<AtomicUsize>;
+                type Error = TraitKitError;
+                fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+                    Ok(Arc::new(AtomicUsize::new(1)))
+                }
+            }
+        };
+    }
+    fx_lazy_module!(FxBuilt, "fx-built");
+    fx_lazy_module!(FxUnbuilt, "fx-unbuilt");
+
+    /// L1：能力存在但类型不匹配时 `contains` 必须为 false——eager 与 lazy
+    /// 路径口径一致（修复前 eager 只查键存在，异型值会被误报为已构建）。
+    #[test]
+    fn contains_is_false_when_capability_type_mismatches() {
+        let mut kit = Kit::new();
+        kit.register::<FxModule>().unwrap();
+        let ready = kit.build().unwrap();
+
+        // 模拟异型能力落入模块槽位（override 误用的等价物）
+        ready
+            .capabilities
+            .insert_boxed(TypeId::of::<FxModule>(), Box::new(42i32));
+
+        assert!(
+            !ready.contains::<FxModule>(),
+            "type-mismatched capability must not count as built"
+        );
+        assert!(matches!(
+            ready.require::<FxModule>(),
+            Err(TraitKitError::CapabilityTypeMismatch { .. })
+        ));
+    }
+
+    /// M1 契约钉住：`require_ref` 的 lazy 守卫存活期间触发另一个 lazy
+    /// 模块的首建会 panic（`lazy_slots.borrow_mut` 冲突，见 `require_ref`
+    /// 文档的 Borrow-conflict caveat）。若未来改为 `try_borrow_mut` 错误
+    /// 路径，此测试应同步更新语义。
+    #[test]
+    #[should_panic(expected = "already borrowed")]
+    fn require_ref_guard_conflicts_with_lazy_first_build() {
+        let mut kit = Kit::new();
+        kit.register_lazy::<FxBuilt>().unwrap();
+        kit.register_lazy::<FxUnbuilt>().unwrap();
+        let ready = kit.build().unwrap();
+
+        let _ = ready.require::<FxBuilt>().unwrap();
+        let _guard = ready.require_ref::<FxBuilt>().unwrap();
+        let _ = ready.require::<FxUnbuilt>();
+    }
+}

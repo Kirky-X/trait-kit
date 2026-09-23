@@ -1730,7 +1730,9 @@ impl<S> Kit<S> {
     /// the first `require()` call triggers lazy construction: the stored
     /// `build_fn` is invoked, the result is cached in a `OnceLock` cell,
     /// and subsequent calls return a clone from the cache without re-running
-    /// the builder.
+    /// the builder. The first build mutably borrows the lazy-slot map —
+    /// a live `require_ref` guard on **any** lazy module conflicts with it
+    /// (see `require_ref`'s Borrow-conflict caveat).
     ///
     /// # Errors
     ///
@@ -2333,6 +2335,14 @@ impl Kit<Ready> {
     /// Read-only: never triggers a lazy build. For `register_lazy` modules
     /// the cached value is borrowable after the first `require()`.
     ///
+    /// # Borrow-conflict caveat (lazy modules)
+    ///
+    /// The lazy path keeps a read borrow on the lazy-slot map for the
+    /// guard's lifetime. Triggering **another** lazy module's first build
+    /// while the guard is alive mutably borrows the same `RefCell` and
+    /// panics — keep the guard tightly scoped, or use the clone-based
+    /// `require`/`optional` in flows that interleave lazy builds.
+    ///
     /// # Errors
     ///
     /// Returns `TraitKitError::MissingCapability` if the module has not
@@ -2371,18 +2381,26 @@ impl Kit<Ready> {
         }
     }
 
-    /// Check if a capability has been built.
+    /// Check if a capability of type `M::Capability` has been built.
     ///
     /// Read-only: never triggers a lazy build. For `register_lazy` modules
     /// this turns `true` after the first `require()` cached the value.
+    /// A stored value whose type does not match `M::Capability` does **not**
+    /// count as built — eager and lazy paths agree (see
+    /// `TraitKitError::CapabilityTypeMismatch` for what `require` reports
+    /// in that case).
     pub fn contains<M: AutoBuilder>(&self) -> bool {
         let type_id = TypeId::of::<M>();
-        if self.capabilities.contains_by_type_id(type_id) {
-            return true;
-        }
-        self.lazy_cached_boxed(type_id)
-            .and_then(|boxed| boxed.downcast_ref::<M::Capability>().cloned())
-            .is_some()
+        let eager = self
+            .capabilities
+            .inner_ref()
+            .get(&type_id)
+            .and_then(|boxed| boxed.downcast_ref::<M::Capability>())
+            .is_some();
+        eager
+            || self
+                .lazy_cached_boxed(type_id)
+                .is_some_and(|boxed| boxed.downcast_ref::<M::Capability>().is_some())
     }
 
     /// Check if a config is registered.
