@@ -160,13 +160,65 @@ pub trait HealthCheck: crate::core::AutoBuilder {
 /// `AsyncKit::register_health_check()` / `AsyncKit::health_check()`; it does
 /// **not** provide asynchronous checking.
 ///
+/// Keep `check` free of network I/O: it runs on the synchronous reporting
+/// path (`AsyncKit::health_check()` / the `/healthz` export), so a network
+/// probe placed there would block the reporting caller for the probe's full
+/// timeout. Probe the network **once** in
+/// [`AsyncLifecycle::on_ready`](crate::core::AsyncLifecycle::on_ready) and
+/// cache the verdict in shared local state; `check` then only reads that
+/// state.
+///
+/// # Example: two-stage probe/report split
+///
+/// ```ignore
+/// use std::sync::atomic::{AtomicBool, Ordering};
+/// use std::sync::Arc;
+/// use trait_kit::core::{AsyncHealthCheck, HealthStatus};
+///
+/// struct PoolHandle {
+///     // Written once by the startup probe, read by every health report.
+///     probe_reachable: AtomicBool,
+/// }
+///
+/// // Stage 1 — the async network probe runs once, in on_ready:
+/// //
+/// // impl AsyncLifecycle for DbPoolModule {
+/// //     fn on_ready<'a>(kit: &'a AsyncKit<Ready>)
+/// //         -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>>
+/// //     {
+/// //         Box::pin(async move {
+/// //             let pool: Arc<PoolHandle> = kit.require::<DbPoolModule>()?;
+/// //             let ok = select_1_probe(&pool).await.is_ok();
+/// //             pool.probe_reachable.store(ok, Ordering::Relaxed);
+/// //             Ok(())
+/// //         })
+/// //     }
+/// // }
+///
+/// // Stage 2 — check stays synchronous and reads only cached local state:
+/// impl AsyncHealthCheck for DbPoolModule {
+///     type Capability = Arc<PoolHandle>;
+///     // ... AsyncAutoBuilder items (Error, build) elided ...
+///
+///     fn check(cap: &Self::Capability) -> HealthStatus {
+///         if cap.probe_reachable.load(Ordering::Relaxed) {
+///             HealthStatus::Healthy
+///         } else {
+///             HealthStatus::unhealthy("database unreachable at startup probe")
+///         }
+///     }
+/// }
+/// ```
+///
 /// Requires both `health` and `async` features.
 #[cfg(all(feature = "health", feature = "async"))]
 pub trait AsyncHealthCheck: crate::core::AsyncAutoBuilder {
     /// Check the health of the async module given its built capability.
     ///
     /// Intentionally synchronous: see the trait docs for why this is not an
-    /// async method.
+    /// async method. Run network probes in
+    /// [`AsyncLifecycle::on_ready`](crate::core::AsyncLifecycle::on_ready)
+    /// instead; this method only reports from cached local state.
     fn check(cap: &Self::Capability) -> HealthStatus;
 }
 
