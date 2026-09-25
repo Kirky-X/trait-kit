@@ -56,9 +56,9 @@ impl AsyncTypeMap {
     /// 廉价句柄克隆：内部 `Arc` 共享同一存储，不复制任何条目。停机桥接
     /// （`AsyncKit<Ready>::register_shutdown_into`）借此让 `'static` 的
     /// local 钩子闭包持有能力表句柄，与 Kit 本体共享同一份能力数据。
-    /// 门控与唯一调用方（`lifecycle` feature）对齐，避免合法组合下的
-    /// `dead_code`。
-    #[cfg(feature = "lifecycle")]
+    /// 门控与唯一调用方（`lifecycle` + `shutdown` feature 交集）完全
+    /// 对齐，避免合法组合下的 `dead_code`。
+    #[cfg(all(feature = "lifecycle", feature = "shutdown"))]
     #[must_use]
     pub(crate) fn shared_handle(&self) -> Self {
         Self {
