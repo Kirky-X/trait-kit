@@ -324,3 +324,154 @@ mod async_shutdown_e2e {
         );
     }
 }
+
+// ─── SHUTDOWN-BRIDGE：Kit 组件清理桥接进协调器（停机顺序锁定） ──────────
+
+#[cfg(all(feature = "lifecycle", feature = "shutdown"))]
+mod shutdown_bridge_e2e {
+    use super::block_on;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::{Arc, Mutex};
+    use trait_kit::core::lifecycle::AsyncLifecycle;
+    use trait_kit::impl_module_meta;
+    use trait_kit::kit::shutdown::{AsyncShutdownCoordinator, ShutdownPhase};
+    use trait_kit::prelude::*;
+
+    /// 停机事件流水：记录各停机机制（协调器 Send 钩子 / 桥接 local 钩子 /
+    /// drop 兜底）的实际触发顺序。
+    static EVENTS: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+
+    fn record(event: &'static str) {
+        EVENTS.lock().unwrap().push(event);
+    }
+
+    /// 能力释放哨兵：drop 时记录事件，模拟"协调器清理之外的 drop 兜底"
+    /// （daemon 场景中 CloseConnections 留空靠 drop 的既有双机制之一）。
+    struct DropSentinel;
+    impl Drop for DropSentinel {
+        fn drop(&mut self) {
+            record("capability-dropped");
+        }
+    }
+
+    // 组件拓扑：BridgeUp 依赖 BridgeDown。桥接后预期 Up 先于 Down 关闭
+    // （依赖者先于被依赖者，与 shutdown_async 的逆拓扑语义一致）。
+    struct BridgeDown;
+    impl_module_meta!(BridgeDown, "bridge-down");
+    impl AsyncAutoBuilder for BridgeDown {
+        type Capability = Arc<DropSentinel>;
+        type Error = TraitKitError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(Arc::new(DropSentinel)) })
+        }
+    }
+    impl AsyncLifecycle for BridgeDown {
+        fn on_shutdown<'a>(
+            _cap: &'a Arc<DropSentinel>,
+        ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+            Box::pin(async {
+                record("bridge-down");
+            })
+        }
+    }
+
+    struct BridgeUp;
+    impl_module_meta!(BridgeUp, "bridge-up", deps = [BridgeDown]);
+    impl AsyncAutoBuilder for BridgeUp {
+        type Capability = Arc<u32>;
+        type Error = TraitKitError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(Arc::new(1u32)) })
+        }
+    }
+    impl AsyncLifecycle for BridgeUp {
+        fn on_shutdown<'a>(_cap: &'a Arc<u32>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+            Box::pin(async {
+                record("bridge-up");
+            })
+        }
+    }
+
+    /// 停机顺序契约锁定：宿主协调器骨架（模拟 daemon 的
+    /// AsyncShutdownCoordinator 三阶段 + CancellationToken/drop 双机制）
+    /// 与桥接进来的 Kit 组件清理共存时——
+    /// 1. 阶段序：StopRequests（令牌）→ CloseConnections（关闭资源）；
+    /// 2. 同阶段内：宿主 Send 钩子 → 桥接 local 钩子；
+    /// 3. 桥接钩子保持逆拓扑：依赖者（Up）先于被依赖者（Down）；
+    /// 4. 桥接即所有权转移：shutdown_async 变 no-op，组件清理 exactly-once；
+    /// 5. drop 兜底最后发生：桥接清理先于能力 drop。
+    #[test]
+    fn e2e_shutdown_bridge_order_transfer_and_one_shot() {
+        EVENTS.lock().unwrap().clear();
+
+        let mut kit = AsyncKit::new();
+        kit.register::<BridgeDown>().unwrap();
+        kit.register::<BridgeUp>().unwrap();
+        kit.register_lifecycle::<BridgeDown>();
+        kit.register_lifecycle::<BridgeUp>();
+        let ready = block_on(kit.build()).expect("build 应成功");
+
+        let coord = AsyncShutdownCoordinator::new();
+        // 模拟宿主 CancellationToken：StopRequests 阶段翻转令牌。
+        coord
+            .register_hook(ShutdownPhase::StopRequests, || {
+                Box::pin(async {
+                    record("token-cancelled");
+                })
+            })
+            .unwrap();
+        // 宿主自有 CloseConnections Send 钩子。
+        coord
+            .register_hook(ShutdownPhase::CloseConnections, || {
+                Box::pin(async {
+                    record("coord-close");
+                })
+            })
+            .unwrap();
+        // 桥接：Kit 组件清理转移进 CloseConnections 阶段的 local 槽位。
+        let bridged = ready
+            .register_shutdown_into(&coord, ShutdownPhase::CloseConnections)
+            .expect("桥接应成功");
+        assert_eq!(bridged, 2, "两个生命周期模块的清理钩子被转移");
+
+        let result = block_on(coord.shutdown_local()).expect("shutdown_local 应成功");
+        assert!(result.is_ok());
+        assert_eq!(
+            result.phases.len(),
+            3,
+            "每阶段一条结果,与 shutdown() 形状一致"
+        );
+        assert_eq!(
+            *EVENTS.lock().unwrap(),
+            vec!["token-cancelled", "coord-close", "bridge-up", "bridge-down"],
+            "停机顺序:令牌 → 宿主钩子 → 桥接组件清理(依赖者先)"
+        );
+
+        // 桥接即所有权转移:两条既有/新增路径二次调用均为 no-op,
+        // 组件清理 exactly-once。
+        block_on(ready.shutdown_async());
+        let second = block_on(coord.shutdown_local()).expect("二次 shutdown_local 应成功");
+        assert!(second.is_ok());
+        assert_eq!(
+            EVENTS.lock().unwrap().len(),
+            4,
+            "桥接后 shutdown_async() 与二次 shutdown_local() 均为 no-op"
+        );
+
+        // drop 兜底最后发生:桥接清理先于能力 drop(双机制顺序)。
+        drop(ready);
+        let events = EVENTS.lock().unwrap();
+        assert_eq!(
+            events.last(),
+            Some(&"capability-dropped"),
+            "drop 兜底在桥接清理之后"
+        );
+    }
+}

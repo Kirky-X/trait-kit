@@ -20,7 +20,10 @@
 //!    `BuildFailed`；"builder 放回槽位可重试"仅存在于 sync 侧 `Kit`）。
 //! 4. `shutdown_async()`：async `on_shutdown` 钩子 drain（one-shot，二次调用
 //!    no-op）且按逆拓扑序执行（依赖者先于被依赖者）；`AsyncKit` 无 sync
-//!    `shutdown()`——async 清理必须 await `shutdown_async()`。
+//!    `shutdown()`——async 清理必须 await `shutdown_async()`。宿主已有
+//!    `AsyncShutdownCoordinator` 骨架时，组件清理可经
+//!    `register_shutdown_into` 转移进协调器指定阶段（桥接后本方法
+//!    no-op，清理 exactly-once；四条停机入口的选型见 shutdown 模块文档）。
 //! 5. decorator：按 `decorator_module_to_cap` 映射应用（async 侧全部在
 //!    `build()` 时应用，无 lazy 路径）。
 //! 6. factory：typestate cast + 编译期 size/align 布局断言。
@@ -1285,6 +1288,63 @@ impl AsyncKit<Ready> {
         for (_type_id, hook) in async_hooks.iter().rev() {
             hook(&self.capabilities).await;
         }
+    }
+
+    /// Bridge all lifecycle modules' `on_shutdown` cleanup into an external
+    /// [`AsyncShutdownCoordinator`](super::shutdown::AsyncShutdownCoordinator)
+    /// at `phase`.
+    ///
+    /// 桥接即**所有权转移**：本方法的 hook 注册表被 drain，钩子以 local
+    /// （`!Send`）形式重新注册进协调器的 `phase`（`on_shutdown` future 借用
+    /// `std::sync::RwLock` 读卫，天然 `!Send`，故走 local 槽位而非 Send
+    /// 槽位）。转移后：
+    /// - 组件清理的唯一执行者是协调器（`shutdown_local()`），`shutdown_async()`
+    ///   因注册表已空变为 no-op——两条路径合起来保证清理 exactly-once；
+    /// - 执行顺序保持逆拓扑：注册表按拓扑序存放，桥接以逆序写入 local
+    ///   槽位（local 槽位按注册序执行），依赖者仍先于被依赖者关闭。
+    ///
+    /// 返回转移的钩子数量（0 表示无生命周期模块，桥接为 no-op）。
+    ///
+    /// 宿主已有协调器骨架时（如 daemon 三阶段停机），用本方法把组件清理
+    /// 汇入既有关闭编排（典型落位：`CloseConnections`），而不是在协调器
+    /// 之外另开一条 `shutdown_async` 调用。
+    ///
+    /// # Errors
+    ///
+    /// 当协调器内部锁中毒时返回 `TraitKitError::BuildFailed`；部分转移
+    /// 失败时已转移的钩子保留在协调器中（注册表 drain 在前，不回插）。
+    ///
+    /// # Panics
+    ///
+    /// 当 Kit 内部 `RwLock` 中毒时 panic（与 `shutdown_async` 的锁纪律
+    /// 一致）。
+    #[cfg(feature = "lifecycle")]
+    #[cfg(feature = "shutdown")]
+    pub fn register_shutdown_into(
+        &self,
+        coord: &super::shutdown::AsyncShutdownCoordinator,
+        phase: super::shutdown::ShutdownPhase,
+    ) -> Result<usize, TraitKitError> {
+        let hooks: Vec<(TypeId, AsyncShutdownHookFn)> = {
+            self.lifecycle
+                .async_shutdown_callbacks
+                .write()
+                .expect("lock poisoned")
+                .drain(..)
+                .collect()
+        };
+        let count = hooks.len();
+        // 逆序写入：local 槽位按注册序执行，逆序写入使执行序等于注册表的
+        // 逆拓扑序（依赖者先关），与 shutdown_async 的语义逐点一致。
+        for (_type_id, hook) in hooks.into_iter().rev() {
+            let capabilities = self.capabilities.shared_handle();
+            coord.register_local_hook(phase, move || {
+                Box::pin(async move {
+                    hook(&capabilities).await;
+                })
+            })?;
+        }
+        Ok(count)
     }
 
     // ─── Health Check ──────────────────────────────────────────────────

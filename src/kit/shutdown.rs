@@ -17,6 +17,28 @@
 //! 中断（`shutdown()` 会等待当前 hook 返回），因此超时保证的粒度是
 //! **"hook 之间"**——全局预算在阶段边界与每个 hook 启动前检查，超预算则
 //! 跳过剩余 hooks；单个长 hook 仍可能使实际耗时超出预算。
+//!
+//! # 异步停机入口（3 → 4 条）定位
+//!
+//! 停机桥接落地后，异步消费者的停机入口从三条变为四条，按"谁驱动、
+//! 清理谁"划分，选型只看**宿主是否已有协调器骨架**：
+//!
+//! 1. `AsyncKit<Ready>` drop——RAII 兜底，能力随能力表释放，无顺序保证；
+//! 2. `AsyncKit<Ready>::shutdown_async()`——Kit 模块级 `on_shutdown`，
+//!    逆拓扑序；适合**没有**协调器的单 Kit 自治清理；
+//! 3. `AsyncShutdownCoordinator::shutdown()`——宿主自有 Send 钩子的
+//!    三阶段编排（Send 快路径，不执行 local 钩子）；
+//! 4. `AsyncShutdownCoordinator::shutdown_local()`——3 的全量版：Send +
+//!    local（`!Send` future）钩子，返回 `!Send` future 须原地 await；配
+//!    `register_local_hook` 注册 `!Send` future 钩子，配
+//!    `AsyncKit<Ready>::register_shutdown_into` 把 Kit 组件清理桥接进
+//!    指定阶段（典型落位 `CloseConnections`）。
+//!
+//! 认知负担的收敛点：2 与 4 都能执行模块级清理，但**桥接即所有权转移**
+//! ——`register_shutdown_into` 后 `shutdown_async()` 变 no-op，同一组件
+//! 的清理 exactly-once，不会双跑。因此 2 与 4 是互斥选项而非并存选项；
+//! 有协调器骨架的宿主（daemon 三阶段停机）选 1+3+4，把组件清理汇入既有
+//! 编排，不要在协调器之外另开一条 `shutdown_async` 调用。
 
 #[cfg(feature = "async")]
 use std::future::Future;
@@ -406,10 +428,28 @@ impl std::ops::Deref for ShutdownResult {
 type AsyncShutdownHook =
     Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
+/// 本地（`!Send` future）异步关闭钩子。
+///
+/// 与 [`AsyncShutdownHook`] 平行的存储槽：闭包仍要求 `Send + Sync`（协调器
+/// 的共享状态因此保持 `Send + Sync`，公开类型 auto-trait 零漂移），仅
+/// **返回的 future 不加 `Send`**——future 在调用点生成、只在执行线程上
+/// 存活，可以持有 `std::sync::RwLock` 读卫、`Rc` 等单线程资源（停机桥接
+/// 的 `on_shutdown` future 正属此类）。这类钩子只能由
+/// [`AsyncShutdownCoordinator::shutdown_local`]（返回 `!Send` future，须
+/// 原地 await）执行，[`AsyncShutdownCoordinator::shutdown`] 的 Send 路径
+/// 不会触碰它们。
+#[cfg(feature = "async")]
+type LocalShutdownHook = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()>>> + Send + Sync>;
+
 /// 异步阶段的配置。
 #[cfg(feature = "async")]
 struct AsyncPhaseConfig {
     hooks: Vec<AsyncShutdownHook>,
+    /// `!Send` 钩子的平行存储。不能与 `hooks` 共用槽位：`AsyncShutdownHook`
+    /// 的闭包与 future 都带 `Send` bound，放宽即破坏既有 `shutdown()` 的
+    /// `Send` 保证；执行顺序约定为同阶段内先 `hooks` 后 `local_hooks`，
+    /// 各自保持注册序。
+    local_hooks: Vec<LocalShutdownHook>,
     timeout: Duration,
 }
 
@@ -440,11 +480,35 @@ impl Future for CatchUnwindFuture {
     }
 }
 
+/// [`CatchUnwindFuture`] 的 `!Send` 镜像：包装 [`LocalShutdownHook`] 产生
+/// 的 future。panic 隔离语义与 Send 版完全一致，仅去掉 `Send` 约束。
+#[cfg(feature = "async")]
+struct LocalCatchUnwindFuture {
+    inner: Pin<Box<dyn Future<Output = ()>>>,
+}
+
+#[cfg(feature = "async")]
+impl Future for LocalCatchUnwindFuture {
+    type Output = Result<(), Box<dyn std::any::Any + Send>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        let this = &mut *self;
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            this.inner.as_mut().poll(cx)
+        })) {
+            Ok(Poll::Ready(())) => Poll::Ready(Ok(())),
+            Ok(Poll::Pending) => Poll::Pending,
+            Err(payload) => Poll::Ready(Err(payload)),
+        }
+    }
+}
+
 #[cfg(feature = "async")]
 impl AsyncPhaseConfig {
     fn new(timeout: Duration) -> Self {
         Self {
             hooks: Vec::new(),
+            local_hooks: Vec::new(),
             timeout,
         }
     }
@@ -584,6 +648,42 @@ impl AsyncShutdownCoordinator {
         Ok(())
     }
 
+    /// 注册一个本地（`!Send` future）异步关闭钩子到指定阶段。
+    ///
+    /// 与 [`register_hook`](Self::register_hook) 的区别仅在于**返回的
+    /// future 不加 `Send`**：future 可以持有 `Rc`、`std::sync::RwLock`
+    /// 读卫等单线程资源（闭包本身仍须 `Send + Sync`，见 `LocalShutdownHook`
+    /// 的文档说明）。存储在平行槽位，与 Send 钩子互不干扰；执行只
+    /// 发生在 [`shutdown_local`](Self::shutdown_local)，同阶段内先执行
+    /// Send 钩子（注册序）、后执行 local 钩子（注册序）。
+    ///
+    /// # Errors
+    ///
+    /// 当内部锁中毒时返回 `TraitKitError::BuildFailed`。
+    ///
+    /// # Panics
+    ///
+    /// 当数组索引越界时 panic（不会发生，索引由枚举映射保证）。
+    pub fn register_local_hook<F>(&self, phase: ShutdownPhase, hook: F) -> Result<(), TraitKitError>
+    where
+        F: FnOnce() -> Pin<Box<dyn Future<Output = ()>>> + Send + Sync + 'static,
+    {
+        let idx = phase.index();
+        self.phases
+            .write()
+            .map_err(|_| {
+                lock_poisoned(tr(
+                    "trait-kit-error-lock-poisoned-phase",
+                    &[("phase", phase.as_str())],
+                ))
+            })?
+            .get_mut(idx)
+            .expect("index in range")
+            .local_hooks
+            .push(Box::new(hook));
+        Ok(())
+    }
+
     /// 执行完整的异步分阶段关闭流程。
     ///
     /// 全局超时在阶段边界与每个钩子启动前检查（软限制，粒度为"hook 之间"，
@@ -677,6 +777,125 @@ impl AsyncShutdownCoordinator {
                 });
             }
             let outcome = (CatchUnwindFuture { inner: hook() }).await;
+            if outcome.is_err() {
+                hook_failures += 1;
+            }
+        }
+
+        Ok(ShutdownPhaseResult {
+            phase,
+            timed_out: false,
+            elapsed: start.elapsed(),
+            hook_failures,
+        })
+    }
+
+    /// 执行完整的分阶段关闭流程（Send + local 全量版）。
+    ///
+    /// 流程骨架与 [`shutdown`](Self::shutdown) 一致；差异在于每个阶段
+    /// 在 Send 钩子执行完后，继续执行 local（`!Send`）钩子（注册序，
+    /// 由 `execute_local_phase` 驱动），并把
+    /// 两段的超时/panic 计数合并为**单个** [`ShutdownPhaseResult`]，
+    /// 保持 `ShutdownResult::phases` 每阶段一条的形状不变。
+    ///
+    /// 超时语义仍是软限制：阶段超时窗口对 Send 段与 local 段各自生效，
+    /// 全局 `deadline` 在两段的钩子启动前均检查。返回的 future 是
+    /// **`!Send`**（local 钩子 future 不加 `Send`）：必须原地 await，
+    /// 不能抛给多线程运行时 spawn。
+    ///
+    /// [`shutdown`](Self::shutdown) 不会执行 local 钩子——它的 `Send`
+    /// 保证与 local 槽位天然互斥，两条路径各自 drain、互不越界。
+    ///
+    /// # Errors
+    ///
+    /// 当内部 `RwLock` 中毒时返回 `TraitKitError::BuildFailed`。
+    #[must_use = "shutdown returns phase result; ignoring it may hide timeout events"]
+    pub async fn shutdown_local(&self) -> Result<ShutdownResult, TraitKitError> {
+        let global_start = Instant::now();
+        let global_timeout = *self.global_timeout.read().map_err(|_| {
+            lock_poisoned(tr(
+                "trait-kit-error-lock-poisoned-operation",
+                &[("operation", "shutdown_local")],
+            ))
+        })?;
+        // 全局截止时刻：None 表示无全局超时
+        let deadline = global_timeout.map(|t| global_start + t);
+        let mut phases = Vec::with_capacity(3);
+
+        for phase in ShutdownPhase::all_phases() {
+            // 检查全局超时（阶段边界）
+            if deadline.is_some_and(|d| Instant::now() >= d) {
+                phases.push(ShutdownPhaseResult {
+                    phase: *phase,
+                    timed_out: true,
+                    // 阶段被整体跳过、未执行任何钩子：elapsed 语义为"该阶段
+                    // 实际耗时"，故为零（而非全局已流逝时间）。
+                    elapsed: Duration::ZERO,
+                    hook_failures: 0,
+                });
+                continue;
+            }
+
+            // 先 Send 钩子后 local 钩子（各自注册序），结果合并为一条。
+            let send_result = self.execute_phase(*phase, deadline).await?;
+            let local_result = self.execute_local_phase(*phase, deadline).await?;
+            phases.push(ShutdownPhaseResult {
+                phase: *phase,
+                timed_out: send_result.timed_out || local_result.timed_out,
+                elapsed: send_result.elapsed + local_result.elapsed,
+                hook_failures: send_result.hook_failures + local_result.hook_failures,
+            });
+        }
+
+        Ok(ShutdownResult { phases })
+    }
+
+    /// 执行单个阶段的 local（`!Send`）钩子，[`execute_phase`](Self::execute_phase)
+    /// 的镜像：同一次写锁取出 `local_hooks` 与阶段超时，超时软限制与
+    /// poll 级 panic 隔离（`LocalCatchUnwindFuture`）语义一致。
+    ///
+    /// # Errors
+    ///
+    /// 当内部 `RwLock` 中毒时返回 `TraitKitError::BuildFailed`。
+    async fn execute_local_phase(
+        &self,
+        phase: ShutdownPhase,
+        deadline: Option<Instant>,
+    ) -> Result<ShutdownPhaseResult, TraitKitError> {
+        let idx = phase.index();
+        let start = Instant::now();
+
+        // 单次写锁同时取出 local 钩子与阶段超时（与 execute_phase 同纪律）
+        let (hooks, timeout) = {
+            let mut phases = self.phases.write().map_err(|_| {
+                lock_poisoned(tr(
+                    "trait-kit-error-lock-poisoned-operation-phase",
+                    &[
+                        ("operation", "execute_local_phase"),
+                        ("phase", phase.as_str()),
+                    ],
+                ))
+            })?;
+            let hooks = std::mem::take(&mut phases[idx].local_hooks);
+            let timeout = phases[idx].timeout;
+            (hooks, timeout)
+        };
+
+        let mut hook_failures = 0usize;
+        for hook in hooks {
+            // 钩子启动前的最后检查：阶段超时或全局超时（软限制，"hook 之间"粒度）
+            if matches!(
+                evaluate_timeout(start, timeout, deadline),
+                TimeoutDecision::SkipRemaining
+            ) {
+                return Ok(ShutdownPhaseResult {
+                    phase,
+                    timed_out: true,
+                    elapsed: start.elapsed(),
+                    hook_failures,
+                });
+            }
+            let outcome = (LocalCatchUnwindFuture { inner: hook() }).await;
             if outcome.is_err() {
                 hook_failures += 1;
             }
@@ -1360,6 +1579,143 @@ mod async_tests {
                 .expect("StopRequests phase result");
             assert_eq!(stop.hook_failures, 1, "恰好一个 panic hook 被计数");
             assert!(!stop.is_ok());
+            assert!(!result.is_ok());
+        });
+    }
+
+    // ─── local(!Send)钩子:平行槽位与 shutdown_local 执行语义 ───
+
+    #[test]
+    fn local_hook_future_may_hold_non_send_state_and_runs() {
+        static TOUCHED: AtomicUsize = AtomicUsize::new(0);
+
+        block_on(async {
+            let coord = AsyncShutdownCoordinator::new();
+            coord
+                .register_local_hook(ShutdownPhase::CloseConnections, || {
+                    // Rc 在闭包体内创建并移入 future：future 持有 Rc（!Send），
+                    // 而闭包本身无捕获、保持 Send+Sync（平行槽位的约束面）。
+                    // 若槽位重新要求 future: Send，此钩子将无法编译。
+                    let hits = std::rc::Rc::new(std::cell::Cell::new(0usize));
+                    let probe = std::rc::Rc::clone(&hits);
+                    Box::pin(async move {
+                        probe.set(probe.get() + 1);
+                        TOUCHED.fetch_add(1, Ordering::SeqCst);
+                    })
+                })
+                .unwrap();
+
+            let result = coord.shutdown_local().await.unwrap();
+            assert!(result.is_ok());
+            assert_eq!(
+                TOUCHED.load(Ordering::SeqCst),
+                1,
+                "local 钩子须由 shutdown_local() 恰好执行一次"
+            );
+        });
+    }
+
+    #[test]
+    fn shutdown_send_path_skips_local_hooks() {
+        static LOCAL_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+        block_on(async {
+            let coord = AsyncShutdownCoordinator::new();
+            coord
+                .register_local_hook(ShutdownPhase::CloseConnections, || {
+                    Box::pin(async {
+                        LOCAL_RUNS.fetch_add(1, Ordering::SeqCst);
+                    })
+                })
+                .unwrap();
+
+            // Send 快路径不得触碰 local 槽位（其 future 的 Send 保证与
+            // !Send 钩子天然互斥），两条路径各自 drain。
+            let send_result = coord.shutdown().await.unwrap();
+            assert!(send_result.is_ok());
+            assert_eq!(
+                LOCAL_RUNS.load(Ordering::SeqCst),
+                0,
+                "shutdown() 不得执行 local 钩子"
+            );
+
+            let local_result = coord.shutdown_local().await.unwrap();
+            assert!(local_result.is_ok());
+            assert_eq!(
+                LOCAL_RUNS.load(Ordering::SeqCst),
+                1,
+                "shutdown_local() 执行 local 钩子"
+            );
+        });
+    }
+
+    #[test]
+    fn shutdown_local_runs_send_hooks_before_local_hooks_in_phase() {
+        static ORDER: AtomicUsize = AtomicUsize::new(0);
+
+        block_on(async {
+            let coord = AsyncShutdownCoordinator::new();
+            // local 钩子先注册，仍须排在 Send 钩子之后：同阶段顺序约定为
+            // "先 hooks 后 local_hooks"，与注册先后无关，各自保持注册序。
+            coord
+                .register_local_hook(ShutdownPhase::DrainQueue, || {
+                    Box::pin(async {
+                        assert_eq!(
+                            ORDER.fetch_add(1, Ordering::SeqCst),
+                            1,
+                            "local 钩子在 Send 钩子之后执行"
+                        );
+                    })
+                })
+                .unwrap();
+            coord
+                .register_hook(ShutdownPhase::DrainQueue, || {
+                    Box::pin(async {
+                        assert_eq!(ORDER.fetch_add(1, Ordering::SeqCst), 0, "Send 钩子先执行");
+                    })
+                })
+                .unwrap();
+
+            let result = coord.shutdown_local().await.unwrap();
+            assert!(result.is_ok());
+            // Send 段与 local 段合并为每阶段一条结果，形状与 shutdown() 一致。
+            assert_eq!(result.phases.len(), 3);
+        });
+    }
+
+    #[test]
+    fn local_hook_panic_is_isolated_and_counted() {
+        static RAN_AFTER: AtomicUsize = AtomicUsize::new(0);
+
+        block_on(async {
+            let coord = AsyncShutdownCoordinator::new();
+            coord
+                .register_local_hook(ShutdownPhase::StopRequests, || {
+                    Box::pin(async {
+                        panic!("local hook boom");
+                    })
+                })
+                .unwrap();
+            coord
+                .register_local_hook(ShutdownPhase::StopRequests, || {
+                    Box::pin(async {
+                        RAN_AFTER.fetch_add(1, Ordering::SeqCst);
+                    })
+                })
+                .unwrap();
+
+            let result = coord.shutdown_local().await.unwrap();
+            assert_eq!(
+                RAN_AFTER.load(Ordering::SeqCst),
+                1,
+                "同阶段 panic 之后的 local 钩子仍须执行"
+            );
+            let stop = result
+                .phases
+                .iter()
+                .find(|p| p.phase == ShutdownPhase::StopRequests)
+                .expect("StopRequests phase result");
+            assert_eq!(stop.hook_failures, 1, "恰好一个 panic 的 local 钩子被计数");
             assert!(!result.is_ok());
         });
     }

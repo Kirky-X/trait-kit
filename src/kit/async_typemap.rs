@@ -53,6 +53,16 @@ impl AsyncTypeMap {
         }
     }
 
+    /// 廉价句柄克隆：内部 `Arc` 共享同一存储，不复制任何条目。停机桥接
+    /// （`AsyncKit<Ready>::register_shutdown_into`）借此让 `'static` 的
+    /// local 钩子闭包持有能力表句柄，与 Kit 本体共享同一份能力数据。
+    #[must_use]
+    pub(crate) fn shared_handle(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+
     /// Insert a value for the given type key. Overwrites any existing entry.
     ///
     /// Requires `T: Send + Sync + 'static` so the stored value can cross
