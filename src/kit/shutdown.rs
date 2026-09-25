@@ -335,8 +335,8 @@ pub struct ShutdownPhaseResult {
     pub timed_out: bool,
     /// 该阶段实际耗时。
     pub elapsed: Duration,
-    /// 该阶段内 panic 被隔离的 hook 数量（`fix-audit-defects-r1` 起：
-    /// 单个 hook panic 不再中断整个关闭流程，只计数并继续）。
+    /// 该阶段内 panic 被隔离的 hook 数量（单个 hook panic 不再中断
+    /// 整个关闭流程，只计数并继续）。
     pub hook_failures: usize,
 }
 
@@ -1321,7 +1321,7 @@ mod tests {
     }
 
     /// 一个 hook panic 不得中断整个关闭流程：后续 hook 与阶段照常执行，
-    /// 失败计数记入该阶段结果（fix-audit-defects-r1 批次 C / T012）。
+    /// 失败计数记入该阶段结果。
     #[test]
     fn shutdown_coordinator_isolates_panicking_hook() {
         use std::sync::Arc;
@@ -1576,7 +1576,7 @@ mod async_tests {
     }
 
     /// async 侧 hook panic 同样被隔离：后续 hook 与阶段照常执行，
-    /// 失败计数进 `hook_failures`（fix-audit-defects-r1 批次 C / T014）。
+    /// 失败计数进 `hook_failures`。
     #[test]
     fn async_shutdown_isolates_panicking_hook() {
         use std::sync::Arc;
