@@ -47,6 +47,11 @@ sys-locale = { version = "0.3", optional = true }
 # `I18nManager` work with or without the `i18n` feature (en-US fallback).
 fluent-bundle = "0.16"
 unic-langid = "0.9"
+# Structured logging facade for degradation events (`soft_build` fallback
+# path). Facade only: records surface in whatever subscriber the consumer
+# installs (log-native, or bridged by tracing-subscriber's default
+# `tracing-log` support).
+log = { version = "0.4", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 thiserror = { version = "2.0", default-features = false }

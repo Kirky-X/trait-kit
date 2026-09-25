@@ -52,9 +52,10 @@ pub use kit::{ShutdownCoordinator, ShutdownPhase, ShutdownPhaseResult, ShutdownR
 /// Shared test helpers for async test modules (`block_on` executor + `MockError`).
 ///
 /// Extracted to deduplicate between `core::meta::async_tests` and
-/// `kit::async_kit::tests`. Gated on `async` feature because
-/// both consumer test mods are `#[cfg(all(test, feature = "async"))]`.
-#[cfg(all(test, feature = "async"))]
+/// `kit::async_kit::tests`. Available to every `#[cfg(test)]` mod so
+/// feature-free test mods (e.g. `kit::soft_build`) reuse the same executor
+/// instead of shipping a second one.
+#[cfg(test)]
 pub(crate) mod test_helpers {
     use std::future::Future;
     use std::task::{self, Poll};

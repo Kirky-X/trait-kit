@@ -2521,6 +2521,7 @@ dependencies = [
  "criterion",
  "fluent-bundle",
  "icu",
+ "log",
  "serde",
  "serde_json",
  "serial_test",

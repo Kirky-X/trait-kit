@@ -8,6 +8,7 @@ pub mod kit;
 pub mod ports;
 #[cfg(feature = "report")]
 pub mod report;
+pub mod soft_build;
 pub(crate) mod typemap;
 
 pub mod events;
@@ -99,6 +100,8 @@ pub use ports::{
 };
 
 pub use events::{EventBus, KitEvent, MemoryEventBus, NoOpEventBus, OptionalEventBus};
+
+pub use soft_build::soft_build;
 
 #[cfg(all(feature = "toggle", feature = "confers"))]
 pub use toggle::ConfersToggle;
