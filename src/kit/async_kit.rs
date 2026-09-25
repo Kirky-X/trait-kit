@@ -1336,13 +1336,23 @@ impl AsyncKit<Ready> {
         let count = hooks.len();
         // 逆序写入：local 槽位按注册序执行，逆序写入使执行序等于注册表的
         // 逆拓扑序（依赖者先关），与 shutdown_async 的语义逐点一致。
-        for (_type_id, hook) in hooks.into_iter().rev() {
+        for (index, (_type_id, hook)) in hooks.into_iter().rev().enumerate() {
             let capabilities = self.capabilities.shared_handle();
-            coord.register_local_hook(phase, move || {
+            if let Err(error) = coord.register_local_hook(phase, move || {
                 Box::pin(async move {
                     hook(&capabilities).await;
                 })
-            })?;
+            }) {
+                // 失败显性化：注册表已 drain（shutdown_async 变 no-op），
+                // 未转移的钩子既不在 Kit 也不在协调器，将永不执行——
+                // 必须留下可检索的错误日志而非静默丢失。
+                let stranded = count - index - 1;
+                log::error!(
+                    "register_shutdown_into: coordinator rejected a hook ({error}); \
+                     {stranded} remaining lifecycle hook(s) are stranded and will never run"
+                );
+                return Err(error);
+            }
         }
         Ok(count)
     }

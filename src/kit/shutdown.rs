@@ -684,10 +684,40 @@ impl AsyncShutdownCoordinator {
         Ok(())
     }
 
+    /// 返回尚未执行的 local（`!Send` future）钩子总数（三阶段合计）。
+    ///
+    /// [`shutdown`](Self::shutdown) 不执行也不 drain local 槽位，只调
+    /// Send 快路径的宿主可用本计数察觉"仍有组件清理待执行"——这类遗漏
+    /// 在 [`ShutdownResult`] 里不可见（结果照常成功），必须显式探测。
+    /// `shutdown_local` 按阶段 drain local 槽位（含超时丢弃），正常走完
+    /// 后计数归零。
+    ///
+    /// # Panics
+    ///
+    /// 当内部 `RwLock` 中毒时 panic（与 [`Debug`](std::fmt::Debug) 实现的
+    /// 锁纪律一致）。
+    #[must_use]
+    pub fn pending_local_hook_count(&self) -> usize {
+        self.phases
+            .read()
+            .expect("lock poisoned")
+            .iter()
+            .map(|phase| phase.local_hooks.len())
+            .sum()
+    }
+
     /// 执行完整的异步分阶段关闭流程。
     ///
     /// 全局超时在阶段边界与每个钩子启动前检查（软限制，粒度为"hook 之间"，
     /// 见模块文档），超预算则跳过剩余钩子并标记该阶段 `timed_out`。
+    ///
+    /// **不执行也不 drain local（`!Send`）槽位**：本方法的 `Send` 保证与
+    /// `!Send` 钩子天然互斥。若协调器同时承载了经
+    /// [`register_local_hook`](Self::register_local_hook) /
+    /// `AsyncKit<Ready>::register_shutdown_into` 注册的清理钩子，只调本
+    /// 方法会使其**静默遗留**——钩子不执行，结果照常报告成功。遗留可用
+    /// [`pending_local_hook_count`](Self::pending_local_hook_count) 探测，
+    /// 或改用全量版 [`shutdown_local`](Self::shutdown_local)。
     ///
     /// # Errors
     ///
@@ -798,8 +828,11 @@ impl AsyncShutdownCoordinator {
     /// 两段的超时/panic 计数合并为**单个** [`ShutdownPhaseResult`]，
     /// 保持 `ShutdownResult::phases` 每阶段一条的形状不变。
     ///
-    /// 超时语义仍是软限制：阶段超时窗口对 Send 段与 local 段各自生效，
-    /// 全局 `deadline` 在两段的钩子启动前均检查。返回的 future 是
+    /// 超时语义仍是软限制：阶段超时窗口对 Send 段与 local 段**各自生效**
+    /// ——Send 段用满窗口（`timed_out`）后，local 段以全新 `start` 独立
+    /// 重置窗口，因此**单阶段最坏耗时 ≈ 2×阶段超时**（两段各用满一个
+    /// 窗口）；全局 `deadline` 则贯穿两段不受影响，宿主设定阶段/全局
+    /// 超时时应把这一预算翻倍后果计入。返回的 future 是
     /// **`!Send`**（local 钩子 future 不加 `Send`）：必须原地 await，
     /// 不能抛给多线程运行时 spawn。
     ///
@@ -919,11 +952,13 @@ impl Default for AsyncShutdownCoordinator {
 
 #[cfg(feature = "async")]
 impl std::fmt::Debug for AsyncShutdownCoordinator {
-    /// 手写 `Debug`：打印结构名、阶段数与各阶段/全局超时概要。
-    /// 不打印 hooks——闭包不可 `Debug`。
+    /// 手写 `Debug`：打印结构名、阶段数、各阶段/全局超时与待执行 local
+    /// 钩子计数。不打印 hooks——闭包不可 `Debug`；计数使"只调 Send 快
+    /// 路径导致 local 清理遗留"在调试输出中可被察觉。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let phases = self.phases.read().expect("lock poisoned");
         let timeouts: [Duration; 3] = [phases[0].timeout, phases[1].timeout, phases[2].timeout];
+        let pending_local: usize = phases.iter().map(|phase| phase.local_hooks.len()).sum();
         f.debug_struct("AsyncShutdownCoordinator")
             .field("phase_count", &phases.len())
             .field("phase_timeouts", &timeouts)
@@ -931,6 +966,7 @@ impl std::fmt::Debug for AsyncShutdownCoordinator {
                 "global_timeout",
                 &*self.global_timeout.read().expect("lock poisoned"),
             )
+            .field("pending_local_hooks", &pending_local)
             .finish()
     }
 }
@@ -1717,6 +1753,167 @@ mod async_tests {
                 .expect("StopRequests phase result");
             assert_eq!(stop.hook_failures, 1, "恰好一个 panic 的 local 钩子被计数");
             assert!(!result.is_ok());
+        });
+    }
+
+    #[test]
+    fn shutdown_send_path_leaves_pending_local_hooks_detectable() {
+        static LOCAL_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+        block_on(async {
+            let coord = AsyncShutdownCoordinator::new();
+            coord
+                .register_local_hook(ShutdownPhase::StopRequests, || {
+                    Box::pin(async {
+                        LOCAL_RUNS.fetch_add(1, Ordering::SeqCst);
+                    })
+                })
+                .unwrap();
+            coord
+                .register_local_hook(ShutdownPhase::CloseConnections, || {
+                    Box::pin(async {
+                        LOCAL_RUNS.fetch_add(1, Ordering::SeqCst);
+                    })
+                })
+                .unwrap();
+
+            // Send 快路径：结果照常成功，local 钩子静默遗留——
+            // 遗留必须能被 pending_local_hook_count() 探测。
+            let send_result = coord.shutdown().await.unwrap();
+            assert!(send_result.is_ok(), "Send 快路径结果不含 local 信息");
+            assert_eq!(LOCAL_RUNS.load(Ordering::SeqCst), 0);
+            assert_eq!(
+                coord.pending_local_hook_count(),
+                2,
+                "遗留的 local 钩子必须可被探测，否则清理丢失不可察觉"
+            );
+
+            let local_result = coord.shutdown_local().await.unwrap();
+            assert!(local_result.is_ok());
+            assert_eq!(LOCAL_RUNS.load(Ordering::SeqCst), 2);
+            assert_eq!(
+                coord.pending_local_hook_count(),
+                0,
+                "shutdown_local() 正常走完后计数归零"
+            );
+        });
+    }
+
+    #[test]
+    fn shutdown_local_phase_timeout_skips_remaining_local_hooks() {
+        static RAN: AtomicUsize = AtomicUsize::new(0);
+
+        block_on(async {
+            let coord = AsyncShutdownCoordinator::new();
+            coord
+                .set_phase_timeout(ShutdownPhase::StopRequests, Duration::from_millis(30))
+                .unwrap();
+            coord
+                .register_local_hook(ShutdownPhase::StopRequests, || {
+                    Box::pin(async {
+                        // 耗尽本阶段窗口
+                        std::thread::sleep(Duration::from_millis(60));
+                        RAN.fetch_add(1, Ordering::SeqCst);
+                    })
+                })
+                .unwrap();
+            coord
+                .register_local_hook(ShutdownPhase::StopRequests, || {
+                    Box::pin(async {
+                        // 应被超时跳过
+                        RAN.fetch_add(1, Ordering::SeqCst);
+                    })
+                })
+                .unwrap();
+
+            let result = coord.shutdown_local().await.unwrap();
+            assert!(!result.is_ok());
+            assert_eq!(
+                result.timed_out_phases(),
+                vec![ShutdownPhase::StopRequests],
+                "local 段超时须合并进该阶段结果"
+            );
+            assert_eq!(
+                RAN.load(Ordering::SeqCst),
+                1,
+                "仅窗口耗尽前的首个 local 钩子执行"
+            );
+            // 软限制语义：超时跳过的剩余 local 钩子随 drain 丢弃，不遗留——
+            // 与 Send 段超时的处置一致。
+            assert_eq!(
+                coord.pending_local_hook_count(),
+                0,
+                "超时丢弃的 local 钩子不应遗留"
+            );
+        });
+    }
+
+    #[test]
+    fn shutdown_local_local_segment_gets_fresh_window_after_send_timeout() {
+        static RAN: AtomicUsize = AtomicUsize::new(0);
+
+        block_on(async {
+            let coord = AsyncShutdownCoordinator::new();
+            coord
+                .set_phase_timeout(ShutdownPhase::DrainQueue, Duration::from_millis(30))
+                .unwrap();
+            coord
+                .register_hook(ShutdownPhase::DrainQueue, || {
+                    Box::pin(async {
+                        // Send 段：耗尽第一份窗口
+                        std::thread::sleep(Duration::from_millis(60));
+                        RAN.fetch_add(1, Ordering::SeqCst);
+                    })
+                })
+                .unwrap();
+            coord
+                .register_hook(ShutdownPhase::DrainQueue, || {
+                    Box::pin(async {
+                        RAN.fetch_add(1, Ordering::SeqCst); // Send 段被超时跳过
+                    })
+                })
+                .unwrap();
+            coord
+                .register_local_hook(ShutdownPhase::DrainQueue, || {
+                    Box::pin(async {
+                        // local 段：窗口已独立重置，首钩子启动前检查通过
+                        std::thread::sleep(Duration::from_millis(60));
+                        RAN.fetch_add(1, Ordering::SeqCst);
+                    })
+                })
+                .unwrap();
+            coord
+                .register_local_hook(ShutdownPhase::DrainQueue, || {
+                    Box::pin(async {
+                        RAN.fetch_add(1, Ordering::SeqCst); // local 段在其窗口内被跳过
+                    })
+                })
+                .unwrap();
+
+            let result = coord.shutdown_local().await.unwrap();
+            assert!(!result.is_ok());
+            assert_eq!(
+                result.timed_out_phases(),
+                vec![ShutdownPhase::DrainQueue],
+                "两段均超时，合并后仍标记该阶段"
+            );
+            assert_eq!(
+                RAN.load(Ordering::SeqCst),
+                2,
+                "Send 段与 local 段各执行首个钩子：local 段拿到全新窗口"
+            );
+            // 单阶段最坏耗时 ≈ 2×阶段超时（两段各用满一个窗口）——
+            // 锁定"独立重置窗口"的声明，防止未来实现无意收紧或放宽。
+            let drain = result
+                .phases
+                .iter()
+                .find(|p| p.phase == ShutdownPhase::DrainQueue)
+                .expect("DrainQueue phase result");
+            assert!(
+                drain.elapsed >= Duration::from_millis(100),
+                "两段各耗满窗口（60ms+60ms），elapsed 应 ≥100ms，实际 {:?}",
+                drain.elapsed
+            );
         });
     }
 }

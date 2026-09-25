@@ -42,6 +42,7 @@
 
 - **API**：`ShutdownPhaseResult` 新增 `hook_failures: usize` 字段（结构体字面量构造方需同步）；`is_ok()` 语义收紧为 `!timed_out && hook_failures == 0`，`into_result()` 对"仅 hook panic"场景返回 `BuildFailed`
 - **文档**：README/README_EN/SECURITY 的"无 unsafe"表述修正为"默认禁用 + 6 处经审计豁免"；API_REFERENCE 补 lazy 模块检索口径
+- **依赖**：新增非 optional `log 0.4`（`default-features = false, features = ["std"]`，零传递依赖 facade）——新增的 `soft_build` 可降级构建助手的 `error!` 降级日志所需；所有消费者升级 rc+1 后依赖闭包将新增 `log`
 
 ---
 
