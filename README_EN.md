@@ -526,7 +526,7 @@ Entries carry over the existing plan; status is aligned with the current reposit
 <tr><td>✅</td><td><b>0.5.0-rc.2</b> (2026-09-03)</td><td>Docs & Kit API table sync; workspace dependency path localization (<code>path</code> + <code>version</code> dual specification).</td></tr>
 <tr><td>✅</td><td><b>Performance benchmarks</b></td><td>Criterion benchmarks in <code>benches/kit_bench.rs</code> and the <code>docs/PERFORMANCE.md</code> baseline report are in place (baseline 2026-09-10).</td></tr>
 <tr><td>📋</td><td><b>0.5.0 stable release</b></td><td>After the minor version bump, sync the <code>path + version</code> dependency requirements of downstream crates (oxcache, dbnexus, inklog, limiteron, sdforge) per the workspace release plan.</td></tr>
-<tr><td>📋</td><td><b>cfg gate completeness</b></td><td>Add missing <code>observer</code> cfg gates for the <code>--no-default-features --features async</code> combination (known low-priority item).</td></tr>
+<tr><td>✅</td><td><b>cfg gate completeness</b></td><td><code>--no-default-features --features async</code> and <code>async,observer</code> check combos, <code>clippy --features async --all-targets</code> are warning-free, and async doc tests all pass — the gate gap is resolved (re-verified 2026-09-27).</td></tr>
 </table>
 
 </div>

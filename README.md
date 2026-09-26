@@ -522,7 +522,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 80
 <tr><td>✅</td><td><b>0.5.0-rc.2</b>（2026-09-03）</td><td>文档与 Kit API 表同步；workspace 依赖路径本地化（<code>path</code> + <code>version</code> 双写）。</td></tr>
 <tr><td>✅</td><td><b>性能基准</b></td><td>criterion 基准 <code>benches/kit_bench.rs</code> 与 <code>docs/PERFORMANCE.md</code> 基线报告已建立（基线 2026-09-10）。</td></tr>
 <tr><td>📋</td><td><b>0.5.0 正式发布</b></td><td>次版本位 +1 后，按工作区发布计划同步下游仓库（oxcache、dbnexus、inklog、limiteron、sdforge）的 <code>path + version</code> 依赖要求。</td></tr>
-<tr><td>📋</td><td><b>cfg 门控完整性</b></td><td>补齐 <code>--no-default-features --features async</code> 组合下 <code>observer</code> 相关 cfg 门控（已知低优先级项）。</td></tr>
+<tr><td>✅</td><td><b>cfg 门控完整性</b></td><td><code>--no-default-features --features async</code> 与 <code>async,observer</code> 组合 check、<code>clippy --features async --all-targets</code> 零告警，async doc 测试全通过——门控缺口已消除（2026-09-27 复测确认）。</td></tr>
 </table>
 
 </div>
