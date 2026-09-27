@@ -1311,7 +1311,11 @@ impl AsyncKit<Ready> {
     /// # Errors
     ///
     /// 当协调器内部锁中毒时返回 `TraitKitError::BuildFailed`；部分转移
-    /// 失败时已转移的钩子保留在协调器中（注册表 drain 在前，不回插）。
+    /// 失败时已转移的钩子保留在协调器中（注册表 drain 在前，不回插），
+    /// 返回的 `BuildFailed` 是对协调器**任意**错误变体的通用包装：
+    /// context 经 `trait-kit-error-shutdown-bridge-stranded` 报告桥接
+    /// 操作/阶段与 stranded 计数，被拒绝的原始错误整体降为 source——
+    /// 沿 `source()` 链下探可追溯根因（如锁中毒的 `io::Error`）。
     ///
     /// # Panics
     ///
