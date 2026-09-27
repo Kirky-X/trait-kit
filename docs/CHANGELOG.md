@@ -11,7 +11,9 @@
 <summary>📑 目录</summary>
 
 - [Unreleased](#unreleased)
-- [`0.5.0-rc.3`](#050-rc3---2026-09-10)
+- [`0.5.0-rc.6`](#050-rc6---2026-09-21)
+- [`0.5.0-rc.5`](#050-rc5---2026-09-14)
+- [`0.5.0-rc.4`](#050-rc4---2026-09-13)
 - [`0.5.0-rc.2`](#050-rc2---2026-09-03)
 - [`0.4.2`](#042---2026-08-06)
 - [`0.4.1`](#041---2026-08-06)
@@ -49,7 +51,9 @@
 
 ---
 
-## [0.5.0-rc.3] - 2026-09-10
+## [0.5.0-rc.4] - 2026-09-13
+
+> 注：0.5.0-rc.3 未单独发布（无 tag、未上 crates.io），本节内容含原 rc.3 开发批次，随 0.5.0-rc.4 一并发布。
 
 ### Added
 
@@ -71,15 +75,59 @@
 - **能力版本协商**：`ModuleMeta::VERSION`/`required_versions` + `negotiate` feature 构建期 semver-compat 校验（`VersionIncompatible`）
 - **配置变更审计**：`set_config`/`set_config_arc`/`reload_config`/`restore_config` 经 EventBus 发布 `ConfigChanged` 审计事件（含变更摘要）
 - **API 文档一致性门禁**：`tests/api_reference_gate.rs` 关键项编译存在性 + docs/API_REFERENCE.md 收录双向断言
+- **presets feature**：`ConfersConfigModule` 把 confers ConfigProvider 包装为 Kit 模块 + Presets 组合 builder
+- **presets-remote 远程配置源桥接**：把 confers AsyncSource 快照包装为 AsyncKit 模块（dot-path `RemoteConfigProvider` + 审计事件）
+- **build_report() / contract_manifest()**：结构化构建报告（模块状态/拓扑/耗时/override 来源）与注册模块契约清单 JSON（report feature）
+- **require 错误细分**：`CapabilityTypeMismatch` variant + `ErrorKind::kind()`（Missing/InitFailed/TypeMismatch/Other）
+- **trait-kit-macros 子 crate**：`#[derive(Module)]` 生成 ModuleMeta（name/deps，trybuild 负面用例）
+- **criterion 基准套件**：build/require/config/toggle + docs/PERFORMANCE.md 基线
 
 ### Changed
 
 - `reload` feature 移除 `confers/watch` 依赖（自有 SubscriberMap 机制不受影响）
 - `confers` feature 启用 `confers/feature-toggle` 以接入 `FeatureToggleRegistry`
+- `confers` 依赖升至 0.6.0-rc.4 并移除 `[patch.crates-io]` 本地口径（改由 crates.io 解析）
+- 文档套件重写：中英双语 README（workspace 架构图/build 生命周期时序图/特性全表）、文档归入 docs/ 并统一优化
 
 ### Fixed
 
 - `derive_kit_field_key` 改为 `pub(crate)` 供 `async_kit.rs` 跨模块访问
+- OCR 审查修复组：事件总线回调持锁死锁、密钥擦除补 `inline(never)`、`ConfersToggle::remove` 补移除语义、`to_json`/`health_json` 返回 `Result`、`interpolate_json_value` 迭代化
+- lifecycle 测试共享计数器互斥串行（并行 build 各触发 on_ready 的计数污染致偶发红）
+
+---
+
+## [0.5.0-rc.5] - 2026-09-14
+
+### Changed
+
+- **trait-kit-derive 并入 trait-kit-macros**：ConfigInherit/SharedConfig 迁移，derive 子包退役；PRE-03 契约与 docs/deny.toml 同步，CI 门禁收敛
+
+### Fixed
+
+- cargo-deny path-only 通配依赖违规：trait-kit-macros 的 dev-dependency trait-kit 补 version 声明
+- release 工作流 publish 步骤幂等容错：本地先行发布/重跑 tag 撞车不阻断 Release 交付
+
+---
+
+## [0.5.0-rc.6] - 2026-09-21
+
+### Added
+
+- **AsyncKit 版本协商补齐**：negotiate feature 下 AsyncKit 与同步 Kit 同口径的版本兼容校验
+
+### Changed
+
+- **i18n 整改**：接入 unify-rust-i18n 统一错误与消息文案
+- **confers 依赖改走 crates.io**：移除跨仓 path，req 升 0.6.0-rc.5
+- **依赖升级**：syn 2.0.119 → 3.0.5、criterion 0.7.0 → 0.8.2、rustls 0.23.45（RUSTSEC-2026-0285）
+- **供应链与工程加固**：detect-secrets 基线、pre-commit 门禁、typos 词表白名单、path-only 依赖补全 version 字段
+- **发布流程加固**：先发 trait-kit-macros 再发主 crate，crates.io 发布后硬校验，校验 curl 补 User-Agent 并加重试
+
+### Fixed
+
+- **encryption 继承链对齐**：di/request-scope/version-negotiation 特性正名
+- ReloadSubscriber 别名与 AsyncDecoMod 测试模块随使用处特性门控
 
 ---
 
@@ -318,8 +366,10 @@
 - `TypeMap` 类型安全存储（以 `TypeId` 为键）
 - 依赖图验证：环检测 + 拓扑排序构建
 
-[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.2...HEAD
-[0.5.0-rc.3]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.2...v0.5.0-rc.3
+[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.6...HEAD
+[0.5.0-rc.6]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.5...v0.5.0-rc.6
+[0.5.0-rc.5]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.4...v0.5.0-rc.5
+[0.5.0-rc.4]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.2...v0.5.0-rc.4
 [0.5.0-rc.2]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.1...v0.5.0-rc.2
 [0.4.2]: https://github.com/Kirky-X/trait-kit/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Kirky-X/trait-kit/compare/v0.4.0...v0.4.1

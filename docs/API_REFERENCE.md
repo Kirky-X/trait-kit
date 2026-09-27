@@ -1,6 +1,6 @@
 # 📘 Trait-Kit API 参考
 
-trait-kit 的完整 API 参考。按模块组织，标注各 API 所需的 feature flag（当前版本 **0.5.0-rc.3**）。
+trait-kit 的完整 API 参考。按模块组织，标注各 API 所需的 feature flag（当前版本 **0.5.0-rc.6**）。
 
 ## 📋 目录
 

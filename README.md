@@ -320,7 +320,7 @@ fn main() {
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.5.0-rc.5", features = ["encryption"] }
+trait-kit = { version = "0.5.0-rc.6", features = ["encryption"] }
 ```
 
 ---
@@ -463,7 +463,7 @@ kit.inject_shared::<DbConfig>()?;       // 注入到 DbConfig
 | 示例验证 | `examples/`（20 个） | 每个示例独立运行，断言失败即 panic |
 | 基准测试 | `benches/kit_bench.rs` | criterion 基准（需 `toggle` feature） |
 
-测试规模：主 crate `src/` 与 `tests/` 共 **754** 个 `#[test]` 函数（截至 **0.5.0-rc.3**，`grep` 统计），另有 `trait-kit-macros/tests/` 6 个。
+测试规模：主 crate `src/` 与 `tests/` 共 **795** 个 `#[test]` 函数（截至 **0.5.0-rc.6**，`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `trait-kit-macros/tests/` 6 个。
 
 ### 常用命令（与 CI 一致）
 

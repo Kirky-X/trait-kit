@@ -324,7 +324,7 @@ Enable the desired level in `Cargo.toml`:
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.5.0-rc.3", features = ["encryption"] }
+trait-kit = { version = "0.5.0-rc.6", features = ["encryption"] }
 ```
 
 ---
@@ -467,7 +467,7 @@ kit.inject_shared::<DbConfig>()?;       // inject into DbConfig
 | Example validation | `examples/` (20) | Each example runs standalone; failed assertions panic |
 | Benchmarks | `benches/kit_bench.rs` | criterion benchmarks (requires the `toggle` feature) |
 
-Test scale: the main crate's `src/` and `tests/` contain **754** `#[test]` functions (as of **0.5.0-rc.3**, `grep` count), plus 6 in `trait-kit-macros/tests/`.
+Test scale: the main crate's `src/` and `tests/` contain **795** `#[test]` functions (as of **0.5.0-rc.6**, via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `trait-kit-macros/tests/`.
 
 ### Common Commands (same as CI)
 
