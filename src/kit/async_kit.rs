@@ -1324,6 +1324,7 @@ impl AsyncKit<Ready> {
         coord: &super::shutdown::AsyncShutdownCoordinator,
         phase: super::shutdown::ShutdownPhase,
     ) -> Result<usize, TraitKitError> {
+        use crate::i18n::tr;
         let hooks: Vec<(TypeId, AsyncShutdownHookFn)> = {
             self.lifecycle
                 .async_shutdown_callbacks
@@ -1344,23 +1345,25 @@ impl AsyncKit<Ready> {
             }) {
                 // 失败显性化：注册表已 drain（shutdown_async 变 no-op），
                 // 未转移的钩子既不在 Kit 也不在协调器，将永不执行——
-                // 计数编入错误的 context 使程序化检测不依赖 log subscriber，
-                // log 通道则供运维侧检索。
+                // 计数编入错误使程序化检测不依赖 log subscriber，log
+                // 通道则供运维侧检索。包装对任意错误变体通用（原错误
+                // 整体降为 source），不把 register_local_hook 的变体面
+                // 当作跨函数隐式契约。
                 let stranded = count - index - 1;
                 log::error!(
                     "register_shutdown_into: coordinator rejected a hook ({error}); \
                      {stranded} remaining lifecycle hook(s) are stranded and will never run"
                 );
-                return Err(match error {
-                    TraitKitError::BuildFailed { context, source } => TraitKitError::BuildFailed {
-                        context: format!(
-                            "{context}; {stranded} lifecycle hook(s) stranded and will \
-                                 never run"
-                        ),
-                        source,
-                    },
-                    // register_local_hook 仅产 BuildFailed；其余变体原样透传
-                    other => other,
+                return Err(TraitKitError::BuildFailed {
+                    context: tr(
+                        "trait-kit-error-shutdown-bridge-stranded",
+                        &[
+                            ("operation", "register_shutdown_into"),
+                            ("phase", phase.as_str()),
+                            ("stranded", &stranded.to_string()),
+                        ],
+                    ),
+                    source: Box::new(error),
                 });
             }
         }

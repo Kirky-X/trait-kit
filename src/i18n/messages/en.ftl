@@ -33,6 +33,10 @@ trait-kit-error-lock-poisoned-operation = shutdown coordinator `{ $operation }`
 
 trait-kit-error-lock-poisoned-operation-phase = shutdown coordinator `{ $operation }` on phase `{ $phase }`
 
+# shutdown bridge partial-failure context (register_shutdown_into stranded hooks)
+
+trait-kit-error-shutdown-bridge-stranded = shutdown bridge `{ $operation }` on phase `{ $phase }`; { $stranded } remaining lifecycle hook(s) stranded and will never run
+
 trait-kit-error-config-validation-failed = config validation failed: { $errors }
 
 trait-kit-error-no-snapshot = no snapshot found for `{ $key }`

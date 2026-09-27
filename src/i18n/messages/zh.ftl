@@ -33,6 +33,10 @@ trait-kit-error-lock-poisoned-operation = 关闭协调器 `{ $operation }`
 
 trait-kit-error-lock-poisoned-operation-phase = 关闭协调器 `{ $operation }`（阶段 `{ $phase }`）
 
+# 关闭桥接部分失败文案（register_shutdown_into 的 stranded 钩子）
+
+trait-kit-error-shutdown-bridge-stranded = 关闭桥接 `{ $operation }`（阶段 `{ $phase }`）；剩余 { $stranded } 个生命周期钩子未转移，将永远不会执行
+
 trait-kit-error-config-validation-failed = 配置验证失败: { $errors }
 
 trait-kit-error-no-snapshot = 未找到 `{ $key }` 的配置快照

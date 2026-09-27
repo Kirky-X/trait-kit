@@ -660,7 +660,9 @@ impl AsyncShutdownCoordinator {
     ///
     /// # Errors
     ///
-    /// 当内部锁中毒时返回 `TraitKitError::BuildFailed`。
+    /// 当内部锁中毒时返回 `TraitKitError::BuildFailed`（当前唯一的错误
+    /// 变体；消费方如 `AsyncKit::register_shutdown_into` 的 stranded
+    /// 包装对任意变体均成立，不得依赖此变体面收窄）。
     ///
     /// # Panics
     ///
@@ -1949,6 +1951,7 @@ mod async_tests {
         use crate::core::{AsyncAutoBuilder, ModuleMeta};
         use crate::kit::AsyncKit;
         use std::any::TypeId;
+        use std::error::Error as _;
 
         macro_rules! bridge_module {
             ($name:ident) => {
@@ -1996,8 +1999,16 @@ mod async_tests {
             .expect_err("桥接失败必须返回 Err");
         let msg = err.to_string();
         assert!(
-            msg.contains("1 lifecycle hook(s) stranded"),
+            msg.contains("1 remaining lifecycle hook(s) stranded"),
             "错误须携带 stranded 计数，使程序化检测不依赖 log subscriber，实际: {msg}"
+        );
+        let source_msg = err
+            .source()
+            .map(std::string::ToString::to_string)
+            .expect("包装错误必须保留协调器拒绝的原始错误为 source");
+        assert!(
+            source_msg.contains("RwLock poisoned"),
+            "source 链须可追溯到锁中毒根因，实际: {source_msg}"
         );
     }
 }

@@ -41,7 +41,7 @@
 ### Changed
 
 - **API**：`ShutdownPhaseResult` 新增 `hook_failures: usize` 字段（结构体字面量构造方需同步）；`is_ok()` 语义收紧为 `!timed_out && hook_failures == 0`，`into_result()` 对"仅 hook panic"场景返回 `BuildFailed`
-- **API**：`AsyncShutdownCoordinator::pending_local_hook_count()` 返回类型改为 `Result<usize, TraitKitError>`——锁中毒不再 panic 击穿宿主监控线程，与同 impl 块 `register_local_hook`/`shutdown_local` 的错误纪律一致；`AsyncKit::register_shutdown_into` 桥接部分失败时，返回的 `TraitKitError::BuildFailed` context 追加 stranded 计数（"...; N lifecycle hook(s) stranded and will never run"），程序化检测清理丢失不再依赖 log subscriber
+- **API**：`AsyncShutdownCoordinator::pending_local_hook_count()` 返回类型改为 `Result<usize, TraitKitError>`——锁中毒不再 panic 击穿宿主监控线程，与同 impl 块 `register_local_hook`/`shutdown_local` 的错误纪律一致；`AsyncKit::register_shutdown_into` 桥接部分失败时，返回的 `TraitKitError::BuildFailed` 以 i18n context 报告桥接操作/阶段与 stranded 计数、原错误整体降为 source（包装对任意错误变体通用），程序化检测清理丢失不再依赖 log subscriber
 - **文档**：README/README_EN/SECURITY 的"无 unsafe"表述修正为"默认禁用 + 6 处经审计豁免"；API_REFERENCE 补 lazy 模块检索口径
 - **文档**：README/README_EN 路线图关闭"cfg 门控完整性"条目——`--no-default-features --features async` 与 `async,observer` 组合 check、`clippy --features async --all-targets` 零告警，`cargo test --features async --doc` 全通过，async × observer 门控缺口经复测确认已消除
 - **依赖**：新增非 optional `log 0.4`（`default-features = false, features = ["std"]`，零传递依赖 facade）——新增的 `soft_build` 可降级构建助手的 `error!` 降级日志所需；所有消费者升级 rc+1 后依赖闭包将新增 `log`
