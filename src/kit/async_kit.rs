@@ -683,8 +683,7 @@ impl AsyncKit {
         // (Single expression instead of per-feature cfg assignment blocks:
         // with two+ consumers enabled, the earlier assignments would be
         // dead stores under -D warnings.)
-        #[allow(unused_mut)]
-        let mut timing_enabled =
+        let timing_enabled =
             event_bus_present || cfg!(feature = "observer") || cfg!(feature = "report");
         let layers = topo_layers(&self.graph, &sorted);
         for layer in layers {
@@ -1345,13 +1344,24 @@ impl AsyncKit<Ready> {
             }) {
                 // 失败显性化：注册表已 drain（shutdown_async 变 no-op），
                 // 未转移的钩子既不在 Kit 也不在协调器，将永不执行——
-                // 必须留下可检索的错误日志而非静默丢失。
+                // 计数编入错误的 context 使程序化检测不依赖 log subscriber，
+                // log 通道则供运维侧检索。
                 let stranded = count - index - 1;
                 log::error!(
                     "register_shutdown_into: coordinator rejected a hook ({error}); \
                      {stranded} remaining lifecycle hook(s) are stranded and will never run"
                 );
-                return Err(error);
+                return Err(match error {
+                    TraitKitError::BuildFailed { context, source } => TraitKitError::BuildFailed {
+                        context: format!(
+                            "{context}; {stranded} lifecycle hook(s) stranded and will \
+                                 never run"
+                        ),
+                        source,
+                    },
+                    // register_local_hook 仅产 BuildFailed；其余变体原样透传
+                    other => other,
+                });
             }
         }
         Ok(count)

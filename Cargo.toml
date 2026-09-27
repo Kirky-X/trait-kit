@@ -48,9 +48,11 @@ sys-locale = { version = "0.3", optional = true }
 fluent-bundle = "0.16"
 unic-langid = "0.9"
 # Structured logging facade for degradation events (`soft_build` fallback
-# path). Facade only: records surface in whatever subscriber the consumer
-# installs (log-native, or bridged by tracing-subscriber's default
-# `tracing-log` support).
+# path, `register_shutdown_into` bridge-failure logging). Always on:
+# `soft_build` is ungated public API, so a `dep:log` feature would split the
+# API surface for a facade with zero transitive deps. Facade only: records
+# surface in whatever subscriber the consumer installs (log-native, or
+# bridged by tracing-subscriber's default `tracing-log` support).
 log = { version = "0.4", default-features = false, features = ["std"] }
 
 [dev-dependencies]

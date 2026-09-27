@@ -53,6 +53,7 @@ use std::cell::RefCell;
 use std::sync::{Arc, RwLock};
 
 use crate::error::TraitKitError;
+#[cfg(feature = "async")]
 use crate::i18n::tr;
 
 /// 关闭阶段，按枚举定义顺序依次执行。
@@ -692,18 +693,22 @@ impl AsyncShutdownCoordinator {
     /// `shutdown_local` 按阶段 drain local 槽位（含超时丢弃），正常走完
     /// 后计数归零。
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// 当内部 `RwLock` 中毒时 panic（与 [`Debug`](std::fmt::Debug) 实现的
-    /// 锁纪律一致）。
-    #[must_use]
-    pub fn pending_local_hook_count(&self) -> usize {
+    /// 当内部 `RwLock` 中毒时返回 `TraitKitError::BuildFailed`，与同
+    /// impl 块的 [`register_local_hook`](Self::register_local_hook) /
+    /// [`shutdown_local`](Self::shutdown_local) 错误纪律一致——本方法
+    /// 常被宿主的监控/健康线程调用，不得以 panic 击穿调用方。
+    pub fn pending_local_hook_count(&self) -> Result<usize, TraitKitError> {
         self.phases
             .read()
-            .expect("lock poisoned")
-            .iter()
-            .map(|phase| phase.local_hooks.len())
-            .sum()
+            .map(|phases| phases.iter().map(|phase| phase.local_hooks.len()).sum())
+            .map_err(|_| {
+                lock_poisoned(tr(
+                    "trait-kit-error-lock-poisoned-operation",
+                    &[("operation", "pending_local_hook_count")],
+                ))
+            })
     }
 
     /// 执行完整的异步分阶段关闭流程。
@@ -1783,7 +1788,7 @@ mod async_tests {
             assert!(send_result.is_ok(), "Send 快路径结果不含 local 信息");
             assert_eq!(LOCAL_RUNS.load(Ordering::SeqCst), 0);
             assert_eq!(
-                coord.pending_local_hook_count(),
+                coord.pending_local_hook_count().unwrap(),
                 2,
                 "遗留的 local 钩子必须可被探测，否则清理丢失不可察觉"
             );
@@ -1792,7 +1797,7 @@ mod async_tests {
             assert!(local_result.is_ok());
             assert_eq!(LOCAL_RUNS.load(Ordering::SeqCst), 2);
             assert_eq!(
-                coord.pending_local_hook_count(),
+                coord.pending_local_hook_count().unwrap(),
                 0,
                 "shutdown_local() 正常走完后计数归零"
             );
@@ -1841,7 +1846,7 @@ mod async_tests {
             // 软限制语义：超时跳过的剩余 local 钩子随 drain 丢弃，不遗留——
             // 与 Send 段超时的处置一致。
             assert_eq!(
-                coord.pending_local_hook_count(),
+                coord.pending_local_hook_count().unwrap(),
                 0,
                 "超时丢弃的 local 钩子不应遗留"
             );
@@ -1915,5 +1920,84 @@ mod async_tests {
                 drain.elapsed
             );
         });
+    }
+
+    #[test]
+    fn pending_local_hook_count_returns_err_on_poisoned_lock() {
+        let coord = AsyncShutdownCoordinator::new();
+        let phases = Arc::clone(&coord.phases);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _guard = phases.write().unwrap();
+            panic!("poison the phases lock");
+        }));
+
+        let err = coord
+            .pending_local_hook_count()
+            .expect_err("锁中毒时探测必须返回 Err，不得击穿宿主监控线程");
+        assert!(
+            err.to_string().contains("pending_local_hook_count"),
+            "错误须可定位到探测操作本身，实际: {err}"
+        );
+    }
+
+    // 毒化协调器锁需要持有私有 `phases` 写锁后 panic——只能在本模块
+    // （而非 async_kit.rs 的测试）完成，故桥接失败语义的测试也在此。
+    #[test]
+    #[cfg(feature = "lifecycle")]
+    fn register_shutdown_into_reports_stranded_count_on_bridge_failure() {
+        use crate::core::lifecycle::AsyncLifecycle;
+        use crate::core::{AsyncAutoBuilder, ModuleMeta};
+        use crate::kit::AsyncKit;
+        use std::any::TypeId;
+
+        macro_rules! bridge_module {
+            ($name:ident) => {
+                struct $name;
+                impl ModuleMeta for $name {
+                    const NAME: &'static str = stringify!($name);
+                    fn dependencies() -> &'static [(&'static str, TypeId)] {
+                        &[]
+                    }
+                }
+                impl AsyncAutoBuilder for $name {
+                    type Capability = Arc<()>;
+                    type Error = TraitKitError;
+
+                    fn build<'a>(
+                        _kit: &'a AsyncKit,
+                    ) -> Pin<
+                        Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>,
+                    > {
+                        Box::pin(async { Ok(Arc::new(())) })
+                    }
+                }
+                impl AsyncLifecycle for $name {}
+            };
+        }
+        bridge_module!(BridgeFirst);
+        bridge_module!(BridgeSecond);
+
+        let mut kit = AsyncKit::new();
+        kit.register::<BridgeFirst>().unwrap();
+        kit.register_lifecycle::<BridgeFirst>();
+        kit.register::<BridgeSecond>().unwrap();
+        kit.register_lifecycle::<BridgeSecond>();
+        let built = block_on(kit.build()).expect("build should succeed");
+
+        let coord = AsyncShutdownCoordinator::new();
+        let phases = Arc::clone(&coord.phases);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _guard = phases.write().unwrap();
+            panic!("poison the phases lock");
+        }));
+
+        let err = built
+            .register_shutdown_into(&coord, ShutdownPhase::CloseConnections)
+            .expect_err("桥接失败必须返回 Err");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("1 lifecycle hook(s) stranded"),
+            "错误须携带 stranded 计数，使程序化检测不依赖 log subscriber，实际: {msg}"
+        );
     }
 }
