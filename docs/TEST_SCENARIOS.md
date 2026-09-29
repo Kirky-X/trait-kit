@@ -94,7 +94,7 @@
 | 19 | prelude 导出面 | PRE | —（随各 feature） | `prelude::*` 再导出一致性 |
 | 20 | feature 组合交互 | CMP | 多 feature 叠加 | — |
 | 21 | 并发与竞态 | CCY | async + 全库 | — |
-| 22 | feature 编译矩阵 | PRS | 13 项全量 | `cargo check --features …` |
+| 22 | feature 编译矩阵 | PRS | 全 feature 全量 | `cargo check --features …` |
 
 场景总数：**238**（正常 100 / 异常 57 / 边界 80，另含 1 条正常/异常双断言，程序化核对见 §6）。
 
@@ -425,7 +425,7 @@
 | CMP-12 | interface+decorator：装饰器按 interface TypeId 应用于 `register_as` 构建路径（`build_interface_modules` 内 `apply_decorators(interface_id, …)`） | 边界 | interface,decorator | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
 | CMP-13 | encryption+reload 双链共存：`encryption` 与 `reload` 同时开启时（confers 双引擎 confers/encryption + Kit SubscriberMap）全部 API 可编译可用 | 异常 | encryption,reload | 无 | 无→需新增（编译级 + 行为级） | tests/e2e/e2e_feature_combinations.rs |
 | CMP-14 | i18n+shutdown：`ShutdownTimedOut` 错误消息走 `tr()` 翻译链（zh locale 下错误文本本地化） | 边界 | shutdown,i18n | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
-| CMP-15 | 全 feature 烟囱：`--all-features` 编译通过（已实测 exit 0）+ 全功能行为级一次打通（register/lazy/multi/interface/config/reload/encrypt/lifecycle/health/observer/decorator/scope/toggle/shutdown/i18n 同 Kit） | 正常 | 全部 13 项 | 无 | `cargo check --all-features`（本次编写时实测）→行为级需新增 | tests/e2e/e2e_feature_combinations.rs |
+| CMP-15 | 全 feature 烟囱：`--all-features` 编译通过（已实测 exit 0）+ 全功能行为级一次打通（register/lazy/multi/interface/config/reload/encrypt/lifecycle/health/observer/decorator/scope/toggle/shutdown/i18n 同 Kit） | 正常 | 全部 feature | 无 | `cargo check --all-features`（本次编写时实测）→行为级需新增 | tests/e2e/e2e_feature_combinations.rs |
 
 ### 2.21 并发与竞态（CCY，7 条）
 
@@ -441,11 +441,15 @@
 
 ### 2.22 feature 编译矩阵（PRS，6 条）
 
+> 本节的 feature 数量是编写时的历史口径（13 项时代），此后新增了 `probe=["health"]` 等
+> feature。数量与清单的**单一事实源**是 `tests/e2e/e2e_presets.rs`（`prs02` 期望表 +
+> `prs03` cfg 门禁，随 Cargo.toml `[features]` 段同步维护），本节文字仅保留场景语义。
+
 | ID | 场景描述 | 类型 | 涉及 feature | 依赖服务 | 既有覆盖 | E2E 落点 |
 |----|---------|------|-------------|---------|---------|---------|
 | PRS-01 | `cargo check`（无 feature，default=[]）全库编译 + no-feature 测试组通过（`e2e_no_feature_*`） | 边界 | — | 无 | `tests/e2e_feature_combinations.rs::e2e_no_feature_basic_build`、`e2e_no_feature_graph_export` | tests/e2e/e2e_presets.rs |
-| PRS-02 | 13 个 feature 逐一单开（`--features async` 等）各自 `cargo check` 通过，导出面按门控正确伸缩（如仅 async 时无 `Lifecycle` 导出） | 边界 | 全部单 feature | 无 | 无→需新增（循环脚本） | tests/e2e/e2e_presets.rs |
-| PRS-03 | `--all-features`（13 项全开）`cargo check` + 全部测试通过 | 边界 | 全部 | 无 | 本次编写时实测 `cargo check --all-features` exit 0 →固化为 CI 门禁需新增 | tests/e2e/e2e_presets.rs |
+| PRS-02 | 全部 feature 逐一单开（`--features async` 等，数量见 `prs02`）各自 `cargo check` 通过，导出面按门控正确伸缩（如仅 async 时无 `Lifecycle` 导出） | 边界 | 全部单 feature | 无 | 无→需新增（循环脚本） | tests/e2e/e2e_presets.rs |
+| PRS-03 | `--all-features`（全部 feature 开启）`cargo check` + 全部测试通过 | 边界 | 全部 | 无 | 本次编写时实测 `cargo check --all-features` exit 0 →固化为 CI 门禁需新增 | tests/e2e/e2e_presets.rs |
 | PRS-04 | 依赖链自动生效：`--features reload` 隐式启用 `confers`（已剪除 `confers/watch`），`Configurable` 面 API 可用 | 边界 | reload | 无 | `Cargo.toml` 声明核对 + `tests/e2e_feature_combinations.rs::e2e_confers_plus_reload` | tests/e2e/e2e_presets.rs |
 | PRS-05 | 依赖链自动生效：`--features encryption` 隐式启用 `confers` 与 `confers/encryption`，XChaCha20 原语经 trait-kit 再导出可用 | 边界 | encryption | 无 | `Cargo.toml` 声明核对 + `tests/e2e_feature_combinations.rs::e2e_confers_plus_encryption` | tests/e2e/e2e_presets.rs |
 | PRS-06 | examples crate 20 个示例按各自 `required-features` 门控编译（每个示例对应 feature 单独 check 通过） | 边界 | 全部 | 无 | 无→需新增（`cargo check -p trait-kit-examples --features <逐个>` 脚本） | tests/e2e/e2e_presets.rs |
@@ -461,12 +465,15 @@ reload     → confers（已剪除 confers/watch 死链）
 encryption → confers, confers/encryption
 confers    → dep:confers, dep:serde, dep:serde_json
 i18n       → dep:icu, dep:writeable, dep:sys-locale
+probe      → health, dep:futures-timer（运行时无关定时器）
+presets / presets-remote / report / version-negotiation / compose / di
+           → 各自的依赖声明见 Cargo.toml（单一事实源）
 default    → （空，无任何隐式 feature）
 async / interface / lifecycle / health / scope / toggle / observer / decorator / shutdown
            → 空 feature（零依赖、零传递项）
 ```
 
-结论：**不存在互斥 feature，也不存在预设（preset）**：9 个零依赖 feature 可自由叠加；约束只体现为"开 `reload`/`encryption` 自动带上 `confers` 引擎"。`cargo check --all-features`（13 项全开）实测通过（exit 0），全 feature 互容得到编译级验证。
+结论：**不存在互斥 feature，也不存在预设（preset）**：零依赖 feature 可自由叠加；约束只体现为"开 `reload`/`encryption`/`probe` 自动带上其依赖引擎"。`cargo check --all-features`（全部 feature 开启，现值见 `prs02`）实测通过（exit 0），全 feature 互容得到编译级验证。
 
 ### 3.2 跨 feature 门控（编译期联动，组合行为测试的输入依据）
 
@@ -500,7 +507,7 @@ async / interface / lifecycle / health / scope / toggle / observer / decorator /
 | C12 | interface + decorator | interface 构建路径装饰 | CMP-12 | **需新增** |
 | C13 | encryption + reload | 双 confers 引擎共存 | CMP-13 | **需新增** |
 | C14 | i18n + shutdown | 错误消息翻译链 | CMP-14 | **需新增** |
-| C15 | 全 13 项 | 全功能烟囱 | CMP-15 | 编译已验 / 行为**需新增** |
+| C15 | 全 feature | 全功能烟囱 | CMP-15 | 编译已验 / 行为**需新增** |
 
 ---
 

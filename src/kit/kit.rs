@@ -2261,16 +2261,57 @@ impl<S> Kit<S> {
     /// writes the result back. If no config of type `C` exists, this is a
     /// no-op (does not panic).
     ///
+    /// With the `report` feature, every call is recorded in
+    /// `build_report().config_overrides` — including no-ops (`applied ==
+    /// false`), so a dropped override is visible instead of silently
+    /// swallowed. `Kit` is single-threaded (`RefCell` state), so records
+    /// appear in call order; the async counterpart makes no such promise
+    /// under concurrent calls. The record history grows by one entry per
+    /// call with no cap; drain it periodically with
+    /// [`take_config_overrides`](Kit::take_config_overrides) (see the
+    /// warning there).
+    ///
     /// Requires the `confers` feature.
     #[cfg(feature = "confers")]
     // 有意按值接收 Override(调用方构造临时对象后转移所有权,API 人体工学优先);
     // 改为 `&C::Override` 属公共 API 破坏性变更,不在本次配置统一范围内。
     #[allow(clippy::needless_pass_by_value)]
     pub fn merge_config<C: super::ConfigInherit>(&self, ovr: C::Override) {
-        if let Ok(mut current) = self.config::<C>() {
-            current.apply_override(&ovr);
-            self.configs.insert(current);
-        }
+        #[cfg_attr(not(feature = "report"), allow(unused_variables))]
+        let applied = match self.config::<C>() {
+            Ok(mut current) => {
+                current.apply_override(&ovr);
+                self.configs.insert(current);
+                true
+            }
+            Err(_) => false,
+        };
+        #[cfg(feature = "report")]
+        self.report.push_config_override(
+            super::report::ConfigOverrideRecord::from_merge_config::<C>(applied),
+        );
+    }
+
+    /// Drain the recorded config-override history: returns all
+    /// [`ConfigOverrideRecord`](super::report::ConfigOverrideRecord)s in record order and leaves
+    /// `build_report().config_overrides` empty.
+    ///
+    /// # Usage warning: unbounded growth
+    ///
+    /// Like `merge_config` (same `impl<S> Kit<S>` block), this is usable
+    /// on any state marker, and `merge_config` keeps appending one record
+    /// per call with no cap for the kit's whole lifetime — roughly 40
+    /// bytes each. A kit merging on every reload callback accumulates
+    /// megabytes over a long process lifetime, and every
+    /// `build_report()` snapshot clones the whole history. Call this from
+    /// the reload completion path (or any other natural rotation point)
+    /// to keep the history bounded by design; drained records are
+    /// returned for further processing, not silently dropped.
+    ///
+    /// Requires the `report` feature.
+    #[cfg(feature = "report")]
+    pub fn take_config_overrides(&self) -> Vec<super::report::ConfigOverrideRecord> {
+        self.report.take_config_overrides()
     }
 
     /// Extract shared fields from config `C` into the Kit's shared overlay.

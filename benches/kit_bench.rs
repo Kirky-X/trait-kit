@@ -12,11 +12,16 @@
 //! Run with:
 //!
 //! ```text
-//! cargo bench --features toggle
+//! cargo bench --features toggle,confers
 //! ```
 //!
 //! The `toggle` feature is required because the toggle benchmarks exercise the
-//! `toggle`-gated API surface. Baseline numbers live in `docs/PERFORMANCE.md`.
+//! `toggle`-gated API surface; `confers` adds the
+//! `config/write_merge_config` benchmark (it is skipped silently under
+//! `--features toggle` alone, and under `--all-features` it is compiled out:
+//! the `report`-gated record accumulation would grow unboundedly per
+//! iteration and invalidate the measurement). Baseline numbers live in
+//! `docs/PERFORMANCE.md`.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,6 +44,27 @@ struct BenchConfig {
     url: String,
     retries: u32,
     timeouts: Vec<u64>,
+}
+
+/// Field-level override payload for [`BenchConfig`] (`confers` feature).
+#[cfg(feature = "confers")]
+#[derive(Clone, Default)]
+struct BenchConfigOverride {
+    url: Option<String>,
+    retries: Option<u32>,
+}
+
+#[cfg(feature = "confers")]
+impl trait_kit::kit::ConfigInherit for BenchConfig {
+    type Override = BenchConfigOverride;
+    fn apply_override(&mut self, ovr: &Self::Override) {
+        if let Some(ref u) = ovr.url {
+            self.url.clone_from(u);
+        }
+        if let Some(r) = ovr.retries {
+            self.retries = r;
+        }
+    }
 }
 
 /// Capability handed out by every fixture module (cheap `Arc` clone).
@@ -166,6 +192,22 @@ fn bench_config(c: &mut Criterion) {
     let unbuilt = registered_kit();
     c.bench_function("config/write_set_config", |b| {
         b.iter(|| unbuilt.set_config(make_config()))
+    });
+    // `merge_config` is a read-modify-write usable on every state marker
+    // (benchmarked on a ready kit). Measured **without** the `report`
+    // feature on purpose: the report record accumulates per call with no
+    // cap (see `take_config_overrides`), so an iterated benchmark under
+    // `report` would grow the Vec by GBs within one run and degrade into
+    // a realloc/cache-miss benchmark whose numbers depend on iteration
+    // count. The pure read-modify-write cost is what this measures.
+    #[cfg(all(feature = "confers", not(feature = "report")))]
+    c.bench_function("config/write_merge_config", |b| {
+        b.iter(|| {
+            kit.merge_config::<BenchConfig>(BenchConfigOverride {
+                url: Some("postgres://localhost:5433/bench".to_string()),
+                retries: None,
+            })
+        })
     });
 }
 

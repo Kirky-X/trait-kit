@@ -153,6 +153,51 @@ struct AsyncNegotiateFields {
     requirements: AsyncRequirementList,
 }
 
+/// Named service probe registry: `(name, probe)` in registration
+/// (= execution) order. The `Arc` wrapper follows the sibling `*Fields`
+/// convention (whole-field transfer on `build()`); the registry itself is
+/// never shared beyond the owning kit.
+#[cfg(feature = "probe")]
+type ProbeRegistry = Arc<RwLock<Vec<(&'static str, Arc<dyn crate::core::probe::ServiceProbe>)>>>;
+
+/// Fields gated behind the `probe` feature: named service probes in
+/// registration order. Registration/execution order is one and the same;
+/// `RwLock` keeps the registry mutable from any state marker and thread
+/// (probes may be added/removed while the kit serves traffic).
+#[cfg(feature = "probe")]
+#[derive(Default)]
+struct ProbeFields {
+    probes: ProbeRegistry,
+    /// Set by the shutdown paths when they clear the registry: an empty
+    /// registry on a shut-down kit must not be reported as
+    /// healthy-by-convention (a readiness consumer would keep routing to
+    /// a dead instance).
+    stopped: std::sync::atomic::AtomicBool,
+}
+
+/// Race one probe's future against a bound: `None` means the bound won and
+/// the probe future was dropped (cancellation). `futures_timer::Delay` is
+/// driven by a global background thread, so the returned future stays
+/// executor-independent — no coupling to any specific async runtime.
+#[cfg(feature = "probe")]
+async fn probe_within_bound(
+    probe_fut: Pin<Box<dyn Future<Output = crate::core::probe::ProbeOutcome> + Send + '_>>,
+    bound: std::time::Duration,
+) -> Option<crate::core::probe::ProbeOutcome> {
+    let mut delay = futures_timer::Delay::new(bound);
+    let mut probe_fut = probe_fut;
+    std::future::poll_fn(move |cx| {
+        if let Poll::Ready(outcome) = Pin::new(&mut probe_fut).poll(cx) {
+            return Poll::Ready(Some(outcome));
+        }
+        if let Poll::Ready(()) = Pin::new(&mut delay).poll(cx) {
+            return Poll::Ready(None);
+        }
+        Poll::Pending
+    })
+    .await
+}
+
 /// Fields for observation ports (always present, no feature gate).
 #[derive(Default)]
 struct PortsFields {
@@ -350,6 +395,8 @@ pub struct AsyncKit<S = Unbuilt> {
     negotiate: AsyncNegotiateFields,
     #[cfg(feature = "report")]
     report: super::report::AsyncReportFields,
+    #[cfg(feature = "probe")]
+    probes: ProbeFields,
     ports: PortsFields,
     /// Max concurrently-polled module builds per topological layer.
     max_concurrency: usize,
@@ -386,6 +433,8 @@ impl AsyncKit {
             negotiate: AsyncNegotiateFields::default(),
             #[cfg(feature = "report")]
             report: super::report::AsyncReportFields::default(),
+            #[cfg(feature = "probe")]
+            probes: ProbeFields::default(),
             ports: PortsFields::default(),
             max_concurrency: usize::MAX,
             _state: PhantomData,
@@ -837,6 +886,8 @@ impl AsyncKit {
             graph: self.graph,
             configs: self.configs,
             capabilities: self.capabilities,
+            #[cfg(feature = "probe")]
+            probes: self.probes,
             #[cfg(feature = "lifecycle")]
             lifecycle: LifecycleFields {
                 async_shutdown_callbacks: self.lifecycle.async_shutdown_callbacks,
@@ -1145,6 +1196,105 @@ impl<S> AsyncKit<S> {
         self.publish_event(event);
     }
 
+    /// Register a named service probe (any state marker; probes may be
+    /// added/removed while the kit serves traffic).
+    ///
+    /// Re-registering an existing name drops the old entry and appends the
+    /// new one at the tail — registration order is execution order for
+    /// `run_probes()` / `probe_aggregate()`.
+    ///
+    /// Requires the `probe` feature (and the `async` feature, since this
+    /// surface lives on `AsyncKit`).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the probe registry [`RwLock`] is poisoned.
+    #[cfg(feature = "probe")]
+    pub fn register_probe(
+        &self,
+        name: &'static str,
+        probe: Arc<dyn crate::core::probe::ServiceProbe>,
+    ) {
+        let mut probes = self
+            .probes
+            .probes
+            .write()
+            .expect("probe registry lock poisoned");
+        probes.retain(|(existing, _)| *existing != name);
+        probes.push((name, probe));
+    }
+
+    /// Unregister the probe registered under `name`.
+    ///
+    /// Returns `true` when an entry was removed, `false` when no probe
+    /// carried that name.
+    ///
+    /// Requires the `probe` feature (and the `async` feature, since this
+    /// surface lives on `AsyncKit`).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the probe registry [`RwLock`] is poisoned.
+    #[cfg(feature = "probe")]
+    pub fn unregister_probe(&self, name: &str) -> bool {
+        let mut probes = self
+            .probes
+            .probes
+            .write()
+            .expect("probe registry lock poisoned");
+        let before = probes.len();
+        probes.retain(|(existing, _)| *existing != name);
+        probes.len() != before
+    }
+
+    /// Names of all registered probes, in registration (= execution) order.
+    ///
+    /// Requires the `probe` feature (and the `async` feature, since this
+    /// surface lives on `AsyncKit`).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the probe registry [`RwLock`] is poisoned.
+    #[cfg(feature = "probe")]
+    #[must_use]
+    pub fn probe_names(&self) -> Vec<&'static str> {
+        self.probes
+            .probes
+            .read()
+            .expect("probe registry lock poisoned")
+            .iter()
+            .map(|(name, _)| *name)
+            .collect()
+    }
+
+    /// Remove all registered probes and mark the registry stopped.
+    /// Internal helper for the shutdown paths (`shutdown_async` /
+    /// `register_shutdown_into`): a shut-down kit has no services left to
+    /// probe, and the stopped mark keeps `run_probes()` from reporting the
+    /// cleared registry as healthy-by-convention. Both callers are
+    /// lifecycle-gated, so the helper carries the same escape hatch for
+    /// `probe` ∧ ¬`lifecycle`.
+    #[cfg(feature = "probe")]
+    #[cfg_attr(not(feature = "lifecycle"), allow(dead_code))]
+    fn clear_probes(&self) {
+        // 顺序即正确性：必须先置 stopped 再清注册表。读者（`run_probes` /
+        // `probe_aggregate`）先读注册表、后读 stopped——若先清空再置位，
+        // 并发读者可能恰好夹在两条语句之间：clone 到已清空的注册表、随后
+        // 才读到 stopped == false，把停机中的 Kit 误报为
+        // healthy-by-convention。提前置位后，读者观察到空注册表时必然先
+        // 与本函数的注册表写锁释放同步（Release/Acquire + 锁序），先行的
+        // stopped store 对其必然可见，窗口归零。stop 提前置位仅在注册表
+        // 非空时被忽略（非空分支不走该标志），无副作用。
+        self.probes
+            .stopped
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.probes
+            .probes
+            .write()
+            .expect("probe registry lock poisoned")
+            .clear();
+    }
+
     /// Apply registered decorators for a capability (keyed by capability `TypeId`).
     #[cfg(feature = "decorator")]
     fn apply_decorators(
@@ -1249,6 +1399,232 @@ impl AsyncKit<Ready> {
 
     // ─── Lifecycle: shutdown ───────────────────────────────────────────
 
+    /// Run all registered service probes once, sequentially in registration
+    /// order (no concurrent join — mirroring the shutdown-hook philosophy),
+    /// and collect per-probe status + latency into a
+    /// [`ProbeReport`](crate::core::probe::ProbeReport) whose overall status
+    /// is the worst-of (`unhealthy` > `degraded` > `healthy`).
+    ///
+    /// This is the async counterpart of the sync health reporting path and
+    /// the designated home for network I/O: unlike
+    /// [`AsyncHealthCheck::check`](crate::core::health::AsyncHealthCheck::check)
+    /// (intentionally synchronous, cache-reading only), a `ServiceProbe` is
+    /// expected to perform its network call inside `probe()` — the trait
+    /// contract requires a timeout inside the implementation, and this
+    /// method trusts it. Sequential execution means the pass latency is the
+    /// **sum** of the per-probe latencies; when implementor compliance
+    /// cannot be assumed, use
+    /// [`run_probes_with_timeout`](AsyncKit::run_probes_with_timeout) to
+    /// bound each probe individually.
+    ///
+    /// An empty probe registry yields a healthy-by-convention report
+    /// (matching the health aggregate's empty-set semantics) — **except**
+    /// after the shutdown protocol has cleared the registry, where the
+    /// report is the explicit not-serviceable verdict
+    /// (`overall == "unhealthy"`, `stopped == true`): an empty registry is
+    /// not proof of health.
+    ///
+    /// Per-probe latencies are measured by the framework around each
+    /// `probe().await`; the probe's self-reported
+    /// [`ProbeOutcome::latency`](crate::core::probe::ProbeOutcome::latency)
+    /// is diagnostic and never recorded.
+    ///
+    /// Requires the `probe` feature.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the probe registry [`RwLock`] is poisoned.
+    #[cfg(feature = "probe")]
+    pub async fn run_probes(&self) -> crate::core::probe::ProbeReport {
+        self.run_probes_bounded(None).await
+    }
+
+    /// [`run_probes`](AsyncKit::run_probes) with a hard per-probe bound:
+    /// each probe's future is raced against `timeout`, a hung probe is
+    /// recorded as an `unhealthy` entry ("timed out") and the pass
+    /// continues with the remaining probes. Worst-case pass latency is
+    /// therefore bounded by `probes × timeout`.
+    ///
+    /// A probe dropped on timeout must be cancellation-safe (see the
+    /// [`ServiceProbe`] trait docs).
+    ///
+    /// Requires the `probe` feature.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the probe registry [`RwLock`] is poisoned.
+    ///
+    /// [`ServiceProbe`]: crate::core::probe::ServiceProbe
+    #[cfg(feature = "probe")]
+    pub async fn run_probes_with_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> crate::core::probe::ProbeReport {
+        self.run_probes_bounded(Some(timeout)).await
+    }
+
+    #[cfg(feature = "probe")]
+    async fn run_probes_bounded(
+        &self,
+        timeout: Option<std::time::Duration>,
+    ) -> crate::core::probe::ProbeReport {
+        use crate::core::probe::{ProbeEntry, ProbeReport};
+        let probes: Vec<(&'static str, Arc<dyn crate::core::probe::ServiceProbe>)> = self
+            .probes
+            .probes
+            .read()
+            .expect("probe registry lock poisoned")
+            .clone();
+        let stopped = self
+            .probes
+            .stopped
+            .load(std::sync::atomic::Ordering::Acquire);
+        if probes.is_empty() {
+            // 停机后的空注册表必须显性不可服务：healthy-by-convention 只
+            // 描述"没有任何探针"的活实例，不描述已被停机协议清空的实例。
+            if stopped {
+                return ProbeReport {
+                    overall: "unhealthy",
+                    healthy: false,
+                    probes: Vec::new(),
+                    stopped: true,
+                };
+            }
+            return ProbeReport {
+                overall: "healthy",
+                healthy: true,
+                probes: Vec::new(),
+                stopped: false,
+            };
+        }
+        let mut worst_rank = 0u8;
+        let mut entries = Vec::with_capacity(probes.len());
+        for (name, probe) in &probes {
+            let started = std::time::Instant::now();
+            let outcome = match timeout {
+                Some(bound) => probe_within_bound(probe.probe(), bound).await,
+                None => Some(probe.probe().await),
+            };
+            let elapsed = started.elapsed();
+            let measured_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+            let status = match outcome {
+                Some(outcome) => outcome.status,
+                None => crate::core::health::HealthStatus::unhealthy(format!(
+                    "probe timed out after {measured_ms}ms"
+                )),
+            };
+            worst_rank = worst_rank.max(status.severity_rank());
+            entries.push(ProbeEntry {
+                name,
+                status: status.as_status_name(),
+                detail: status.detail().map(str::to_owned),
+                latency_ms: measured_ms,
+            });
+        }
+        let (overall, healthy) = match worst_rank {
+            0 => ("healthy", true),
+            1 => ("degraded", false),
+            _ => ("unhealthy", false),
+        };
+        ProbeReport {
+            overall,
+            healthy,
+            probes: entries,
+            stopped: false,
+        }
+    }
+
+    /// Run all registered service probes once (sequentially, in
+    /// registration order) and return only the worst-of verdict.
+    ///
+    /// Every probe runs — there is no short-circuit on the first unhealthy
+    /// verdict — so side-effecting probes observe the same call count as a
+    /// `run_probes()` pass. The `Degraded`/`Unhealthy` detail carries the
+    /// winning probe's own detail.
+    ///
+    /// An empty probe registry yields
+    /// [`HealthStatus::Healthy`](crate::core::health::HealthStatus::Healthy)
+    /// by convention; after the shutdown protocol has cleared the registry
+    /// it yields `Unhealthy` instead ("stopped"), matching
+    /// [`run_probes`](AsyncKit::run_probes).
+    ///
+    /// Requires the `probe` feature.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the probe registry [`RwLock`] is poisoned.
+    #[cfg(feature = "probe")]
+    pub async fn probe_aggregate(&self) -> crate::core::health::HealthStatus {
+        self.probe_aggregate_bounded(None).await
+    }
+
+    /// [`probe_aggregate`](AsyncKit::probe_aggregate) with a hard per-probe
+    /// bound (see
+    /// [`run_probes_with_timeout`](AsyncKit::run_probes_with_timeout)): a
+    /// hung probe yields an `Unhealthy` verdict with a "timed out" detail
+    /// and the pass continues.
+    ///
+    /// Requires the `probe` feature.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the probe registry [`RwLock`] is poisoned.
+    #[cfg(feature = "probe")]
+    pub async fn probe_aggregate_with_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> crate::core::health::HealthStatus {
+        self.probe_aggregate_bounded(Some(timeout)).await
+    }
+
+    #[cfg(feature = "probe")]
+    async fn probe_aggregate_bounded(
+        &self,
+        timeout: Option<std::time::Duration>,
+    ) -> crate::core::health::HealthStatus {
+        use crate::core::health::HealthStatus;
+        let probes: Vec<(&'static str, Arc<dyn crate::core::probe::ServiceProbe>)> = self
+            .probes
+            .probes
+            .read()
+            .expect("probe registry lock poisoned")
+            .clone();
+        let stopped = self
+            .probes
+            .stopped
+            .load(std::sync::atomic::Ordering::Acquire);
+        if probes.is_empty() {
+            return if stopped {
+                HealthStatus::unhealthy("probe registry stopped by shutdown")
+            } else {
+                HealthStatus::Healthy
+            };
+        }
+        let mut worst_rank = 0u8;
+        let mut worst: Option<HealthStatus> = None;
+        for (_, probe) in &probes {
+            let outcome = match timeout {
+                Some(bound) => probe_within_bound(probe.probe(), bound).await,
+                None => Some(probe.probe().await),
+            };
+            let status = match outcome {
+                Some(outcome) => outcome.status,
+                None => HealthStatus::unhealthy("probe timed out before returning a verdict"),
+            };
+            let rank = status.severity_rank();
+            if rank > worst_rank {
+                worst_rank = rank;
+                worst = Some(status);
+            }
+        }
+        match worst_rank {
+            0 => HealthStatus::Healthy,
+            // rank > 0 必然经过 worst = Some(...) 赋值；expect 把该不变式
+            // 显式守护，防止未来重构破坏时静默落回 Healthy。
+            _ => worst.expect("worst verdict must exist when rank > 0"),
+        }
+    }
+
     /// Shut down all lifecycle modules, awaiting the async `on_shutdown` hooks.
     ///
     /// Requires the `lifecycle` feature.
@@ -1267,6 +1643,14 @@ impl AsyncKit<Ready> {
     /// guard is `!Send`). Await `shutdown_async` in place (e.g. in your
     /// async `main` or via a `block_on` helper) instead of spawning it on a
     /// multi-threaded runtime.
+    ///
+    /// With the `probe` feature, all registered service probes are
+    /// unregistered as part of shutdown and the registry is marked
+    /// stopped — a shut-down kit has no services left to probe, and
+    /// post-shutdown `run_probes()` reports the explicit not-serviceable
+    /// verdict (`overall == "unhealthy"`, `stopped == true`) instead of
+    /// the healthy-by-convention empty set, so a readiness consumer cannot
+    /// mistake a shut-down kit for a healthy one.
     ///
     /// # Panics
     ///
@@ -1287,6 +1671,13 @@ impl AsyncKit<Ready> {
         for (_type_id, hook) in async_hooks.iter().rev() {
             hook(&self.capabilities).await;
         }
+        // A shut-down kit has no services left to probe: clear the registry
+        // and mark it stopped, so post-shutdown `run_probes()` reports the
+        // explicit not-serviceable verdict instead of the
+        // healthy-by-convention empty set — a readiness consumer must not
+        // keep routing to a dead instance.
+        #[cfg(feature = "probe")]
+        self.clear_probes();
     }
 
     /// Bridge all lifecycle modules' `on_shutdown` cleanup into an external
@@ -1301,6 +1692,10 @@ impl AsyncKit<Ready> {
     ///   因注册表已空变为 no-op——两条路径合起来保证清理 exactly-once；
     /// - 执行顺序保持逆拓扑：注册表按拓扑序存放，桥接以逆序写入 local
     ///   槽位（local 槽位按注册序执行），依赖者仍先于被依赖者关闭。
+    /// - `probe` 特性下服务探针注册表随桥接一并清空并标记 stopped：关闭
+    ///   编排启动后服务面即下线，残留探针只会探到死组件；此后的
+    ///   `run_probes()` 返回显性不可服务结论（`stopped == true`），不会
+    ///   以空注册表惯例误报 healthy。
     ///
     /// 返回转移的钩子数量（0 表示无生命周期模块，桥接为 no-op）。
     ///
@@ -1338,6 +1733,11 @@ impl AsyncKit<Ready> {
                 .collect()
         };
         let count = hooks.len();
+        // 桥接后组件清理的唯一执行者是协调器，Kit 的探针注册表随之清空并
+        // 标记 stopped：关闭编排启动后服务面即下线，残留探针只会探到死
+        // 组件，此后的 run_probes() 显性不可服务而非误报 healthy。
+        #[cfg(feature = "probe")]
+        self.clear_probes();
         // 逆序写入：local 槽位按注册序执行，逆序写入使执行序等于注册表的
         // 逆拓扑序（依赖者先关），与 shutdown_async 的语义逐点一致。
         for (index, (_type_id, hook)) in hooks.into_iter().rev().enumerate() {
@@ -1576,6 +1976,25 @@ impl AsyncKit {
     /// writes the result back. If no config of type `C` exists, this is a
     /// no-op (does not panic).
     ///
+    /// With the `report` feature, every call is recorded in
+    /// `build_report().config_overrides` — including no-ops (`applied ==
+    /// false`), so a dropped override is visible instead of silently
+    /// swallowed. The method is `&self` on a shared `Send + Sync` type:
+    /// apply and record run under two independent locks, so under
+    /// concurrent calls the record order reflects lock arrival, not the
+    /// order overrides landed, and a concurrent `set_config` may still
+    /// overwrite an applied override afterwards (`applied == true` records
+    /// that this call performed the apply step, not that the override
+    /// survived). The read-modify-write itself is **not atomic**: two
+    /// concurrent `merge_config` calls on the same config type can
+    /// interleave as read-read/write-write and lose one override entirely
+    /// (lost update, both records still `applied == true`) — callers that
+    /// need exclusive write semantics must serialize the calls themselves.
+    /// Under the `report` feature the record history grows by one entry
+    /// per call; on long-lived kits drain it periodically with
+    /// [`take_config_overrides`](AsyncKit::take_config_overrides) (see the
+    /// warning there).
+    ///
     /// Requires the `confers` feature.
     ///
     /// # Panics
@@ -1586,10 +2005,35 @@ impl AsyncKit {
     where
         C::Override: Send + Sync,
     {
-        if let Ok(mut current) = self.config::<C>() {
+        #[cfg_attr(not(feature = "report"), allow(unused_variables))]
+        let applied = if let Ok(mut current) = self.config::<C>() {
             current.apply_override(&ovr);
             self.set_config(current);
-        }
+            true
+        } else {
+            false
+        };
+        #[cfg(feature = "report")]
+        self.report.push_config_override(
+            crate::kit::report::ConfigOverrideRecord::from_merge_config::<C>(applied),
+        );
+    }
+
+    /// Drain the recorded config-override history: returns all
+    /// [`ConfigOverrideRecord`](crate::kit::report::ConfigOverrideRecord)s in record order and leaves
+    /// `build_report().config_overrides` empty.
+    ///
+    /// Like `merge_config` (same `impl AsyncKit` block, i.e. the
+    /// pre-build configuration phase), this is an **Unbuilt-state** API:
+    /// the async config surface is a build-time concern, so the record
+    /// history is finite by construction and freezes once the kit is
+    /// `Ready`. Runtime accumulation with unbounded growth is a sync-Kit
+    /// scenario only.
+    ///
+    /// Requires the `report` feature.
+    #[cfg(feature = "report")]
+    pub fn take_config_overrides(&self) -> Vec<crate::kit::report::ConfigOverrideRecord> {
+        self.report.take_config_overrides()
     }
 
     /// Extract shared fields from config `C` into the `AsyncKit`'s shared overlay.
@@ -4498,5 +4942,515 @@ mod async_report_tests {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<AsyncKit<Unbuilt>>();
         assert_send_sync::<AsyncKit<Ready>>();
+    }
+
+    /// `merge_config` 的覆盖事实进 async 构建报告：应用与被丢弃（目标配置
+    /// 不存在）都要显性呈现，不允许静默吞并。
+    #[cfg(feature = "confers")]
+    mod async_config_override_tests {
+        use super::*;
+
+        #[derive(Clone, Debug)]
+        struct AsyncOvCfg {
+            host: String,
+        }
+
+        #[derive(Clone, Default)]
+        struct AsyncOvCfgOverride {
+            host: Option<String>,
+        }
+
+        impl crate::kit::ConfigInherit for AsyncOvCfg {
+            type Override = AsyncOvCfgOverride;
+            fn apply_override(&mut self, ovr: &Self::Override) {
+                if let Some(ref h) = ovr.host {
+                    self.host.clone_from(h);
+                }
+            }
+        }
+
+        fn ov_cfg_kit() -> AsyncKit {
+            let mut kit = AsyncKit::new();
+            kit.register::<RptAsyncLeaf>().expect("register leaf");
+            kit
+        }
+
+        #[test]
+        fn async_merge_config_records_applied_override() {
+            let kit = ov_cfg_kit();
+            kit.set_config(AsyncOvCfg {
+                host: "localhost".into(),
+            });
+            kit.merge_config::<AsyncOvCfg>(AsyncOvCfgOverride {
+                host: Some("async.example.com".into()),
+            });
+            let built = block_on(kit.build()).expect("build ok");
+
+            let report = built.build_report();
+            assert_eq!(report.config_overrides.len(), 1);
+            assert!(report.config_overrides[0].applied);
+            assert_eq!(report.config_overrides[0].source, "merge_config");
+            assert!(
+                report.config_overrides[0].config.ends_with("AsyncOvCfg"),
+                "config type name: {}",
+                report.config_overrides[0].config
+            );
+
+            let cfg = built.config::<AsyncOvCfg>().expect("config present");
+            assert_eq!(cfg.host, "async.example.com");
+        }
+
+        #[test]
+        fn async_merge_config_records_dropped_override_when_target_missing() {
+            let kit = ov_cfg_kit();
+            kit.merge_config::<AsyncOvCfg>(AsyncOvCfgOverride::default());
+            let built = block_on(kit.build()).expect("build ok");
+
+            let report = built.build_report();
+            assert_eq!(report.config_overrides.len(), 1);
+            assert!(
+                !report.config_overrides[0].applied,
+                "dropped override must be surfaced in the report"
+            );
+            assert!(built.config::<AsyncOvCfg>().is_err(), "config still absent");
+        }
+
+        /// 排空语义：take 返回全部记录并清空报告历史，drain 后 snapshot
+        /// 保持为空——高频 `merge_config` 的长生命周期 kit 以此防无界累积。
+        #[test]
+        fn take_config_overrides_drains_history() {
+            let kit = ov_cfg_kit();
+            kit.set_config(AsyncOvCfg {
+                host: "localhost".into(),
+            });
+            kit.merge_config::<AsyncOvCfg>(AsyncOvCfgOverride {
+                host: Some("first".into()),
+            });
+            kit.merge_config::<AsyncOvCfg>(AsyncOvCfgOverride {
+                host: Some("second".into()),
+            });
+
+            let drained = kit.take_config_overrides();
+            assert_eq!(drained.len(), 2);
+            assert!(drained.iter().all(|r| r.applied));
+            assert!(
+                kit.take_config_overrides().is_empty(),
+                "second take returns empty"
+            );
+
+            let built = block_on(kit.build()).expect("build ok");
+            assert!(
+                built.build_report().config_overrides.is_empty(),
+                "drained history stays drained across build"
+            );
+        }
+    }
+}
+
+// ─── AsyncKit probe registry (`probe` feature) tests ───────────────────
+
+#[cfg(all(test, feature = "probe"))]
+mod async_probe_tests {
+    use super::{AsyncKit, Ready, Unbuilt};
+    use crate::core::{AsyncAutoBuilder, HealthStatus, ModuleMeta, ProbeOutcome, ServiceProbe};
+    use crate::test_helpers::{MockError, block_on};
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug, Clone)]
+    struct ProbeCap;
+
+    struct ProbeLeaf;
+    impl ModuleMeta for ProbeLeaf {
+        const NAME: &'static str = "probe-leaf";
+    }
+    impl AsyncAutoBuilder for ProbeLeaf {
+        type Capability = Arc<ProbeCap>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(Arc::new(ProbeCap)) })
+        }
+    }
+
+    /// Deterministic probe returning a fixed status after an optional
+    /// busy delay; counts invocations so tests can assert how often the
+    /// registry executed it.
+    struct FakeProbe {
+        status: HealthStatus,
+        delay_ms: u64,
+        calls: AtomicUsize,
+    }
+
+    impl FakeProbe {
+        fn new(status: HealthStatus, delay_ms: u64) -> Arc<Self> {
+            Arc::new(Self {
+                status,
+                delay_ms,
+                calls: AtomicUsize::new(0),
+            })
+        }
+    }
+
+    impl ServiceProbe for FakeProbe {
+        fn probe<'a>(&'a self) -> Pin<Box<dyn Future<Output = ProbeOutcome> + Send + 'a>> {
+            Box::pin(async move {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                if self.delay_ms > 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(self.delay_ms));
+                }
+                ProbeOutcome {
+                    status: self.status.clone(),
+                    latency: std::time::Duration::from_millis(self.delay_ms),
+                }
+            })
+        }
+    }
+
+    #[test]
+    fn register_unregister_and_enumerate_probes() {
+        let kit = AsyncKit::new();
+        kit.register_probe("db", FakeProbe::new(HealthStatus::Healthy, 0));
+        kit.register_probe("cache", FakeProbe::new(HealthStatus::Healthy, 0));
+        assert_eq!(kit.probe_names(), vec!["db", "cache"]);
+
+        assert!(kit.unregister_probe("db"), "existing probe unregisters");
+        assert_eq!(kit.probe_names(), vec!["cache"]);
+        assert!(!kit.unregister_probe("db"), "unknown name → false");
+
+        // Re-registering the same name drops the old entry and appends at
+        // the tail (registration order = execution order); the subsequent
+        // "queue" registration then lands after it.
+        kit.register_probe("cache", FakeProbe::new(HealthStatus::Healthy, 0));
+        kit.register_probe("queue", FakeProbe::new(HealthStatus::Healthy, 0));
+        assert_eq!(kit.probe_names(), vec!["cache", "queue"]);
+    }
+
+    #[test]
+    fn probes_run_on_ready_kit_with_worst_of_and_latency() {
+        let mut kit = AsyncKit::new();
+        kit.register::<ProbeLeaf>().expect("register leaf");
+        let fast = FakeProbe::new(HealthStatus::Healthy, 0);
+        let slow = FakeProbe::new(HealthStatus::degraded("slow replica"), 3);
+        kit.register_probe("fast", fast.clone());
+        kit.register_probe("slow", slow.clone());
+
+        let built = block_on(kit.build()).expect("build ok");
+        let report = block_on(built.run_probes());
+
+        assert_eq!(report.overall, "degraded");
+        assert!(!report.healthy);
+        assert_eq!(report.probes.len(), 2);
+        assert_eq!(report.probes[0].name, "fast");
+        assert_eq!(report.probes[0].status, "healthy");
+        assert_eq!(report.probes[0].detail, None);
+        assert_eq!(report.probes[1].name, "slow");
+        assert_eq!(report.probes[1].status, "degraded");
+        assert_eq!(report.probes[1].detail.as_deref(), Some("slow replica"));
+        assert!(report.probes[1].latency_ms >= report.probes[0].latency_ms);
+
+        // Sequential execution, one call per registered probe.
+        assert_eq!(fast.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(slow.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn run_probes_on_empty_registry_is_healthy_by_convention() {
+        let mut kit = AsyncKit::new();
+        kit.register::<ProbeLeaf>().expect("register leaf");
+        let built = block_on(kit.build()).expect("build ok");
+        let report = block_on(built.run_probes());
+        assert_eq!(report.overall, "healthy");
+        assert!(report.healthy);
+        assert!(report.probes.is_empty());
+        assert!(!report.stopped, "a live empty registry is not stopped");
+    }
+
+    /// 悬挂探针在框架超时下被记为 unhealthy，其余探针继续执行——单个坏
+    /// 探针不得阻塞整个就绪路径。
+    #[test]
+    fn run_probes_with_timeout_bounds_a_hung_probe_and_continues() {
+        use std::time::{Duration, Instant};
+
+        struct HungProbe;
+        impl ServiceProbe for HungProbe {
+            fn probe<'a>(&'a self) -> Pin<Box<dyn Future<Output = ProbeOutcome> + Send + 'a>> {
+                Box::pin(std::future::pending())
+            }
+        }
+
+        let mut kit = AsyncKit::new();
+        kit.register::<ProbeLeaf>().expect("register leaf");
+        kit.register_probe("hung", Arc::new(HungProbe));
+        let after = FakeProbe::new(HealthStatus::Healthy, 0);
+        kit.register_probe("after", after.clone());
+        let built = block_on(kit.build()).expect("build ok");
+
+        let started = Instant::now();
+        let report = block_on(built.run_probes_with_timeout(Duration::from_millis(40)));
+        let elapsed = started.elapsed();
+
+        assert_eq!(report.overall, "unhealthy", "timed-out probe → unhealthy");
+        assert!(!report.healthy);
+        assert!(!report.stopped);
+        assert_eq!(report.probes.len(), 2, "pass continues after the timeout");
+        assert_eq!(report.probes[0].name, "hung");
+        assert_eq!(report.probes[0].status, "unhealthy");
+        assert!(
+            report.probes[0]
+                .detail
+                .as_deref()
+                .is_some_and(|d| d.contains("timed out")),
+            "timeout entry must explain itself: {:?}",
+            report.probes[0].detail
+        );
+        assert_eq!(report.probes[1].name, "after");
+        assert_eq!(report.probes[1].status, "healthy");
+        assert_eq!(
+            after.calls.load(Ordering::SeqCst),
+            1,
+            "remaining probe still executed"
+        );
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "bounded pass must return: took {elapsed:?}"
+        );
+    }
+
+    /// `probe_aggregate` 的超时变体：悬挂探针产出 Unhealthy 结论而非悬挂。
+    #[test]
+    fn probe_aggregate_with_timeout_bounds_a_hung_probe() {
+        use std::time::Duration;
+
+        struct HungProbe;
+        impl ServiceProbe for HungProbe {
+            fn probe<'a>(&'a self) -> Pin<Box<dyn Future<Output = ProbeOutcome> + Send + 'a>> {
+                Box::pin(std::future::pending())
+            }
+        }
+
+        let mut kit = AsyncKit::new();
+        kit.register::<ProbeLeaf>().expect("register leaf");
+        kit.register_probe("hung", Arc::new(HungProbe));
+        let built = block_on(kit.build()).expect("build ok");
+
+        let verdict = block_on(built.probe_aggregate_with_timeout(Duration::from_millis(40)));
+        assert_eq!(verdict.as_status_name(), "unhealthy");
+        assert!(
+            verdict.detail().is_some_and(|d| d.contains("timed out")),
+            "timeout verdict must explain itself: {:?}",
+            verdict.detail()
+        );
+    }
+
+    /// 报告中的延迟由框架在 `probe().await` 外侧实测，不采信实现自报值。
+    #[test]
+    fn run_probes_measures_wall_latency_not_the_self_reported_value() {
+        let mut kit = AsyncKit::new();
+        kit.register::<ProbeLeaf>().expect("register leaf");
+        // Sleeps 30ms but self-reports 1ms: the report must carry the
+        // framework measurement, not the claim.
+        kit.register_probe("sleeper", FakeProbe::new(HealthStatus::Healthy, 30));
+        let built = block_on(kit.build()).expect("build ok");
+        let report = block_on(built.run_probes());
+
+        assert!(
+            report.probes[0].latency_ms >= 25,
+            "framework-measured latency must reflect the real sleep: {}",
+            report.probes[0].latency_ms
+        );
+    }
+
+    /// 停机协议清空注册表后，`run_probes` 不得返回 healthy-by-convention：
+    /// 已停机的 Kit 无服务可探，就绪面必须显性不可服务。
+    #[test]
+    #[cfg(feature = "lifecycle")]
+    fn run_probes_after_shutdown_is_unhealthy_and_stopped() {
+        let mut kit = AsyncKit::new();
+        kit.register::<ProbeLeaf>().expect("register leaf");
+        kit.register_probe("db", FakeProbe::new(HealthStatus::Healthy, 0));
+        let built = block_on(kit.build()).expect("build ok");
+
+        block_on(built.shutdown_async());
+        let report = block_on(built.run_probes());
+        assert_eq!(report.overall, "unhealthy");
+        assert!(!report.healthy);
+        assert!(report.probes.is_empty());
+        assert!(
+            report.stopped,
+            "shutdown-cleared registry must be marked stopped"
+        );
+
+        let verdict = block_on(built.probe_aggregate());
+        assert_eq!(verdict.as_status_name(), "unhealthy");
+    }
+
+    /// 并发停机 × 就绪轮询压力：stopped 置位先于注册表清空（顺序即正确
+    /// 性依据，见 `clear_probes` 注释），因此轮询一旦观察到停机结论就
+    /// 不得再回落 healthy——旧顺序（先清空后置位）下读者可能夹在两条
+    /// 语句之间把停机中的 Kit 误报为 healthy-by-convention。
+    #[test]
+    #[cfg(feature = "lifecycle")]
+    fn polling_never_regresses_to_healthy_after_concurrent_shutdown() {
+        let mut kit = AsyncKit::new();
+        kit.register::<ProbeLeaf>().expect("register leaf");
+        kit.register_probe("db", FakeProbe::new(HealthStatus::Healthy, 0));
+        let built = Arc::new(block_on(kit.build()).expect("build ok"));
+
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let poller = {
+            let built = Arc::clone(&built);
+            let done = Arc::clone(&done);
+            std::thread::spawn(move || {
+                let mut ever_stopped = false;
+                loop {
+                    let report = block_on(built.run_probes());
+                    assert!(
+                        !(ever_stopped && report.healthy),
+                        "once stopped, a pass must never report healthy again"
+                    );
+                    ever_stopped |= report.stopped;
+                    if done.load(std::sync::atomic::Ordering::Acquire) {
+                        break;
+                    }
+                }
+                ever_stopped
+            })
+        };
+        let stopper = {
+            let built = Arc::clone(&built);
+            let done = Arc::clone(&done);
+            std::thread::spawn(move || {
+                for _ in 0..50 {
+                    // one-shot hook drain 后为 no-op，clear_probes 幂等；
+                    // future 为 !Send，在线程内就地创建与 await。
+                    block_on(built.shutdown_async());
+                    std::thread::sleep(std::time::Duration::from_micros(50));
+                }
+                done.store(true, std::sync::atomic::Ordering::Release);
+            })
+        };
+        stopper.join().expect("stopper thread");
+        assert!(
+            poller.join().expect("poller thread"),
+            "poller must have observed the stopped report"
+        );
+        let final_report = block_on(built.run_probes());
+        assert!(final_report.stopped && !final_report.healthy);
+    }
+
+    #[test]
+    fn probe_aggregate_returns_worst_of_status() {
+        let mut kit = AsyncKit::new();
+        kit.register::<ProbeLeaf>().expect("register leaf");
+        kit.register_probe("ok", FakeProbe::new(HealthStatus::Healthy, 0));
+        kit.register_probe("bad", FakeProbe::new(HealthStatus::unhealthy("down"), 0));
+        let built = block_on(kit.build()).expect("build ok");
+
+        let verdict = block_on(built.probe_aggregate());
+        assert_eq!(verdict.as_status_name(), "unhealthy");
+        assert_eq!(verdict.detail(), Some("down"));
+
+        // Degraded only → degraded verdict with the winning probe's detail.
+        let mut kit2 = AsyncKit::new();
+        kit2.register::<ProbeLeaf>().expect("register leaf");
+        kit2.register_probe("ok", FakeProbe::new(HealthStatus::Healthy, 0));
+        kit2.register_probe("mid", FakeProbe::new(HealthStatus::degraded("laggy"), 0));
+        let built2 = block_on(kit2.build()).expect("build ok");
+        let verdict2 = block_on(built2.probe_aggregate());
+        assert_eq!(verdict2.as_status_name(), "degraded");
+        assert_eq!(verdict2.detail(), Some("laggy"));
+    }
+
+    #[test]
+    #[cfg(feature = "lifecycle")]
+    fn probes_are_unregistered_by_shutdown_async() {
+        let mut kit = AsyncKit::new();
+        kit.register::<ProbeLeaf>().expect("register leaf");
+        kit.register_probe("db", FakeProbe::new(HealthStatus::Healthy, 0));
+        let built = block_on(kit.build()).expect("build ok");
+        assert_eq!(built.probe_names(), vec!["db"]);
+
+        block_on(built.shutdown_async());
+        assert!(
+            built.probe_names().is_empty(),
+            "shutdown must unregister all probes"
+        );
+    }
+
+    #[test]
+    fn async_kit_stays_send_sync_with_probe_feature() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<AsyncKit<Unbuilt>>();
+        assert_send_sync::<AsyncKit<Ready>>();
+    }
+}
+
+#[cfg(all(test, feature = "probe", feature = "lifecycle", feature = "shutdown"))]
+mod async_probe_bridge_tests {
+    use super::AsyncKit;
+    use crate::core::{AsyncAutoBuilder, HealthStatus, ModuleMeta, ProbeOutcome, ServiceProbe};
+    use crate::kit::{AsyncShutdownCoordinator, ShutdownPhase};
+    use crate::test_helpers::{MockError, block_on};
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct BridgeCap;
+
+    struct BridgeLeaf;
+    impl ModuleMeta for BridgeLeaf {
+        const NAME: &'static str = "probe-bridge-leaf";
+    }
+    impl AsyncAutoBuilder for BridgeLeaf {
+        type Capability = Arc<BridgeCap>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(Arc::new(BridgeCap)) })
+        }
+    }
+
+    // AsyncLifecycle is a sub-trait of AsyncAutoBuilder (already impl'd
+    // above): the empty impl supplies the default on_ready/on_shutdown
+    // hooks so a hook exists to bridge into the coordinator.
+    impl crate::core::lifecycle::AsyncLifecycle for BridgeLeaf {}
+
+    struct NoopProbe;
+    impl ServiceProbe for NoopProbe {
+        fn probe<'a>(&'a self) -> Pin<Box<dyn Future<Output = ProbeOutcome> + Send + 'a>> {
+            Box::pin(async move {
+                ProbeOutcome {
+                    status: HealthStatus::Healthy,
+                    latency: std::time::Duration::ZERO,
+                }
+            })
+        }
+    }
+
+    #[test]
+    fn register_shutdown_into_unregisters_probes() {
+        let mut kit = AsyncKit::new();
+        kit.register::<BridgeLeaf>().expect("register leaf");
+        kit.register_lifecycle::<BridgeLeaf>();
+        kit.register_probe("db", Arc::new(NoopProbe));
+        let built = block_on(kit.build()).expect("build ok");
+
+        let coord = AsyncShutdownCoordinator::new();
+        let bridged = built
+            .register_shutdown_into(&coord, ShutdownPhase::CloseConnections)
+            .expect("bridge ok");
+        assert!(bridged > 0, "lifecycle hook bridged");
+        assert!(
+            built.probe_names().is_empty(),
+            "bridging shutdown into a coordinator must unregister probes"
+        );
     }
 }

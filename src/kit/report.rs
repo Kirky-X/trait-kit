@@ -24,6 +24,8 @@ pub(crate) struct ReportFields {
     modules: RefCell<Vec<ModuleReportEntry>>,
     /// Override records captured at `override_module(_strict)` call time.
     overrides: RefCell<Vec<OverrideRecord>>,
+    /// Config override records captured at `merge_config` call time.
+    config_overrides: RefCell<Vec<ConfigOverrideRecord>>,
     /// Topological order (module names) captured after `graph.validate()`.
     topo_order: RefCell<Vec<&'static str>>,
     /// Total wall time of `build()` (set when build finishes).
@@ -69,6 +71,25 @@ impl ReportFields {
         self.overrides.borrow_mut().push(record);
     }
 
+    /// Record a config-level override (`merge_config`): `applied == false`
+    /// surfaces an override that was dropped because the target config did
+    /// not exist, instead of silently swallowing it.
+    ///
+    /// The only caller is the `confers`-gated `Kit::merge_config`, so the
+    /// method follows the same gate and stays dead-code-free under
+    /// `report` alone (the snapshot field remains, always empty then).
+    #[cfg(feature = "confers")]
+    pub(crate) fn push_config_override(&self, record: ConfigOverrideRecord) {
+        self.config_overrides.borrow_mut().push(record);
+    }
+
+    /// Drain the recorded config-override history (record order), leaving
+    /// the accumulator empty. Rotates the history so high-frequency
+    /// `merge_config` callers can keep it bounded by design.
+    pub(crate) fn take_config_overrides(&self) -> Vec<ConfigOverrideRecord> {
+        std::mem::take(&mut *self.config_overrides.borrow_mut())
+    }
+
     /// Record the validated topological order (module names).
     pub(crate) fn set_topo_order(&self, names: Vec<&'static str>) {
         *self.topo_order.borrow_mut() = names;
@@ -98,6 +119,7 @@ impl ReportFields {
             topo_order: self.topo_order.borrow().clone(),
             modules: self.modules.borrow().clone(),
             overrides: self.overrides.borrow().clone(),
+            config_overrides: self.config_overrides.borrow().clone(),
             total_elapsed_us: *self.total_elapsed_us.borrow(),
             ..BuildReport::default()
         }
@@ -106,14 +128,19 @@ impl ReportFields {
 
 /// Feature-gated fields aggregated on `AsyncKit` — the `Mutex` counterpart
 /// of [`ReportFields`]. The async kit is a documented `Send + Sync` type, so
-/// the `RefCell` original cannot be reused; locking is confined to the build
-/// path (one short critical section per module), while `AsyncKit<Ready>`
-/// reads the snapshot once via `build_report()`.
+/// the `RefCell` original cannot be reused; the `modules`/`topo_order`/
+/// `total_elapsed_us`/`contract` locks are confined to the build path (one
+/// short critical section per module), while `config_overrides` is touched
+/// on every `merge_config` call — a user API runnable at any time on any
+/// thread, outside the build path. `AsyncKit<Ready>` reads the snapshot once
+/// via `build_report()`.
 #[cfg(feature = "async")]
 #[derive(Default)]
 pub(crate) struct AsyncReportFields {
     /// Per-module build records in build-completion order.
     modules: Mutex<Vec<ModuleReportEntry>>,
+    /// Config override records captured at `merge_config` call time.
+    config_overrides: Mutex<Vec<ConfigOverrideRecord>>,
     /// Topological order (module names) captured after `graph.validate()`.
     topo_order: Mutex<Vec<&'static str>>,
     /// Total wall time of `build()` (set when build finishes).
@@ -135,6 +162,35 @@ impl AsyncReportFields {
                 deps,
                 elapsed_us: Some(elapsed_us),
             });
+    }
+
+    /// Record a config-level override (`merge_config`): `applied == false`
+    /// surfaces an override that was dropped because the target config did
+    /// not exist, instead of silently swallowing it.
+    ///
+    /// The only caller is the `confers`-gated `AsyncKit::merge_config`, so
+    /// the method follows the same gate and stays dead-code-free under
+    /// `async,report` alone (the snapshot field remains, always empty then).
+    #[cfg(feature = "confers")]
+    pub(crate) fn push_config_override(&self, record: ConfigOverrideRecord) {
+        self.config_overrides
+            .lock()
+            .expect("AsyncKit report config_overrides lock poisoned")
+            .push(record);
+    }
+
+    /// Drain the recorded config-override history (record order), leaving
+    /// the accumulator empty. Rotates the history so high-frequency
+    /// `merge_config` callers can keep it bounded by design; the swap runs
+    /// inside the mutex, so concurrent `merge_config`/`take` calls never
+    /// lose a record.
+    pub(crate) fn take_config_overrides(&self) -> Vec<ConfigOverrideRecord> {
+        std::mem::take(
+            &mut *self
+                .config_overrides
+                .lock()
+                .expect("AsyncKit report config_overrides lock poisoned"),
+        )
     }
 
     /// Record the validated topological order (module names).
@@ -175,8 +231,10 @@ impl AsyncReportFields {
 
     /// Snapshot the accumulated build facts into a [`BuildReport`].
     ///
-    /// `overrides` is always empty: the `override_module` family is a
-    /// sync-only surface, so async builds have no override records.
+    /// The module-level `overrides` is always empty: the `override_module`
+    /// family is a sync-only surface. Config-level overrides recorded via
+    /// `merge_config` (including dropped ones, `applied == false`) do show
+    /// up under `config_overrides`.
     pub(crate) fn snapshot(&self) -> BuildReport {
         BuildReport {
             topo_order: self
@@ -188,6 +246,11 @@ impl AsyncReportFields {
                 .modules
                 .lock()
                 .expect("AsyncKit report modules lock poisoned")
+                .clone(),
+            config_overrides: self
+                .config_overrides
+                .lock()
+                .expect("AsyncKit report config_overrides lock poisoned")
                 .clone(),
             total_elapsed_us: *self
                 .total_elapsed_us
@@ -270,6 +333,44 @@ pub struct OverrideRecord {
     pub source: &'static str,
 }
 
+/// One config-level override captured in a [`BuildReport`], in record order.
+///
+/// Record order matches call order only for sequential (single-threaded)
+/// call patterns: the async kit is a shared `Send + Sync` type, so
+/// concurrent `merge_config` calls interleave their "apply" and "record"
+/// steps across two independent locks, and the record sequence reflects
+/// lock arrival rather than the order overrides actually landed.
+#[derive(Debug, Clone, Serialize)]
+pub struct ConfigOverrideRecord {
+    /// Overridden config type name (`std::any::type_name`). The exact
+    /// format is not promised to be stable across compilers or versions —
+    /// diagnostic use only; match by suffix, never by full equality.
+    pub config: &'static str,
+    /// Which API applied the override (e.g. `"merge_config"`).
+    pub source: &'static str,
+    /// Whether this call went through the apply step, i.e. the target
+    /// config existed. `false` means the override was dropped — surfaced
+    /// here instead of being silently swallowed. `true` does not promise
+    /// the final config still contains the override: a concurrent
+    /// `set_config`/`merge_config` may overwrite it afterwards
+    /// (last-writer-wins).
+    pub applied: bool,
+}
+
+impl ConfigOverrideRecord {
+    /// Build the record for one `merge_config` call; keeps the `source`
+    /// tag single-sourced for the sync and async call sites. Same feature
+    /// gate as its only callers (`Kit::merge_config`/`AsyncKit::merge_config`).
+    #[cfg(feature = "confers")]
+    pub(crate) fn from_merge_config<C: ?Sized>(applied: bool) -> Self {
+        Self {
+            config: std::any::type_name::<C>(),
+            source: "merge_config",
+            applied,
+        }
+    }
+}
+
 /// Structured, machine-readable report of a completed `Kit::build`.
 ///
 /// Obtained from [`Kit<Ready>::build_report`](crate::kit::Kit::build_report);
@@ -282,8 +383,26 @@ pub struct BuildReport {
     pub topo_order: Vec<&'static str>,
     /// Per-module build records in build-completion order.
     pub modules: Vec<ModuleReportEntry>,
-    /// Override registrations observed at registration time.
+    /// Override registrations observed at registration time (module-level
+    /// `override_module` family; config-level overrides are recorded
+    /// separately in [`BuildReport::config_overrides`]).
     pub overrides: Vec<OverrideRecord>,
+    /// Config-level override records in record order (`merge_config`
+    /// family; `applied == false` marks an override dropped on a missing
+    /// config). Under concurrent async calls, record order is lock arrival
+    /// order and may differ from the order overrides actually landed.
+    ///
+    /// # Usage warning: unbounded growth
+    ///
+    /// One entry per `merge_config` call, no cap or truncation — roughly
+    /// 40 bytes each, on both `Kit` and the shared `Send + Sync` `AsyncKit`
+    /// where `merge_config` is a runtime API callable at any time from any
+    /// thread. A kit merging on every reload callback accumulates
+    /// megabytes over a long process lifetime, and every `build_report()`
+    /// snapshot clones the whole history. Drain periodically with
+    /// `take_config_overrides()` (kit-level, `report` feature) at a
+    /// natural rotation point instead of letting the history grow.
+    pub config_overrides: Vec<ConfigOverrideRecord>,
     /// Total `build()` wall time in microseconds.
     pub total_elapsed_us: Option<u64>,
 }
@@ -295,6 +414,7 @@ impl Default for BuildReport {
             topo_order: Vec::new(),
             modules: Vec::new(),
             overrides: Vec::new(),
+            config_overrides: Vec::new(),
             total_elapsed_us: None,
         }
     }
@@ -482,6 +602,29 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "confers")]
+    fn config_override_records_reach_snapshot() {
+        let fields = ReportFields::default();
+        fields.push_config_override(ConfigOverrideRecord {
+            config: "demo::HostConfig",
+            source: "merge_config",
+            applied: true,
+        });
+        fields.push_config_override(ConfigOverrideRecord {
+            config: "demo::MissingConfig",
+            source: "merge_config",
+            applied: false,
+        });
+
+        let report = fields.snapshot();
+        assert_eq!(report.config_overrides.len(), 2);
+        assert_eq!(report.config_overrides[0].config, "demo::HostConfig");
+        assert_eq!(report.config_overrides[0].source, "merge_config");
+        assert!(report.config_overrides[0].applied);
+        assert!(!report.config_overrides[1].applied);
+    }
+
+    #[test]
     fn report_fields_accumulate_across_lifecycles() {
         let fields = ReportFields::default();
         fields.push_built("a", 12, vec![]);
@@ -504,6 +647,166 @@ mod tests {
         assert_eq!(report.modules.len(), 3);
         assert_eq!(report.overrides.len(), 1);
         assert_eq!(report.total_elapsed_us, Some(100));
+    }
+
+    /// `merge_config` 的覆盖事实进报告：应用与被丢弃（目标配置不存在）都要
+    /// 显性呈现，不允许静默吞并。
+    #[cfg(all(test, feature = "confers"))]
+    mod config_override_tests {
+        use super::*;
+
+        #[derive(Clone, Debug)]
+        struct HostConfig {
+            host: String,
+            port: u16,
+        }
+
+        #[derive(Clone, Default)]
+        struct HostConfigOverride {
+            host: Option<String>,
+            port: Option<u16>,
+        }
+
+        impl crate::kit::ConfigInherit for HostConfig {
+            type Override = HostConfigOverride;
+            fn apply_override(&mut self, ovr: &Self::Override) {
+                if let Some(ref h) = ovr.host {
+                    self.host.clone_from(h);
+                }
+                if let Some(ref p) = ovr.port {
+                    self.port = *p;
+                }
+            }
+        }
+
+        #[test]
+        fn merge_config_records_applied_override_in_build_report() {
+            let mut kit = Kit::new();
+            kit.register::<RptLeaf>().expect("register leaf");
+            kit.set_config(HostConfig {
+                host: "localhost".into(),
+                port: 5432,
+            });
+            kit.merge_config::<HostConfig>(HostConfigOverride {
+                host: Some("override.example.com".into()),
+                port: None,
+            });
+            let ready = kit.build().expect("build ok");
+
+            let report = ready.build_report();
+            assert_eq!(report.config_overrides.len(), 1);
+            let record = &report.config_overrides[0];
+            assert_eq!(record.source, "merge_config");
+            assert!(
+                record.config.ends_with("HostConfig"),
+                "config type name: {}",
+                record.config
+            );
+            assert!(record.applied, "existing target config → applied");
+
+            // 合并语义本身不受影响：Some 字段胜出，None 字段保留原值。
+            let cfg = ready.config::<HostConfig>().expect("config present");
+            assert_eq!(cfg.host, "override.example.com");
+            assert_eq!(cfg.port, 5432);
+        }
+
+        #[test]
+        fn merge_config_records_dropped_override_when_target_missing() {
+            let mut kit = Kit::new();
+            kit.register::<RptLeaf>().expect("register leaf");
+            kit.merge_config::<HostConfig>(HostConfigOverride::default());
+            let ready = kit.build().expect("build ok");
+
+            let report = ready.build_report();
+            assert_eq!(report.config_overrides.len(), 1);
+            assert!(
+                !report.config_overrides[0].applied,
+                "dropped override must be surfaced in the report"
+            );
+            assert!(ready.config::<HostConfig>().is_err(), "config still absent");
+        }
+
+        #[test]
+        fn config_override_records_preserve_call_order() {
+            let mut kit = Kit::new();
+            kit.register::<RptLeaf>().expect("register leaf");
+            kit.set_config(HostConfig {
+                host: "base".into(),
+                port: 1,
+            });
+            kit.merge_config::<HostConfig>(HostConfigOverride {
+                host: Some("first".into()),
+                port: None,
+            });
+            kit.merge_config::<HostConfig>(HostConfigOverride {
+                host: Some("second".into()),
+                port: None,
+            });
+            let ready = kit.build().expect("build ok");
+
+            let report = ready.build_report();
+            assert_eq!(report.config_overrides.len(), 2);
+            assert!(report.config_overrides.iter().all(|r| r.applied));
+            // Sequential (single-threaded) calls: record order mirrors call
+            // order, so the later merge wins — under concurrent async calls
+            // the record sequence is lock arrival order only.
+            let cfg = ready.config::<HostConfig>().expect("config present");
+            assert_eq!(cfg.host, "second");
+        }
+
+        /// 排空语义：take 返回全部记录并清空历史，drain 后 snapshot 保持
+        /// 为空——高频 `merge_config` 的长生命周期 kit 以此防无界累积。
+        #[test]
+        fn take_config_overrides_drains_report_history() {
+            let mut kit = Kit::new();
+            kit.register::<RptLeaf>().expect("register leaf");
+            kit.set_config(HostConfig {
+                host: "base".into(),
+                port: 1,
+            });
+            kit.merge_config::<HostConfig>(HostConfigOverride {
+                host: Some("first".into()),
+                port: None,
+            });
+            kit.merge_config::<HostConfig>(HostConfigOverride {
+                host: Some("second".into()),
+                port: None,
+            });
+
+            let drained = kit.take_config_overrides();
+            assert_eq!(drained.len(), 2);
+            assert!(drained.iter().all(|r| r.applied));
+            assert!(
+                kit.take_config_overrides().is_empty(),
+                "second take returns empty"
+            );
+
+            let ready = kit.build().expect("build ok");
+            assert!(
+                ready.build_report().config_overrides.is_empty(),
+                "drained history stays drained across build"
+            );
+        }
+
+        #[test]
+        fn config_override_records_json_round_trip() {
+            let mut kit = Kit::new();
+            kit.register::<RptLeaf>().expect("register leaf");
+            kit.set_config(HostConfig {
+                host: "localhost".into(),
+                port: 5432,
+            });
+            kit.merge_config::<HostConfig>(HostConfigOverride {
+                host: Some("json.example.com".into()),
+                port: None,
+            });
+            let ready = kit.build().expect("build ok");
+
+            let json = ready.build_report().to_json().expect("serialize report");
+            let value = BuildReport::from_json_str(&json).expect("valid JSON");
+            assert_eq!(value["config_overrides"][0]["source"], "merge_config");
+            assert_eq!(value["config_overrides"][0]["applied"], true);
+        }
     }
 }
 
@@ -641,6 +944,22 @@ mod async_report_fields_tests {
         assert_eq!(manifest.schema_version, CONTRACT_SCHEMA_VERSION);
         assert_eq!(manifest.modules.len(), 1);
         assert_eq!(manifest.modules[0].module, "a");
+    }
+
+    #[test]
+    #[cfg(feature = "confers")]
+    fn async_config_override_records_reach_snapshot() {
+        let fields = AsyncReportFields::default();
+        fields.push_config_override(ConfigOverrideRecord {
+            config: "demo::HostConfig",
+            source: "merge_config",
+            applied: false,
+        });
+
+        let report = fields.snapshot();
+        assert_eq!(report.config_overrides.len(), 1);
+        assert_eq!(report.config_overrides[0].source, "merge_config");
+        assert!(!report.config_overrides[0].applied);
     }
 
     #[test]

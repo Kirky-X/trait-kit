@@ -22,6 +22,8 @@ pub mod health;
 pub mod lifecycle;
 #[cfg(feature = "observer")]
 pub mod observer;
+#[cfg(feature = "probe")]
+pub mod probe;
 
 #[cfg(feature = "async")]
 pub use meta::AsyncAutoBuilder;
@@ -41,6 +43,8 @@ pub use health::AsyncHealthCheck;
 pub use health::{HealthAggregate, HealthModuleEntry};
 #[cfg(feature = "health")]
 pub use health::{HealthCheck, HealthStatus};
+#[cfg(feature = "probe")]
+pub use probe::{ProbeEntry, ProbeOutcome, ProbeReport, ServiceProbe};
 
 #[cfg(feature = "observer")]
 pub use observer::BuildObserver;

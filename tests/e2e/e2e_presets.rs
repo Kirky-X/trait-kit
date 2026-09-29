@@ -115,6 +115,7 @@ fn prs02_feature_table_lists_all_features() {
         "observer",
         "presets",
         "presets-remote",
+        "probe",
         "reload",
         "report",
         "request-scope",
@@ -129,7 +130,8 @@ fn prs02_feature_table_lists_all_features() {
             "Cargo.toml [features] 缺少 feature '{f}'：got {names:?}"
         );
     }
-    // 除 18 个 feature 外仅允许空集 default（PRS-01 的可编译前提）。
+    // 除 22 个 feature 外仅允许空集 default（PRS-01 的可编译前提；数量
+    // 与 prs02 期望表一致）。
     assert_eq!(
         features.get("default").map(Vec::is_empty),
         Some(true),
@@ -138,7 +140,7 @@ fn prs02_feature_table_lists_all_features() {
     assert_eq!(
         names.len(),
         expected.len() + 1,
-        "[features] 段应恰含 21 个 feature + default：got {names:?}"
+        "[features] 段应恰含 22 个 feature + default：got {names:?}"
     );
 }
 
@@ -172,7 +174,9 @@ fn prs05_encryption_chain_expansion() {
     );
 }
 
-/// PRS-03 门禁测试化：`--all-features` 下全部 21 项激活。
+/// PRS-03 门禁测试化：`--all-features` 下全部 feature 激活（清单与计数以
+/// `prs02` 的期望表为单一事实源；cfg 段必须逐一列全部非别名 feature——
+/// 漏列一项该组合就会静默通过，门禁失效）。
 /// 该测试仅在全 feature 组合编译时存在（cfg 段即门禁本体）。
 #[cfg(all(
     feature = "async",
@@ -186,6 +190,7 @@ fn prs05_encryption_chain_expansion() {
     feature = "lifecycle",
     feature = "version-negotiation",
     feature = "observer",
+    feature = "probe",
     feature = "presets",
     feature = "presets-remote",
     feature = "reload",
@@ -196,9 +201,10 @@ fn prs05_encryption_chain_expansion() {
 ))]
 #[test]
 fn prs03_all_features_gate_reached() {
-    // 能编译并执行到此处 = 21 项 feature 全部激活。
+    // 能编译并执行到此处 = 22 项 feature 全部激活（cfg 列表覆盖全部非
+    // 别名 feature，数量与下一行断言的「22 feature + default」一致）。
     let features = parse_features();
-    assert_eq!(features.len(), 22, "21 feature + default 空集");
+    assert_eq!(features.len(), 23, "22 feature + default 空集");
 }
 
 /// examples crate 20 个示例全部显式 `[[example]]` 注册，且

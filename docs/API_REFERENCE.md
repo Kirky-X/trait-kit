@@ -97,7 +97,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `restore_config::<C>()` | `confers` | 回滚配置到最近快照 |
 | `has_snapshot::<C>()` | `confers` | 检查指定类型快照是否存在 |
 | `populate_defaults::<C>()` | `confers` | 空 Kit 时填充 `ModuleConfig::default_value()` |
-| `merge_config::<C>(ovr)` | `confers` | 应用 `ConfigInherit` 字段覆盖 |
+| `merge_config::<C>(ovr)` | `confers` | 应用 `ConfigInherit` 字段覆盖；每次调用记录进 `build_report().config_overrides`（`report` 特性，`applied=false` = 目标配置不存在被丢弃；记录无上限，高频调用配 `take_config_overrides()` 轮转） |
 | `extract_shared::<C>()` | `confers` | 从配置提取共享字段到 overlay |
 | `inject_shared::<C>()` | `confers` | 从 overlay 注入共享字段到配置 |
 | `enable_toggle(key, bool)` | `toggle` | 设置 feature flag |
@@ -152,6 +152,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `module_count()` | — | 已注册模块数 |
 | `build_report()` | `report` | 结构化构建报告（JSON） |
 | `contract_manifest()` | `report` | 契约清单导出 |
+| `take_config_overrides()` | `report` | 排空并返回 `config_overrides` 历史（记录序）——高频 `merge_config` 的长生命周期 Kit 以此防无界累积（每条约 40B，`build_report()` 快照整段 clone） |
 | `emit_event(event)` | — | 发布自定义 `KitEvent` |
 
 ### 声明宏
@@ -308,7 +309,7 @@ pub trait ConfigInherit: Clone + 'static {
 }
 ```
 
-- `Kit::merge_config::<C>(ovr)` — 应用字段覆盖
+- `Kit::merge_config::<C>(ovr)` — 应用字段覆盖；覆盖事实（含目标配置不存在时的 `applied=false` 丢弃记录）按记录顺序进 `build_report().config_overrides`（`report` 特性，`AsyncKit` 同；`AsyncKit` 为共享 `Send + Sync` 类型，并发调用下记录序为加锁到达序，不代表实际应用顺序，且读-改-写非原子——同类型并发 `merge_config` 可能互相丢失覆盖，需独占写语义的调用方自行串行化）。记录历史无上限（每条约 40B），高频调用场景用 `take_config_overrides()`（`report` 特性）在轮转点排空
 - `#[derive(ConfigInherit)]` — 自动生成 Override 类型（`trait-kit-macros`）
 - `#[config_inherit(nested)]` — 嵌套字段递归委托
 
@@ -392,6 +393,7 @@ pub trait AsyncAutoBuilder: ModuleMeta {
 | `AsyncKit<Ready>` 配置面 | `load_config` 系列、`subscribe` / `reload_config`、`snapshot_config` / `restore_config`、`set_encrypted` / `get_encrypted` 与同步 Kit 能力一致 |
 | `build_report()` `report` | 结构化构建报告（JSON），与同步 `Kit<Ready>` 对位；async 构建状态集仅 `built`（无 override/lazy 面） |
 | `contract_manifest()` `report` | 契约清单导出（NAME/VERSION/capability/deps），与同步 `Kit<Ready>` 对位 |
+| `take_config_overrides()` `report` | 排空并返回 `config_overrides` 历史（共享 `Send + Sync` 类型上防无界累积，语义与同步侧一致） |
 
 ### `interface` — 接口/实现分离
 
@@ -469,6 +471,54 @@ pub trait AsyncHealthCheck: AsyncAutoBuilder {
 }
 ```
 
+### `probe` — 服务探针注册面
+
+`probe = ["health"]`。与 `HealthCheck`/`AsyncHealthCheck` 的分工：`check` 刻意同步、只读缓存状态，跑在报告路径；`ServiceProbe` 才做真正的异步网络探活，只在显式调用时执行（延迟由框架在 `probe().await` 外侧实测，见 `ProbeEntry::latency_ms`）。对象安全 `trait`，手写 `Pin<Box<dyn Future>>` 分派（对齐 `AsyncLifecycle`，不引 `async-trait`）。
+
+#### `ServiceProbe` `probe`
+
+```rust
+pub struct ProbeOutcome {
+    pub status: HealthStatus,
+    pub latency: Duration,
+}
+
+pub trait ServiceProbe: Send + Sync {
+    fn probe<'a>(&'a self)
+        -> Pin<Box<dyn Future<Output = ProbeOutcome> + Send + 'a>>;
+}
+```
+
+#### 注册面（`AsyncKit`，`probe` + `async`，任意状态可用）
+
+```rust
+impl<S> AsyncKit<S> {
+    pub fn register_probe(&self, name: &'static str, probe: Arc<dyn ServiceProbe>);
+    pub fn unregister_probe(&self, name: &str) -> bool;
+    pub fn probe_names(&self) -> Vec<&'static str>;   // 注册序 = 执行序；同名重注册落到尾部
+}
+```
+
+#### 执行面（`AsyncKit<Ready>`，`probe`）
+
+```rust
+impl AsyncKit<Ready> {
+    // 顺序执行全部探针；worst-of（unhealthy > degraded > healthy）聚合；
+    // 空注册表 healthy-by-convention（停机清空后除外，见 stopped）。
+    // probe+report 下 ProbeReport 可 to_json()。
+    pub async fn run_probes(&self) -> ProbeReport;
+    // 只取 worst-of 结论；全部探针都会执行（无短路）。
+    pub async fn probe_aggregate(&self) -> HealthStatus;
+    // 单探针硬上限变体：悬挂探针记 unhealthy（detail 含 timed out），
+    // 继续跑其余探针；最坏总延迟 ≤ 探针数 × timeout。探针 future 在
+    // 超时处被 drop（须取消安全）。
+    pub async fn run_probes_with_timeout(&self, timeout: Duration) -> ProbeReport;
+    pub async fn probe_aggregate_with_timeout(&self, timeout: Duration) -> HealthStatus;
+}
+```
+
+`ProbeReport { overall, healthy, probes: Vec<ProbeEntry { name, status, detail, latency_ms }>, stopped }` 在 `report` 特性下派生 `Serialize` 并提供 `to_json()`。`latency_ms` 为框架在 `probe().await` 外侧实测的墙钟延迟（不采信实现自报的 `ProbeOutcome::latency`——后者仅为实现方诊断字段）；`detail` 原样进入对外 JSON 载荷，**不得包含凭据/连接串/内网拓扑**。`stopped == true` 表示本报告不来自探针执行：注册表已被停机协议清空，结论为显性不可服务（`overall == "unhealthy"`、`probes == []`）——空注册表 ≠ 全部健康，就绪消费方必须区分。shutdown 协同：`shutdown_async()`（`probe`+`lifecycle`）与 `register_shutdown_into()`（`probe`+`lifecycle`+`shutdown`）完成后自动注销全部探针并标记 stopped——已停机的 Kit 无服务可探。
+
 ### `observer` — 构建可观测
 
 #### `BuildObserver` `observer`
@@ -527,6 +577,11 @@ pub trait BuildObserver: Send + Sync + 'static {
 | `ConfersConfigModule` | `presets` | confers 配置中心作为 Kit 模块纳入体系（`presets-remote` 走 confers 远程 `AsyncSource`） |
 
 `report` feature 的 `BuildReport` / `graph_dot` / `graph_mermaid` 见 [Kit API](#kit-api) 的 `Kit<Ready>` 表与 [依赖图导出](#依赖图导出) 一节。
+
+`BuildReport` 的 override 语义分两层：
+
+- **模块级** `overrides`：`override_module` / `override_module_strict` 家族的注册记录（sync-only，async 报告恒为空）
+- **配置级** `config_overrides`：`merge_config`（sync 与 async）每次调用的 `{ config, source, applied }`，按记录顺序排列（顺序调用/单线程下即调用顺序；`AsyncKit` 并发调用下为加锁到达序，不代表实际应用顺序）；`applied=false` 表示目标配置不存在、override 被丢弃——显性呈现而非静默吞并；`applied=true` 表示本次调用执行了 apply，不承诺最终配置仍包含该 override（并发 `set_config`/`merge_config` 可能随后覆盖）。**使用警告（运行期累积仅 sync 侧成立）**：`Kit::merge_config`/`Kit::take_config_overrides` 任意状态可用（`impl<S>`），记录随调用无界累积（每条约 40B，`build_report()` 快照整段 clone 该历史）——高频调用（如每次 reload 回调）的长生命周期 Kit 应在轮转点调用 `take_config_overrides()` 排空并取回记录；`AsyncKit` 侧两者为构建前（Unbuilt）API（与 `set_config` 同口径），Ready 后历史冻结、无运行期累积
 
 ### 其他方法级门控速查
 

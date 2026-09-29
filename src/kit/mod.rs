@@ -112,6 +112,6 @@ pub use toggle::{
 
 #[cfg(feature = "report")]
 pub use report::{
-    BuildReport, ContractEntry, ContractManifest, ModuleBuildState, ModuleReportEntry,
-    OverrideRecord,
+    BuildReport, ConfigOverrideRecord, ContractEntry, ContractManifest, ModuleBuildState,
+    ModuleReportEntry, OverrideRecord,
 };

@@ -6,8 +6,9 @@
 ## 🏃 运行方式
 
 ```sh
-# 全部基准（toggle 基准需要 toggle feature）
-cargo bench --features toggle
+# 全部基准（toggle 基准需要 toggle feature；config/write_merge_config 需追加 confers；
+# 注意不要用 --all-features 跑基准——见下方 merge_config 行的测量说明）
+cargo bench --features toggle,confers
 
 # 仅跑某个基准
 cargo bench --features toggle -- build/three_module_chain
@@ -24,8 +25,11 @@ cargo bench --features toggle -- build/three_module_chain
 | require | `require/arc_capability_top` | `require::<M>()` 取 `Arc` 能力（期望 ≈ 一次 `Arc::clone`） |
 | config | `config/read_clone` | `config::<C>()` 读（含 `Clone` 拷贝，5 元素 Vec 的中型结构） |
 | config | `config/write_set_config` | `set_config` 覆写（`TypeMap` 换值） |
+| config | `config/write_merge_config` | `merge_config` 读-改-写（`confers` feature；Ready Kit 可用）。**仅在无 `report` 的组合下测量**：`report` 下该基准被编译剔除——报告记录随调用无上限累积（见 `take_config_overrides`），迭代式基准会在单次运行内累积 GB 级 `Vec` 并退化为 realloc/cache 测量（迭代数即机器速度的函数，数字不可比，2–8GB 内存 runner 有 OOM 风险） |
 | toggle | `toggle/set` | `enable_toggle`（Ready Kit，HashMap 后端） |
 | toggle | `toggle/get` | `is_toggle_enabled`（未命中 → 命中路径均为此量级） |
+
+`report` 特性的记录开销（每次 `merge_config` 一次 `Vec` push、构建路径每模块一次累加）为诊断用途、量级远低于上述热路径，不设独立基准轴，属**非目标**；`config/write_merge_config` 在无 `report` 的组合下测量即其纯逻辑成本。探针路径（`probe` feature）无独立基准轴：`run_probes` 的框架测量开销为每次探针一对 `Instant::now()`（纳秒级）+ 超时变体一次定时器 arm，相对网络探针本身的毫秒级延迟属非目标。
 
 ## 📊 基线（2026-09-10）
 

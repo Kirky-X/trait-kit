@@ -165,8 +165,10 @@ pub trait HealthCheck: crate::core::AutoBuilder {
 /// probe placed there would block the reporting caller for the probe's full
 /// timeout. Probe the network **once** in
 /// [`AsyncLifecycle::on_ready`](crate::core::AsyncLifecycle::on_ready) and
-/// cache the verdict in shared local state; `check` then only reads that
-/// state.
+/// cache the verdict in shared local state, or register a
+/// `ServiceProbe` (`probe` feature) for
+/// on-demand async probes with latency capture; `check` then only reads
+/// that state.
 ///
 /// # Example: two-stage probe/report split
 ///
@@ -218,6 +220,8 @@ pub trait AsyncHealthCheck: crate::core::AsyncAutoBuilder {
     /// Intentionally synchronous: see the trait docs for why this is not an
     /// async method. Run network probes in
     /// [`AsyncLifecycle::on_ready`](crate::core::AsyncLifecycle::on_ready)
+    /// or via a
+    /// `ServiceProbe` (`probe` feature)
     /// instead; this method only reports from cached local state.
     fn check(cap: &Self::Capability) -> HealthStatus;
 }

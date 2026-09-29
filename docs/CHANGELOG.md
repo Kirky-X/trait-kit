@@ -31,8 +31,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **服务探针注册面**（蓝图 TK-A，新 feature `probe=["health","dep:futures-timer"]`）：对象安全 `ServiceProbe` trait（`ProbeOutcome{status,latency}`，手写 `Pin<Box<dyn Future>>` 分派对齐 `AsyncLifecycle`，不引 `async-trait`）；`AsyncKit` 任意状态可 `register_probe`/`unregister_probe`/`probe_names`（注册序=执行序，同名重注册落到尾部）；`AsyncKit<Ready>::run_probes()` 顺序执行全部探针产出 `ProbeReport`（per-probe 状态+**框架实测墙钟延迟**+worst-of 聚合，`report` 特性下可 `to_json()`，空注册表 healthy-by-convention）与 `probe_aggregate()`（worst-of 结论，复用 `severity_rank`，无短路）；`run_probes_with_timeout()`/`probe_aggregate_with_timeout()` 以运行时无关定时器（`futures-timer`，全局后台线程驱动）给单探针硬上限——悬挂探针记 unhealthy（detail 含 timed out）并继续跑完其余探针，最坏总延迟 ≤ 探针数 × timeout；`shutdown_async()`（probe+lifecycle）与 `register_shutdown_into()`（probe+lifecycle+shutdown）自动注销全部探针并标记 stopped。健康面三者分工显性化：`HealthCheck`/`AsyncHealthCheck::check` 刻意同步只读缓存，`ServiceProbe` 承载真正的网络探活
+- **构建报告 overrides 语义显式化**（async-kit-build-report 跟进项，`report` × `confers`）：`BuildReport` 新增 `config_overrides: Vec<ConfigOverrideRecord>` 字段（0.x 语义下 additive，schema 仍为 1；穷举构造 `BuildReport` 的代码需同步补字段），记录 `merge_config`（sync 与 async）每次调用的 `{ config, source, applied }`——目标配置不存在时 `applied=false`，被丢弃的 override 不再静默吞并。顺序语义：记录序在顺序调用/单线程下即调用顺序，`AsyncKit` 并发调用下为加锁到达序、不代表实际应用顺序（读-改-写非原子，同类型并发调用可能互相丢失覆盖，需独占写语义的调用方自行串行化）；`applied=true` 表示本次调用执行了 apply，不承诺最终配置仍包含该 override。模块级 `overrides` 语义不变（`override_module` 家族 sync-only，async 报告恒为空）；另新增 `config/write_merge_config` 基准（`toggle,confers` 组合且仅在无 `report` 组合下测量——report 下记录无界累积会使迭代式基准失真，见 PERFORMANCE.md）
+
 ### Fixed
 
+- **三路审查修复**（probe 面与 overrides 面的 MEDIUM/HIGH 项）：停机协议清空探针注册表后 `run_probes()`/`probe_aggregate()` 不再误报 healthy——`ProbeReport` 新增 `stopped: bool`（穷举构造方需同步），停机后返回显性不可服务结论（`overall=="unhealthy"`、`stopped==true`），防止就绪端点向死实例导流；`ProbeEntry.latency_ms` 改为框架在 `probe().await` 外侧实测的墙钟延迟，自报的 `ProbeOutcome.latency` 降级为实现方诊断字段、不进就绪载荷；`prs03` 门禁 cfg 列表补 `probe`（此前缺 probe 的组合下测试静默通过，门禁声明失效）；`config/write_merge_config` 基准在 `report` 组合下编译剔除（无界累积使测量失真且有 OOM 风险）；CI 中 `github/codeql-action` 三处引用由可变 tag 固定为 commit SHA
 - **版本协商四路径奇偶**（fix-audit-defects-r1 批次 A）：`register_lazy`/`register_multi`/`register_as` 此前不登记 `ModuleMeta::VERSION` 与 `required_versions`，版本冲突被静默跳过（fail-open）；现四条注册路径统一登记，`build()` 对任何路径的不兼容版本返回 `VersionIncompatible`
 - **register_as i18n/契约登记**：`register_as` 此前丢弃模块 `i18n_ftl()` 片段且不入 contract manifest；现与 eager 路径一致（contract 的 capability 字段记接口类型名）
 - **lazy 检索口径统一**（批次 B）：`contains`/`optional`/`require_ref` 此前对 `register_lazy` 模块 `require()` 后的缓存失明；现与 `require`/`get_arc` 口径一致——"已构建即可见"，且全部只读查询不触发 lazy 构建
@@ -42,6 +48,9 @@
 
 ### Changed
 
+- **API**：`ProbeReport` 新增 `stopped: bool` 字段（结构体字面量构造方需同步）；`register_probe` 签名从泛型 `Arc<P>` 收紧为 `Arc<dyn ServiceProbe>`（与 `with_observer` 惯例对齐，调用点源码不变）；`ServiceProbe::probe` 文档将"实现内自设超时"从建议升级为契约，并要求取消安全（有界变体在超时处 drop 探针 future）
+- **API**：`Kit::take_config_overrides()` / `AsyncKit::take_config_overrides()`（`report` 特性）——排空并返回 `config_overrides` 历史（记录序），高频 `merge_config` 的长生命周期 Kit 在轮转点调用以防无界累积（每条约 40B，`build_report()` 快照整段 clone）；`BuildReport::config_overrides` 文档从权衡说明升级为使用警告
+- **依赖**：新增 optional `futures-timer 3.0`（`default-features = false`，经 `probe` feature 挂载）——运行时无关的全局定时器线程，超时变体所需；不引入 tokio/async-std 耦合
 - **API**：`ShutdownPhaseResult` 新增 `hook_failures: usize` 字段（结构体字面量构造方需同步）；`is_ok()` 语义收紧为 `!timed_out && hook_failures == 0`，`into_result()` 对"仅 hook panic"场景返回 `BuildFailed`
 - **API**：`AsyncShutdownCoordinator::pending_local_hook_count()` 返回类型改为 `Result<usize, TraitKitError>`——锁中毒不再 panic 击穿宿主监控线程，与同 impl 块 `register_local_hook`/`shutdown_local` 的错误纪律一致；`AsyncKit::register_shutdown_into` 桥接部分失败时，返回的 `TraitKitError::BuildFailed` 以 i18n context 报告桥接操作/阶段与 stranded 计数、原错误整体降为 source（包装对任意错误变体通用），程序化检测清理丢失不再依赖 log subscriber
 - **文档**：README/README_EN/SECURITY 的"无 unsafe"表述修正为"默认禁用 + 6 处经审计豁免"；API_REFERENCE 补 lazy 模块检索口径

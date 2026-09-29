@@ -43,6 +43,11 @@ serde_json = { workspace = true, optional = true }
 icu = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
 writeable = { version = "0.6", optional = true }
 sys-locale = { version = "0.3", optional = true }
+# Runtime-agnostic timer for `run_probes_with_timeout` / `probe_aggregate_with_timeout`:
+# a global background thread drives the delays, so the futures stay executor-independent
+# (no tokio/async-std coupling). Native std backend needs no feature; the wasm
+# backends (`gloo-timers`/`wasm-bindgen`/`send_wrapper`) are deliberately not enabled.
+futures-timer = { version = "3.0", default-features = false, optional = true }
 # Fluent FTL message translation (concurrent bundle). Always on: `tr()` /
 # `I18nManager` work with or without the `i18n` feature (en-US fallback).
 fluent-bundle = "0.16"
@@ -97,6 +102,11 @@ interface = ["di"]
 lifecycle = []
 # Health check: per-module health status reporting.
 health = []
+# Service probe registry: object-safe async probes (`ServiceProbe`) with
+# latency capture, worst-of aggregation and auto-unregister on shutdown.
+# Builds on the health feature's `HealthStatus` vocabulary; the async
+# registration surface lives on `AsyncKit` (feature `async`).
+probe = ["health", "dep:futures-timer"]
 # Scoped dependencies: per-request instance isolation.
 request-scope = []
 # Deprecated alias of `request-scope`.
