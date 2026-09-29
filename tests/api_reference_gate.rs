@@ -287,6 +287,22 @@ fn _assert_async_api() {
             async_probe_aggregate_bounded,
         );
     }
+
+    // health+report：健康聚合访问器（与同步 Kit<Ready> 口径对位）。
+    #[cfg(all(feature = "health", feature = "report"))]
+    {
+        fn async_health_aggregate(
+            kit: &trait_kit::kit::AsyncKit<trait_kit::kit::AsyncReady>,
+        ) -> trait_kit::core::health::HealthAggregate {
+            kit.health_aggregate()
+        }
+        fn async_health_json(
+            kit: &trait_kit::kit::AsyncKit<trait_kit::kit::AsyncReady>,
+        ) -> serde_json::Result<String> {
+            kit.health_json()
+        }
+        let _ = (async_health_aggregate, async_health_json);
+    }
 }
 
 #[cfg(feature = "health")]
@@ -296,6 +312,22 @@ fn _assert_health_api() {
     }
     fn checker<T: trait_kit::core::HealthCheck>() {}
     let _ = (status, checker::<GateHealthModule>);
+
+    // report 特性：健康聚合访问器（async 侧对位断言在 `_assert_async_api`）。
+    #[cfg(feature = "report")]
+    {
+        fn sync_health_aggregate(
+            kit: &trait_kit::kit::Kit<trait_kit::kit::Ready>,
+        ) -> trait_kit::core::health::HealthAggregate {
+            kit.health_aggregate()
+        }
+        fn sync_health_json(
+            kit: &trait_kit::kit::Kit<trait_kit::kit::Ready>,
+        ) -> serde_json::Result<String> {
+            kit.health_json()
+        }
+        let _ = (sync_health_aggregate, sync_health_json);
+    }
 }
 
 #[cfg(feature = "request-scope")]
@@ -380,6 +412,32 @@ fn api_reference_documented_feature_items_resolve() {
         assert!(
             doc.contains("`take_config_overrides()` | `report`"),
             "doc must list sync take_config_overrides()"
+        );
+    }
+    #[cfg(all(feature = "health", feature = "report"))]
+    {
+        assert!(
+            doc.contains("health_aggregate()"),
+            "doc must list health_aggregate()"
+        );
+        assert!(doc.contains("health_json()"), "doc must list health_json()");
+        // 行独有串：sync 表行与 async 表行分别钉住收录本体（标识符子串
+        // 两行都会命中，无法区分哪一行被删）。
+        assert!(
+            doc.contains("明细（modules 顺序不承诺确定"),
+            "doc must list sync health_aggregate entry"
+        );
+        assert!(
+            doc.contains("健康聚合 JSON 导出（供 /healthz 消费）"),
+            "doc must list sync health_json entry"
+        );
+        assert!(
+            doc.contains("与同步 `Kit<Ready>` 口径一致（空集 healthy-by-convention"),
+            "doc must list async health_aggregate entry"
+        );
+        assert!(
+            doc.contains("健康聚合 JSON 导出，与同步"),
+            "doc must list async health_json entry"
         );
     }
     #[cfg(feature = "probe")]
