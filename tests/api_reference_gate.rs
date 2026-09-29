@@ -93,6 +93,14 @@ fn _assert_core_api() {
             sync_config_override_drain_ready,
         );
     }
+
+    // probe 特性：对象安全探针 trait（`probe` 单开即可用，不依赖 async——
+    // 注册面/执行面在 AsyncKit 上，由 `_assert_async_api` 单独钉住）。
+    #[cfg(feature = "probe")]
+    {
+        fn probe_impl<T: trait_kit::core::probe::ServiceProbe>() {}
+        let _ = probe_impl::<GateProbe>;
+    }
 }
 
 // 共享 fixture（各断言函数各自引用，保证独立编译有效）。
@@ -167,6 +175,25 @@ impl trait_kit::core::HealthCheck for GateHealthModule {
     }
 }
 
+#[cfg(feature = "probe")]
+struct GateProbe;
+
+#[cfg(feature = "probe")]
+impl trait_kit::core::probe::ServiceProbe for GateProbe {
+    fn probe<'a>(
+        &'a self,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = trait_kit::core::probe::ProbeOutcome> + Send + 'a>,
+    > {
+        Box::pin(async {
+            trait_kit::core::probe::ProbeOutcome {
+                status: trait_kit::core::HealthStatus::Healthy,
+                latency: std::time::Duration::from_millis(1),
+            }
+        })
+    }
+}
+
 #[cfg(feature = "async")]
 use std::pin::Pin;
 
@@ -200,6 +227,65 @@ fn _assert_async_api() {
             kit.take_config_overrides().len()
         }
         let _ = async_config_override_drain;
+    }
+
+    // probe 特性：注册面（任意状态，probe+async）与执行面（AsyncKit<Ready>，
+    // probe+async——AsyncKit 类型本身即 async 门控）。
+    #[cfg(feature = "probe")]
+    {
+        fn async_probe_registry(kit: &trait_kit::kit::AsyncKit<trait_kit::kit::AsyncUnbuilt>) {
+            kit.register_probe("gate-probe", std::sync::Arc::new(GateProbe));
+        }
+        fn async_probe_unregistry(
+            kit: &trait_kit::kit::AsyncKit<trait_kit::kit::AsyncUnbuilt>,
+        ) -> bool {
+            kit.unregister_probe("gate-probe")
+        }
+        fn async_probe_enumeration(
+            kit: &trait_kit::kit::AsyncKit<trait_kit::kit::AsyncUnbuilt>,
+        ) -> Vec<&'static str> {
+            kit.probe_names()
+        }
+        // 注册面任意态契约的 Ready 实例化钉死（防 impl<S> 收窄漂移）。
+        fn async_probe_registry_ready(kit: &trait_kit::kit::AsyncKit<trait_kit::kit::AsyncReady>) {
+            kit.register_probe("gate-probe", std::sync::Arc::new(GateProbe));
+        }
+        fn async_run_probes(
+            kit: &trait_kit::kit::AsyncKit<trait_kit::kit::AsyncReady>,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = trait_kit::core::probe::ProbeReport> + '_>,
+        > {
+            Box::pin(kit.run_probes())
+        }
+        fn async_probe_execution(
+            kit: &trait_kit::kit::AsyncKit<trait_kit::kit::AsyncReady>,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = trait_kit::core::probe::ProbeReport> + '_>,
+        > {
+            Box::pin(kit.run_probes_with_timeout(std::time::Duration::from_secs(1)))
+        }
+        fn async_probe_aggregate(
+            kit: &trait_kit::kit::AsyncKit<trait_kit::kit::AsyncReady>,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = trait_kit::core::HealthStatus> + '_>>
+        {
+            Box::pin(kit.probe_aggregate())
+        }
+        fn async_probe_aggregate_bounded(
+            kit: &trait_kit::kit::AsyncKit<trait_kit::kit::AsyncReady>,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = trait_kit::core::HealthStatus> + '_>>
+        {
+            Box::pin(kit.probe_aggregate_with_timeout(std::time::Duration::from_secs(1)))
+        }
+        let _ = (
+            async_probe_registry,
+            async_probe_unregistry,
+            async_probe_enumeration,
+            async_probe_registry_ready,
+            async_run_probes,
+            async_probe_execution,
+            async_probe_aggregate,
+            async_probe_aggregate_bounded,
+        );
     }
 }
 
@@ -284,7 +370,8 @@ fn api_reference_documented_feature_items_resolve() {
         feature = "di",
         feature = "observer",
         feature = "confers",
-        feature = "report"
+        feature = "report",
+        feature = "probe"
     ))]
     let doc = api_reference_md();
     // 文档带 feature 标注的项必须真实存在（编译期引用 + 文档收录成对）。
@@ -293,6 +380,40 @@ fn api_reference_documented_feature_items_resolve() {
         assert!(
             doc.contains("`take_config_overrides()` | `report`"),
             "doc must list sync take_config_overrides()"
+        );
+    }
+    #[cfg(feature = "probe")]
+    {
+        assert!(
+            doc.contains("`ServiceProbe` `probe`"),
+            "doc must list ServiceProbe trait"
+        );
+        // 签名形式断言：register_probe 会被 unregister_probe 的子串顶替，
+        // probe_aggregate 会被 probe_aggregate_with_timeout 顶替。
+        assert!(
+            doc.contains("pub fn register_probe("),
+            "doc must list register_probe"
+        );
+        assert!(
+            doc.contains("unregister_probe"),
+            "doc must list unregister_probe"
+        );
+        assert!(doc.contains("probe_names"), "doc must list probe_names");
+        assert!(
+            doc.contains("pub async fn run_probes("),
+            "doc must list run_probes"
+        );
+        assert!(
+            doc.contains("pub async fn probe_aggregate("),
+            "doc must list probe_aggregate"
+        );
+        assert!(
+            doc.contains("run_probes_with_timeout"),
+            "doc must list run_probes_with_timeout"
+        );
+        assert!(
+            doc.contains("probe_aggregate_with_timeout"),
+            "doc must list probe_aggregate_with_timeout"
         );
     }
     #[cfg(feature = "async")]

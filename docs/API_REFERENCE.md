@@ -503,7 +503,7 @@ impl<S> AsyncKit<S> {
 }
 ```
 
-#### 执行面（`AsyncKit<Ready>`，`probe`）
+#### 执行面（`AsyncKit<Ready>`，`probe` + `async`）
 
 ```rust
 impl AsyncKit<Ready> {
