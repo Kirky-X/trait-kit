@@ -33,6 +33,12 @@
 - 历史（2026-09-10）快照中 toggle/set ≈21ns、toggle/get ≈12ns 与当前 HEAD 的实测
   （61ns/1728ns）不可对齐，根因未查明（其测量条件无法复现）；该快照仅作历史记录
   保留在 PERFORMANCE.md，不参与门禁推导。
+- `report` 特性的记录/排空路径（`merge_config` 的 `push_config_override` 记录成本与
+  `take_config_overrides` 的 `mem::take` 轮转换出）**无基准覆盖，属显式非目标**：
+  `config/write_merge_config` 在 report 组合下被编译剔除（迭代式基准下记录 `Vec`
+  无上限增长，见 benches/kit_bench.rs 与 PERFORMANCE.md 测量说明），CI bench 亦只跑
+  `toggle,confers`。该路径为诊断用途、量级远低于热路径（每次调用一次 `Vec` push /
+  一次整体换出），不要因本台账无此轴而误以为已测。
 
 ## CI 门禁阈值（推导与口径）
 

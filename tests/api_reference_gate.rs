@@ -74,6 +74,25 @@ fn _assert_core_api() {
         trait_kit::prelude::Kit::new()
     }
     let _ = prelude_kit;
+
+    // report 特性：配置覆盖历史排空（`merge_config` 记录面的防累积出口）。
+    // 两个状态标记都实例化：方法位于 `impl<S> Kit<S>`，防止 impl 块收窄到
+    // 单一状态导致 `Kit<Ready>` 调用方被静默破坏。
+    #[cfg(feature = "report")]
+    {
+        fn sync_config_override_drain_unbuilt(kit: &trait_kit::kit::Kit) -> usize {
+            kit.take_config_overrides().len()
+        }
+        fn sync_config_override_drain_ready(
+            kit: &trait_kit::kit::Kit<trait_kit::kit::Ready>,
+        ) -> usize {
+            kit.take_config_overrides().len()
+        }
+        let _ = (
+            sync_config_override_drain_unbuilt,
+            sync_config_override_drain_ready,
+        );
+    }
 }
 
 // 共享 fixture（各断言函数各自引用，保证独立编译有效）。
@@ -173,6 +192,14 @@ fn _assert_async_api() {
             )
         }
         let _ = async_report_accessors;
+
+        // 配置覆盖历史排空：async 侧为 Unbuilt 态 API（与 set_config 同口径）。
+        fn async_config_override_drain(
+            kit: &trait_kit::kit::AsyncKit<trait_kit::kit::AsyncUnbuilt>,
+        ) -> usize {
+            kit.take_config_overrides().len()
+        }
+        let _ = async_config_override_drain;
     }
 }
 
@@ -256,10 +283,18 @@ fn api_reference_documented_feature_items_resolve() {
         feature = "request-scope",
         feature = "di",
         feature = "observer",
-        feature = "confers"
+        feature = "confers",
+        feature = "report"
     ))]
     let doc = api_reference_md();
     // 文档带 feature 标注的项必须真实存在（编译期引用 + 文档收录成对）。
+    #[cfg(feature = "report")]
+    {
+        assert!(
+            doc.contains("`take_config_overrides()` | `report`"),
+            "doc must list sync take_config_overrides()"
+        );
+    }
     #[cfg(feature = "async")]
     {
         _assert_async_api();
@@ -278,6 +313,10 @@ fn api_reference_documented_feature_items_resolve() {
         assert!(
             doc.contains("`contract_manifest()` `report`"),
             "doc must list async contract_manifest()"
+        );
+        assert!(
+            doc.contains("`take_config_overrides()` `report`"),
+            "doc must list async take_config_overrides()"
         );
     }
     #[cfg(feature = "health")]

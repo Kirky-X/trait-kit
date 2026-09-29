@@ -97,7 +97,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `restore_config::<C>()` | `confers` | 回滚配置到最近快照 |
 | `has_snapshot::<C>()` | `confers` | 检查指定类型快照是否存在 |
 | `populate_defaults::<C>()` | `confers` | 空 Kit 时填充 `ModuleConfig::default_value()` |
-| `merge_config::<C>(ovr)` | `confers` | 应用 `ConfigInherit` 字段覆盖；每次调用记录进 `build_report().config_overrides`（`report` 特性，`applied=false` = 目标配置不存在被丢弃；记录无上限，高频调用配 `take_config_overrides()` 轮转） |
+| `merge_config::<C>(ovr)` | `confers` | 任意状态可用（`impl<S>`，构建期与运行期皆可调用）；应用 `ConfigInherit` 字段覆盖；每次调用记录进 `build_report().config_overrides`（`report` 特性，`applied=false` = 目标配置不存在被丢弃；记录无上限，高频调用配 `take_config_overrides()` 轮转） |
 | `extract_shared::<C>()` | `confers` | 从配置提取共享字段到 overlay |
 | `inject_shared::<C>()` | `confers` | 从 overlay 注入共享字段到配置 |
 | `enable_toggle(key, bool)` | `toggle` | 设置 feature flag |
@@ -152,7 +152,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `module_count()` | — | 已注册模块数 |
 | `build_report()` | `report` | 结构化构建报告（JSON） |
 | `contract_manifest()` | `report` | 契约清单导出 |
-| `take_config_overrides()` | `report` | 排空并返回 `config_overrides` 历史（记录序）——高频 `merge_config` 的长生命周期 Kit 以此防无界累积（每条约 40B，`build_report()` 快照整段 clone） |
+| `take_config_overrides()` | `report` | 任意状态可用（`impl<S>`，与 `merge_config` 同 impl 块，列于本表仅因排空轮转点多在运行期）；排空并返回 `config_overrides` 历史（记录序）——高频 `merge_config` 的长生命周期 Kit 以此防无界累积（每条约 40B，`build_report()` 快照整段 clone） |
 | `emit_event(event)` | — | 发布自定义 `KitEvent` |
 
 ### 声明宏
@@ -395,7 +395,7 @@ pub trait AsyncAutoBuilder: ModuleMeta {
 | `health_json()` | `health` + `report` | 健康聚合 JSON 导出，与同步 `Kit<Ready>` 对位 |
 | `build_report()` `report` | 结构化构建报告（JSON），与同步 `Kit<Ready>` 对位；async 构建状态集仅 `built`（无 override/lazy 面） |
 | `contract_manifest()` `report` | 契约清单导出（NAME/VERSION/capability/deps），与同步 `Kit<Ready>` 对位 |
-| `take_config_overrides()` `report` | 排空并返回 `config_overrides` 历史（共享 `Send + Sync` 类型上防无界累积，语义与同步侧一致） |
+| `take_config_overrides()` `report` | 排空并返回 `config_overrides` 历史（构建前 `AsyncKit<Unbuilt>` 态 API，与 `set_config` 同口径——累积仅发生在构建前，Ready 后历史冻结、无运行期无界累积；排空动作语义（换出并返回记录序）与同步侧一致） |
 
 ### `di` — 接口/实现分离
 
