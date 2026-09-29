@@ -1849,6 +1849,70 @@ impl AsyncKit<Ready> {
         report
     }
 
+    /// Aggregate the health of all registered checkers into a structured
+    /// [`HealthAggregate`](crate::core::health::HealthAggregate): worst-of
+    /// overall status plus per-module entries, ready for a `/healthz`
+    /// endpoint. Async counterpart of
+    /// [`Kit::health_aggregate`](super::kit::Kit::health_aggregate) — the
+    /// same empty-set convention (an empty checker set is healthy by
+    /// convention) and the same severity ranking via the checkers' own
+    /// `severity_rank`.
+    ///
+    /// Requires the `health` and `report` features. Serialize with
+    /// [`HealthAggregate::to_json`](crate::core::health::HealthAggregate::to_json)
+    /// or [`AsyncKit::health_json`].
+    ///
+    /// Side effect (inherited from [`health_report`](AsyncKit::health_report)):
+    /// every call runs **all** registered checkers and, when an event bus is
+    /// injected, publishes one `HealthChanged` event per module — callers
+    /// polling `/healthz` at high frequency must weigh the event volume.
+    /// The `modules` order is not specified (registry iteration order).
+    #[cfg(all(feature = "health", feature = "report"))]
+    #[must_use]
+    pub fn health_aggregate(&self) -> crate::core::health::HealthAggregate {
+        use crate::core::health::{HealthAggregate, HealthModuleEntry};
+
+        let report = self.health_report();
+        let mut worst_rank = 0u8;
+        let modules = report
+            .into_iter()
+            .map(|(name, status)| {
+                worst_rank = worst_rank.max(status.severity_rank());
+                HealthModuleEntry {
+                    module: name,
+                    status: status.as_status_name(),
+                    detail: status.detail().map(str::to_owned),
+                }
+            })
+            .collect::<Vec<_>>();
+        let status = match worst_rank {
+            0 => "healthy",
+            1 => "degraded",
+            _ => "unhealthy",
+        };
+        HealthAggregate {
+            status,
+            healthy: worst_rank == 0,
+            modules,
+        }
+    }
+
+    /// Aggregate health JSON string — the direct `/healthz` payload.
+    ///
+    /// See [`AsyncKit::health_aggregate`] for the structured form. Async
+    /// counterpart of [`Kit::health_json`](super::kit::Kit::health_json).
+    /// Requires the `health` and `report` features. Runs all checkers and
+    /// may publish `HealthChanged` events, exactly like
+    /// [`health_aggregate`](AsyncKit::health_aggregate).
+    ///
+    /// # Errors
+    ///
+    /// Propagates the `serde_json` error from serialization.
+    #[cfg(all(feature = "health", feature = "report"))]
+    pub fn health_json(&self) -> serde_json::Result<String> {
+        self.health_aggregate().to_json()
+    }
+
     /// Structured, machine-readable build report.
     ///
     /// Async counterpart of `Kit<Ready>::build_report`: per-module records
@@ -1991,9 +2055,10 @@ impl AsyncKit {
     /// (lost update, both records still `applied == true`) — callers that
     /// need exclusive write semantics must serialize the calls themselves.
     /// Under the `report` feature the record history grows by one entry
-    /// per call; on long-lived kits drain it periodically with
-    /// [`take_config_overrides`](AsyncKit::take_config_overrides) (see the
-    /// warning there).
+    /// per call with no cap: high-frequency callers **must** drain it
+    /// with [`take_config_overrides`](AsyncKit::take_config_overrides) at
+    /// a rotation point — unbounded growth is a documented usage
+    /// requirement to avoid, not just a caveat (see the warning there).
     ///
     /// Requires the `confers` feature.
     ///
@@ -3766,6 +3831,88 @@ mod async_health_tests {
         let built = block_on(kit.build()).unwrap();
         let err = built.health_check::<AsyncHcModule>().unwrap_err();
         assert!(matches!(err, TraitKitError::MissingConfig { .. }));
+    }
+
+    /// mock 路径：手写 checker 注入各状态，聚合产出 worst-of 整体结论与
+    /// per-module 明细（含 detail），与 sync 侧 `Kit::health_aggregate` 口径
+    /// 一致。
+    #[test]
+    #[cfg(feature = "report")]
+    fn async_health_aggregate_worst_of_and_entries() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncHcModule>().unwrap();
+        kit.register_health_check::<AsyncHcModule>();
+        // mock：直接注入一个 degraded checker（不走模块注册面）。
+        let degraded: AsyncHealthCheckerFn =
+            Arc::new(|_caps: &AsyncTypeMap| HealthStatus::degraded("mock replica lag"));
+        kit.health
+            .health_checkers
+            .write()
+            .expect("lock poisoned")
+            .insert(TypeId::of::<()>(), ("mock-degraded", Arc::clone(&degraded)));
+        let built = block_on(kit.build()).unwrap();
+
+        let agg = built.health_aggregate();
+        assert_eq!(agg.status, "degraded", "worst-of across entries");
+        assert!(!agg.healthy);
+        let mut names: Vec<&str> = agg.modules.iter().map(|m| m.module).collect();
+        names.sort_unstable();
+        assert_eq!(names, vec!["async-hc", "mock-degraded"]);
+        let degraded_entry = agg
+            .modules
+            .iter()
+            .find(|m| m.module == "mock-degraded")
+            .expect("degraded entry present");
+        assert_eq!(degraded_entry.status, "degraded");
+        assert_eq!(degraded_entry.detail.as_deref(), Some("mock replica lag"));
+    }
+
+    /// 真实路径：模块经 `AsyncAutoBuilder` 真实构建后，checker 读到的就是
+    /// 真实 capability 状态——聚合反映构建产物而非固定值。
+    #[test]
+    #[cfg(feature = "report")]
+    fn async_health_aggregate_reflects_real_built_capability() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncHcModule>().unwrap();
+        kit.register_health_check::<AsyncHcModule>();
+        let built = block_on(kit.build()).unwrap();
+
+        let agg = built.health_aggregate();
+        assert_eq!(agg.status, "healthy", "built val=42 → healthy check");
+        assert!(agg.healthy);
+        assert_eq!(agg.modules.len(), 1);
+        assert_eq!(agg.modules[0].module, "async-hc");
+        assert_eq!(agg.modules[0].status, "healthy");
+        assert_eq!(agg.modules[0].detail, None);
+    }
+
+    /// 空注册表 healthy-by-convention，与 sync 侧空集聚合语义一致。
+    #[test]
+    #[cfg(feature = "report")]
+    fn async_health_aggregate_empty_is_healthy() {
+        let kit = AsyncKit::new();
+        let built = block_on(kit.build()).unwrap();
+        let agg = built.health_aggregate();
+        assert_eq!(agg.status, "healthy");
+        assert!(agg.healthy);
+        assert!(agg.modules.is_empty());
+    }
+
+    /// JSON round-trip：`/healthz` 载荷结构（status/healthy/modules）。
+    #[test]
+    #[cfg(feature = "report")]
+    fn async_health_aggregate_json_round_trips() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncHcModule>().unwrap();
+        kit.register_health_check::<AsyncHcModule>();
+        let built = block_on(kit.build()).unwrap();
+
+        let json = built.health_json().expect("serialize aggregate");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        assert_eq!(value["status"], "healthy");
+        assert_eq!(value["healthy"], true);
+        assert_eq!(value["modules"][0]["module"], "async-hc");
+        assert_eq!(value["modules"][0]["status"], "healthy");
     }
 }
 

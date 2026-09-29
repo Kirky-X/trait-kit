@@ -6,7 +6,9 @@ useDefault = true
 
 [allowlist]
 description = "算法名与已核实的非凭据字符串（非密钥）"
-paths = ['''tests/e2e/''']
+# .secrets.baseline 只存已豁免条目的 hashed_secret 指纹（无原文），其指纹串
+# 会被 generic-api-key 按熵误判——路径级排除不随 pre-commit 行号同步漂移。
+paths = ['''tests/e2e/''', '''.secrets\.baseline''']
 regexes = [
     '''XChaCha20-Poly1305''',
 ]

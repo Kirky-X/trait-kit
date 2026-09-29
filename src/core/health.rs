@@ -86,6 +86,10 @@ pub struct HealthModuleEntry {
     /// Flat status name (`healthy` / `degraded` / `unhealthy`).
     pub status: &'static str,
     /// Detail message for degraded / unhealthy states, if any.
+    ///
+    /// Carried verbatim into the readiness payload (`to_json()`), so
+    /// checkers must never embed credentials, connection strings or
+    /// internal topology in the detail.
     pub detail: Option<String>,
 }
 
@@ -93,7 +97,11 @@ pub struct HealthModuleEntry {
 ///
 /// The overall status is the worst-of across all registered health checkers
 /// (`unhealthy` > `degraded` > `healthy`); an empty checker set is healthy by
-/// convention.
+/// convention. Module details are carried verbatim into the JSON payload —
+/// keep credentials and internal topology out of
+/// [`HealthModuleEntry::detail`]. The `modules` order is not specified: it
+/// follows the checker registry's iteration order and may vary across
+/// runs.
 #[cfg(all(feature = "health", feature = "report"))]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct HealthAggregate {

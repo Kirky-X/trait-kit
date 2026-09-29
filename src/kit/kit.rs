@@ -2267,9 +2267,11 @@ impl<S> Kit<S> {
     /// swallowed. `Kit` is single-threaded (`RefCell` state), so records
     /// appear in call order; the async counterpart makes no such promise
     /// under concurrent calls. The record history grows by one entry per
-    /// call with no cap; drain it periodically with
-    /// [`take_config_overrides`](Kit::take_config_overrides) (see the
-    /// warning there).
+    /// call with no cap: high-frequency callers (e.g. a reload callback)
+    /// **must** drain it periodically with
+    /// [`take_config_overrides`](Kit::take_config_overrides) at a rotation
+    /// point — unbounded growth is a documented usage requirement to avoid,
+    /// not just a caveat (see the warning there).
     ///
     /// Requires the `confers` feature.
     #[cfg(feature = "confers")]
@@ -2621,6 +2623,12 @@ impl Kit<Ready> {
     /// Requires the `health` and `report` features. Serialize with
     /// [`HealthAggregate::to_json`](crate::core::health::HealthAggregate::to_json)
     /// or `Kit::health_json()`.
+    ///
+    /// Side effect (inherited from [`health_report`](Kit::health_report)):
+    /// every call runs **all** registered checkers and, when an event bus is
+    /// injected, publishes one `HealthChanged` event per module — callers
+    /// polling `/healthz` at high frequency must weigh the event volume.
+    /// The `modules` order is not specified (registry iteration order).
     #[cfg(all(feature = "health", feature = "report"))]
     pub fn health_aggregate(&self) -> crate::core::health::HealthAggregate {
         use crate::core::health::{HealthAggregate, HealthModuleEntry};
@@ -2653,7 +2661,9 @@ impl Kit<Ready> {
     /// Aggregate health JSON string — the direct `/healthz` payload.
     ///
     /// See [`Kit::health_aggregate`] for the structured form. Requires the
-    /// `health` and `report` features.
+    /// `health` and `report` features. Runs all checkers and may publish
+    /// `HealthChanged` events, exactly like
+    /// [`health_aggregate`](Kit::health_aggregate).
     ///
     /// # Errors
     ///

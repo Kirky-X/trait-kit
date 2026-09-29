@@ -133,7 +133,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `create_scope_from(self)` | `scope` | 消费 Kit 创建带父上下文的 `Scope`（`scope.parent::<T>()` 只读查询） |
 | `health_check::<M>()` | `health` | 查询单模块健康状态 |
 | `health_report()` | `health` | 查询所有模块健康报告 |
-| `health_aggregate()` | `health` + `report` | worst-of 整体状态 + 各模块明细 |
+| `health_aggregate()` | `health` + `report` | worst-of 整体状态 + 各模块明细（modules 顺序不承诺确定；每次调用执行全部 checker，注入事件总线时发布 HealthChanged） |
 | `health_json()` | `health` + `report` | 健康聚合 JSON 导出（供 /healthz 消费） |
 | `record_health_history()` / `health_history()` | `health` | 环形缓冲健康采样与读取 |
 | `shutdown()` | `lifecycle` | 按逆拓扑序执行 `on_shutdown` |
@@ -391,6 +391,8 @@ pub trait AsyncAutoBuilder: ModuleMeta {
 | `with_max_concurrency(limit)` | 按拓扑分层并发构建的并发上限 |
 | `create_scope()` | 创建异步作用域 |
 | `AsyncKit<Ready>` 配置面 | `load_config` 系列、`subscribe` / `reload_config`、`snapshot_config` / `restore_config`、`set_encrypted` / `get_encrypted` 与同步 Kit 能力一致 |
+| `health_aggregate()` | `health` + `report` | worst-of 整体状态 + 各模块明细（`/healthz` 结构化载荷），与同步 `Kit<Ready>` 口径一致（空集 healthy-by-convention；modules 顺序不承诺确定；每次调用执行全部 checker，注入事件总线时发布 HealthChanged） |
+| `health_json()` | `health` + `report` | 健康聚合 JSON 导出，与同步 `Kit<Ready>` 对位 |
 | `build_report()` `report` | 结构化构建报告（JSON），与同步 `Kit<Ready>` 对位；async 构建状态集仅 `built`（无 override/lazy 面） |
 | `contract_manifest()` `report` | 契约清单导出（NAME/VERSION/capability/deps），与同步 `Kit<Ready>` 对位 |
 | `take_config_overrides()` `report` | 排空并返回 `config_overrides` 历史（共享 `Send + Sync` 类型上防无界累积，语义与同步侧一致） |
