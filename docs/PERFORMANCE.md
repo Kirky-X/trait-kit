@@ -1,7 +1,12 @@
 # ⚡ Trait-Kit 性能基准
 
 > 兑现 README "运行时零开销" 主张：以 criterion 基准建立可复现的性能基线。
-> 本文件记录基线数字与测量方法；CI 阈值门禁**暂不启用**（待多机数据稳定后引入，回归阈值建议 ±20%）。
+> 本文件记录基线数字与测量方法。**CI 门禁口径**：ci.yml 的 bench job 以"本地基线
+> ×100 后向上取整到整千"的数量级阈值做灾难性回归护栏（仓库变量
+> `BENCH_GATE_DISABLED=true` 可整体停用）——共享 runner 噪音大，该门禁**不是**严格
+> 回归检测，±20% 级的精细回归判断只能在同一台机器的本地基线流程做；阈值推导、
+> 基线台账与刷新规则（三处一致变更：台账/LIMITS_NS/本文件基线段）见
+> [docs/bench-baseline.md](./bench-baseline.md)（单一事实源）。
 
 ## 🏃 运行方式
 
@@ -31,30 +36,41 @@ cargo bench --features toggle -- build/three_module_chain
 
 `report` 特性的记录开销（每次 `merge_config` 一次 `Vec` push、构建路径每模块一次累加）为诊断用途、量级远低于上述热路径，不设独立基准轴，属**非目标**；`config/write_merge_config` 在无 `report` 的组合下测量即其纯逻辑成本。探针路径（`probe` feature）无独立基准轴：`run_probes` 的框架测量开销为每次探针一对 `Instant::now()`（纳秒级）+ 超时变体一次定时器 arm，相对网络探针本身的毫秒级延迟属非目标。
 
-## 📊 基线（2026-09-10）
+## 📊 基线（2026-09-29 安静复测，现行）
 
 - 机器：AMD Ryzen 9 9950X（16C/32T），WSL2 kernel 6.6.87
 - 工具链：rustc 1.97.1，`bench` profile（继承 `release`：`opt-level=3`、`lto=fat`、`codegen-units=1`）
 - criterion 配置：`sample_size=20`，`warm_up_time=500ms`，`measurement_time=1s`
-- 报告口径：median（点估计），单位 ns/iter
+- 报告口径：median（点估计），单位 ns/iter；feature 集 `toggle,confers`
 
 | 基准 | median |
 | --- | --- |
-| `build/three_module_chain` | ~706 ns |
-| `require/arc_capability_top` | ~15 ns |
-| `config/read_clone` | ~39 ns |
-| `config/write_set_config` | ~34 ns |
-| `toggle/set` | ~21 ns |
-| `toggle/get` | ~12 ns |
+| `build/three_module_chain` | ~625 ns |
+| `require/arc_capability_top` | ~16 ns |
+| `config/read_clone` | ~45 ns |
+| `config/write_set_config` | ~36 ns |
+| `config/write_merge_config` | ~39 ns |
+| `toggle/set` | ~61 ns |
+| `toggle/get` | ~1728 ns |
+
+CI 阈值推导以本表为准（×100 后向上取整到整千，见 docs/bench-baseline.md）。
+
+## 🗄 历史快照（2026-09-10，不参与门禁推导）
+
+- 同机同 criterion 配置的早期快照：build ~706 / require ~15 / read_clone ~39 /
+  write_set_config ~34 / toggle/set ~21 / toggle/get ~12（ns）。
+- build/require/config 四行与现行测量同量级吻合；toggle 两行与现行实测
+  （61 ns / 1728 ns）相差 3×–144×，根因未查明（当时的测量条件无法复现，
+  toggle.rs 自快照以来仅版权头变更），以现行复测为准。
 
 ### 结论
 
-- **require ≈ 15 ns**：与裸 `Arc::clone`（≈1–2 ns）+ `TypeId` HashMap 查找 + downcast 同量级，
+- **require ≈ 16 ns**：与裸 `Arc::clone`（≈1–2 ns）+ `TypeId` HashMap 查找 + downcast 同量级，
   "零开销能力检索"成立；非 `Arc` 能力经 `require` 会整体 `Clone`，大结构请改用
   `require_ref`（借用读，注意与 `RefCell` 写路径互斥）。
-- **config 读 ≈ 39 ns**：包含中型结构（String + Vec）的真实拷贝成本；纯开销部分（查找 + downcast）
+- **config 读 ≈ 45 ns**：包含中型结构（String + Vec）的真实拷贝成本；纯开销部分（查找 + downcast）
   与 require 同量级。
-- **build ≈ 706 ns / 3 模块**：图校验（缺依赖 + 环检测）+ Kahn 排序 + 3 次构建回调，
+- **build ≈ 625 ns / 3 模块**：图校验（缺依赖 + 环检测）+ Kahn 排序 + 3 次构建回调，
   启动期一次性成本，量级符合预期。
 
 ## 🔁 复现与对比
@@ -64,8 +80,9 @@ cargo bench --features toggle -- build/three_module_chain
 3. 改动后 `cargo bench --features toggle -- --baseline <name>` 对比；
    criterion 会在输出中标注回归/改进（noise_threshold=5%）。
 
-## 🚦 CI 阈值（待启用）
+## 🚦 CI 阈值（已启用，数量级护栏）
 
-- 建议：任一基准 median 回归 > 20% 时失败（连续两次运行确认，排除噪声）。
-- 启用前置：至少两台不同机器各留存 3 次基线，确认方差 < 10%。
-- 当前阶段仅记录基线，阈值门禁待多机数据稳定后引入。
+- ci.yml bench job 断言 7 个基准中位数不超过本地基线 ×100 后向上取整到整千
+  （`scripts/bench_gate.py`），仓库变量 `BENCH_GATE_DISABLED=true` 可整体停用。
+- ±20% 级的精细回归判断仍走本地 `--save-baseline`/`--baseline` 流程；多机方差
+  数据稳定后可再收紧 CI 阈值（届时按刷新规则三处一致变更）。

@@ -155,3 +155,28 @@ jobs:
         with:
           files: lcov.info
           fail_ci_if_error: false
+
+  bench:
+    name: Bench gate (order-of-magnitude)
+    # 显式开关：仓库变量 BENCH_GATE_DISABLED=true 整体停用（默认启用）。
+    # 门禁定位与阈值推导见 docs/bench-baseline.md：共享 runner 噪音大，
+    # 阈值为本地基线 ×100 的数量级护栏，仅拦截灾难性回归。
+    needs: [check, test]
+    if: ${{ vars.BENCH_GATE_DISABLED != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@4716b85f2fac3e324e64fa2810f6b5c3905760a5 # 1.97.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Run benchmarks
+        run: cargo bench --features toggle,confers
+      - name: Assert order-of-magnitude thresholds
+        run: python3 scripts/bench_gate.py
+      - name: Upload criterion output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: criterion-results
+          path: target/criterion
+          retention-days: 7
