@@ -134,8 +134,10 @@ presets = ["confers"]
 # (namespaced capabilities, cross-Kit dependency validation).
 compose = []
 # Remote configuration bridge: ConfersConfigModule over confers remote
-# AsyncSource (AsyncKit only; pulls confers/remote).
-presets-remote = ["presets", "confers/remote"]
+# AsyncSource. Implies `async` because the remote module is built through
+# `AsyncKit::build()` (its previous absence made `presets-remote` alone
+# fail to compile with unresolved `AsyncKit` imports).
+presets-remote = ["presets", "confers/remote", "async"]
 # Capability version negotiation: ModuleMeta::VERSION vs required_versions
 # semver-compat validation at build() time.
 version-negotiation = []

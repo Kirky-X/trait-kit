@@ -286,12 +286,12 @@ cargo run -p trait-kit-examples --example async_basic --features async
 |---|---|---|
 | 生命周期钩子（`on_ready` / `on_shutdown`） | `lifecycle` | 构建后初始化、清理释放 |
 | 健康检查（`HealthCheck` + `health_report`） | `health` | 运行时状态探针 |
-| 作用域（`Scope` 每请求隔离） | `scope` | Web 请求级实例 |
+| 作用域（`Scope` 每请求隔离） | `request-scope` | Web 请求级实例 |
 | 特性开关（`enable_toggle` / `register_if_toggle`） | `toggle` | 运行时启停模块 |
 | 构建观察者（`BuildObserver` 回调） | `observer` | 构建耗时统计、日志 |
 | 装饰器（`decorate::<M>(f)`） | `decorator` | 能力包装（如加日志、指标） |
 | 优雅关闭（`ShutdownCoordinator` 分阶段关闭 + 超时） | `shutdown` | 服务下线编排 |
-| 接口分离（`register_as` / `resolve::<dyn Trait>()`） | `interface` | 面向接口编程、测试替身 |
+| 接口分离（`register_as` / `resolve::<dyn Trait>()`） | `di` | 面向接口编程、测试替身 |
 | 国际化格式化（`I18nFormatter`） | `i18n` | 区域感知数字/日期/复数/排序（`tr()` 翻译默认可用） |
 
 ### 条件注册与工厂
@@ -334,7 +334,7 @@ let kit = kit.build()?;
 | `DependencyMissing { module, missing }` | 声明的依赖未注册 | 在 `build()` 前补齐 `kit.register::<MissingModule>()` |
 | `AlreadyRegistered { module }` | 模块重复注册 | 同一模块只需注册一次；多实例需求用 `register_multi` |
 | `DecoratorTargetMissing { module }` | 装饰器目标模块未注册 | 改用 `try_decorate::<M>(f)` 在注册时校验，或先 `register::<M>()` |
-| `VersionIncompatible { .. }` | 依赖模块版本不满足 `required_versions`（`negotiate` feature） | 对齐 `ModuleMeta::VERSION` 的 semver 兼容版本 |
+| `VersionIncompatible { .. }` | 依赖模块版本不满足 `required_versions`（`version-negotiation` feature） | 对齐 `ModuleMeta::VERSION` 的 semver 兼容版本 |
 | `BuildFailed { context, source }` | 模块构建函数返回错误 | 查看 `source` 中的原始错误，通常是外部资源不可用 |
 | `MissingCapability { key }` | `require::<M>()` 时能力不存在 | 确认模块已注册且 `build()` 已完成；可选场景改用 `optional::<M>()` |
 | `CapabilityTypeMismatch { key }` | 能力已构建但类型不符（如 override 注入了另一种能力类型） | 检查 `override_module` 注入值的类型与模块声明一致 |

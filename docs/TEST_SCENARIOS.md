@@ -553,11 +553,11 @@ async / interface / lifecycle / health / scope / toggle / observer / decorator /
 | 7 | `lifecycle` | lifecycle | 退出码 0；on_ready/on_shutdown 触发输出 |
 | 8 | `health_check` | health | 退出码 0；health_report 汇总输出 |
 | 9 | `observability` | observer | 退出码 0；构建回调序列输出 |
-| 10 | `scope_basic` | scope | 退出码 0；作用域隔离演示 |
+| 10 | `scope_basic` | request-scope | 退出码 0；作用域隔离演示 |
 | 11 | `conditional` | 无 | 退出码 0；`register_if` 谓词注册双分支输出 |
 | 12 | `factory` | 无 | 退出码 0；factory 每次新实例演示 |
 | 13 | `decorator` | decorator | 退出码 0；能力包装前后对比输出 |
-| 14 | `interface` | interface | 退出码 0；register_as/resolve dyn Trait 演示 |
+| 14 | `interface` | di | 退出码 0；register_as/resolve dyn Trait 演示 |
 | 15 | `i18n` | i18n | 退出码 0；FTL 翻译 + ICU4X 格式化输出 |
 | 16 | `shutdown` | shutdown | 退出码 0；三阶段优雅关闭演示 |
 | 17 | `validation` | confers | 退出码 0；合法通过+非法被拒双分支输出 |

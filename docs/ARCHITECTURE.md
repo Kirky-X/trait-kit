@@ -139,7 +139,7 @@ graph LR
         D1["i18n<br/>icu / writeable / sys-locale"]
         D2["report<br/>serde / serde_json"]
         P["presets / presets-remote"]
-        N["negotiate / compose"]
+        N["version-negotiation / compose"]
     end
 
     P --> C

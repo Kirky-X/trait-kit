@@ -309,7 +309,7 @@ fn main() {
 <tr><td><code>report</code></td><td><code>dep:serde</code>, <code>dep:serde_json</code></td><td>结构化构建报告：<code>BuildReport</code> JSON、依赖图 DOT/Mermaid 导出。</td><td>—</td></tr>
 <tr><td><code>presets</code></td><td><code>confers</code></td><td>预设模块包：<code>ConfersConfigModule</code>（配置中心作为 Kit 模块）+ 组合 builder。</td><td>—</td></tr>
 <tr><td><code>compose</code></td><td>—</td><td>子 Kit 组合：子 <code>Kit</code> 注册为父 <code>Kit</code> 的单一模块（能力命名空间隔离 + 跨 Kit 依赖校验）。</td><td>—</td></tr>
-<tr><td><code>presets-remote</code></td><td><code>presets</code>, <code>confers/remote</code></td><td>远程配置桥接：<code>ConfersConfigModule</code> 走 confers 远程 <code>AsyncSource</code>（仅 <code>AsyncKit</code>）。</td><td>—</td></tr>
+<tr><td><code>presets-remote</code></td><td><code>presets</code>, <code>confers/remote</code>, <code>async</code></td><td>远程配置桥接：<code>ConfersConfigModule</code> 走 confers 远程 <code>AsyncSource</code>（remote 模块以 <code>AsyncKit</code> 为构建载体，故 imply <code>async</code>）。</td><td>—</td></tr>
 <tr><td><code>version-negotiation</code></td><td>—</td><td>能力版本协商：<code>ModuleMeta::VERSION</code> 与 <code>required_versions</code> 在 <code>build()</code> 时做 semver 兼容校验。</td><td>—</td></tr>
 </table>
 
@@ -355,7 +355,7 @@ cargo run -p trait-kit-examples --example <名称> --features <特性>
 | `default_basic` | — | `ModuleMeta` + `AutoBuilder` + `Kit` 注册/构建/检索基础流程 |
 | `conditional` | — | `register_if::<M>(predicate)` 运行时谓词条件注册 |
 | `factory` | — | `Kit<Ready>::factory::<M>()` 每次调用创建新实例（对比单例 `require()`） |
-| `interface` | `interface` | `InterfaceBuilder` + `register_as` / `resolve::<dyn Trait>()` 类型擦除 DI |
+| `interface` | `di` | `InterfaceBuilder` + `register_as` / `resolve::<dyn Trait>()` 类型擦除 DI |
 | `lifecycle` | `lifecycle` | `Lifecycle` trait（`on_ready` + `on_shutdown`）+ `Kit::shutdown()` |
 | `health_check` | `health` | `HealthCheck` trait + `HealthStatus` + `health_report` |
 | `observability` | `observer` | `BuildObserver` 回调（`on_module_start` / `on_module_built`） |
@@ -367,7 +367,7 @@ cargo run -p trait-kit-examples --example <名称> --features <特性>
 | `hot_reload` | `reload` | `subscribe::<C>` + `reload_config::<C>` 热重载订阅 |
 | `encryption` | `encryption` | `set_encrypted` / `get_encrypted` 加密存取 + 错误密钥拒绝 |
 | `async_basic` | `async` | `AsyncAutoBuilder` + `AsyncKit` 异步注册/构建/检索 |
-| `scope_basic` | `scope` | `Scope` 每请求实例隔离 + 懒构建缓存 |
+| `scope_basic` | `request-scope` | `Scope` 每请求实例隔离 + 懒构建缓存 |
 | `toggle_basic` | `toggle` | `enable_toggle` / `is_toggle_enabled` / `register_if_toggle` 运行时开关 |
 | `decorator` | `decorator` | `Kit::decorate::<M>(fn)` 构建后能力包装 |
 | `shutdown` | `shutdown` | `ShutdownCoordinator` 分阶段优雅关闭（`StopRequests` → `DrainQueue` → `CloseConnections`）+ 超时控制 |

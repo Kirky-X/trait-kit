@@ -1,0 +1,51 @@
+# feature 组合矩阵（FEATURE_AUDIT 遗留项：feature imply 裂缝的回归门禁）。
+# PR 每次都跑 22 个单开 check 成本过高，故此处仅定时/手动触发；
+# 单开裂缝在 PR 门禁之外由 src/kit/presets.rs 的 compile_error 守卫兜底
+# （presets-remote→async 链）。
+name: feature-matrix
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 5 * * 1" # 每周一 05:23 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feature-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  each-feature:
+    name: cargo hack --each-feature
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@4716b85f2fac3e324e64fa2810f6b5c3905760a5 # 1.97.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2
+        with:
+          tool: cargo-hack
+      - name: Check each feature alone
+        run: cargo hack check --each-feature
+
+  powerset-depth2:
+    name: cargo hack --feature-powerset --depth 2
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@4716b85f2fac3e324e64fa2810f6b5c3905760a5 # 1.97.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2
+        with:
+          tool: cargo-hack
+      - name: Check feature pairs
+        run: cargo hack check --feature-powerset --depth 2

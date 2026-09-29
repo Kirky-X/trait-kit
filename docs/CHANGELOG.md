@@ -33,6 +33,7 @@
 
 ### Added
 
+- **feature 组合矩阵抽查修复与文档旧名收尾**（workspace feature 审计遗留复核）：`cargo hack check --each-feature`（22 个非 default feature 单开 + default/no-default/all-features 端点，共 25 次编译检查）暴露三处编译裂缝并修复——`presets-remote` 补 imply `async`（remote 模块用 `AsyncKit` 构建，此前单开编译失败 E0432）、`src/kit/presets.rs` 的 `tr` 导入按唯一调用点补 `presets-remote` 门控（presets 单开 unused 警告）、`src/kit/toggle.rs` 的 `HashSet` 导入按 confers 门控（toggle 单开 unused 警告）；单开矩阵复跑归零，两两组合 powerset（`--feature-powerset --depth 2`，1+22+231=254 组合）零错误；防复发双门禁：`src/kit/presets.rs` 顶部 `compile_error!` 守卫 presets-remote→async 链（单开组合即编译失败），新增 `.github/workflows/feature-matrix.yml`（每周定时+手动触发 each-feature 与 powerset depth-2）。文档旧名统一：`negotiate`/`scope`/`interface` 裸名在 API_REFERENCE（方法 Feature 列+节名）、USER_GUIDE、ARCHITECTURE、README/README_EN（feature 表与导览 bullet，README_EN 补别名声明段）、examples/Cargo.toml（旧名 feature 补 deprecated 注释，`scope_basic`/`interface` 两示例 required-features 迁正名并编译验证；行为变化：以旧名跑迁移后的示例（如 `--features scope --example scope_basic`）不再可用，错误提示直接给出正名 feature——required-features 为 AND 语义无法双名兼容，示例作为教学入口示范正名全部改为正名 `version-negotiation`/`request-scope`/`di`，历史 CHANGELOG 章节保持当时事实不改写
 - **性能回归 CI 阈值门禁**：ci.yml 新增 bench job——跑 `cargo bench --features toggle,confers` 并经 `scripts/bench_gate.py` 断言 7 个基准的中位数（criterion `estimates.json`）不超过本地基线 ×100 的数量级上限（阈值推导、基线台账与刷新规则见 docs/bench-baseline.md，刷新需三处一致变更：台账/LIMITS_NS/PERFORMANCE.md 基线段）；仓库变量 `BENCH_GATE_DISABLED=true` 可整体停用；脚本对未纳管基准目录打 WARN（防新增基准静默逃逸门禁），criterion 输出按 7 天保留上传 artifact。定位为灾难性回归护栏（≥100× 悬崖），严格回归检测仍在同机本地基线流程做，docs/PERFORMANCE.md 已同步口径与免责
 - **async 健康聚合访问器**（TK-D，`health` × `report`）：`AsyncKit<Ready>::health_aggregate()` 与 `health_json()`——worst-of 整体状态 + per-module 明细（`/healthz` 结构化载荷与 JSON 导出），与同步 `Kit::health_aggregate` 口径逐点对位（空集 healthy-by-convention、worst-of 取 severity_rank 最大值——modules 明细顺序不承诺确定、serde_json 错误直传不伪装健康），复用既有 `AsyncKit::health_report` 读取基建（含 HealthChanged 事件发布路径）
 - **服务探针注册面**（蓝图 TK-A，新 feature `probe=["health","dep:futures-timer"]`）：对象安全 `ServiceProbe` trait（`ProbeOutcome{status,latency}`，手写 `Pin<Box<dyn Future>>` 分派对齐 `AsyncLifecycle`，不引 `async-trait`）；`AsyncKit` 任意状态可 `register_probe`/`unregister_probe`/`probe_names`（注册序=执行序，同名重注册落到尾部）；`AsyncKit<Ready>::run_probes()` 顺序执行全部探针产出 `ProbeReport`（per-probe 状态+**框架实测墙钟延迟**+worst-of 聚合，`report` 特性下可 `to_json()`，空注册表 healthy-by-convention）与 `probe_aggregate()`（worst-of 结论，复用 `severity_rank`，无短路）；`run_probes_with_timeout()`/`probe_aggregate_with_timeout()` 以运行时无关定时器（`futures-timer`，全局后台线程驱动）给单探针硬上限——悬挂探针记 unhealthy（detail 含 timed out）并继续跑完其余探针，最坏总延迟 ≤ 探针数 × timeout；`shutdown_async()`（probe+lifecycle）与 `register_shutdown_into()`（probe+lifecycle+shutdown）自动注销全部探针并标记 stopped。健康面三者分工显性化：`HealthCheck`/`AsyncHealthCheck::check` 刻意同步只读缓存，`ServiceProbe` 承载真正的网络探活
@@ -221,7 +222,7 @@
 - `HealthStatus` 枚举（`Healthy` / `Degraded` / `Unhealthy`）
 - `Kit::register_health_check::<M>()` / `Kit::health_check::<M>()`
 
-#### 作用域依赖（feature = "scope"）
+#### 作用域依赖（feature = "scope"，0.5.0 起正名为 `request-scope`，旧名保留为别名）
 - `Scope` — 基于 `RefCell` 的轻量级每请求实例隔离容器
 - `AsyncScope` — `Send + Sync` 异步作用域（需同时启用 `async`）
 
@@ -304,7 +305,7 @@
 - `Kit::register_multi<M>()` — 多绑定注册，相同能力类型聚合为 Vec
 - `Kit::require_all<M>()` — 按注册顺序返回所有多绑定能力
 
-#### Phase 3: 接口分离（feature = "interface"）
+#### Phase 3: 接口分离（feature = "interface"，0.5.0 起正名为 `di`，旧名保留为别名）
 - `Interface` marker trait — 支持 `dyn Trait` 类型擦除（`?Sized` blanket impl）
 - `InterfaceBuilder` 扩展 trait — 关联 `Capability` 与 `Interface`，通过 `into_interface` 执行类型擦除
 - `Kit::register_as<M>()` — 按接口类型注册，`M::Interface` 作为 key

@@ -28,14 +28,17 @@ async = ["trait-kit/async"]
 lifecycle = ["trait-kit/lifecycle"]
 health = ["trait-kit/health"]
 observer = ["trait-kit/observer"]
+# Deprecated alias of `request-scope` (kept for compatibility).
 scope = ["trait-kit/scope"]
 toggle = ["trait-kit/toggle"]
 decorator = ["trait-kit/decorator"]
+# Deprecated alias of `di` (kept for compatibility).
 interface = ["trait-kit/interface"]
 di = ["trait-kit/di"]
 shutdown = ["trait-kit/shutdown"]
 i18n = ["trait-kit/i18n"]
 report = ["trait-kit/report"]
+# Deprecated alias of `version-negotiation` (kept for compatibility).
 negotiate = ["trait-kit/negotiate"]
 version-negotiation = ["trait-kit/version-negotiation"]
 compose = ["trait-kit/compose"]
@@ -90,7 +93,7 @@ required-features = ["observer"]
 [[example]]
 name = "scope_basic"
 path = "src/kit/scope_basic.rs"
-required-features = ["scope"]
+required-features = ["request-scope"]
 
 [[example]]
 name = "conditional"
@@ -108,7 +111,7 @@ required-features = ["decorator"]
 [[example]]
 name = "interface"
 path = "src/core/interface.rs"
-required-features = ["interface"]
+required-features = ["di"]
 
 [[example]]
 name = "i18n"

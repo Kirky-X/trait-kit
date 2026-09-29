@@ -38,7 +38,7 @@ pub trait ModuleMeta: 'static {
     const NAME: &'static str;
     fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
 
-    // 版本协商（negotiate feature 在 build() 时校验，声明本身无门控）
+    // 版本协商（version-negotiation feature 在 build() 时校验，声明本身无门控）
     const VERSION: &'static str = "0.0.0";
     fn required_versions() -> &'static [(&'static str, &'static str)] { &[] }
 
@@ -52,7 +52,7 @@ pub trait ModuleMeta: 'static {
 |---|---|
 | `NAME` | 模块诊断名称，用于错误消息和日志 |
 | `dependencies()` | 返回依赖模块的 `(name, TypeId)` 对。默认返回空切片 |
-| `VERSION` | 模块能力版本，默认 `"0.0.0"` 表示未声明；`negotiate` feature 下参与 `build()` 时的 semver 兼容校验 |
+| `VERSION` | 模块能力版本，默认 `"0.0.0"` 表示未声明；`version-negotiation` feature 下参与 `build()` 时的 semver 兼容校验 |
 | `required_versions()` | 对依赖模块要求的最低版本 `(name, min_version)` 列表，默认为空 |
 | `i18n_ftl()` `i18n` | 模块自带的 `(locale, ftl_source)` 翻译片段，`build()` 时合并为 kit 本地翻译 overlay |
 
@@ -78,7 +78,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `register::<M>()` | — | 注册模块（即时构建） |
 | `register_lazy::<M>()` | — | 注册模块（延迟构建，首次 require 时触发） |
 | `register_multi::<M>()` | — | 多绑定注册（同类型聚合为 Vec） |
-| `register_as::<M>()` | `interface` | 按接口类型注册（`dyn Trait` 类型擦除） |
+| `register_as::<M>()` | `di` | 按接口类型注册（`dyn Trait` 类型擦除） |
 | `register_if::<M>(pred)` | — | 条件注册（运行时谓词） |
 | `register_lifecycle::<M>()` | `lifecycle` | 注册生命周期钩子 |
 | `register_health_check::<M>()` | `health` | 注册健康检查 |
@@ -123,14 +123,14 @@ pub trait AutoBuilder: ModuleMeta {
 | `get_arc::<M, T>()` | — | `Arc` 能力免克隆检索（返回 `Arc<T>`，同指针；兼容 lazy 缓存） |
 | `optional::<M>()` | — | 可选检索（返回 `Option`；兼容 lazy 缓存） |
 | `require_all::<M>()` | — | 检索所有多绑定能力 |
-| `resolve::<I>()` | `interface` | 按接口类型检索 `Arc<I>` |
+| `resolve::<I>()` | `di` | 按接口类型检索 `Arc<I>` |
 | `contains::<M>()` | — | 检查能力是否已构建（兼容 lazy 缓存） |
 | `contains_config::<C>()` | — | 检查配置是否存在 |
 | `config::<C>()` | — | 检索配置（Clone） |
 | `config_arc::<C>()` | — | 以 `Arc` 快照检索配置 |
 | `factory::<M>()` | — | 创建工厂闭包，每次调用产生新实例 |
-| `create_scope()` | `scope` | 创建空 `Scope`（与 Kit 能力互相独立） |
-| `create_scope_from(self)` | `scope` | 消费 Kit 创建带父上下文的 `Scope`（`scope.parent::<T>()` 只读查询） |
+| `create_scope()` | `request-scope` | 创建空 `Scope`（与 Kit 能力互相独立） |
+| `create_scope_from(self)` | `request-scope` | 消费 Kit 创建带父上下文的 `Scope`（`scope.parent::<T>()` 只读查询） |
 | `health_check::<M>()` | `health` | 查询单模块健康状态 |
 | `health_report()` | `health` | 查询所有模块健康报告 |
 | `health_aggregate()` | `health` + `report` | worst-of 整体状态 + 各模块明细（modules 顺序不承诺确定；每次调用执行全部 checker，注入事件总线时发布 HealthChanged） |
@@ -255,8 +255,8 @@ fmt.format_date(2026, 9, 10)?;
 | `HealthCheck`, `HealthStatus` | `health` |
 | `AsyncHealthCheck` | `health` + `async` |
 | `BuildObserver` | `observer` |
-| `Scope` | `scope` |
-| `AsyncScope` | `scope` + `async` |
+| `Scope` | `request-scope` |
+| `AsyncScope` | `request-scope` + `async` |
 | `ShutdownCoordinator`, `ShutdownPhase`, `ShutdownPhaseResult`, `ShutdownResult` | `shutdown` |
 | `AsyncShutdownCoordinator` | `shutdown` + `async` |
 
@@ -397,13 +397,15 @@ pub trait AsyncAutoBuilder: ModuleMeta {
 | `contract_manifest()` `report` | 契约清单导出（NAME/VERSION/capability/deps），与同步 `Kit<Ready>` 对位 |
 | `take_config_overrides()` `report` | 排空并返回 `config_overrides` 历史（共享 `Send + Sync` 类型上防无界累积，语义与同步侧一致） |
 
-### `interface` — 接口/实现分离
+### `di` — 接口/实现分离
 
-#### `Interface` `interface`
+旧 feature 名 `interface` 保留为兼容别名（转发到 `di`，已标记 deprecated）。
+
+#### `Interface` `di`
 
 接口标记 trait。所有 `'static` 类型（含 `?Sized`）自动实现。
 
-#### `InterfaceBuilder` `interface`
+#### `InterfaceBuilder` `di`
 
 接口/实现分离扩展 trait。
 
@@ -535,9 +537,11 @@ pub trait BuildObserver: Send + Sync + 'static {
 
 所有方法均有默认 no-op 实现，可按需覆盖。
 
-### `scope` — 作用域
+### `request-scope` — 作用域
 
-#### `Scope` `scope`
+旧 feature 名 `scope` 保留为兼容别名（转发到 `request-scope`，已标记 deprecated）。
+
+#### `Scope` `request-scope`
 
 轻量级每请求实例隔离容器（`!Send + !Sync`）。
 
@@ -548,7 +552,7 @@ pub trait BuildObserver: Send + Sync + 'static {
 | `require::<M>()` | 检索能力（首次构建并缓存） |
 | `contains::<M>()` | 检查是否已注册 |
 
-#### `AsyncScope` `scope` + `async`
+#### `AsyncScope` `request-scope` + `async`
 
 线程安全异步作用域（`Send + Sync`）。
 

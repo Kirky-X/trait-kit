@@ -16,7 +16,11 @@
 //!
 //! Requires the `toggle` feature (which implies `conditional`).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+// Only the confers-backed backend keeps tombstones; `toggle` alone must not
+// carry the import.
+#[cfg(feature = "confers")]
+use std::collections::HashSet;
 
 // ─── ToggleValue ────────────────────────────────────────────────────────
 

@@ -15,8 +15,22 @@ use std::sync::Arc;
 
 use confers::ConfigProvider;
 
+// Regression guard: the remote module (below) is built through `AsyncKit`,
+// so `presets-remote` must imply `async` (declared in Cargo.toml). This
+// turns a future loss of that imply into a compile error on
+// `--features presets-remote` alone, the exact combination where it
+// previously failed with unresolved `AsyncKit` imports.
+#[cfg(all(feature = "presets-remote", not(feature = "async")))]
+compile_error!(
+    "feature `presets-remote` requires `async`: the remote module builds \
+     through `AsyncKit` (implied via Cargo.toml, do not remove)"
+);
+
 use crate::core::{AutoBuilder, ModuleMeta};
 use crate::error::TraitKitError;
+// The only `tr` call site is the `presets-remote` Display arm; gating the
+// import keeps `presets` alone warning-free.
+#[cfg(feature = "presets-remote")]
 use crate::i18n::tr;
 use crate::kit::Kit;
 
