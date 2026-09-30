@@ -73,19 +73,19 @@
 
 | # | 功能域 | 场景 ID 前缀 | 涉及 feature（Cargo.toml 名） | 主要公共 API |
 |---|--------|-------------|------------------------------|--------------|
-| 1 | 模块元数据与声明宏 | MET | —（MET-04/07/08 需 async、interface） | `core::{ModuleMeta, AutoBuilder, Interface, InterfaceBuilder}`、宏 `impl_module_meta!` / `impl_auto_builder!` / `impl_async_auto_builder!` |
+| 1 | 模块元数据与声明宏 | MET | —（MET-04/07/08 需 async、di） | `core::{ModuleMeta, AutoBuilder, Interface, InterfaceBuilder}`、宏 `impl_module_meta!` / `impl_auto_builder!` / `impl_async_auto_builder!` |
 | 2 | 注册与构建（typestate） | REG | — | `kit::{Kit, Unbuilt, Ready}`、`register / register_lazy / register_multi / register_if / override_module / override_module_strict / build` |
 | 3 | 能力获取 | CAP | — | `Kit::require / optional / require_ref / require_all / contains / contains_config / factory` |
 | 4 | 依赖图 | DEP | — | `kit::{DependencyGraph, GraphError, ModuleEntry}`、`graph_dot / graph_mermaid` |
 | 5 | 配置中心 | CFG | confers | `Configurable / ModuleConfig / Validatable / ValidationError / ConfigInherit / SharedConfig`、`set_config / config / load_config / load_and_validate / load_config_with / load_config_or_default / snapshot_config / restore_config / has_snapshot / populate_defaults / merge_config / extract_shared / inject_shared`、自由函数 `interpolate_json_value / merge_json_deep`、派生宏 `ConfigInherit / SharedConfig`（trait-kit-macros） |
 | 6 | 热重载 | RLD | reload（→confers，Kit 自有 SubscriberMap） | `Kit::subscribe / reload_config` |
 | 7 | 加密存储 | ENC | encryption（→confers→confers/encryption） | `Kit::set_encrypted / get_encrypted / contains_encrypted`、`EncryptedBlob`、再导出 `XChaCha20Crypto / derive_field_key` |
-| 8 | 接口/实现分离 | ITF | interface | `register_as / resolve`、`core::{Interface, InterfaceBuilder}` |
+| 8 | 接口/实现分离 | ITF | di | `register_as / resolve`、`core::{Interface, InterfaceBuilder}` |
 | 9 | 生命周期 | LCY | lifecycle（×async） | `core::{Lifecycle, AsyncLifecycle}`、`register_lifecycle / shutdown` |
 | 10 | 健康检查 | HLT | health（×async） | `core::{HealthCheck, AsyncHealthCheck, HealthStatus}`、`register_health_check / health_check / health_report` |
 | 11 | 构建观察者 | OBS | observer（×async） | `core::BuildObserver`、`with_observer` |
 | 12 | 装饰器 | DEC | decorator（×async） | `Kit::decorate`（覆盖 eager/lazy/multi/interface 四条构建路径） |
-| 13 | 作用域 | SCP | scope（×async） | `kit::{Scope, AsyncScope}`、`create_scope`、`Scope::register / require / contains` |
+| 13 | 作用域 | SCP | request-scope（×async） | `kit::{Scope, AsyncScope}`、`create_scope`、`Scope::register / require / contains` |
 | 14 | 特性开关 | TGL | toggle | `Kit::enable_toggle / is_toggle_enabled / register_if_toggle`（Unbuilt 与 Ready 两态） |
 | 15 | 优雅关闭 | SHD | shutdown（×async） | `kit::{ShutdownCoordinator, ShutdownPhase, ShutdownPhaseResult, ShutdownResult, AsyncShutdownCoordinator}` |
 | 16 | 异步 Kit | ASK | async | `AsyncKit / AsyncAutoBuilder / AsyncReady / AsyncUnbuilt / AsyncTypeMap`、`AsyncKit::register / build / require / factory / create_scope` |
@@ -112,8 +112,8 @@
 | MET-04 | `impl_async_auto_builder!` 生成 `AsyncAutoBuilder`：`build` 返回 `Pin<Box<dyn Future>>`、Capability `Send+Sync`、Error `Send+'static` | 正常 | async | 无 | `src/core/macros.rs::macro_async_*`（9 例）、`src/core/meta.rs::async_auto_builder_returns_pin_box_future`、`async_auto_builder_capability_is_send_sync`、`async_auto_builder_error_is_send_static` | tests/e2e/e2e_async.rs |
 | MET-05 | 宏生成代码对 `build` 返回 `Err` 的传播路径与手写 impl 一致（不吞错、不包装） | 异常 | — | 无 | `src/core/macros.rs::macro_sync_build_propagates_errors`、`macro_async_build_propagates_errors` | tests/e2e/e2e_core.rs |
 | MET-06 | 无依赖宏形态（两参形式）生成空依赖，与手写空实现等价 | 边界 | — | 无 | `src/core/macros.rs::macro_generates_empty_dependencies_when_no_deps`、`macro_name_equals_hand_written_name` | tests/e2e/e2e_core.rs |
-| MET-07 | `Interface` marker 对全部 `'static` 类型自动实现（含 `?Sized` trait object、原始类型、自定义类型） | 正常 | interface | 无 | `src/core/meta.rs::interface_auto_implemented_for_primitive_types`、`_custom_types`、`_reference_types` | tests/e2e/e2e_features.rs |
-| MET-08 | `InterfaceBuilder` 关联 Capability/Interface，不要求实现 `AutoBuilder`，Interface 可为 `dyn Trait` | 正常 | interface | 无 | `src/core/meta.rs::interface_builder_does_not_require_autobuilder`、`interface_builder_interface_type_is_dyn_compatible`、`interface_builder_into_interface_produces_trait_object` | tests/e2e/e2e_features.rs |
+| MET-07 | `Interface` marker 对全部 `'static` 类型自动实现（含 `?Sized` trait object、原始类型、自定义类型） | 正常 | di | 无 | `src/core/meta.rs::interface_auto_implemented_for_primitive_types`、`_custom_types`、`_reference_types` | tests/e2e/e2e_features.rs |
+| MET-08 | `InterfaceBuilder` 关联 Capability/Interface，不要求实现 `AutoBuilder`，Interface 可为 `dyn Trait` | 正常 | di | 无 | `src/core/meta.rs::interface_builder_does_not_require_autobuilder`、`interface_builder_interface_type_is_dyn_compatible`、`interface_builder_into_interface_produces_trait_object` | tests/e2e/e2e_features.rs |
 | MET-09 | `a25` 同一模块一次验证三种声明形态（手写/两参宏/deps 宏）注册后行为一致 | 边界 | — | 无 | `tests/e2e_advanced.rs::a25_impl_module_meta_macro_three_forms` | tests/e2e/e2e_core.rs |
 
 ### 2.2 注册与构建 / typestate（REG，20 条）
@@ -236,15 +236,15 @@
 
 | ID | 场景描述 | 类型 | 涉及 feature | 依赖服务 | 既有覆盖 | E2E 落点 |
 |----|---------|------|-------------|---------|---------|---------|
-| ITF-01 | `register_as::<M>()` → `build()` → `resolve::<I>()` 返回 `Arc<dyn Trait>` | 正常 | interface | 无 | `src/kit/kit.rs::register_as_then_resolve_returns_arc_dyn_trait`、`tests/e2e_advanced.rs::a19_register_as_then_resolve`、`tests/e2e_feature_combinations.rs::e2e_interface_register_and_resolve` | tests/e2e/e2e_features.rs |
-| ITF-02 | 同一 interface 类型二次 `register_as` → `AlreadyRegistered`（一个接口一个实现） | 异常 | interface | 无 | `src/kit/kit.rs::register_as_twice_same_interface_returns_already_registered`、`tests/e2e_advanced.rs::e07_duplicate_interface_registration_returns_already_registered` | tests/e2e/e2e_features.rs |
-| ITF-03 | `build()` 之前 `resolve` → `MissingCapability` | 异常 | interface | 无 | `src/kit/kit.rs::resolve_before_build_returns_missing_capability` | tests/e2e/e2e_features.rs |
-| ITF-04 | `resolve` 未注册 interface → `MissingCapability` | 异常 | interface | 无 | `src/kit/kit.rs::resolve_unregistered_interface_returns_missing_capability`、`tests/e2e_advanced.rs::e27_resolve_unregistered_interface_returns_missing_capability` | tests/e2e/e2e_features.rs |
-| ITF-05 | 解析出的 `Arc<dyn Trait>` 可直接调用 trait 方法（动态分派生效） | 正常 | interface | 无 | `src/kit/kit.rs::resolve_returns_callable_trait_object`、`file_logger_interface_build_and_resolve` | tests/e2e/e2e_features.rs |
-| ITF-06 | `register_as` 与 `register`（单绑定）/multi 共存互不干扰 | 边界 | interface | 无 | `src/kit/kit.rs::register_as_coexists_with_register`、`register_as_builds_during_build` | tests/e2e/e2e_features.rs |
-| ITF-07 | 同一模块类型经 `register_as` 注册两次（按模块 TypeId 判定）→ `AlreadyRegistered` | 异常 | interface | 无 | `src/kit/kit.rs::register_as_same_module_twice_returns_already_registered` | tests/e2e/e2e_features.rs |
-| ITF-08 | `InterfaceBuilder::build` 失败 → `BuildFailed{context=interface}` 传播 | 异常 | interface | 无 | `src/kit/kit.rs::interface_build_error_returns_build_failed` | tests/e2e/e2e_features.rs |
-| ITF-09 | `Interface` blanket impl 使任意具体类型可直接作 Capability 转 `into_interface`（`?Sized` 约束边界） | 边界 | interface | 无 | `src/core/meta.rs::interface_builder_capability_is_clone`、`interface_builder_build_returns_concrete_capability` | tests/e2e/e2e_features.rs |
+| ITF-01 | `register_as::<M>()` → `build()` → `resolve::<I>()` 返回 `Arc<dyn Trait>` | 正常 | di | 无 | `src/kit/kit.rs::register_as_then_resolve_returns_arc_dyn_trait`、`tests/e2e_advanced.rs::a19_register_as_then_resolve`、`tests/e2e_feature_combinations.rs::e2e_interface_register_and_resolve` | tests/e2e/e2e_features.rs |
+| ITF-02 | 同一 interface 类型二次 `register_as` → `AlreadyRegistered`（一个接口一个实现） | 异常 | di | 无 | `src/kit/kit.rs::register_as_twice_same_interface_returns_already_registered`、`tests/e2e_advanced.rs::e07_duplicate_interface_registration_returns_already_registered` | tests/e2e/e2e_features.rs |
+| ITF-03 | `build()` 之前 `resolve` → `MissingCapability` | 异常 | di | 无 | `src/kit/kit.rs::resolve_before_build_returns_missing_capability` | tests/e2e/e2e_features.rs |
+| ITF-04 | `resolve` 未注册 interface → `MissingCapability` | 异常 | di | 无 | `src/kit/kit.rs::resolve_unregistered_interface_returns_missing_capability`、`tests/e2e_advanced.rs::e27_resolve_unregistered_interface_returns_missing_capability` | tests/e2e/e2e_features.rs |
+| ITF-05 | 解析出的 `Arc<dyn Trait>` 可直接调用 trait 方法（动态分派生效） | 正常 | di | 无 | `src/kit/kit.rs::resolve_returns_callable_trait_object`、`file_logger_interface_build_and_resolve` | tests/e2e/e2e_features.rs |
+| ITF-06 | `register_as` 与 `register`（单绑定）/multi 共存互不干扰 | 边界 | di | 无 | `src/kit/kit.rs::register_as_coexists_with_register`、`register_as_builds_during_build` | tests/e2e/e2e_features.rs |
+| ITF-07 | 同一模块类型经 `register_as` 注册两次（按模块 TypeId 判定）→ `AlreadyRegistered` | 异常 | di | 无 | `src/kit/kit.rs::register_as_same_module_twice_returns_already_registered` | tests/e2e/e2e_features.rs |
+| ITF-08 | `InterfaceBuilder::build` 失败 → `BuildFailed{context=interface}` 传播 | 异常 | di | 无 | `src/kit/kit.rs::interface_build_error_returns_build_failed` | tests/e2e/e2e_features.rs |
+| ITF-09 | `Interface` blanket impl 使任意具体类型可直接作 Capability 转 `into_interface`（`?Sized` 约束边界） | 边界 | di | 无 | `src/core/meta.rs::interface_builder_capability_is_clone`、`interface_builder_build_returns_concrete_capability` | tests/e2e/e2e_features.rs |
 
 ### 2.9 生命周期（LCY，9 条）
 
@@ -258,7 +258,7 @@
 | LCY-06 | `AsyncLifecycle`（async+lifecycle）：异步 on_ready 在 build 后被调用 | 正常 | lifecycle,async | 无 | `src/kit/async_kit.rs::async_lifecycle_on_ready_called`、`async_lifecycle_test_module_full_kit_integration`、`src/core/lifecycle.rs::async_lifecycle_default_on_ready_returns_ok` | tests/e2e/e2e_async.rs |
 | LCY-07 | 多模块 on_ready 按拓扑序执行（依赖者的 ready 晚于被依赖者） | 边界 | lifecycle | 无 | `src/core/lifecycle.rs::lifecycle_test_module_full_kit_integration`（部分）→显式顺序断言需新增 | tests/e2e/e2e_features.rs |
 | LCY-08 | lifecycle+health 组合：ready 后健康检查可用 | 边界 | lifecycle,health | 无 | `tests/e2e_feature_combinations.rs::e2e_lifecycle_plus_health` | tests/e2e/e2e_feature_combinations.rs |
-| LCY-09 | scope+lifecycle 组合：scope 内构建不影响 lifecycle 钩子语义 | 边界 | scope,lifecycle | 无 | `tests/e2e_feature_combinations.rs::e2e_scope_plus_lifecycle` | tests/e2e/e2e_feature_combinations.rs |
+| LCY-09 | scope+lifecycle 组合：scope 内构建不影响 lifecycle 钩子语义 | 边界 | request-scope,lifecycle | 无 | `tests/e2e_feature_combinations.rs::e2e_scope_plus_lifecycle` | tests/e2e/e2e_feature_combinations.rs |
 
 ### 2.10 健康检查（HLT，9 条）
 
@@ -303,16 +303,16 @@
 
 | ID | 场景描述 | 类型 | 涉及 feature | 依赖服务 | 既有覆盖 | E2E 落点 |
 |----|---------|------|-------------|---------|---------|---------|
-| SCP-01 | `Scope::register::<M>()` → `require::<M>()` 取得作用域内实例 | 正常 | scope | 无 | `src/kit/scope.rs::scope_register_then_require`、`tests/e2e_feature_combinations.rs::e2e_scope_isolation` | tests/e2e/e2e_runtime.rs |
-| SCP-02 | `Scope::require` 二次调用返回缓存（每作用域单例，LazySlot 同源实现） | 边界 | scope | 无 | `src/kit/scope.rs::scope_require_caches_result` | tests/e2e/e2e_runtime.rs |
-| SCP-03 | `Scope::register` 重复注册同模块 → 错误 | 异常 | scope | 无 | `src/kit/scope.rs::scope_register_duplicate_returns_error` | tests/e2e/e2e_runtime.rs |
-| SCP-04 | `Scope::require` 未注册模块 → `MissingCapability` | 异常 | scope | 无 | `src/kit/scope.rs::scope_require_unregistered_returns_missing` | tests/e2e/e2e_runtime.rs |
-| SCP-05 | 双作用域互不泄漏：A 注册的模块在 B 中不可见 | 边界 | scope | 无 | `src/kit/scope.rs::scope_registrations_do_not_leak_across_scopes`、`tests/e2e_feature_combinations.rs::e2e_scope_isolation` | tests/e2e/e2e_runtime.rs |
-| SCP-06 | `Scope` drop 后资源清空（`scope_drop_clears_resources`） | 边界 | scope | 无 | `src/kit/scope.rs::scope_drop_clears_resources` | tests/e2e/e2e_runtime.rs |
-| SCP-07 | `Kit<Ready>::create_scope()` 返回空作用域，与 Kit 能力互相独立 | 正常 | scope | 无 | `src/kit/kit.rs::create_scope_returns_empty_scope`、`tests/e2e_feature_combinations.rs::e2e_scope_create_empty` | tests/e2e/e2e_runtime.rs |
-| SCP-08 | `AsyncScope`（scope+async）：insert/require/contains 全链路 | 正常 | scope,async | 无 | `src/kit/scope.rs::async_scope_insert_then_contains`、`async_scope_insert_and_require`、`src/kit/async_kit.rs::async_create_scope_returns_empty` | tests/e2e/e2e_async.rs |
-| SCP-09 | `AsyncScope` 异常面：重复 insert 覆盖旧值、缺失 require 报错 | 异常 | scope,async | 无 | `src/kit/scope.rs::async_scope_insert_twice_replaces_value`、`async_scope_require_missing_returns_error` | tests/e2e/e2e_async.rs |
-| SCP-10 | scope+lifecycle 组合：作用域实例参与（或不参与）Kit 级 shutdown，语义固化 | 边界 | scope,lifecycle | 无 | `tests/e2e_feature_combinations.rs::e2e_scope_plus_lifecycle` | tests/e2e/e2e_feature_combinations.rs |
+| SCP-01 | `Scope::register::<M>()` → `require::<M>()` 取得作用域内实例 | 正常 | request-scope | 无 | `src/kit/scope.rs::scope_register_then_require`、`tests/e2e_feature_combinations.rs::e2e_scope_isolation` | tests/e2e/e2e_runtime.rs |
+| SCP-02 | `Scope::require` 二次调用返回缓存（每作用域单例，LazySlot 同源实现） | 边界 | request-scope | 无 | `src/kit/scope.rs::scope_require_caches_result` | tests/e2e/e2e_runtime.rs |
+| SCP-03 | `Scope::register` 重复注册同模块 → 错误 | 异常 | request-scope | 无 | `src/kit/scope.rs::scope_register_duplicate_returns_error` | tests/e2e/e2e_runtime.rs |
+| SCP-04 | `Scope::require` 未注册模块 → `MissingCapability` | 异常 | request-scope | 无 | `src/kit/scope.rs::scope_require_unregistered_returns_missing` | tests/e2e/e2e_runtime.rs |
+| SCP-05 | 双作用域互不泄漏：A 注册的模块在 B 中不可见 | 边界 | request-scope | 无 | `src/kit/scope.rs::scope_registrations_do_not_leak_across_scopes`、`tests/e2e_feature_combinations.rs::e2e_scope_isolation` | tests/e2e/e2e_runtime.rs |
+| SCP-06 | `Scope` drop 后资源清空（`scope_drop_clears_resources`） | 边界 | request-scope | 无 | `src/kit/scope.rs::scope_drop_clears_resources` | tests/e2e/e2e_runtime.rs |
+| SCP-07 | `Kit<Ready>::create_scope()` 返回空作用域，与 Kit 能力互相独立 | 正常 | request-scope | 无 | `src/kit/kit.rs::create_scope_returns_empty_scope`、`tests/e2e_feature_combinations.rs::e2e_scope_create_empty` | tests/e2e/e2e_runtime.rs |
+| SCP-08 | `AsyncScope`（scope+async）：insert/require/contains 全链路 | 正常 | request-scope,async | 无 | `src/kit/scope.rs::async_scope_insert_then_contains`、`async_scope_insert_and_require`、`src/kit/async_kit.rs::async_create_scope_returns_empty` | tests/e2e/e2e_async.rs |
+| SCP-09 | `AsyncScope` 异常面：重复 insert 覆盖旧值、缺失 require 报错 | 异常 | request-scope,async | 无 | `src/kit/scope.rs::async_scope_insert_twice_replaces_value`、`async_scope_require_missing_returns_error` | tests/e2e/e2e_async.rs |
+| SCP-10 | scope+lifecycle 组合：作用域实例参与（或不参与）Kit 级 shutdown，语义固化 | 边界 | request-scope,lifecycle | 无 | `tests/e2e_feature_combinations.rs::e2e_scope_plus_lifecycle` | tests/e2e/e2e_feature_combinations.rs |
 
 ### 2.14 特性开关（TGL，9 条）
 
@@ -325,7 +325,7 @@
 | TGL-05 | toggle 状态跨 `build()` 保持（Unbuilt 期设置 → Ready 期仍可读） | 边界 | toggle | 无 | `tests/e2e_feature_combinations.rs::e2e_toggle_persists_after_build`、`src/kit/kit.rs::toggle_state_survives_build` | tests/e2e/e2e_runtime.rs |
 | TGL-06 | `Kit<Ready>` 态仍可 `enable_toggle` / `is_toggle_enabled`（运行期动态开关） | 正常 | toggle | 无 | `src/kit/kit.rs::toggle_enable_on_ready_state` | tests/e2e/e2e_runtime.rs |
 | TGL-07 | 开关关闭 → 对应模块能力不可获取（`require` 报缺失/`contains` 为 false），开启后可获取 | 边界 | toggle | 无 | `src/kit/kit.rs::toggle_disabled_capability_not_retrievable` | tests/e2e/e2e_runtime.rs |
-| TGL-08 | toggle+scope 组合：开关门控作用域内注册（无既有断言） | 边界 | toggle,scope | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
+| TGL-08 | toggle+scope 组合：开关门控作用域内注册（无既有断言） | 边界 | toggle,request-scope | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
 | TGL-09 | 结构核对：`src/kit/toggle.rs` 为 doc-only 模块，无独立运行时（防止误判 API 面） | 边界 | toggle | 无 | `src/kit/toggle.rs`（10 行 doc）+ `src/kit/mod.rs`（无 toggle 导出）核对 | tests/e2e/e2e_presets.rs（编译面） |
 
 ### 2.15 优雅关闭（SHD，13 条）
@@ -417,12 +417,12 @@
 | CMP-04 | lifecycle+health：on_ready 后健康报告可用，关闭后状态保持可读 | 边界 | lifecycle,health | 无 | `tests/e2e_feature_combinations.rs::e2e_lifecycle_plus_health` | tests/e2e/e2e_feature_combinations.rs |
 | CMP-05 | observer+decorator：观察者时序覆盖装饰步骤（build → decorate → on_module_built） | 正常 | observer,decorator | 无 | `tests/e2e_feature_combinations.rs::e2e_observer_plus_decorator` | tests/e2e/e2e_feature_combinations.rs |
 | CMP-06 | toggle+decorator：开关门控下装饰器仅对实际注册模块生效 | 正常 | toggle,decorator | 无 | `tests/e2e_feature_combinations.rs::e2e_toggle_plus_decorator` | tests/e2e/e2e_feature_combinations.rs |
-| CMP-07 | scope+lifecycle：作用域与生命周期钩子共存语义 | 边界 | scope,lifecycle | 无 | `tests/e2e_feature_combinations.rs::e2e_scope_plus_lifecycle` | tests/e2e/e2e_feature_combinations.rs |
-| CMP-08 | scope+async → `AsyncScope` 导出面与 `AsyncKit::create_scope` 打通 | 边界 | scope,async | 无 | `src/lib.rs`/`src/kit/mod.rs` 导出核对 + `src/kit/async_kit.rs::async_create_scope_returns_empty` | tests/e2e/e2e_feature_combinations.rs |
+| CMP-07 | scope+lifecycle：作用域与生命周期钩子共存语义 | 边界 | request-scope,lifecycle | 无 | `tests/e2e_feature_combinations.rs::e2e_scope_plus_lifecycle` | tests/e2e/e2e_feature_combinations.rs |
+| CMP-08 | scope+async → `AsyncScope` 导出面与 `AsyncKit::create_scope` 打通 | 边界 | request-scope,async | 无 | `src/lib.rs`/`src/kit/mod.rs` 导出核对 + `src/kit/async_kit.rs::async_create_scope_returns_empty` | tests/e2e/e2e_feature_combinations.rs |
 | CMP-09 | shutdown+async → `AsyncShutdownCoordinator` 导出面一致（lib.rs/kit/mod/prelude） | 边界 | shutdown,async | 无 | `src/kit/shutdown.rs::async_shutdown_coordinator_executes_hooks` + 导出核对 | tests/e2e/e2e_feature_combinations.rs |
 | CMP-10 | shutdown+decorator：被装饰能力的关闭次序（装饰层与核心层）语义固化 | 边界 | shutdown,decorator | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
-| CMP-11 | toggle+scope：开关门控 `create_scope` 后的作用域内注册 | 边界 | toggle,scope | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
-| CMP-12 | interface+decorator：装饰器按 interface TypeId 应用于 `register_as` 构建路径（`build_interface_modules` 内 `apply_decorators(interface_id, …)`） | 边界 | interface,decorator | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
+| CMP-11 | toggle+scope：开关门控 `create_scope` 后的作用域内注册 | 边界 | toggle,request-scope | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
+| CMP-12 | interface+decorator：装饰器按 interface TypeId 应用于 `register_as` 构建路径（`build_interface_modules` 内 `apply_decorators(interface_id, …)`） | 边界 | di,decorator | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
 | CMP-13 | encryption+reload 双链共存：`encryption` 与 `reload` 同时开启时（confers 双引擎 confers/encryption + Kit SubscriberMap）全部 API 可编译可用 | 异常 | encryption,reload | 无 | 无→需新增（编译级 + 行为级） | tests/e2e/e2e_feature_combinations.rs |
 | CMP-14 | i18n+shutdown：`ShutdownTimedOut` 错误消息走 `tr()` 翻译链（zh locale 下错误文本本地化） | 边界 | shutdown,i18n | 无 | 无→需新增 | tests/e2e/e2e_feature_combinations.rs |
 | CMP-15 | 全 feature 烟囱：`--all-features` 编译通过（已实测 exit 0）+ 全功能行为级一次打通（register/lazy/multi/interface/config/reload/encrypt/lifecycle/health/observer/decorator/scope/toggle/shutdown/i18n 同 Kit） | 正常 | 全部 feature | 无 | `cargo check --all-features`（本次编写时实测）→行为级需新增 | tests/e2e/e2e_feature_combinations.rs |
@@ -469,7 +469,7 @@ probe      → health, dep:futures-timer（运行时无关定时器）
 presets / presets-remote / report / version-negotiation / compose / di
            → 各自的依赖声明见 Cargo.toml（单一事实源）
 default    → （空，无任何隐式 feature）
-async / interface / lifecycle / health / scope / toggle / observer / decorator / shutdown
+async / di / lifecycle / health / request-scope / toggle / observer / decorator / shutdown
            → 空 feature（零依赖、零传递项）
 ```
 
@@ -481,7 +481,7 @@ async / interface / lifecycle / health / scope / toggle / observer / decorator /
 |------|----------------|---------|
 | async + lifecycle | `AsyncLifecycle` | `src/lib.rs`、`src/core/mod.rs`、`src/prelude.rs` |
 | async + health | `AsyncHealthCheck` | 同上 |
-| async + scope | `AsyncScope` | 同上 |
+| async + request-scope | `AsyncScope` | 同上 |
 | async + shutdown | `AsyncShutdownCoordinator` | 同上 |
 | async（单独） | `AsyncKit`/`AsyncAutoBuilder`/`AsyncReady`/`AsyncUnbuilt`/`AsyncTypeMap` | `src/lib.rs`、`src/kit/mod.rs` |
 | observer + decorator | build 主路径：先回调 `on_module_start` → build → `apply_decorators` → `on_module_built` | `src/kit/kit.rs::build_eager_modules` |
@@ -499,12 +499,12 @@ async / interface / lifecycle / health / scope / toggle / observer / decorator /
 | C4 | lifecycle + health | ready 后健康可用 | CMP-04 | 有（e2e_feature_combinations） |
 | C5 | observer + decorator | 回调覆盖装饰步骤 | CMP-05 | 有（e2e_feature_combinations） |
 | C6 | toggle + decorator | 开关门控装饰 | CMP-06 | 有（e2e_feature_combinations） |
-| C7 | scope + lifecycle | 作用域与钩子共存 | CMP-07 | 有（e2e_feature_combinations） |
-| C8 | scope + async | `AsyncScope` | CMP-08 | 有（src 内联） |
+| C7 | request-scope + lifecycle | 作用域与钩子共存 | CMP-07 | 有（e2e_feature_combinations） |
+| C8 | request-scope + async | `AsyncScope` | CMP-08 | 有（src 内联） |
 | C9 | shutdown + async | `AsyncShutdownCoordinator` | CMP-09 | 有（src 内联） |
 | C10 | shutdown + decorator | 关闭次序 | CMP-10 | **需新增** |
-| C11 | toggle + scope | 开关门控作用域 | CMP-11 | **需新增** |
-| C12 | interface + decorator | interface 构建路径装饰 | CMP-12 | **需新增** |
+| C11 | toggle + request-scope | 开关门控作用域 | CMP-11 | **需新增** |
+| C12 | di + decorator | interface 构建路径装饰 | CMP-12 | **需新增** |
 | C13 | encryption + reload | 双 confers 引擎共存 | CMP-13 | **需新增** |
 | C14 | i18n + shutdown | 错误消息翻译链 | CMP-14 | **需新增** |
 | C15 | 全 feature | 全功能烟囱 | CMP-15 | 编译已验 / 行为**需新增** |
@@ -530,7 +530,7 @@ async / interface / lifecycle / health / scope / toggle / observer / decorator /
 | 层级 | 内容 | 命令 | 允许 mock？ |
 |------|------|------|-----------|
 | L1 单元 | src 内联 394 个 `#[test]`（16 处 `#[cfg(test)]` + 38 处 `#[cfg(all(test, feature = …))]` 门控块，覆盖 16 个文件） | `cargo test --all-features --lib` | 允许 |
-| L2 集成 | `tests/{basic,e2e_advanced,e2e_feature_combinations,config_inherit_derive,shared_config_derive,config_inheritance_e2e}.rs`（185 个测试函数；注意 §重要发现-3：feature 组按 `--features` 分轮执行） | `cargo test --features confers,reload,encryption && cargo test --features async,lifecycle,health,scope,toggle,observer,decorator,shutdown,interface && cargo test --features i18n` | 允许（纯内存） |
+| L2 集成 | `tests/{basic,e2e_advanced,e2e_feature_combinations,config_inherit_derive,shared_config_derive,config_inheritance_e2e}.rs`（185 个测试函数；注意 §重要发现-3：feature 组按 `--features` 分轮执行） | `cargo test --features confers,reload,encryption && cargo test --features async,lifecycle,health,request-scope,toggle,observer,decorator,shutdown,di && cargo test --features i18n` | 允许（纯内存） |
 | L2b 编译期 | `tests/ui/` 3 个 trybuild 用例（typestate 违规） | `cargo test --test compile_fail` | — |
 | L3 examples | 20 个示例逐一运行（见 5.2，需按 `required-features` 传 feature） | `cargo run -p trait-kit-examples --features <f> --example <name>` | 禁 mock |
 | L4 E2E | `tests/e2e/`（本文档 §2 场景 ID 落点，13 个文件已落地） | `cargo test --features <组合> --test e2e_<名>`（子目录不被自动发现，已由根 `Cargo.toml` 显式 `[[test]]` 注册 13 个目标） | 禁 mock |

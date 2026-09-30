@@ -98,6 +98,9 @@ pub(crate) mod test_helpers {
     }
 
     /// Mock error type for tests verifying `AsyncAutoBuilder` trait signatures.
+    /// Gated on `async`: all consumers are `all(test, feature = "async")` mods;
+    /// ungated it is dead code under default features.
+    #[cfg(all(test, feature = "async"))]
     #[derive(Debug, thiserror::Error)]
     pub(crate) enum MockError {
         #[error("mock build failed: {0}")]

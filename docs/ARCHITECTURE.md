@@ -124,7 +124,7 @@ Kit<Unbuilt>                    Kit<Ready>
 
 ### Feature 分层
 
-18 个可选 feature 中，confers 系列存在继承链，其余为零依赖独立 feature：
+19 个正名 feature（另含 `interface`/`scope`/`negotiate` 三个 deprecated 兼容别名）中，confers 系列存在继承链，其余为零依赖独立 feature：
 
 ```mermaid
 graph LR
@@ -132,12 +132,13 @@ graph LR
     R --> E["encryption"]
 
     subgraph zc["零依赖独立 feature"]
-        Z["async / interface / lifecycle / health<br/>scope / toggle / observer / decorator / shutdown"]
+        Z["async / di / lifecycle / health<br/>request-scope / toggle / observer / decorator / shutdown"]
     end
 
     subgraph dep["带可选依赖的 feature"]
         D1["i18n<br/>icu / writeable / sys-locale"]
         D2["report<br/>serde / serde_json"]
+        PR["probe<br/>futures-timer（→health）"]
         P["presets / presets-remote"]
         N["version-negotiation / compose"]
     end
