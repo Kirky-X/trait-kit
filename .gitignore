@@ -57,8 +57,9 @@ CODEIUM.md
 .codeium/
 .github/copilot/
 
-# Reviews (security/quality scan artifacts)
-reviews/
+# Reviews (security/quality scan artifacts; governance review records whitelisted)
+reviews/*
+!reviews/ws-r14-governance-review.md
 
 # WorkBuddy AI local notes
 .workbuddy-ai/
