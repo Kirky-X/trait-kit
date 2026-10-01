@@ -3058,7 +3058,7 @@ mod lazy_retrieval_semantics_tests {
     }
 }
 
-/// lazy builder panic 恢复（fix-audit-defects-r1 批次 C / T015）。
+/// lazy builder panic 恢复（审计缺陷修复批次 C）。
 ///
 /// 缺陷现状（Red）：`require()` 首建路径 take 出 builder 后只在返回 `Err`
 /// 的分支放回；builder panic（或 decorator `.expect` panic）会 unwind 跳过

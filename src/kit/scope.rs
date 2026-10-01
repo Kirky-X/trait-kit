@@ -658,7 +658,7 @@ mod tests {
     }
 
     /// scope builder panic：首次 require 返回 `BuildFailed`（含 panic 摘要），
-    /// builder 放回后重试可成功（fix-audit-defects-r1 批次 C / T016）。
+    /// builder 放回后重试可成功（审计缺陷修复批次 C）。
     #[test]
     fn scope_builder_panic_keeps_slot_retryable() {
         struct PanicThenOkScopeModule;
