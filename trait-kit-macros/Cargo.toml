@@ -32,5 +32,5 @@ quote = { version = "1.0", default-features = false, features = ["proc-macro"] }
 proc-macro2 = { version = "1.0", default-features = false, features = ["proc-macro"] }
 
 [dev-dependencies]
-trait-kit = { path = "..", version = "0.5.0-rc.6", default-features = false }
+trait-kit = { path = "..", version = "0.5.0-rc.7", default-features = false }
 trybuild = { version = "1.0", default-features = false }

@@ -11,6 +11,7 @@
 <summary>📑 目录</summary>
 
 - [Unreleased](#unreleased)
+- [`0.5.0-rc.7`](#050-rc7---2026-10-03)
 - [`0.5.0-rc.6`](#050-rc6---2026-09-21)
 - [`0.5.0-rc.5`](#050-rc5---2026-09-14)
 - [`0.5.0-rc.4`](#050-rc4---2026-09-13)
@@ -30,6 +31,10 @@
 ---
 
 ## [Unreleased]
+
+---
+
+## [0.5.0-rc.7] - 2026-10-03
 
 ### Added
 
@@ -62,6 +67,7 @@
 - **文档**：README/README_EN 路线图关闭"cfg 门控完整性"条目——`--no-default-features --features async` 与 `async,observer` 组合 check、`clippy --features async --all-targets` 零告警，`cargo test --features async --doc` 全通过，async × observer 门控缺口经复测确认已消除
 - **依赖**：新增非 optional `log 0.4`（`default-features = false, features = ["std"]`，零传递依赖 facade）——新增的 `soft_build` 可降级构建助手的 `error!` 降级日志所需；所有消费者升级 rc+1 后依赖闭包将新增 `log`
 - **构建**：`shutdown.rs` 的 `crate::i18n::tr` 导入补 `#[cfg(feature = "async")]` 门控，`shutdown`∧¬`async` 组合（含 `lifecycle,shutdown`、`observer,lifecycle,shutdown`）不再产生 `unused_imports` 告警，`-D warnings` 构建在这些组合下恢复可用
+- **依赖**：default-features 显式关闭批量裁剪——serde/serde_json/writeable/sys-locale 及 dev 侧 thiserror/serial_test/static_assertions/trybuild/criterion/async-trait 逐一显式声明所需特性；`trait-kit-macros` 的 syn 3.0 移除未使用的 extra-traits（quote/proc-macro2 特性声明统一）——下游宏编译不再平添 syn AST 调试 trait 的 impl 生成成本
 
 ---
 
