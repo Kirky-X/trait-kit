@@ -32,5 +32,7 @@ quote = { version = "1.0", default-features = false, features = ["proc-macro"] }
 proc-macro2 = { version = "1.0", default-features = false, features = ["proc-macro"] }
 
 [dev-dependencies]
-trait-kit = { path = "..", version = "0.5.0-rc.7", default-features = false }
+# path-only：publish 时 dev-deps 被剔除、不参与 registry 解析（带 version 会在
+# 主包同名版本发布前形成循环解析失败）；本地联调走 path 取主仓工作区码
+trait-kit = { path = ".." }
 trybuild = { version = "1.0", default-features = false }
