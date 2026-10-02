@@ -11,10 +11,16 @@
 //! this trait" 建议会列出当前构建中真实存在的 impl，随 presets/compose
 //! 等 feature 门控漂移，导致部分特性组合下快照必然失配（曾因此只在
 //! `--all-features` 下通过）。
+//!
+//! probe 敏感组（tests/ui/probe_sensitive/）：fixture 的 E0599 help 段
+//! 引用 `register_probe`（仅 probe feature 存在），故快照比对需要
+//! async + probe 同时开启——与主组分开门控。
 
 #[cfg(feature = "async")]
 #[test]
 fn compile_fail_tests() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/*.rs");
+    #[cfg(feature = "probe")]
+    t.compile_fail("tests/ui/probe_sensitive/*.rs");
 }

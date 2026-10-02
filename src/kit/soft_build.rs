@@ -55,7 +55,11 @@ where
     match build.await {
         Ok(capability) => capability,
         Err(error) => {
-            log::error!("module `{module}` build failed: {error}; degrading to fallback");
+            let message = crate::i18n::tr(
+                "trait-kit-soft-build-degraded",
+                &[("module", module), ("error", &error.to_string())],
+            );
+            log::error!("{message}");
             fallback
         }
     }

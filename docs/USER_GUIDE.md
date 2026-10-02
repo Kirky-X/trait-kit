@@ -26,7 +26,7 @@ trait-kit 解决的问题是：**在应用启动时，以类型安全、可验�
 - **模块**通过 `ModuleMeta` + `AutoBuilder` 两个 trait 定义统一契约，用 `impl_module_meta!` 宏一行声明。
 - **Kit** 是能力与配置的集中管理中心：`Kit<Unbuilt>` 阶段注册模块与配置，`build()` 验证依赖图后得到 `Kit<Ready>`，此后只读检索能力。
 - **能力**按模块类型存储和检索（`kit.require::<LoggerModule>()`），无需字符串键、无需 downcast。
-- 整个 crate 标注 `#![deny(unsafe_code)]`，无任何 `unsafe` 代码。
+- 整个 crate 标注 `#![deny(unsafe_code)]`，仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、RefCell guard 生命周期重锚 ×2），详见 [安全文档](SECURITY.md)。
 
 适合"手动装配太散、完整 DI 框架太重"的中间场景。API 全集见 [📘 API 参考](API_REFERENCE.md)，设计细节见 [🏗️ 架构文档](ARCHITECTURE.md)。
 
@@ -44,7 +44,7 @@ trait-kit 解决的问题是：**在应用启动时，以类型安全、可验�
 cargo add trait-kit
 ```
 
-默认特性只含核心 `ModuleMeta` + `AutoBuilder` + `Kit`，无任何额外依赖。
+默认特性（`default = []`）只含核心 `ModuleMeta` + `AutoBuilder` + `Kit`。crate 固定携带 Fluent 翻译（`fluent-bundle` / `unic-langid`）与 `log` 门面 3 个必选依赖，其余依赖（`confers`、`serde`、`icu` 等）全部经 feature 门控可选。
 
 ### 第一个模块
 
@@ -94,9 +94,9 @@ fn main() {
 
 ### Typestate 两阶段
 
-- **`Kit<Unbuilt>`（构建阶段）**：注册模块、存入配置、声明生命周期钩子。此阶段类型上不允许检索能力，未构建的模块无法被 `require()`，这类误用会直接**编译失败**。
+- **`Kit<Unbuilt>`（构建阶段）**：注册模块、存入配置、声明生命周期钩子。此阶段调用 `optional()` 会直接**编译失败**；`require()` / `config()` 等检索方法在类型上即可调用（供 `AutoBuilder::build` 回调读取依赖与配置），对未构建的模块则返回错误。
 - **`kit.build()`**：验证依赖图（缺失依赖检测、Kahn 算法环检测 + 拓扑排序），按拓扑序构建所有模块。
-- **`Kit<Ready>`（运行阶段）**：只读检索能力与配置，不可再注册。
+- **`Kit<Ready>`（运行阶段）**：只读检索能力与配置，不可再注册（注册与构建方法在此阶段被**编译期拒绝**）。
 
 两阶段的完整方法面与流程图见 [架构文档](ARCHITECTURE.md)，逐方法 feature 门控见 [API 参考](API_REFERENCE.md)。
 
@@ -135,7 +135,7 @@ impl_module_meta!(StorageModule, "storage", deps = [LoggerModule]);
 
 ### 手动存取
 
-`set_config` 在 `Kit<Unbuilt>` 与 `Kit<Ready>` 上均可调用；模块在 `build()` 时通过 `kit.config::<C>()` 检索：
+`set_config` 仅在 `Kit<Unbuilt>` 上可调用；模块在 `build()` 时通过 `kit.config::<C>()` 检索。`Kit<Ready>` 上写配置的唯一路径是 `reload_config::<C>()`（`reload` feature）与 `merge_config::<C>(ovr)`（`confers` feature）：
 
 ```rust
 use std::sync::Arc;
@@ -344,7 +344,7 @@ let kit = kit.build()?;
 
 其他常见问题：
 
-- **typestate 编译错误**（如 `ready_cannot_register`）：在 `Kit<Ready>` 上调用注册方法、或在 `Kit<Unbuilt>` 上调用 `require()` 都会编译失败。这是有意的构建期防护，请检查调用阶段。
+- **typestate 编译错误**：编译期排除的误用是 `Kit<Ready>` 上调用注册/构建方法（`ready_cannot_register` / `ready_cannot_build`）与 `Kit<Unbuilt>` 上调用 `optional()`（`unbuilt_cannot_optional`），请检查调用阶段。`require()` 在 `Kit<Unbuilt>` 上可编译（供 `AutoBuilder::build` 回调使用），对未构建的模块返回 `MissingCapability` 错误而非编译失败。
 - **feature 方法不存在**：方法级门控 API（如 `subscribe`、`set_encrypted`）需启用对应 feature，参见 [README 特性标志](../README.md#-特性标志)。
 - **跨线程使用 `Kit` 报 `!Sync`**：改用 `AsyncKit`（`async` feature），或在单线程内使用 `Kit`。
 

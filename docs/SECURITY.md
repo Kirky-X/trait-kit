@@ -36,7 +36,7 @@
 - 报告时请尽量包含：影响版本、复现步骤或概念验证代码、影响评估。
 - 维护者承诺 **48 小时内确认**收到报告、**7 天内给出初步评估**；确认后会评估严重性、开发修复并在补丁发布时致谢报告者（除非您希望匿名）。
 
-**安全加固渠道**：除漏洞报告外，仓库 CI 持续运行依赖与静态分析门禁（见下文），发布前还会执行 SAST 扫描（Semgrep / cargo-audit / Trivy / 密钥扫描），历史上保持零未处置 Critical/High 的记录。
+**安全加固渠道**：除漏洞报告外，仓库 CI 持续运行依赖与静态分析门禁（cargo-audit + cargo-deny、CodeQL，pre-commit 的 detect-secrets / detect-private-key 密钥扫描，见下文「CI 安全门禁」），历史上保持零未处置 Critical/High 的记录。
 
 ---
 
@@ -54,7 +54,7 @@
 
 ### 构建期验证（typestate）
 
-`Kit<Unbuilt>` → `Kit<Ready>` 两阶段类型状态使"未构建就检索"成为编译错误（见 `tests/ui/` 下的 trybuild 断言）。依赖图在 `build()` 时做缺失依赖检测与环检测，把装配错误前置到应用启动之前。
+`Kit<Unbuilt>` → `Kit<Ready>` 两阶段类型状态把典型误用前置为编译错误（见 `tests/ui/` 下的 trybuild 断言：`Kit<Unbuilt>` 上调用 `optional()`、`Kit<Ready>` 上注册/构建均被编译期拒绝；`require()` 在两态均可编译，未构建模块返回运行时错误）。依赖图在 `build()` 时做缺失依赖检测与环检测，把装配错误前置到应用启动之前。
 
 ### 明确的线程安全边界
 
@@ -75,8 +75,10 @@
 ### CI 安全门禁
 
 - `cargo deny check`：依赖许可证/安全通告/重复依赖审计（CI 必过项）。
+- `cargo audit`：RustSec 安全通告审计（CI 必过项；lefthook 的 pre-push 阶段亦运行）。
 - CodeQL 静态分析（`.github/workflows/codeql.yml`）。
-- 发布流程含 cargo-audit、Trivy、Semgrep 与密钥扫描（Gitleaks/Trufflehog）。
+- pre-commit 钩子：`detect-secrets`（带 `.secrets.baseline` 基线）与 `detect-private-key` 私钥检测。
+- 发布流程（`release.yml`）执行全特性构建与测试验证及 crates.io 上架校验；SAST 静态分析由 CI 的 CodeQL 承担，发布工作流本身不含独立扫描步骤。
 
 ---
 

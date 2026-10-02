@@ -327,6 +327,15 @@ mod tests {
         );
     }
 
+    /// 没有 provider 的 Presets 是空操作（apply 仍返回 Ok）。
+    #[test]
+    fn presets_builder_without_provider_is_a_noop() {
+        let mut kit = Kit::new();
+        Presets::new()
+            .apply_to(&mut kit)
+            .expect("empty presets apply");
+    }
+
     #[test]
     fn presets_builder_applies_confers_config_preset() {
         let provider = MapProvider::from_pairs([("k", ConfigValue::String("v".into()))]);
@@ -338,6 +347,12 @@ mod tests {
         let ready = kit.build().expect("build ok");
         let cfg = ready.require::<ConfersConfigModule>().expect("require");
         assert_eq!(cfg.get_string("k").as_deref(), Some("v"));
+        // 原生 annotated-value 透传（完整 confers 保真度）。
+        assert!(
+            cfg.get_raw("k").is_some(),
+            "raw annotated value is reachable"
+        );
+        assert!(cfg.get_raw("absent").is_none());
     }
 }
 
@@ -556,6 +571,42 @@ pub mod remote {
             assert!(
                 audits.iter().any(|s| s.contains("mock-remote")),
                 "remote load published an audit event: {audits:?}"
+            );
+        }
+
+        /// `keys()` 递归收集叶子路径（map 节点不出现在结果里），
+        /// `get_raw()` 按点路径走 map 逐段下钻。
+        #[test]
+        fn remote_provider_keys_list_leaf_paths_and_get_raw_walks_maps() {
+            let source = MockRemoteSource {
+                json: serde_json::json!({
+                    "db": { "host": "remote-db", "port": 5432 },
+                    "flags": { "canary": true },
+                    "plain": "scalar"
+                }),
+                id: confers::SourceId::default(),
+            };
+            let snapshot = block_on(<MockRemoteSource as confers::interface::AsyncSource>::load(
+                &source,
+            ))
+            .expect("load snapshot");
+            let provider = RemoteConfigProvider::new(snapshot);
+
+            let mut keys = provider.keys();
+            keys.sort();
+            assert_eq!(keys, vec!["db.host", "db.port", "flags.canary", "plain"]);
+
+            assert!(
+                provider.get_raw("db.host").is_some(),
+                "nested leaf resolves"
+            );
+            assert!(
+                provider.get_raw("db.absent").is_none(),
+                "missing leaf is absent"
+            );
+            assert!(
+                provider.get_raw("db").is_some(),
+                "an interior map node resolves to its own annotated value"
             );
         }
 

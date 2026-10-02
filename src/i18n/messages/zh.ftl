@@ -49,6 +49,30 @@ i18n-error-date = 日期错误: { $detail }
 
 i18n-error-format = 格式化错误: { $detail }
 
+# 关闭钩子隔离（ShutdownResult::into_result 的 BuildFailed source）
+
+trait-kit-error-shutdown-hooks-panicked = { $failures } 个关闭钩子已 panic 并被隔离
+
+# register_shutdown_into stranded 钩子的日志通道
+
+trait-kit-log-shutdown-bridge-stranded = register_shutdown_into：协调器拒绝了一个钩子（{ $error }）；剩余 { $stranded } 个生命周期钩子未转移，将永远不会执行
+
+# 软（可降级）能力构建的降级日志
+
+trait-kit-soft-build-degraded = 模块 `{ $module }` 构建失败: { $error }；降级到回退实现
+
+# 探针 readiness 载荷（AsyncKit run_probes / probe_aggregate 的 detail）
+
+trait-kit-probe-timeout-measured = 探针在 { $measured_ms } 毫秒后超时
+
+trait-kit-probe-registry-stopped = 探针注册表已因关闭而停止
+
+trait-kit-probe-timeout-no-verdict = 探针在给出结论前超时
+
+# 非字符串 panic 载荷摘要（BuildFailed source）
+
+trait-kit-error-panic-payload-non-string = 非字符串 panic 载荷
+
 # 诊断上下文标记（用于错误消息）
 
 trait-kit-diag-unknown = <未知>

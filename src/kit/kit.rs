@@ -14,7 +14,8 @@
 //! 4. `shutdown`：回调 drain（one-shot），二次调用为 no-op；async 清理走
 //!    `shutdown_async()`。
 //! 5. decorator：按 `decorator_module_to_cap` 映射应用（eager 与 lazy 一致；
-//!    eager 未映射时回退模块 `TypeId`，该差异由 e2e DEC-07 冻结）。
+//!    eager 未映射时回退模块 `TypeId`，该差异由 e2e DEC-07 冻结）；未注册
+//!    目标在 `build()` 期 panic（`try_decorate` 为注册时报错的对照面）。
 //! 6. `factory`：typestate cast + 编译期 size/align 布局断言。
 
 use std::any::{Any, TypeId};
@@ -34,6 +35,8 @@ use super::TypeMap;
 #[cfg(feature = "toggle")]
 use super::toggle::ToggleBackend;
 use super::{DependencyGraph, GraphError, ModuleEntry};
+#[cfg(feature = "encryption")]
+use zeroize::Zeroizing;
 
 #[cfg(feature = "lifecycle")]
 type ShutdownCallback = Box<dyn Fn(&TypeMap)>;
@@ -62,12 +65,14 @@ type DecoratorFn = Box<dyn Fn(Box<dyn Any>) -> Box<dyn Any>>;
 const KEY_DERIVATION_VERSION: &str = "v1";
 
 /// Derive a per-field encryption key, mapping HKDF failures to `TraitKitError`.
+/// The key comes back as a `Zeroizing` container: it volatile-zeroes on drop,
+/// so every error path (and the success path) wipes it without explicit calls.
 #[cfg(feature = "encryption")]
 pub(crate) fn derive_kit_field_key(
     master_key: &[u8],
     path: &'static str,
     context: &'static str,
-) -> Result<[u8; 32], TraitKitError> {
+) -> Result<Zeroizing<[u8; 32]>, TraitKitError> {
     super::config::derive_field_key(master_key, path, KEY_DERIVATION_VERSION).map_err(|e| {
         TraitKitError::BuildFailed {
             context: context.to_string(),
@@ -107,7 +112,7 @@ pub(crate) fn panic_payload_summary(payload: &(dyn std::any::Any + Send)) -> Str
     } else if let Some(s) = payload.downcast_ref::<String>() {
         s.clone()
     } else {
-        "non-string panic payload".to_string()
+        tr("trait-kit-error-panic-payload-non-string", &[])
     }
 }
 
@@ -257,6 +262,10 @@ struct DecoratorFields {
     /// `build_eager_modules()` (where only module `TypeId`s from the
     /// dependency graph are available).
     decorator_module_to_cap: RefCell<HashMap<TypeId, TypeId>>,
+    /// Module `TypeId` → `ModuleMeta::NAME`, recorded by `decorate()` so the
+    /// build-time target check (`validate_decorator_targets`) can name the
+    /// unregistered target in its panic message.
+    decorator_target_names: RefCell<HashMap<TypeId, &'static str>>,
 }
 
 /// Fields gated behind the `version-negotiation` feature.
@@ -892,6 +901,12 @@ impl Kit {
                 return Err(TraitKitError::CycleDetected { cycle });
             }
         };
+
+        // Decorator targets registered but never wired into the graph are a
+        // documented build-time panic (decorate is fire-and-forget;
+        // try_decorate is the checking counterpart).
+        #[cfg(feature = "decorator")]
+        self.validate_decorator_targets();
 
         // Report: capture validated topological order (module names) and the
         // overall build start time. Zero code exists without `report`.
@@ -1567,8 +1582,14 @@ impl Kit {
     ///
     /// # Panics
     ///
-    /// Panics at runtime if the internal `downcast` fails due to a type
-    /// mismatch (should never happen when used correctly).
+    /// - At [`build()`](Kit::build) time if `M` was never registered.
+    ///   This method performs no immediate target validation (the target
+    ///   may legitimately be registered after the decorator); the missing
+    ///   target surfaces when the kit is built. Use
+    ///   [`try_decorate`](Kit::try_decorate) to get the same condition as
+    ///   an immediate `DecoratorTargetMissing` error instead.
+    /// - At runtime if the internal `downcast` fails due to a type
+    ///   mismatch (should never happen when used correctly).
     #[cfg(feature = "decorator")]
     pub fn decorate<M: AutoBuilder>(
         &self,
@@ -1595,6 +1616,10 @@ impl Kit {
             .decorator_module_to_cap
             .borrow_mut()
             .insert(TypeId::of::<M>(), TypeId::of::<M::Capability>());
+        self.decorator
+            .decorator_target_names
+            .borrow_mut()
+            .insert(TypeId::of::<M>(), M::NAME);
     }
 
     /// Decorate a module with **registration-time contract validation**.
@@ -1643,6 +1668,24 @@ impl<S> Kit<S> {
             current = dec(current);
         }
         current
+    }
+
+    /// Enforce the documented `decorate()` contract at build time: every
+    /// decorated target must be registered by then. `decorate()` performs no
+    /// immediate validation (registering the target after the decorator is
+    /// legitimate), so a target still missing at build time is a programmer
+    /// error reported by panic — [`try_decorate`](Kit::try_decorate) reports
+    /// the same condition as an immediate `DecoratorTargetMissing` error.
+    #[cfg(feature = "decorator")]
+    fn validate_decorator_targets(&self) {
+        let names = self.decorator.decorator_target_names.borrow();
+        for (module_id, name) in names.iter() {
+            assert!(
+                self.graph.name_of(*module_id).is_some(),
+                "decorator target not registered: module `{name}` was passed to \
+                 decorate() but never registered before build()"
+            );
+        }
     }
 
     /// Inject an [`EventBus`](super::events::EventBus) that receives runtime
@@ -2125,14 +2168,13 @@ impl Kit {
         // Derive before serializing: derivation does not depend on the
         // plaintext, so a derivation failure never leaves a generated
         // plaintext buffer behind.
-        let mut field_key = derive_kit_field_key(master_key, C::PATH, "set_encrypted")?;
+        let field_key = derive_kit_field_key(master_key, C::PATH, "set_encrypted")?;
 
         let mut plaintext = match serde_json::to_vec(value) {
             Ok(vec) => vec,
             Err(e) => {
                 // No plaintext exists on this path, but the derived key must
-                // not outlive the call either.
-                zeroize_bytes(&mut field_key);
+                // not outlive the call either — Zeroizing wipes it on drop.
                 return Err(TraitKitError::BuildFailed {
                     context: "set_encrypted".into(),
                     source: Box::new(e),
@@ -2140,11 +2182,10 @@ impl Kit {
             }
         };
 
-        // Compute the encryption Result first, then wipe both buffers before
-        // propagating success or failure, so the plaintext serialization and
-        // the derived key never outlive this call.
-        let encrypted = XChaCha20Crypto::new().encrypt(&plaintext, &field_key);
-        zeroize_bytes(&mut field_key);
+        // Compute the encryption Result first, then wipe the plaintext before
+        // propagating success or failure, so it never outlives this call; the
+        // derived key wipes itself via Zeroizing on drop.
+        let encrypted = XChaCha20Crypto::new().encrypt(&plaintext, &*field_key);
         zeroize_bytes(&mut plaintext);
         let (nonce, ciphertext) = encrypted.map_err(|e| TraitKitError::BuildFailed {
             context: "set_encrypted".into(),
@@ -2859,14 +2900,14 @@ impl Kit<Ready> {
             })?;
         let blob = versioned.blob;
 
-        let mut field_key = derive_kit_field_key(master_key, C::PATH, "get_encrypted")?;
+        let field_key = derive_kit_field_key(master_key, C::PATH, "get_encrypted")?;
 
-        // Compute the decryption Result first, then wipe the derived key
-        // before propagating success or failure. The intermediate plaintext
-        // is wiped right after parsing; only the deserialized `C` escapes
-        // this call.
-        let decrypted = XChaCha20Crypto::new().decrypt(blob.nonce(), blob.ciphertext(), &field_key);
-        zeroize_bytes(&mut field_key);
+        // Compute the decryption Result first; the derived key zeroes itself
+        // on drop (Zeroizing), so it never outlives this call even on error.
+        // The intermediate plaintext is wiped right after parsing; only the
+        // deserialized `C` escapes this call.
+        let decrypted =
+            XChaCha20Crypto::new().decrypt(blob.nonce(), blob.ciphertext(), &*field_key);
         let mut plaintext = decrypted.map_err(|e| TraitKitError::BuildFailed {
             context: "get_encrypted".into(),
             source: Box::new(e),
@@ -2974,24 +3015,23 @@ impl Kit<Ready> {
                 key: std::any::type_name::<C>().to_string(),
             })?;
 
-        // Decrypt with the old key (fail closed on mismatch).
-        let mut old_field_key = derive_kit_field_key(old_master_key, C::PATH, "rotate_master_key")?;
+        // Decrypt with the old key (fail closed on mismatch); both derived
+        // keys are Zeroizing containers and wipe themselves on drop.
+        let old_field_key = derive_kit_field_key(old_master_key, C::PATH, "rotate_master_key")?;
         let decrypted = XChaCha20Crypto::new().decrypt(
             stored.blob.nonce(),
             stored.blob.ciphertext(),
-            &old_field_key,
+            &*old_field_key,
         );
-        zeroize_bytes(&mut old_field_key);
         let mut plaintext = decrypted.map_err(|e| TraitKitError::BuildFailed {
             context: "rotate_master_key (old key)".into(),
             source: Box::new(e),
         })?;
 
         // Re-encrypt under the new key generation.
-        let mut new_field_key = derive_kit_field_key(new_master_key, C::PATH, "rotate_master_key")?;
-        let encrypted = XChaCha20Crypto::new().encrypt(&plaintext, &new_field_key);
+        let new_field_key = derive_kit_field_key(new_master_key, C::PATH, "rotate_master_key")?;
+        let encrypted = XChaCha20Crypto::new().encrypt(&plaintext, &*new_field_key);
         zeroize_bytes(&mut plaintext);
-        zeroize_bytes(&mut new_field_key);
         let (nonce, ciphertext) = encrypted.map_err(|e| TraitKitError::BuildFailed {
             context: "rotate_master_key (new key)".into(),
             source: Box::new(e),
@@ -3543,12 +3583,14 @@ mod config_audit_event_tests {
         kit.set_config(AuditConfig);
         kit.set_config(AuditConfig);
         kit.set_config_arc(AuditConfig);
+        kit.set_config_arc(AuditConfig);
 
         let entries = log.lock().unwrap();
-        assert_eq!(entries.len(), 3, "two set + one set_arc audits");
+        assert_eq!(entries.len(), 4, "two set + two set_arc audits");
         assert_eq!(entries[0].1, "set (new)");
         assert_eq!(entries[1].1, "set (replaced)");
-        assert!(entries[2].1.starts_with("set_arc"));
+        assert_eq!(entries[2].1, "set_arc (new)");
+        assert_eq!(entries[3].1, "set_arc (replaced)");
         assert!(
             entries[0].0.contains("AuditConfig"),
             "key is the config type name: {}",
@@ -3913,5 +3955,524 @@ mod negotiate_tests {
         let mut kit = Kit::new();
         kit.register::<UndeclaredProvider>().expect("provider");
         kit.build().expect("no requirements → no negotiation");
+    }
+}
+
+// ─── panic_payload_summary branches ────────────────────────────────────
+
+#[cfg(test)]
+mod panic_payload_summary_tests {
+    use super::panic_payload_summary;
+
+    #[test]
+    fn summarizes_str_string_and_non_string_payloads() {
+        let static_str: &(dyn std::any::Any + Send) = &"static boom";
+        assert_eq!(panic_payload_summary(static_str), "static boom");
+
+        let owned = String::from("owned boom");
+        let owned_ref: &(dyn std::any::Any + Send) = &owned;
+        assert_eq!(panic_payload_summary(owned_ref), "owned boom");
+
+        let num = 42u32;
+        let other: &(dyn std::any::Any + Send) = &num;
+        assert_eq!(panic_payload_summary(other), "non-string panic payload");
+    }
+}
+
+// ─── sync config surface (confers) ─────────────────────────────────────
+
+#[cfg(all(test, feature = "confers"))]
+mod sync_config_surface_tests {
+    use crate::error::TraitKitError;
+    use crate::kit::{Configurable, Kit, ModuleConfig, Validatable};
+    use std::collections::HashMap;
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct AppConfig {
+        replicas: u32,
+    }
+
+    impl Configurable for AppConfig {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Ok(Self { replicas: 3 })
+        }
+    }
+
+    impl ModuleConfig for AppConfig {
+        const PATH: &'static str = "app.toml";
+        fn default_value() -> Self {
+            Self { replicas: 1 }
+        }
+    }
+
+    impl Validatable for AppConfig {
+        fn validate(&self) -> Result<(), Vec<String>> {
+            if self.replicas == 0 {
+                Err(vec!["replicas must be > 0".to_string()])
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct FailingCfg;
+
+    impl Configurable for FailingCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Err(Box::new(std::io::Error::other("no config source")))
+        }
+    }
+
+    impl ModuleConfig for FailingCfg {
+        const PATH: &'static str = "failing.toml";
+        fn default_value() -> Self {
+            Self
+        }
+    }
+
+    impl Validatable for FailingCfg {
+        fn validate(&self) -> Result<(), Vec<String>> {
+            Ok(())
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct InterpCfg {
+        endpoint: String,
+    }
+
+    impl Configurable for InterpCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Ok(Self {
+                endpoint: "${HOST}:9090".to_string(),
+            })
+        }
+    }
+
+    #[test]
+    fn load_and_validate_accepts_valid_config() {
+        let kit = Kit::new();
+        kit.load_and_validate::<AppConfig>().expect("valid config");
+        assert_eq!(kit.config::<AppConfig>().unwrap().replicas, 3);
+    }
+
+    #[test]
+    fn load_and_validate_rejects_invalid_config() {
+        #[derive(Clone)]
+        struct InvalidCfg;
+        impl Configurable for InvalidCfg {
+            fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+                Ok(Self)
+            }
+        }
+        impl Validatable for InvalidCfg {
+            fn validate(&self) -> Result<(), Vec<String>> {
+                Err(vec!["always invalid".to_string()])
+            }
+        }
+        let kit = Kit::new();
+        let err = kit.load_and_validate::<InvalidCfg>().unwrap_err();
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "load_and_validate"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn load_and_validate_propagates_load_failure() {
+        let kit = Kit::new();
+        let err = kit.load_and_validate::<FailingCfg>().unwrap_err();
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "load_and_validate"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn snapshot_restore_roundtrip_and_missing_snapshot_error() {
+        let kit = Kit::new();
+        assert!(
+            !kit.snapshot_config::<AppConfig>(),
+            "nothing to snapshot yet"
+        );
+        kit.set_config(AppConfig { replicas: 1 });
+        assert!(kit.snapshot_config::<AppConfig>());
+
+        kit.set_config(AppConfig { replicas: 9 });
+        kit.restore_config::<AppConfig>().expect("restore ok");
+        assert_eq!(kit.config::<AppConfig>().unwrap().replicas, 1);
+
+        assert!(kit.restore_config::<FailingCfg>().is_err(), "no snapshot");
+    }
+
+    #[test]
+    fn load_config_with_interpolates_variables() {
+        let kit = Kit::new();
+        let mut vars: HashMap<String, String> = HashMap::new();
+        vars.insert("HOST".to_string(), "example.net".to_string());
+        kit.load_config_with::<InterpCfg, _>(&vars)
+            .expect("interpolation ok");
+        assert_eq!(
+            kit.config::<InterpCfg>().unwrap().endpoint,
+            "example.net:9090"
+        );
+    }
+
+    #[test]
+    fn load_config_with_propagates_load_failure() {
+        let kit = Kit::new();
+        let err = kit
+            .load_config_with::<FailingCfg, _>(&HashMap::new())
+            .unwrap_err();
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "load_config_with"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+}
+
+// ─── toggle surface on Kit ─────────────────────────────────────────────
+
+#[cfg(all(test, feature = "toggle"))]
+mod kit_toggle_surface_tests {
+    use crate::kit::{Kit, ToggleValue};
+
+    #[test]
+    fn set_get_remove_list_toggle_roundtrip() {
+        let kit = Kit::new();
+        assert_eq!(kit.get_toggle("feat"), None);
+
+        kit.set_toggle("feat", ToggleValue::Bool(true));
+        assert_eq!(kit.get_toggle("feat"), Some(ToggleValue::Bool(true)));
+
+        kit.set_toggle("feat", ToggleValue::Str("on".into()));
+        assert_eq!(kit.get_toggle("feat"), Some(ToggleValue::Str("on".into())));
+
+        let removed = kit.remove_toggle("feat");
+        assert_eq!(removed, Some(ToggleValue::Str("on".into())));
+        // The Bool(true) from the first set lives in the confers registry:
+        // the second remove disables it and returns its prior state.
+        assert_eq!(kit.remove_toggle("feat"), Some(ToggleValue::Bool(true)));
+        // Reads honor the removal contract after tombstoning.
+        assert_eq!(
+            kit.get_toggle("feat"),
+            None,
+            "tombstoned key reads as absent"
+        );
+
+        assert!(kit.list_toggles().is_empty());
+        kit.set_toggle("a", ToggleValue::Int(1));
+        kit.set_toggle("b", ToggleValue::Bool(false));
+        let listed: std::collections::HashMap<String, ToggleValue> =
+            kit.list_toggles().into_iter().collect();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed.get("a"), Some(&ToggleValue::Int(1)));
+        assert_eq!(listed.get("b"), Some(&ToggleValue::Bool(false)));
+    }
+}
+
+// ─── observation port setter on sync Kit ───────────────────────────────
+
+#[cfg(test)]
+mod sync_port_setter_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    struct PortModule;
+    impl ModuleMeta for PortModule {
+        const NAME: &'static str = "port-module";
+    }
+    impl AutoBuilder for PortModule {
+        type Capability = Arc<()>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(()))
+        }
+    }
+
+    #[test]
+    fn with_metrics_port_stores_and_getter_reads_back() {
+        let mut kit = Kit::new();
+        kit.with_metrics_port(None::<Arc<dyn crate::kit::MetricsPort>>);
+        kit.register::<PortModule>().expect("register");
+        let ready = kit.build().expect("build");
+        assert!(ready.metrics_port().is_none(), "explicit None stays None");
+
+        let mut kit = Kit::new();
+        kit.with_metrics_port(Some(
+            Arc::new(crate::kit::NoOpMetricsPort) as Arc<dyn crate::kit::MetricsPort>
+        ));
+        kit.register::<PortModule>().expect("register");
+        let ready = kit.build().expect("build");
+        assert!(ready.metrics_port().is_some());
+
+        let mut kit = Kit::new();
+        kit.with_log_port(None::<Arc<dyn crate::kit::LogPort>>);
+        kit.register::<PortModule>().expect("register");
+        let ready = kit.build().expect("build");
+        assert!(ready.log_port().is_none(), "explicit None stays None");
+    }
+
+    #[test]
+    fn emit_event_publishes_to_injected_bus_and_is_noop_without_one() {
+        use crate::kit::events::{EventBus, KitEvent, MemoryEventBus};
+        use std::sync::Mutex;
+
+        let bus = Arc::new(MemoryEventBus::new());
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        bus.subscribe(move |event| {
+            if let KitEvent::HealthChanged { module, .. } = event {
+                sink.lock().unwrap().push((*module).to_string());
+            }
+        });
+
+        let mut kit = Kit::new();
+        kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn EventBus>));
+        kit.emit_event(KitEvent::HealthChanged {
+            module: "emitted",
+            status: "healthy",
+            detail: None,
+        });
+        assert_eq!(seen.lock().unwrap().clone(), vec!["emitted".to_string()]);
+
+        // No bus injected: the escape hatch is a silent no-op.
+        let kit = Kit::new();
+        kit.emit_event(KitEvent::HealthChanged {
+            module: "dropped",
+            status: "healthy",
+            detail: None,
+        });
+    }
+}
+
+// ─── version negotiation: absent provider is skipped ───────────────────
+
+#[cfg(all(test, feature = "version-negotiation"))]
+mod negotiate_absent_provider_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct Cap;
+
+    #[derive(Debug)]
+    struct NeverError;
+    impl std::fmt::Display for NeverError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "never")
+        }
+    }
+    impl std::error::Error for NeverError {}
+
+    /// Declares a version requirement against a module that is never
+    /// registered — negotiation must skip it (the graph owns absent deps).
+    struct GhostConsumer;
+    impl ModuleMeta for GhostConsumer {
+        const NAME: &'static str = "ghost-consumer";
+        fn required_versions() -> &'static [(&'static str, &'static str)] {
+            &[("ghost-provider", "1.0.0")]
+        }
+    }
+    impl AutoBuilder for GhostConsumer {
+        type Capability = Arc<Cap>;
+        type Error = NeverError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(Cap))
+        }
+    }
+
+    #[test]
+    fn requirement_against_absent_provider_is_skipped() {
+        let mut kit = Kit::new();
+        kit.register::<GhostConsumer>().expect("register consumer");
+        kit.build().expect("absent provider skipped by negotiation");
+    }
+}
+
+// ─── Ready-kit toggle API + lifecycle idempotence ──────────────────────
+
+#[cfg(all(test, feature = "toggle", feature = "lifecycle"))]
+mod ready_toggle_and_lifecycle_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::{Kit, ToggleValue};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct ComboModule;
+    impl ModuleMeta for ComboModule {
+        const NAME: &'static str = "combo-module";
+    }
+    impl AutoBuilder for ComboModule {
+        type Capability = Arc<()>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(()))
+        }
+    }
+
+    #[test]
+    fn ready_kit_toggle_api_reads_and_lists() {
+        let mut kit = Kit::new();
+        kit.register::<ComboModule>().expect("register");
+        let ready = kit.build().expect("build");
+
+        assert_eq!(ready.get_toggle("switch"), None);
+        ready.set_toggle("switch", ToggleValue::Bool(true));
+        assert_eq!(ready.get_toggle("switch"), Some(ToggleValue::Bool(true)));
+        ready.set_toggle("other", ToggleValue::Float(1.5));
+        let listed: std::collections::HashMap<String, ToggleValue> =
+            ready.list_toggles().into_iter().collect();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed.get("switch"), Some(&ToggleValue::Bool(true)));
+        assert_eq!(listed.get("other"), Some(&ToggleValue::Float(1.5)));
+    }
+
+    /// 重复 `register_lifecycle` 不得复制 `on_shutdown` 回调（幂等早退）。
+    #[test]
+    fn register_lifecycle_is_idempotent() {
+        static SHUTDOWNS: AtomicUsize = AtomicUsize::new(0);
+
+        struct ShutdownCounterModule;
+        impl ModuleMeta for ShutdownCounterModule {
+            const NAME: &'static str = "shutdown-counter";
+        }
+        impl AutoBuilder for ShutdownCounterModule {
+            type Capability = Arc<()>;
+            type Error = std::io::Error;
+            fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+                Ok(Arc::new(()))
+            }
+        }
+        impl crate::core::Lifecycle for ShutdownCounterModule {
+            fn on_shutdown(_cap: &Self::Capability) {
+                SHUTDOWNS.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.register::<ShutdownCounterModule>().expect("register");
+        kit.register_lifecycle::<ShutdownCounterModule>();
+        kit.register_lifecycle::<ShutdownCounterModule>();
+        let ready = kit.build().expect("build");
+        ready.shutdown();
+        assert_eq!(
+            SHUTDOWNS.load(Ordering::SeqCst),
+            1,
+            "duplicate registration must not double-run on_shutdown"
+        );
+    }
+}
+
+// ─── sync health aggregate / history / encrypted roundtrip branches ─────
+
+#[cfg(all(test, feature = "health", feature = "encryption"))]
+mod sync_health_and_encryption_branch_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::error::TraitKitError;
+    use crate::kit::{Kit, ModuleConfig};
+    use std::sync::Arc;
+
+    /// 返回 degraded 状态的健康检查器（驱动 overall "degraded" 映射）。
+    struct DegradedModule;
+    impl ModuleMeta for DegradedModule {
+        const NAME: &'static str = "sync-degraded";
+    }
+    impl AutoBuilder for DegradedModule {
+        type Capability = Arc<u32>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(1))
+        }
+    }
+    impl crate::core::HealthCheck for DegradedModule {
+        fn check(_cap: &Arc<u32>) -> crate::core::health::HealthStatus {
+            crate::core::health::HealthStatus::Degraded {
+                detail: "slow".into(),
+            }
+        }
+    }
+
+    #[test]
+    fn health_history_trims_to_configured_capacity() {
+        let mut kit = Kit::new();
+        kit.register::<DegradedModule>().expect("register");
+        kit.register_health_check::<DegradedModule>();
+        let ready = kit.build().expect("build");
+        ready.set_health_history_capacity(2);
+        for _ in 0..5 {
+            let report = ready.health_report();
+            assert_eq!(report.len(), 1, "one sample per report call");
+        }
+        let history = ready.health_history();
+        assert!(
+            history.len() <= 2,
+            "history is trimmed to capacity, got {}",
+            history.len()
+        );
+    }
+
+    /// capacity = 0 表示不保留历史：采样照跑，但一条都不入环。
+    #[test]
+    fn zero_health_history_capacity_records_nothing() {
+        let mut kit = Kit::new();
+        kit.register::<DegradedModule>().expect("register");
+        kit.register_health_check::<DegradedModule>();
+        let ready = kit.build().expect("build");
+        ready.set_health_history_capacity(0);
+        let report = ready.health_report();
+        assert_eq!(report.len(), 1, "sampling still happens");
+        assert!(
+            ready.health_history().is_empty(),
+            "capacity 0 keeps nothing"
+        );
+    }
+
+    #[test]
+    fn health_aggregate_maps_degraded_overall_status() {
+        let mut kit = Kit::new();
+        kit.register::<DegradedModule>().expect("register");
+        kit.register_health_check::<DegradedModule>();
+        let ready = kit.build().expect("build");
+        let aggregate = ready.health_aggregate();
+        assert_eq!(aggregate.status, "degraded");
+        assert!(!aggregate.healthy);
+        assert_eq!(aggregate.modules[0].status, "degraded");
+        assert_eq!(aggregate.modules[0].detail.as_deref(), Some("slow"));
+    }
+
+    #[derive(Clone, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+    struct SynSecret {
+        token: String,
+    }
+    impl ModuleConfig for SynSecret {
+        const PATH: &'static str = "syn-secret";
+        fn default_value() -> Self {
+            Self {
+                token: String::new(),
+            }
+        }
+    }
+
+    #[test]
+    fn get_encrypted_with_wrong_key_fails_closed() {
+        let mut kit = Kit::new();
+        let value = SynSecret {
+            token: "s3cret".into(),
+        };
+        kit.set_encrypted(&value, b"0123456789abcdef")
+            .expect("encrypt ok");
+        kit.register::<DegradedModule>().expect("register");
+        let ready = kit.build().expect("build");
+        let err = ready
+            .get_encrypted::<SynSecret>(b"fedcba9876543210")
+            .expect_err("wrong key must fail closed");
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "get_encrypted"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
     }
 }

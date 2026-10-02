@@ -548,4 +548,51 @@ mod typed_handle_tests {
         crate::define_toggle_key!(TestMacroKey = "macro-key");
         assert_eq!(<TestMacroKey as ToggleKey>::KEY, "macro-key");
     }
+
+    #[test]
+    fn toggle_handle_debug_shows_type_and_key() {
+        let kit = Kit::new();
+        let ready = kit.build().expect("build ok");
+        let handle = ready.toggle_handle::<PrdModeKey>();
+        let debug = format!("{handle:?}");
+        assert!(debug.contains("PrdModeKey"), "type name in debug: {debug}");
+        assert!(debug.contains("prd-mode"), "string key in debug: {debug}");
+    }
+
+    #[cfg(feature = "confers")]
+    #[test]
+    fn confers_toggle_with_registry_exposes_underlying_registry() {
+        let registry = confers::FeatureToggleRegistry::new();
+        registry.register("pre-registered", "desc", true);
+        let t = ConfersToggle::with_registry(registry);
+        assert!(
+            t.registry()
+                .list()
+                .iter()
+                .any(|i| i.name == "pre-registered")
+        );
+        assert!(t.contains("pre-registered"));
+    }
+
+    #[cfg(feature = "confers")]
+    #[test]
+    fn confers_toggle_default_is_empty() {
+        let t = ConfersToggle::default();
+        assert!(t.registry().list().is_empty());
+    }
+
+    #[cfg(feature = "confers")]
+    #[test]
+    fn confers_toggle_remove_returns_registry_bool_and_tombstones() {
+        let mut t = ConfersToggle::new();
+        t.set("flag".into(), ToggleValue::Bool(true));
+        // Bool values live in the confers registry: remove disables the
+        // entry, returns its prior state, and tombstones the key.
+        assert_eq!(t.remove("flag"), Some(ToggleValue::Bool(true)));
+        assert!(!t.contains("flag"), "tombstoned key reads as absent");
+        assert!(
+            !t.list().iter().any(|(k, _)| k == "flag"),
+            "tombstoned key is not listed"
+        );
+    }
 }

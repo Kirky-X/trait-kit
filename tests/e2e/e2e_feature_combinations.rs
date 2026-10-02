@@ -1631,3 +1631,47 @@ mod kit_observer_e2e {
         assert_eq!(count.load(Ordering::SeqCst), 0);
     }
 }
+
+// ─── toggle+confers：ConfersToggle confers 侧 key 的墓碑→复活语义 ──────
+
+/// 仅存在于 confers registry 的 boolean key：remove_toggle → 返回旧值且
+/// get/list 两面不再出现（disable+墓碑，非真删除）；再次 set_toggle 同
+/// key → 复活可读。实现契约 src/kit/toggle.rs（removed 墓碑集）。
+#[cfg(all(feature = "toggle", feature = "confers"))]
+#[test]
+fn e2e_confers_toggle_tombstone_then_revive() {
+    use trait_kit::kit::ToggleValue;
+
+    let kit = Kit::new();
+    // confers 侧 boolean key（enable_toggle 走 registry 注册）。
+    kit.set_toggle("e2e-tombstone", ToggleValue::Bool(true));
+    assert!(kit.is_toggle_enabled("e2e-tombstone"));
+
+    // remove：返回旧值，此后 get/list 均不出现（墓碑）。
+    assert_eq!(
+        kit.remove_toggle("e2e-tombstone"),
+        Some(ToggleValue::Bool(true)),
+        "remove 应返回 confers registry 中的旧布尔值"
+    );
+    assert_eq!(
+        kit.get_toggle("e2e-tombstone"),
+        None,
+        "墓碑后 get 不应再返回该 key"
+    );
+    assert!(
+        !kit.list_toggles().iter().any(|(k, _)| k == "e2e-tombstone"),
+        "墓碑后 list 不应再列出该 key"
+    );
+
+    // 复活：fresh set 重新激活该 key。
+    kit.set_toggle("e2e-tombstone", ToggleValue::Bool(true));
+    assert_eq!(
+        kit.get_toggle("e2e-tombstone"),
+        Some(ToggleValue::Bool(true)),
+        "再次 set 应复活墓碑 key"
+    );
+    assert!(
+        kit.list_toggles().iter().any(|(k, _)| k == "e2e-tombstone"),
+        "复活后 list 应重新列出该 key"
+    );
+}

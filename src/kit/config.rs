@@ -783,4 +783,50 @@ mod key_provider_tests {
         assert_eq!(format!("{key:?}"), "KeyBytes(***)");
         assert_eq!(key.len(), 3);
     }
+
+    #[test]
+    fn key_bytes_len_and_is_empty() {
+        assert!(KeyBytes::from(Vec::new()).is_empty(), "empty key is empty");
+        let key = KeyBytes::from(vec![9u8; 32]);
+        assert!(!key.is_empty());
+        assert_eq!(key.len(), 32);
+    }
+
+    #[cfg(feature = "confers")]
+    #[test]
+    fn validation_error_constructors_carry_messages() {
+        let from_new = ValidationError::new(vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(from_new.errors, vec!["a", "b"]);
+
+        let from_vec: ValidationError = vec!["c".to_string()].into();
+        assert_eq!(from_vec.errors, vec!["c"]);
+    }
+
+    #[test]
+    fn interpolate_json_value_applies_inline_default() {
+        use serde_json::json;
+
+        let mut value = json!({ "port": "${PORT:-8080}", "host": "${HOST}" });
+        let mut vars: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        vars.insert("HOST".to_string(), "example.com".to_string());
+        interpolate_json_value(&mut value, &vars);
+        assert_eq!(value["port"], "8080", "unset var falls back to its default");
+        assert_eq!(value["host"], "example.com");
+    }
+
+    #[test]
+    fn interpolate_json_value_preserves_unclosed_placeholder() {
+        use serde_json::json;
+
+        let mut value = json!({ "endpoint": "host${port", "plain": "no-var" });
+        interpolate_json_value(
+            &mut value,
+            &std::collections::HashMap::<String, String>::new(),
+        );
+        assert_eq!(
+            value["endpoint"], "host${port",
+            "unclosed placeholder untouched"
+        );
+        assert_eq!(value["plain"], "no-var");
+    }
 }

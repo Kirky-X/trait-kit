@@ -21,7 +21,7 @@
 模块以 `ModuleMeta` + `AutoBuilder` 声明契约，Kit 集中完成装配校验与能力检索：
 
 <table style="width:100%; border-collapse: collapse">
-<tr><td align="center" width="25%" style="padding: 12px">🧩<br><b>标准模块接口</b><br><span style="color:#64748B">ModuleMeta + AutoBuilder 统一契约，宏一行声明模块</span></td><td align="center" width="25%" style="padding: 12px">🏗️<br><b>构建期验证</b><br><span style="color:#64748B">typestate 依赖图校验，装配错误前置到启动之前</span></td><td align="center" width="25%" style="padding: 12px">🔎<br><b>类型安全检索</b><br><span style="color:#64748B">能力按模块类型存取，无字符串键、无 downcast</span></td><td align="center" width="25%" style="padding: 12px">⚡<br><b>按需扩展</b><br><span style="color:#64748B">18 个可选 feature 全部门控，默认零开销</span></td></tr>
+<tr><td align="center" width="25%" style="padding: 12px">🧩<br><b>标准模块接口</b><br><span style="color:#64748B">ModuleMeta + AutoBuilder 统一契约，宏一行声明模块</span></td><td align="center" width="25%" style="padding: 12px">🏗️<br><b>构建期验证</b><br><span style="color:#64748B">typestate 依赖图校验，装配错误前置到启动之前</span></td><td align="center" width="25%" style="padding: 12px">🔎<br><b>类型安全检索</b><br><span style="color:#64748B">能力按模块类型存取，无字符串键、无 downcast</span></td><td align="center" width="25%" style="padding: 12px">⚡<br><b>按需扩展</b><br><span style="color:#64748B">19 个可选 feature 全部门控，默认零开销</span></td></tr>
 </table>
 
 </div>
@@ -74,7 +74,7 @@
 <td width="50%" style="vertical-align:top; padding: 12px">🌍 <b>ICU4X 国际化</b><br><span style="color:#64748B">区域感知的数字 / 日期 / 复数 / 排序格式化，内置 Fluent FTL 中英文消息翻译（<code>tr()</code>）。</span></td>
 </tr>
 <tr>
-<td width="50%" style="vertical-align:top; padding: 12px">🧱 <b>极简默认依赖</b><br><span style="color:#64748B"><code>default = []</code> 零默认依赖；<code>confers</code>、<code>serde</code>、<code>serde_json</code>、<code>icu</code> 等全部为可选依赖并经 feature 门控。</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🧱 <b>极简默认依赖</b><br><span style="color:#64748B"><code>default = []</code> 不启用任何可选 feature；仅固定携带 Fluent 翻译（<code>fluent-bundle</code> / <code>unic-langid</code>）与 <code>log</code> 门面 3 个必选依赖，<code>confers</code>、<code>serde</code>、<code>serde_json</code>、<code>icu</code> 等其余依赖全部经 feature 门控可选。</span></td>
 <td width="50%" style="vertical-align:top; padding: 12px">🚫 <b>默认禁用 unsafe</b><br><span style="color:#64748B"><code>#![deny(unsafe_code)]</code> 全 crate 强制；仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、RefCell guard 生命周期重锚 ×2）。</span></td>
 </tr>
 </table>
@@ -87,7 +87,7 @@
 - **作用域依赖**（`request-scope`）：`Scope` / `AsyncScope` 每请求实例隔离。
 - **特性开关**（`toggle`）：`enable_toggle` / `is_toggle_enabled` / `register_if_toggle` 运行时字符串键控启停。
 - **模块装饰器**（`decorator`）：`decorate::<M>(fn)` 构建后能力包装/增强。
-- **结构化构建报告**（`report`）：`BuildReport` JSON 导出与依赖图 `graph_dot()` / `graph_mermaid()` 导出。
+- **结构化构建报告**（`report`）：`BuildReport` JSON 导出与 `contract_manifest()` 契约清单；依赖图 `graph_dot()` / `graph_mermaid()` 文本导出无门控，默认可用。
 - **预设模块**（`presets` / `presets-remote`）：`ConfersConfigModule` 将 confers 配置中心纳入 Kit 模块体系，支持远程配置源。
 - **子 Kit 组合**（`compose`）：子 `Kit` 以单一模块身份注册进父 `Kit`，能力命名空间隔离。
 - **版本协商**（`version-negotiation`）：`ModuleMeta::VERSION` 与 `required_versions` 在 `build()` 时做 semver 兼容校验。
@@ -119,7 +119,7 @@ trait-kit 提供 DI 框架的**标准化**，同时保持手动装配的**显式
 cargo add trait-kit
 ```
 
-默认特性只含核心 `ModuleMeta` + `AutoBuilder` + `Kit`，无任何额外依赖。
+默认特性（`default = []`）只含核心 `ModuleMeta` + `AutoBuilder` + `Kit`；crate 固定携带 Fluent 翻译（`fluent-bundle` / `unic-langid`）与 `log` 门面 3 个必选依赖，其余依赖（`confers`、`serde`、`serde_json`、`icu` 等）全部经 feature 门控可选。
 
 ### 💡 最小示例
 
@@ -170,7 +170,7 @@ fn main() {
 
 - **模块**：实现 `ModuleMeta`（名称 + 依赖声明）与 `AutoBuilder`（构建能力）的类型，可用 `impl_module_meta!` 宏省去手写 impl。
 - **能力**：模块构建产出的 `Clone` 值，存入 `TypeMap`，按模块类型检索。
-- **Typestate**：`Kit<Unbuilt>` 只能注册，`Kit<Ready>` 只能检索，误用在编译期报错。
+- **Typestate**：`Kit<Unbuilt>` 注册模块与配置，`Kit<Ready>` 检索能力；编译期排除的误用是 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建方法（`require` / `require_all` / `resolve` / `config` / `get_arc` 等定义在 `impl<S> Kit<S>` 的检索方法两态均可编译，供 `AutoBuilder::build` 回调使用；`require_ref` / `contains` / `factory` 仅存在于 `Kit<Ready>`）。
 - **Feature 门控**：异步、配置、生命周期等能力按需启用，详见[特性标志](#-特性标志)。
 
 ### ⚙️ 带配置的模块
@@ -295,18 +295,18 @@ fn main() {
 <tr><td><code>async</code></td><td>—</td><td><code>AsyncKit</code>：<code>Send + Sync</code> 异步能力管理，无额外依赖。</td><td>—</td></tr>
 <tr><td><code>confers</code></td><td><code>dep:confers</code>, <code>dep:serde</code>, <code>dep:serde_json</code>, <code>confers/feature-toggle</code></td><td><code>Configurable</code> + <code>ModuleConfig</code> trait + <code>Config</code> derive 宏再导出。</td><td>—</td></tr>
 <tr><td><code>reload</code></td><td><code>confers</code></td><td><code>subscribe</code> / <code>reload_config</code> 热重载订阅。</td><td>—</td></tr>
-<tr><td><code>encryption</code></td><td><code>confers</code>, <code>confers/encryption</code></td><td><code>set_encrypted</code> / <code>get_encrypted</code> 加密配置存储。</td><td>—</td></tr>
+<tr><td><code>encryption</code></td><td><code>reload</code>, <code>confers</code>, <code>confers/encryption</code>, <code>dep:zeroize</code></td><td><code>set_encrypted</code> / <code>get_encrypted</code> 加密配置存储。</td><td>—</td></tr>
 <tr><td><code>di</code></td><td>—</td><td>接口/实现分离：<code>register_as</code> / <code>resolve</code> 支持 <code>dyn Trait</code> 类型擦除。</td><td>—</td></tr>
 <tr><td><code>lifecycle</code></td><td>—</td><td>生命周期钩子：<code>on_ready</code>（构建后）+ <code>on_shutdown</code>（清理）。</td><td>—</td></tr>
 <tr><td><code>health</code></td><td>—</td><td>健康检查：<code>HealthCheck</code> trait + <code>HealthStatus</code> 状态报告；<code>AsyncHealthCheck</code>（health+async）的 <code>check</code> 刻意保持同步——网络探活应走 <code>on_ready</code> 探测一次并缓存结论，或用 <code>probe</code> 特性的 <code>ServiceProbe</code>；勿在 <code>check</code> 内做网络 I/O。</td><td>—</td></tr>
-<tr><td><code>probe</code></td><td><code>health</code></td><td>服务探针注册面：对象安全 <code>ServiceProbe</code> 异步探针——<code>register_probe</code>/<code>unregister_probe</code>/<code>probe_names</code>（任意状态可动态增减）、<code>AsyncKit&lt;Ready&gt;::run_probes()</code>（明细 + worst-of 聚合 + JSON；<code>latency_ms</code> 为框架实测墙钟）、<code>probe_aggregate()</code>（worst-of 结论）及 <code>run_probes_with_timeout()</code>/<code>probe_aggregate_with_timeout()</code>（单探针硬上限，悬挂探针记 unhealthy 继续跑完）；shutdown 自动注销并标记 stopped——停机后 <code>run_probes()</code> 返回显性不可服务（<code>stopped=true</code>），空注册表 ≠ 全部健康。与 <code>health</code> 的分工：<code>check</code> 只读缓存状态，<code>ServiceProbe</code> 才做真正的网络探活。</td><td>—</td></tr>
+<tr><td><code>probe</code></td><td><code>health</code>, <code>dep:futures-timer</code></td><td>服务探针注册面：对象安全 <code>ServiceProbe</code> 异步探针——<code>register_probe</code>/<code>unregister_probe</code>/<code>probe_names</code>（任意状态可动态增减）、<code>AsyncKit&lt;Ready&gt;::run_probes()</code>（明细 + worst-of 聚合 + JSON；<code>latency_ms</code> 为框架实测墙钟）、<code>probe_aggregate()</code>（worst-of 结论）及 <code>run_probes_with_timeout()</code>/<code>probe_aggregate_with_timeout()</code>（单探针硬上限，悬挂探针记 unhealthy 继续跑完）；shutdown 自动注销并标记 stopped——停机后 <code>run_probes()</code> 返回显性不可服务（<code>stopped=true</code>），空注册表 ≠ 全部健康。与 <code>health</code> 的分工：<code>check</code> 只读缓存状态，<code>ServiceProbe</code> 才做真正的网络探活。</td><td>—</td></tr>
 <tr><td><code>request-scope</code></td><td>—</td><td>作用域依赖：<code>Scope</code> / <code>AsyncScope</code> 每请求实例隔离。</td><td>—</td></tr>
 <tr><td><code>toggle</code></td><td>—</td><td>特性开关：运行时字符串键控的模块启用/禁用。</td><td>—</td></tr>
 <tr><td><code>observer</code></td><td>—</td><td>构建可观测：<code>BuildObserver</code> 回调（开始/完成/错误）。</td><td>—</td></tr>
 <tr><td><code>decorator</code></td><td>—</td><td>模块装饰器：构建后能力包装/增强。</td><td>—</td></tr>
 <tr><td><code>shutdown</code></td><td>—</td><td>优雅关闭协调器：分阶段有序关闭 + 超时强退。</td><td>—</td></tr>
 <tr><td><code>i18n</code></td><td><code>dep:icu</code>, <code>dep:writeable</code>, <code>dep:sys-locale</code></td><td>ICU4X 国际化：本地化数字/日期/复数/排序格式化。</td><td>—</td></tr>
-<tr><td><code>report</code></td><td><code>dep:serde</code>, <code>dep:serde_json</code></td><td>结构化构建报告：<code>BuildReport</code> JSON、依赖图 DOT/Mermaid 导出。</td><td>—</td></tr>
+<tr><td><code>report</code></td><td><code>dep:serde</code>, <code>dep:serde_json</code></td><td>结构化构建报告：<code>BuildReport</code> JSON 与 <code>contract_manifest()</code> 契约清单（依赖图 DOT/Mermaid 导出 <code>graph_dot()</code> / <code>graph_mermaid()</code> 无门控，默认可用）。</td><td>—</td></tr>
 <tr><td><code>presets</code></td><td><code>confers</code></td><td>预设模块包：<code>ConfersConfigModule</code>（配置中心作为 Kit 模块）+ 组合 builder。</td><td>—</td></tr>
 <tr><td><code>compose</code></td><td>—</td><td>子 Kit 组合：子 <code>Kit</code> 注册为父 <code>Kit</code> 的单一模块（能力命名空间隔离 + 跨 Kit 依赖校验）。</td><td>—</td></tr>
 <tr><td><code>presets-remote</code></td><td><code>presets</code>, <code>confers/remote</code>, <code>async</code></td><td>远程配置桥接：<code>ConfersConfigModule</code> 走 confers 远程 <code>AsyncSource</code>（remote 模块以 <code>AsyncKit</code> 为构建载体，故 imply <code>async</code>）。</td><td>—</td></tr>
@@ -331,7 +331,7 @@ trait-kit = { version = "0.5.0-rc.6", features = ["encryption"] }
 | 文档 | 说明 |
 |------|------|
 | [📖 用户指南](docs/USER_GUIDE.md) | 从安装到进阶用法的完整教程 |
-| [📘 API 参考](docs/API_REFERENCE.md) | 全部公开 API 速查，逐项标注 feature 门控 |
+| [📘 API 参考](docs/API_REFERENCE.md) | 核心公开 API 速查，逐项标注 feature 门控（非穷尽全量，完整清单以 rustdoc / docs.rs 为准） |
 | [🏗️ 架构文档](docs/ARCHITECTURE.md) | 设计模式、数据流、线程安全模型与目录结构 |
 | [🧪 验收测试场景](docs/TEST_SCENARIOS.md) | 验收场景穷举矩阵与 e2e 落地对账 |
 | [⚡ 性能基准](docs/PERFORMANCE.md) | criterion 基准设施、基线数据与复现方法 |
@@ -344,7 +344,7 @@ trait-kit = { version = "0.5.0-rc.6", features = ["encryption"] }
 
 ## 💻 示例
 
-`examples/` 是一个独立的 workspace 成员 `trait-kit-examples`（`publish = false`），共 20 个可独立运行的示例，覆盖全部公开 API 与 feature 门控。运行方式：
+`examples/` 是一个独立的 workspace 成员 `trait-kit-examples`（`publish = false`），共 20 个可独立运行的示例，覆盖 13 个 feature 门控的核心用法（`probe` / `report` / `compose` / `presets` / `presets-remote` / `version-negotiation` 暂无专属示例，用法见 [📘 API 参考](docs/API_REFERENCE.md)）。运行方式：
 
 ```sh
 cargo run -p trait-kit-examples --example <名称> --features <特性>
@@ -379,7 +379,7 @@ cargo run -p trait-kit-examples --example <名称> --features <特性>
 
 ## 🏗️ 架构
 
-trait-kit workspace 由四个成员组成：主 crate `trait-kit`、过程宏 crate `trait-kit-macros` 与 `trait-kit-macros`、示例 crate `trait-kit-examples`；主 crate 的 `src/` 分 `core` 接口层、`kit` 能力管理中心、`i18n` 国际化三层。
+trait-kit workspace 由三个成员组成：主 crate `trait-kit`、过程宏 crate `trait-kit-macros`（`trait-kit-derive` 已于 0.5.0-rc.5 并入退役）、示例 crate `trait-kit-examples`；主 crate 的 `src/` 分 `core` 接口层、`kit` 能力管理中心、`i18n` 国际化三层。
 
 **核心设计**：
 
@@ -393,7 +393,7 @@ workspace 结构图、依赖图验证、数据流、线程安全模型与目录�
 
 ### 🔄 构建生命周期
 
-`Kit` 的全部能力检索都发生在 `build()` 之后：注册期方法位于 `Kit<Unbuilt>`，检索期方法位于 `Kit<Ready>`，"未构建就检索"由编译期排除（trybuild UI 测试断言，见 `tests/ui/`）。
+`Kit` 的能力检索以 `build()` 之后为主：注册期方法位于 `Kit<Unbuilt>`，检索期方法位于 `Kit<Ready>`。编译期排除的误用（trybuild UI 测试断言，见 `tests/ui/`）是 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建方法；`require()` / `require_all()` / `resolve()` / `config()` / `get_arc()` 等定义在 `impl<S> Kit<S>` 的检索方法在 `Kit<Unbuilt>` 上亦可编译调用（供 `AutoBuilder::build` 回调读取依赖与配置），对未构建模块返回运行时错误；`require_ref` / `contains` / `factory` 仅存在于 `Kit<Ready>`。
 
 | 阶段 | 类型状态 | 可用操作 |
 |------|----------|----------|
@@ -440,12 +440,12 @@ struct DbConfig {
 
 let mut kit = Kit::new();
 kit.load_config::<TraitKitConfig>()?;        // 经 confers 从环境变量/默认值加载
-kit.populate_defaults::<DbConfig>()?;   // 零配置默认值
-kit.extract_shared::<TraitKitConfig>()?;     // 提取共享字段
-kit.inject_shared::<DbConfig>()?;       // 注入到 DbConfig
+kit.populate_defaults::<DbConfig>();         // 零配置默认值（返回是否实际写入）
+kit.extract_shared::<TraitKitConfig>();      // 提取共享字段
+kit.inject_shared::<DbConfig>();             // 注入到 DbConfig
 ```
 
-- `trait-kit-macros` 提供 `#[derive(ConfigInherit)]` 与 `#[derive(SharedConfig)]` 宏，共享字段以 `serde_json::Value` 保留类型信息。
+- `trait-kit-macros` 提供 `#[derive(Module)]`（生成 `ModuleMeta` 实现，等价于 `impl_module_meta!`）、`#[derive(ConfigInherit)]` 与 `#[derive(SharedConfig)]` 宏，共享字段以 `serde_json::Value` 保留类型信息。
 - `AsyncKit` 提供完全对称的 `Send + Sync` 配置 API。
 
 ---
@@ -458,13 +458,13 @@ kit.inject_shared::<DbConfig>()?;       // 注入到 DbConfig
 |------|------|------|
 | 单元测试 | `src/`（`#[cfg(test)]`） | 模块内部逻辑 |
 | 集成测试 | `tests/`（6 个目标）+ `tests/e2e/`（13 个注册目标） | `basic`、`config_inheritance_e2e`、`e2e_core`、`e2e_async`、`e2e_concurrency`、`e2e_feature_combinations` 等 |
-| 编译期 UI 测试 | `tests/compile_fail.rs` + `tests/ui/`（3 个用例） | 基于 trybuild，断言 typestate 误用（未构建即检索等）无法编译 |
+| 编译期 UI 测试 | `tests/compile_fail.rs` + `tests/ui/`（4 个用例）+ `tests/ui/probe_sensitive/`（probe 门控组 1 个） | 基于 trybuild，断言 typestate 误用（未构建即检索等）无法编译 |
 | 宏 crate 测试 | `trait-kit-macros/tests/` | `#[derive(Module)]` 展开正确性与编译失败用例 |
 | 文档测试 | README 与 doc 注释中的 `rust` 代码块 | 随 `cargo test` 编译运行 |
 | 示例验证 | `examples/`（20 个） | 每个示例独立运行，断言失败即 panic |
 | 基准测试 | `benches/kit_bench.rs` | criterion 基准（需 `toggle` feature） |
 
-测试规模：主 crate `src/` 与 `tests/` 共 **795** 个 `#[test]` 函数（截至 **0.5.0-rc.6**，`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `trait-kit-macros/tests/` 6 个。
+测试规模：主 crate `src/` 与 `tests/` 共 **911** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `trait-kit-macros/tests/` 6 个。
 
 ### 常用命令（与 CI 一致）
 
@@ -503,7 +503,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 80
 
 - **漏洞报告**：请勿通过公开 Issue 报告，使用 GitHub 私密通道 [Security Advisories](https://github.com/Kirky-X/trait-kit/security/advisories/new)（"Report a vulnerability"）。维护者承诺 48 小时内确认、7 天内给出初步评估（见 [SECURITY.md](docs/SECURITY.md)）。
 - **默认禁用 unsafe**：`#![deny(unsafe_code)]` 全 crate 强制；仅 6 处经 SAFETY 论证与 review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、RefCell guard 生命周期重锚 ×2）。
-- **编译期排除误用**：typestate 使"未构建就检索"成为编译错误；依赖图在 `build()` 时做缺失依赖与环检测。
+- **编译期排除误用**：typestate 将 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建误用前置为编译错误（trybuild UI 测试断言）；依赖图在 `build()` 时做缺失依赖与环检测。
 - **明确的线程安全边界**：同步 `Kit` 为 `!Sync`（编译器强制，见 `static_assertions` 断言），多线程用 `AsyncKit`（`Send + Sync`）。
 - **加密配置存储**（`encryption`）：XChaCha20-Poly1305 AEAD，HKDF 从主密钥与 `ModuleConfig::PATH` 派生字段密钥；`EncryptedBlob` 的 `Debug` 实现不泄露加密材料。
 - **供应链门禁**：`cargo deny check`（`deny.toml`：advisories / licenses / bans / sources）+ `cargo audit` 为 CI 必过项；CodeQL 静态分析常开；lefthook 私钥扫描拦截凭据入库。
@@ -520,7 +520,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 80
 
 <table>
 <tr><th>状态</th><th>条目</th><th>说明</th></tr>
-<tr><td>✅</td><td><b>0.5.0-rc.2</b>（2026-09-03）</td><td>文档与 Kit API 表同步；workspace 依赖路径本地化（<code>path</code> + <code>version</code> 双写）。</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.6</b>（2026-09-21）</td><td>rc.4–rc.6 已发布：观测端口与事件总线、Toggle 完整落地、<code>trait-kit-derive</code> 并入 <code>trait-kit-macros</code>、<code>confers</code> 依赖改走 crates.io（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
 <tr><td>✅</td><td><b>性能基准</b></td><td>criterion 基准 <code>benches/kit_bench.rs</code> 与 <code>docs/PERFORMANCE.md</code> 基线报告已建立（基线 2026-09-10）。</td></tr>
 <tr><td>📋</td><td><b>0.5.0 正式发布</b></td><td>次版本位 +1 后，按工作区发布计划同步下游仓库（oxcache、dbnexus、inklog、limiteron、sdforge）的 <code>path + version</code> 依赖要求。</td></tr>
 <tr><td>✅</td><td><b>cfg 门控完整性</b></td><td><code>--no-default-features --features async</code> 与 <code>async,observer</code> 组合 check、<code>clippy --features async --all-targets</code> 零告警，async doc 测试全通过——门控缺口已消除（2026-09-27 复测确认）。</td></tr>
@@ -566,9 +566,10 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 80
 
 详见 [CHANGELOG.md](docs/CHANGELOG.md)。近期版本要点：
 
-- **0.5.0-rc.2**（2026-09-03）：文档版本号与 Kit API 表格同步；`confers` 依赖路径本地化（`path` + `version` 双写）。
+- **0.5.0-rc.6**（2026-09-21）：`confers` 依赖改走 crates.io；依赖升级（syn 3.0、criterion 0.8、rustls 0.23.45）；发布流程加固（先发 `trait-kit-macros` 再发主 crate）。
+- **0.5.0-rc.5**（2026-09-14）：`trait-kit-derive` 并入 `trait-kit-macros`（`ConfigInherit` / `SharedConfig` 迁移，derive 子包退役）。
+- **0.5.0-rc.4**（2026-09-13）：观测端口（`MetricsPort` / `LogPort`）、运行时事件总线 `EventBus`、Toggle 完整落地、AsyncKit 配置对称补齐（rc.3 未单独发布，并入本节）。
 - **0.4.2**（2026-08-06）：修复 `AsyncKit::decorate()` 装饰器存储键错误（decorator 此前从未生效）。
-- **0.4.1**（2026-08-06）：国际化增强（`tr()` / `I18nManager` 不再依赖 `i18n` feature）；`EncryptedBlob` Debug 不再泄露加密材料；新增配置扩展 API 文档与示例。
 
 ---
 
@@ -585,7 +586,7 @@ Copyright (c) 2026 Kirky.X🌠
 - [`confers`](https://crates.io/crates/confers) — 配置加载、热重载与加密存储的底层能力。
 - [ICU4X](https://github.com/unicode-org/icu4x) — 国际化格式化（数字/日期/复数/排序）。
 - [Project Fluent](https://projectfluent.org/) — Fluent FTL 消息本地化方案。
-- [syn](https://github.com/dtolnay/syn) / [quote](https://github.com/dtolnay/quote) / [proc-macro2](https://github.com/dtolnay/proc-macro2) — 过程宏基础设施（`trait-kit-macros` 与 `trait-kit-macros`）。
+- [syn](https://github.com/dtolnay/syn) / [quote](https://github.com/dtolnay/quote) / [proc-macro2](https://github.com/dtolnay/proc-macro2) — 过程宏基础设施（`trait-kit-macros`）。
 - [Rust 社区](https://www.rust-lang.org/community) — 优秀的语言生态与工具链。
 
 ---

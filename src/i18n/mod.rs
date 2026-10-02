@@ -456,6 +456,69 @@ mod tests {
         );
     }
 
+    /// 守卫：自硬编码接入的键在 EN/ZH 束中按预期渲染（FTL 行语法错误会
+    /// 被 Fluent 静默降级，此处逐字断言以防回退到 key 本身）。
+    #[test]
+    fn bundle_hardcoded_i18n_keys_render_in_en_and_zh() {
+        for (key, args, en, zh) in [
+            (
+                "trait-kit-error-shutdown-hooks-panicked",
+                &[("failures", "3")][..],
+                "3 shutdown hook(s) panicked and were isolated",
+                "3 个关闭钩子已 panic 并被隔离",
+            ),
+            (
+                "trait-kit-log-shutdown-bridge-stranded",
+                &[("error", "boom"), ("stranded", "2")][..],
+                "register_shutdown_into: coordinator rejected a hook (boom); \
+                 2 remaining lifecycle hook(s) are stranded and will never run",
+                "register_shutdown_into：协调器拒绝了一个钩子（boom）；\
+                 剩余 2 个生命周期钩子未转移，将永远不会执行",
+            ),
+            (
+                "trait-kit-soft-build-degraded",
+                &[("module", "m"), ("error", "boom")][..],
+                "module `m` build failed: boom; degrading to fallback",
+                "模块 `m` 构建失败: boom；降级到回退实现",
+            ),
+            (
+                "trait-kit-probe-timeout-measured",
+                &[("measured_ms", "42")][..],
+                "probe timed out after 42ms",
+                "探针在 42 毫秒后超时",
+            ),
+            (
+                "trait-kit-probe-registry-stopped",
+                &[][..],
+                "probe registry stopped by shutdown",
+                "探针注册表已因关闭而停止",
+            ),
+            (
+                "trait-kit-probe-timeout-no-verdict",
+                &[][..],
+                "probe timed out before returning a verdict",
+                "探针在给出结论前超时",
+            ),
+            (
+                "trait-kit-error-panic-payload-non-string",
+                &[][..],
+                "non-string panic payload",
+                "非字符串 panic 载荷",
+            ),
+        ] {
+            assert_eq!(
+                format_from_bundle("en", key, args).as_deref(),
+                Some(en),
+                "{key}: en bundle degraded to the raw key"
+            );
+            assert_eq!(
+                format_from_bundle("zh", key, args).as_deref(),
+                Some(zh),
+                "{key}: zh bundle degraded to the raw key"
+            );
+        }
+    }
+
     #[test]
     fn bundle_en_and_zh_lookup_with_args() {
         assert_eq!(
@@ -840,5 +903,36 @@ mod tests {
             "'ZH' 输入应选择 zh 目录：got '{}'",
             upper.translate("trait-kit-error-already-registered", &[])
         );
+    }
+}
+
+#[cfg(test)]
+mod catalog_debug_tests {
+    use super::I18nManager;
+    #[cfg(feature = "i18n")]
+    use super::MessageCatalog;
+
+    /// `MessageCatalog` 的 Debug 走 Global 分支（FluentBundle 未实现
+    /// Debug，只输出形态与语言摘要）。
+    #[test]
+    fn manager_debug_renders_catalog_summary() {
+        let mgr = I18nManager::init();
+        let debug = format!("{mgr:?}");
+        assert!(
+            debug.contains("MessageCatalog"),
+            "catalog in debug: {debug}"
+        );
+        assert!(debug.contains("lang"), "lang summary in debug: {debug}");
+    }
+
+    /// Overlay 目录（parse 构造）走同一 Debug 的另一分支。
+    #[cfg(feature = "i18n")]
+    #[test]
+    fn overlay_catalog_debug_reports_kind_without_lang() {
+        let overlay = MessageCatalog::parse("zh", &["greet = 你好"]);
+        let debug = format!("{overlay:?}");
+        assert!(debug.contains("overlay"), "overlay kind in debug: {debug}");
+        assert!(!debug.contains("lang"), "overlay exposes no lang field");
+        assert_eq!(overlay.translate("greet", &[]), "你好");
     }
 }

@@ -49,6 +49,30 @@ i18n-error-date = date error: { $detail }
 
 i18n-error-format = formatting error: { $detail }
 
+# shutdown hook isolation (ShutdownResult::into_result BuildFailed source)
+
+trait-kit-error-shutdown-hooks-panicked = { $failures } shutdown hook(s) panicked and were isolated
+
+# register_shutdown_into stranded-hook log channel
+
+trait-kit-log-shutdown-bridge-stranded = register_shutdown_into: coordinator rejected a hook ({ $error }); { $stranded } remaining lifecycle hook(s) are stranded and will never run
+
+# soft (degradable) capability build degradation log
+
+trait-kit-soft-build-degraded = module `{ $module }` build failed: { $error }; degrading to fallback
+
+# probe readiness payloads (AsyncKit run_probes / probe_aggregate details)
+
+trait-kit-probe-timeout-measured = probe timed out after { $measured_ms }ms
+
+trait-kit-probe-registry-stopped = probe registry stopped by shutdown
+
+trait-kit-probe-timeout-no-verdict = probe timed out before returning a verdict
+
+# non-string panic payload summary (BuildFailed source)
+
+trait-kit-error-panic-payload-non-string = non-string panic payload
+
 # diagnostic context markers (used in error messages)
 
 trait-kit-diag-unknown = <unknown>

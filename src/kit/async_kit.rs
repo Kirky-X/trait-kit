@@ -1509,8 +1509,9 @@ impl AsyncKit<Ready> {
             let measured_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
             let status = match outcome {
                 Some(outcome) => outcome.status,
-                None => crate::core::health::HealthStatus::unhealthy(format!(
-                    "probe timed out after {measured_ms}ms"
+                None => crate::core::health::HealthStatus::unhealthy(crate::i18n::tr(
+                    "trait-kit-probe-timeout-measured",
+                    &[("measured_ms", &measured_ms.to_string())],
                 )),
             };
             worst_rank = worst_rank.max(status.severity_rank());
@@ -1583,6 +1584,7 @@ impl AsyncKit<Ready> {
         timeout: Option<std::time::Duration>,
     ) -> crate::core::health::HealthStatus {
         use crate::core::health::HealthStatus;
+        use crate::i18n::tr;
         let probes: Vec<(&'static str, Arc<dyn crate::core::probe::ServiceProbe>)> = self
             .probes
             .probes
@@ -1595,7 +1597,7 @@ impl AsyncKit<Ready> {
             .load(std::sync::atomic::Ordering::Acquire);
         if probes.is_empty() {
             return if stopped {
-                HealthStatus::unhealthy("probe registry stopped by shutdown")
+                HealthStatus::unhealthy(tr("trait-kit-probe-registry-stopped", &[]))
             } else {
                 HealthStatus::Healthy
             };
@@ -1609,7 +1611,7 @@ impl AsyncKit<Ready> {
             };
             let status = match outcome {
                 Some(outcome) => outcome.status,
-                None => HealthStatus::unhealthy("probe timed out before returning a verdict"),
+                None => HealthStatus::unhealthy(tr("trait-kit-probe-timeout-no-verdict", &[])),
             };
             let rank = status.severity_rank();
             if rank > worst_rank {
@@ -1754,10 +1756,14 @@ impl AsyncKit<Ready> {
                 // 整体降为 source），不把 register_local_hook 的变体面
                 // 当作跨函数隐式契约。
                 let stranded = count - index - 1;
-                log::error!(
-                    "register_shutdown_into: coordinator rejected a hook ({error}); \
-                     {stranded} remaining lifecycle hook(s) are stranded and will never run"
+                let message = tr(
+                    "trait-kit-log-shutdown-bridge-stranded",
+                    &[
+                        ("error", &error.to_string()),
+                        ("stranded", &stranded.to_string()),
+                    ],
                 );
+                log::error!("{message}");
                 return Err(TraitKitError::BuildFailed {
                     context: tr(
                         "trait-kit-error-shutdown-bridge-stranded",
@@ -2423,12 +2429,13 @@ impl AsyncKit {
             });
         }
 
-        let mut field_key = super::kit::derive_kit_field_key(master_key, C::PATH, "set_encrypted")?;
+        let field_key = super::kit::derive_kit_field_key(master_key, C::PATH, "set_encrypted")?;
 
         let mut plaintext = match serde_json::to_vec(value) {
             Ok(vec) => vec,
             Err(e) => {
-                super::kit::zeroize_bytes(&mut field_key);
+                // The derived key zeroes itself on drop (Zeroizing); only the
+                // plaintext buffer needs an explicit wipe.
                 return Err(TraitKitError::BuildFailed {
                     context: "set_encrypted".into(),
                     source: Box::new(e),
@@ -2436,8 +2443,7 @@ impl AsyncKit {
             }
         };
 
-        let encrypted = XChaCha20Crypto::new().encrypt(&plaintext, &field_key);
-        super::kit::zeroize_bytes(&mut field_key);
+        let encrypted = XChaCha20Crypto::new().encrypt(&plaintext, &*field_key);
         super::kit::zeroize_bytes(&mut plaintext);
         let (nonce, ciphertext) = encrypted.map_err(|e| TraitKitError::BuildFailed {
             context: "set_encrypted".into(),
@@ -2514,10 +2520,10 @@ impl AsyncKit {
                 key: std::any::type_name::<C>().to_string(),
             })?;
 
-        let mut field_key = super::kit::derive_kit_field_key(master_key, C::PATH, "get_encrypted")?;
+        let field_key = super::kit::derive_kit_field_key(master_key, C::PATH, "get_encrypted")?;
 
-        let decrypted = XChaCha20Crypto::new().decrypt(blob.nonce(), blob.ciphertext(), &field_key);
-        super::kit::zeroize_bytes(&mut field_key);
+        let decrypted =
+            XChaCha20Crypto::new().decrypt(blob.nonce(), blob.ciphertext(), &*field_key);
         let mut plaintext = decrypted.map_err(|e| TraitKitError::BuildFailed {
             context: "get_encrypted".into(),
             source: Box::new(e),
@@ -3580,6 +3586,91 @@ mod async_lifecycle_tests {
         );
     }
 
+    /// `on_ready` 返回 Err 时 `build()` 透传 `LifecycleFailed`（含模块名）。
+    struct AsyncReadyErrModule;
+    impl ModuleMeta for AsyncReadyErrModule {
+        const NAME: &'static str = "async-ready-err";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
+    }
+    impl AsyncAutoBuilder for AsyncReadyErrModule {
+        type Capability = Arc<()>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+            Box::pin(async move { Ok(Arc::new(())) })
+        }
+    }
+    impl AsyncLifecycle for AsyncReadyErrModule {
+        fn on_ready<'a>(
+            _kit: &'a AsyncKit<Ready>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), MockError>> + Send + 'a>> {
+            Box::pin(async { Err(MockError::Failed("on_ready boom".to_string())) })
+        }
+    }
+
+    #[test]
+    fn async_lifecycle_on_ready_failure_fails_build() {
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncReadyErrModule>().unwrap();
+        kit.register_lifecycle::<AsyncReadyErrModule>();
+        let err = block_on(kit.build()).expect_err("on_ready error fails the build");
+        let TraitKitError::LifecycleFailed { context, source } = &err else {
+            panic!("expected LifecycleFailed, got {err:?}")
+        };
+        assert_eq!(context, "async-ready-err");
+        assert!(
+            source.to_string().contains("on_ready boom"),
+            "the original hook error is preserved: {source}"
+        );
+    }
+
+    /// 重复 `register_lifecycle` 是 no-op：`on_shutdown` 仍恰好跑一次。
+    #[test]
+    fn async_register_lifecycle_is_idempotent() {
+        static DUP_SHUTDOWNS: AtomicUsize = AtomicUsize::new(0);
+
+        struct AsyncDupLcModule;
+        impl ModuleMeta for AsyncDupLcModule {
+            const NAME: &'static str = "async-dup-lc";
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                &[]
+            }
+        }
+        impl AsyncAutoBuilder for AsyncDupLcModule {
+            type Capability = Arc<()>;
+            type Error = MockError;
+            fn build<'a>(
+                _kit: &'a AsyncKit,
+            ) -> Pin<Box<dyn Future<Output = Result<Arc<()>, MockError>> + Send + 'a>> {
+                Box::pin(async move { Ok(Arc::new(())) })
+            }
+        }
+        impl AsyncLifecycle for AsyncDupLcModule {
+            fn on_shutdown<'a>(_cap: &'a Arc<()>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+                Box::pin(async {
+                    DUP_SHUTDOWNS.fetch_add(1, Ordering::SeqCst);
+                })
+            }
+        }
+
+        let before = DUP_SHUTDOWNS.load(Ordering::SeqCst);
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncDupLcModule>().unwrap();
+        kit.register_lifecycle::<AsyncDupLcModule>();
+        kit.register_lifecycle::<AsyncDupLcModule>();
+        let built = block_on(kit.build()).unwrap();
+
+        block_on(built.shutdown_async());
+        assert_eq!(
+            DUP_SHUTDOWNS.load(Ordering::SeqCst),
+            before + 1,
+            "duplicate registration must not double-run on_shutdown"
+        );
+    }
+
     // --- async shutdown: `shutdown_async` runs `AsyncLifecycle::on_shutdown` ---
 
     static ASYNC_LC_SHUTDOWN: AtomicUsize = AtomicUsize::new(0);
@@ -3800,6 +3891,106 @@ mod async_health_tests {
                     detail: "zero".into(),
                 }
             }
+        }
+    }
+
+    /// degraded / unhealthy 严重度排名映射（`worst_rank` 1 与 >1）。
+    struct DegradedHcModule;
+    impl ModuleMeta for DegradedHcModule {
+        const NAME: &'static str = "async-hc-degraded";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
+    }
+    impl AsyncAutoBuilder for DegradedHcModule {
+        type Capability = Arc<AsyncHcCap>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<AsyncHcCap>, MockError>> + Send + 'a>> {
+            Box::pin(async move { Ok(Arc::new(AsyncHcCap { val: 0 })) })
+        }
+    }
+    impl AsyncHealthCheck for DegradedHcModule {
+        fn check(_cap: &Arc<AsyncHcCap>) -> HealthStatus {
+            HealthStatus::Degraded {
+                detail: "slow".into(),
+            }
+        }
+    }
+
+    #[test]
+    fn async_health_check_reports_degraded_status() {
+        let mut kit = AsyncKit::new();
+        kit.register::<DegradedHcModule>().unwrap();
+        kit.register_health_check::<DegradedHcModule>();
+        let built = block_on(kit.build()).unwrap();
+        assert_eq!(
+            built.health_check::<DegradedHcModule>().unwrap(),
+            HealthStatus::Degraded {
+                detail: "slow".into()
+            }
+        );
+    }
+
+    #[cfg(feature = "report")]
+    #[test]
+    fn async_health_aggregate_maps_worst_rank_to_overall_status() {
+        use crate::kit::events::{EventBus, KitEvent, MemoryEventBus};
+        use std::sync::Mutex;
+
+        // 未注入 bus：overall status 仍按 worst rank 映射。
+        let mut kit = AsyncKit::new();
+        kit.register::<DegradedHcModule>().unwrap();
+        kit.register_health_check::<DegradedHcModule>();
+        let built = block_on(kit.build()).unwrap();
+        let aggregate = built.health_aggregate();
+        assert_eq!(aggregate.status, "degraded");
+        assert!(!aggregate.healthy, "degraded is not healthy");
+        assert_eq!(aggregate.modules.len(), 1);
+        assert_eq!(aggregate.modules[0].module, "async-hc-degraded");
+        assert_eq!(aggregate.modules[0].status, "degraded");
+
+        // 注入 bus：health_report 每模块发一条 HealthChanged。
+        let bus = Arc::new(MemoryEventBus::new());
+        let seen: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        bus.subscribe(move |event| {
+            if let KitEvent::HealthChanged { module, status, .. } = event {
+                sink.lock()
+                    .unwrap()
+                    .push(((*module).to_string(), (*status).to_string()));
+            }
+        });
+        let mut kit = AsyncKit::new();
+        kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn EventBus>));
+        kit.register::<DegradedHcModule>().unwrap();
+        kit.register_health_check::<DegradedHcModule>();
+        let built = block_on(kit.build()).unwrap();
+        let _ = built.health_json().expect("health json");
+        let log = seen.lock().unwrap().clone();
+        assert_eq!(
+            log,
+            vec![("async-hc-degraded".to_string(), "degraded".to_string())],
+            "one HealthChanged per checked module"
+        );
+    }
+
+    /// 注册了 checker 但模块未注册/未构建：capability 缺失时检查结果
+    /// 必须是显式 unhealthy，而不是 panic 或静默跳过。
+    #[test]
+    fn async_health_check_without_capability_is_unhealthy() {
+        let mut kit = AsyncKit::new();
+        kit.register_health_check::<AsyncHcModule>();
+        let built = block_on(kit.build()).expect("build with no modules");
+        let report = built.health_report();
+        assert_eq!(report.len(), 1, "checker is still sampled");
+        assert_eq!(report[0].0, "async-hc");
+        match &report[0].1 {
+            HealthStatus::Unhealthy { detail } => {
+                assert_eq!(detail, "capability not found");
+            }
+            other => panic!("expected Unhealthy, got {other:?}"),
         }
     }
 
@@ -5599,5 +5790,427 @@ mod async_probe_bridge_tests {
             built.probe_names().is_empty(),
             "bridging shutdown into a coordinator must unregister probes"
         );
+    }
+}
+
+// ─── Config surface tests (confers) ────────────────────────────────────
+
+#[cfg(all(test, feature = "async", feature = "confers"))]
+mod async_config_api_tests {
+    use super::AsyncKit;
+    use crate::error::TraitKitError;
+    use crate::kit::{Configurable, ModuleConfig, Validatable};
+    use std::collections::HashMap;
+
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct AppConfig {
+        name: String,
+        replicas: u32,
+    }
+
+    impl Configurable for AppConfig {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Ok(Self {
+                name: "orders".to_string(),
+                replicas: 3,
+            })
+        }
+    }
+
+    impl ModuleConfig for AppConfig {
+        const PATH: &'static str = "app.toml";
+        fn default_value() -> Self {
+            Self {
+                name: "default".to_string(),
+                replicas: 1,
+            }
+        }
+    }
+
+    impl Validatable for FailingCfg {
+        fn validate(&self) -> Result<(), Vec<String>> {
+            Ok(())
+        }
+    }
+
+    impl Validatable for AppConfig {
+        fn validate(&self) -> Result<(), Vec<String>> {
+            if self.replicas == 0 {
+                Err(vec!["replicas must be > 0".to_string()])
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    /// `load()` always fails — exercises every load-error path.
+    #[derive(Debug, Clone, PartialEq)]
+    struct FailingCfg;
+
+    impl Configurable for FailingCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Err(Box::new(std::io::Error::other("no config source")))
+        }
+    }
+
+    impl ModuleConfig for FailingCfg {
+        const PATH: &'static str = "failing.toml";
+        fn default_value() -> Self {
+            Self
+        }
+    }
+
+    /// Loads with a placeholder that variable interpolation must replace.
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct InterpCfg {
+        endpoint: String,
+    }
+
+    impl Configurable for InterpCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Ok(Self {
+                endpoint: "${HOST}:8080".to_string(),
+            })
+        }
+    }
+
+    #[test]
+    fn load_config_stores_and_reads_back() {
+        let kit = AsyncKit::new();
+        kit.load_config::<AppConfig>().expect("load ok");
+        let stored = kit.config::<AppConfig>().expect("config stored");
+        assert_eq!(stored.name, "orders");
+        assert_eq!(stored.replicas, 3);
+    }
+
+    #[test]
+    fn load_config_propagates_load_failure() {
+        let kit = AsyncKit::new();
+        let err = kit.load_config::<FailingCfg>().unwrap_err();
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "load_config"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn load_and_validate_accepts_valid_config() {
+        let kit = AsyncKit::new();
+        kit.load_and_validate::<AppConfig>().expect("valid config");
+        assert_eq!(kit.config::<AppConfig>().unwrap().replicas, 3);
+    }
+
+    #[test]
+    fn load_and_validate_propagates_load_failure() {
+        let kit = AsyncKit::new();
+        let err = kit.load_and_validate::<FailingCfg>().unwrap_err();
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "load_and_validate"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn load_and_validate_rejects_invalid_config() {
+        #[derive(Clone)]
+        struct InvalidCfg;
+        impl Configurable for InvalidCfg {
+            fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+                Ok(Self)
+            }
+        }
+        impl Validatable for InvalidCfg {
+            fn validate(&self) -> Result<(), Vec<String>> {
+                Err(vec!["always invalid".to_string()])
+            }
+        }
+        let kit = AsyncKit::new();
+        let err = kit.load_and_validate::<InvalidCfg>().unwrap_err();
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "load_and_validate"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn snapshot_restore_roundtrip_and_missing_snapshot_error() {
+        let kit = AsyncKit::new();
+        assert!(
+            !kit.snapshot_config::<AppConfig>(),
+            "no snapshot before the config exists"
+        );
+        kit.set_config(AppConfig {
+            name: "v1".to_string(),
+            replicas: 1,
+        });
+        assert!(kit.snapshot_config::<AppConfig>(), "snapshot stored");
+        assert!(kit.has_snapshot::<AppConfig>());
+
+        kit.set_config(AppConfig {
+            name: "v2".to_string(),
+            replicas: 9,
+        });
+        kit.restore_config::<AppConfig>().expect("restore ok");
+        assert_eq!(kit.config::<AppConfig>().unwrap().name, "v1");
+
+        assert!(kit.restore_config::<FailingCfg>().is_err(), "no snapshot");
+    }
+
+    #[test]
+    fn load_config_with_interpolates_variables() {
+        let kit = AsyncKit::new();
+        let mut vars: HashMap<String, String> = HashMap::new();
+        vars.insert("HOST".to_string(), "example.org".to_string());
+        kit.load_config_with::<InterpCfg, _>(&vars)
+            .expect("interpolation ok");
+        assert_eq!(
+            kit.config::<InterpCfg>().unwrap().endpoint,
+            "example.org:8080"
+        );
+    }
+
+    #[test]
+    fn load_config_or_default_falls_back_to_default_value() {
+        let kit = AsyncKit::new();
+        assert!(
+            kit.load_config_or_default::<AppConfig>().unwrap(),
+            "load ok"
+        );
+        assert_eq!(kit.config::<AppConfig>().unwrap().name, "orders");
+
+        let fallback = AsyncKit::new();
+        assert!(
+            !fallback.load_config_or_default::<FailingCfg>().unwrap(),
+            "load failed -> default"
+        );
+        assert_eq!(fallback.config::<FailingCfg>().unwrap(), FailingCfg);
+    }
+}
+
+// ─── Reload surface tests ──────────────────────────────────────────────
+
+#[cfg(all(test, feature = "async", feature = "reload"))]
+mod async_reload_tests {
+    use super::AsyncKit;
+    use crate::error::TraitKitError;
+    use crate::kit::Configurable;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug, Clone)]
+    struct PingCfg;
+
+    impl Configurable for PingCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Ok(Self)
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct FailingCfg;
+
+    impl Configurable for FailingCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Err(Box::new(std::io::Error::other("no config source")))
+        }
+    }
+
+    #[test]
+    fn reload_config_notifies_subscribers_of_that_type() {
+        let kit = AsyncKit::new();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let sink = Arc::clone(&hits);
+        kit.subscribe::<PingCfg>(move || {
+            sink.fetch_add(1, Ordering::SeqCst);
+        });
+        kit.reload_config::<PingCfg>().expect("reload ok");
+        assert_eq!(hits.load(Ordering::SeqCst), 1, "subscriber notified once");
+        // Reload a different type: no callbacks for PingCfg.
+        kit.reload_config::<FailingCfg>().unwrap_err();
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+    }
+
+    /// 没有订阅者的类型 reload：回调列表为空，reload 仍成功。
+    #[test]
+    fn reload_config_without_subscribers_succeeds() {
+        let kit = AsyncKit::new();
+        kit.reload_config::<PingCfg>()
+            .expect("no subscribers is fine");
+    }
+
+    #[test]
+    fn reload_config_propagates_load_failure() {
+        let kit = AsyncKit::new();
+        let err = kit.reload_config::<FailingCfg>().unwrap_err();
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "reload_config"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+}
+
+// ─── Encryption surface tests ──────────────────────────────────────────
+
+#[cfg(all(test, feature = "async", feature = "encryption"))]
+mod async_encryption_tests {
+    use super::AsyncKit;
+    use crate::error::TraitKitError;
+    use crate::kit::ModuleConfig;
+
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct SecretCfg {
+        token: String,
+    }
+
+    impl ModuleConfig for SecretCfg {
+        const PATH: &'static str = "secret.toml";
+        fn default_value() -> Self {
+            Self {
+                token: String::new(),
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct OtherCfg {
+        n: u32,
+    }
+
+    impl ModuleConfig for OtherCfg {
+        const PATH: &'static str = "other.toml";
+        fn default_value() -> Self {
+            Self { n: 0 }
+        }
+    }
+
+    const KEY: &[u8] = b"0123456789abcdef"; // 16 bytes
+    const OTHER_KEY: &[u8] = b"fedcba9876543210";
+
+    #[test]
+    fn set_encrypted_rejects_short_master_key() {
+        let kit = AsyncKit::new();
+        let value = SecretCfg {
+            token: "x".to_string(),
+        };
+        let err = kit.set_encrypted(&value, b"short").unwrap_err();
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "set_encrypted"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn encrypted_config_roundtrip() {
+        let kit = AsyncKit::new();
+        let value = SecretCfg {
+            token: "t0p-s3cret".to_string(),
+        };
+        kit.set_encrypted(&value, KEY).expect("encrypt ok");
+        assert!(kit.contains_encrypted::<SecretCfg>());
+        let decrypted: SecretCfg = kit.get_encrypted(KEY).expect("decrypt ok");
+        assert_eq!(decrypted, value);
+    }
+
+    #[test]
+    fn get_encrypted_errors_on_missing_blob_and_short_key() {
+        let kit = AsyncKit::new();
+        let err: TraitKitError = kit.get_encrypted::<SecretCfg>(KEY).unwrap_err();
+        assert!(matches!(err, TraitKitError::MissingConfig { .. }));
+
+        let value = OtherCfg { n: 1 };
+        kit.set_encrypted(&value, KEY).expect("encrypt ok");
+        let err: TraitKitError = kit.get_encrypted::<OtherCfg>(b"short").unwrap_err();
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "get_encrypted"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+        assert!(!kit.contains_encrypted::<SecretCfg>());
+    }
+
+    #[test]
+    fn get_encrypted_fails_with_wrong_key() {
+        let kit = AsyncKit::new();
+        let value = SecretCfg {
+            token: "t0p-s3cret".to_string(),
+        };
+        kit.set_encrypted(&value, KEY).expect("encrypt ok");
+        assert!(kit.get_encrypted::<SecretCfg>(OTHER_KEY).is_err());
+    }
+}
+
+// ─── set_config / set_config_arc events + observation ports ────────────
+
+#[cfg(all(test, feature = "async"))]
+mod async_config_events_tests {
+    use super::AsyncKit;
+    use crate::kit::events::{EventBus, KitEvent, MemoryEventBus};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct PlainCfg(u32);
+
+    #[test]
+    fn set_config_publishes_new_then_replaced_event() {
+        let bus = Arc::new(MemoryEventBus::new());
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        bus.subscribe(move |event| {
+            if let KitEvent::ConfigChanged { summary, .. } = event {
+                sink.lock().unwrap().push(summary.clone());
+            }
+        });
+        let mut kit = AsyncKit::new();
+        kit.with_event_bus(Some(Arc::clone(&bus) as Arc<dyn EventBus>));
+
+        kit.set_config(PlainCfg(1));
+        kit.set_config(PlainCfg(2));
+        kit.set_config_arc(PlainCfg(3));
+        kit.set_config_arc(PlainCfg(4));
+
+        let log = seen.lock().unwrap().clone();
+        assert_eq!(
+            log,
+            vec![
+                "set (new)".to_string(),
+                "set (replaced)".to_string(),
+                "set_arc (new)".to_string(),
+                "set_arc (replaced)".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn set_config_without_bus_succeeds_silently() {
+        let kit = AsyncKit::new();
+        kit.set_config(PlainCfg(1));
+        assert_eq!(kit.config::<PlainCfg>().unwrap().0, 1);
+    }
+
+    #[test]
+    fn set_config_arc_stores_arc_snapshot() {
+        let kit = AsyncKit::new();
+        kit.set_config_arc(PlainCfg(7));
+        let arc = kit.config_arc::<PlainCfg>().expect("arc snapshot");
+        assert_eq!(arc.0, 7);
+    }
+
+    #[test]
+    fn observation_ports_roundtrip_and_concurrency_clamp() {
+        let mut kit = AsyncKit::new();
+        assert!(kit.event_bus().is_none(), "default bus is None");
+
+        kit.with_event_bus(Some(Arc::new(MemoryEventBus::new()) as Arc<dyn EventBus>));
+        kit.with_metrics_port(Some(
+            Arc::new(crate::kit::NoOpMetricsPort) as Arc<dyn crate::kit::MetricsPort>
+        ));
+        kit.with_log_port(Some(
+            Arc::new(crate::kit::NoOpLogPort) as Arc<dyn crate::kit::LogPort>
+        ));
+        kit.with_max_concurrency(0);
+        kit.with_max_concurrency(8);
+
+        assert!(kit.event_bus().is_some());
+        assert!(kit.metrics_port().is_some());
+        assert!(kit.log_port().is_some());
     }
 }

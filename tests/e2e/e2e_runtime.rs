@@ -74,3 +74,68 @@ fn e2e_shutdown_global_timeout_display_contains_all_phases() {
         );
     }
 }
+
+// ─── 健康历史环形容量边界（health 落点，HLX-03 同文件） ────────────────
+
+/// capacity=0 禁用采样（record 为 no-op、history 恒空）；先采 n 条再
+/// 收缩容量至 k<n → 既有历史立即截断到最近 k 条。
+#[cfg(feature = "health")]
+mod health_history_capacity_edge_e2e {
+    use std::sync::Arc;
+    use trait_kit::core::HealthCheck;
+    use trait_kit::core::health::HealthStatus;
+    use trait_kit::impl_module_meta;
+    use trait_kit::prelude::*;
+
+    struct HistMod;
+    impl_module_meta!(HistMod, "hist-mod");
+    impl AutoBuilder for HistMod {
+        type Capability = Arc<u32>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            Ok(Arc::new(1))
+        }
+    }
+    impl HealthCheck for HistMod {
+        fn check(_cap: &Arc<u32>) -> HealthStatus {
+            HealthStatus::Healthy
+        }
+    }
+
+    fn kit_with_checker() -> trait_kit::kit::Kit<Ready> {
+        let mut kit = Kit::new();
+        kit.register::<HistMod>().unwrap();
+        kit.register_health_check::<HistMod>();
+        kit.build().unwrap()
+    }
+
+    #[test]
+    fn e2e_health_history_zero_capacity_disables_sampling() {
+        let ready = kit_with_checker();
+        ready.set_health_history_capacity(0);
+        for _ in 0..5 {
+            ready.record_health_history();
+        }
+        assert!(
+            ready.health_history().is_empty(),
+            "capacity=0 时 record 应为 no-op（history 恒空）"
+        );
+    }
+
+    #[test]
+    fn e2e_health_history_shrink_truncates_existing_samples() {
+        let ready = kit_with_checker();
+        ready.set_health_history_capacity(4);
+        for _ in 0..4 {
+            ready.record_health_history();
+        }
+        assert_eq!(ready.health_history().len(), 4, "先采满 4 条");
+
+        // 收缩容量到 2：既有历史立即截断到最近 2 条。
+        ready.set_health_history_capacity(2);
+        let history = ready.health_history();
+        assert_eq!(history.len(), 2, "收缩容量应立即截断既有历史到最近 k 条");
+        // 时间戳与状态字段齐全。
+        assert!(matches!(history[1].status, HealthStatus::Healthy));
+    }
+}

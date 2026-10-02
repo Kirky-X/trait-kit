@@ -9,6 +9,8 @@
 //   （eager 已有 tests/e2e_feature_combinations.rs::e2e_decorator_wraps_capability，
 //     此处固化 lazy、multi、interface 三条路径）
 // - DEC-07 装饰器闭包 panic / 内部 downcast 失败的文档化 panic 语义
+// - decorate 未注册目标：build() 期文档化 panic（decorate 为发射后不管
+//   式注册，与 try_decorate 的注册时立即报错互为对照）
 
 #![cfg(feature = "decorator")]
 
@@ -236,9 +238,127 @@ fn e2e_decorator_downcast_mismatch_panics_with_documented_message() {
 fn kit_with_impostor_decorator() -> Kit {
     let mut kit = Kit::new();
     kit.decorate::<ImpostorMod>(|cap: VictimMod| cap);
+    // ImpostorMod 自身也须注册（未注册装饰目标在 build 期是另一条文档化
+    // panic，见 e2e_decorate_unregistered_target_panics_on_build）；本场景
+    // 的要点是 ImpostorMod 的能力类型与 VictimMod 的模块 TypeId 重合，
+    // 与 ImpostorMod 是否注册无关。
+    kit.register::<ImpostorMod>().unwrap();
     kit.register::<VictimMod>().unwrap();
     // VictimMod 未出现在装饰映射表 → eager 路径回退以模块自身 TypeId
     // 查找装饰器 → 命中 ImpostorMod 以 VictimMod 为键注册的装饰 →
     // Box<Arc<u32>> downcast 到 VictimMod 失败。
     kit
+}
+
+// ─── on_ready 失败 → Kit<Ready> 整体丢弃，任何 on_shutdown 都不执行 ────
+
+#[cfg(feature = "lifecycle")]
+mod ready_discard_on_ready_failure_e2e {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use trait_kit::core::Lifecycle;
+    use trait_kit::impl_module_meta;
+    use trait_kit::prelude::*;
+
+    static SYNC_SHUTDOWN_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    struct HealthyShutdownMod;
+    impl_module_meta!(HealthyShutdownMod, "healthy-shutdown-mod");
+    impl AutoBuilder for HealthyShutdownMod {
+        type Capability = Arc<u32>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            Ok(Arc::new(1))
+        }
+    }
+    impl Lifecycle for HealthyShutdownMod {
+        fn on_shutdown(_cap: &Arc<u32>) {
+            SYNC_SHUTDOWN_COUNT.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct FailingReadyMod;
+    impl_module_meta!(FailingReadyMod, "failing-ready-mod");
+    impl AutoBuilder for FailingReadyMod {
+        type Capability = Arc<u32>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+            Ok(Arc::new(2))
+        }
+    }
+    impl Lifecycle for FailingReadyMod {
+        fn on_ready(_kit: &Kit<Ready>) -> Result<(), TraitKitError> {
+            Err(TraitKitError::MissingCapability {
+                key: "on-ready boom".into(),
+            })
+        }
+        fn on_shutdown(_cap: &Arc<u32>) {
+            SYNC_SHUTDOWN_COUNT.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    /// on_ready 返回 Err → build() 返回 LifecycleFailed，已成功构建的
+    /// 其余模块（含 on_ready 失败模块自身）的 on_shutdown 一律不执行
+    /// （Kit<Ready> 未产出，shutdown 回调表随 Kit 一起丢弃）。
+    #[test]
+    fn e2e_on_ready_failure_discards_ready_and_runs_no_shutdown() {
+        let before = SYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst);
+        let mut kit = Kit::new();
+        kit.register::<HealthyShutdownMod>().unwrap();
+        kit.register::<FailingReadyMod>().unwrap();
+        kit.register_lifecycle::<HealthyShutdownMod>();
+        kit.register_lifecycle::<FailingReadyMod>();
+
+        let err = kit.build().expect_err("on_ready 失败应使 build 整体失败");
+        assert!(matches!(err, TraitKitError::LifecycleFailed { .. }));
+
+        assert_eq!(
+            SYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst),
+            before,
+            "on_ready 失败后任何 on_shutdown 都不得执行"
+        );
+    }
+}
+
+// ─── decorate 未注册目标：实测行为固化 ─────────────────────────────
+
+struct NeverRegisteredMod;
+impl_module_meta!(NeverRegisteredMod, "never-registered-mod");
+impl AutoBuilder for NeverRegisteredMod {
+    type Capability = Arc<u32>;
+    type Error = TraitKitError;
+    fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
+        unreachable!("该模块从不注册，不应被构建")
+    }
+}
+
+/// decorate::<M> 于 M 未注册：`decorate()` 是"发射后不管"式注册（目标
+/// 允许在装饰之后才注册），不做注册时校验；缺失目标延迟到 build() 期以
+/// 文档化 panic 暴露（与 try_decorate 的注册时立即报错契约互为对照，
+/// 后者由 kit_tests::try_decorate_rejects_unregistered_target_immediately
+/// 固化）。
+#[test]
+fn e2e_decorate_unregistered_target_panics_on_build() {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut kit = Kit::new();
+        kit.register::<OnionMod>().unwrap();
+        kit.decorate::<NeverRegisteredMod>(|_cap: Arc<u32>| -> Arc<u32> {
+            unreachable!("未注册模块的装饰器闭包不应被应用")
+        });
+        kit.build().unwrap()
+    }));
+    let err = result.expect_err("未注册装饰目标应在 build() 期 panic");
+    let msg = err
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_string())
+        .or_else(|| err.downcast_ref::<String>().cloned())
+        .unwrap_or_default();
+    assert!(
+        msg.contains("decorator target not registered"),
+        "应命中文档化的 build 期 panic：got '{msg}'"
+    );
+    assert!(
+        msg.contains("never-registered-mod"),
+        "panic 消息应携带未注册目标的模块名：got '{msg}'"
+    );
 }

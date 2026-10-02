@@ -557,3 +557,27 @@ mod tests {
         assert!(debug.contains("MissingConfig"));
     }
 }
+
+// ─── Display branches for rarely-hit variants ──────────────────────────
+
+#[cfg(test)]
+mod display_branch_tests {
+    use super::TraitKitError;
+
+    #[test]
+    fn decorator_target_missing_display_renders_module() {
+        let err = TraitKitError::DecoratorTargetMissing { module: "m" };
+        let msg = format!("{err}");
+        assert_eq!(
+            msg,
+            "decorator target module `m` is not registered (checked at registration time)"
+        );
+    }
+
+    #[test]
+    fn capability_type_mismatch_display_renders_key() {
+        let err = TraitKitError::CapabilityTypeMismatch { key: "k".into() };
+        let msg = format!("{err}");
+        assert_eq!(msg, "capability type mismatch for `k`");
+    }
+}

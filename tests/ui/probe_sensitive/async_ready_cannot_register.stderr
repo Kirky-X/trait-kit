@@ -1,0 +1,15 @@
+error[E0599]: no method named `register` found for struct `trait_kit::AsyncKit<trait_kit::AsyncReady>` in the current scope
+  --> tests/ui/probe_sensitive/async_ready_cannot_register.rs:38:11
+   |
+38 |     ready.register::<MyModule>().unwrap();
+   |           ^^^^^^^^
+   |
+help: there is a method `register_probe` with a similar name, but with different arguments
+  --> src/kit/async_kit.rs
+   |
+   | /     pub fn register_probe(
+   | |         &self,
+   | |         name: &'static str,
+   | |         probe: Arc<dyn crate::core::probe::ServiceProbe>,
+   | |     ) {
+   | |_____^

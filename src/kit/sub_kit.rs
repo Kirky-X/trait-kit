@@ -353,6 +353,11 @@ mod tests {
             .require::<SubKitModule<LazySliceSpec>>()
             .expect("handle");
 
+        assert!(
+            format!("{handle:?}").starts_with("SubKitHandle("),
+            "Debug reports the child module count"
+        );
+
         // require 前不可见（查询不触发构建）
         assert!(!handle.contains::<LazyLeaf>());
         let cap = handle.require::<LazyLeaf>().expect("lazy build in child");

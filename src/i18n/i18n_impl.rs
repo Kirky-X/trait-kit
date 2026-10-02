@@ -131,6 +131,20 @@ mod tests {
         );
     }
 
+    /// NaN/Infinity 不是合法十进制文本：格式化必须显式报错，
+    /// 不得静默回退。
+    #[test]
+    fn format_number_rejects_non_finite_values() {
+        let fmt = I18nFormatter::new("en-US").expect("en-US locale");
+        match fmt.format_number(f64::NAN) {
+            Err(I18nError::InvalidNumber { input, .. }) => {
+                assert!(!input.is_empty());
+            }
+            other => panic!("expected InvalidNumber, got {other:?}"),
+        }
+        assert!(fmt.format_number(f64::INFINITY).is_err());
+    }
+
     #[test]
     fn format_number_tiny_value_does_not_collapse_to_zero() {
         // 旧实现对 1e-300 级小值经 ".20" 截断 + 尾零修剪后输出 "0"；

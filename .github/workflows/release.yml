@@ -101,22 +101,31 @@ jobs:
 
       # 发布步骤带 continue-on-error(幂等重跑),但版本最终必须可查——
       # 否则此处硬失败,防止"绿色 Release 实际没发出去"的静默漏发。
+      # 校验版本取自 Cargo.toml workspace.version(publish 的就是它,
+      # 对 tag push 与 workflow_dispatch 同样成立),不取 tag 名以免
+      # 手动触发时 tag 缺失。无任何 registry token 时本就不发布,整体跳过。
       - name: Verify on crates.io
-        if: always()
+        if: always() && (env.HAS_CARGO_TOKEN == 'true' || env.HAS_CRATES_TOKEN == 'true')
         run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          if [ -z "$VERSION" ]; then
+            echo "::error::无法从 Cargo.toml 提取 workspace.version,校验中止"
+            exit 1
+          fi
+          echo "Verifying trait-kit + trait-kit-macros ${VERSION} on crates.io"
           for crate in trait-kit trait-kit-macros; do
             ok=""
             for i in 1 2 3 4 5; do
               sleep 20
               # crates.io API 必须带 User-Agent,否则 403
               CODE=$(curl -s -o /dev/null -w "%{http_code}" -H 'User-Agent: kirky-x-release-verify' \
-                "https://crates.io/api/v1/crates/${crate}/0.5.0-rc.6")
+                "https://crates.io/api/v1/crates/${crate}/${VERSION}")
               echo "try$i ${crate}: HTTP ${CODE}"
               if [ "$CODE" = "200" ]; then ok=1; break; fi
               if [ "$CODE" != "403" ]; then break; fi
             done
             if [ -z "$ok" ]; then
-              echo "::error::${crate} 0.5.0-rc.6 未出现在 crates.io(HTTP ${CODE})"
+              echo "::error::${crate} ${VERSION} 未出现在 crates.io(HTTP ${CODE})"
               exit 1
             fi
           done

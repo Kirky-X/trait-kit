@@ -21,7 +21,7 @@
 Modules declare a contract via `ModuleMeta` + `AutoBuilder`; the Kit centralizes assembly, validation, and capability lookup:
 
 <table style="width:100%; border-collapse: collapse">
-<tr><td align="center" width="25%" style="padding: 12px">🧩<br><b>Standard Module Interface</b><br><span style="color:#64748B">uniform contract, one-line macro declaration</span></td><td align="center" width="25%" style="padding: 12px">🏗️<br><b>Build-Time Validation</b><br><span style="color:#64748B">typestate dependency-graph checks before startup</span></td><td align="center" width="25%" style="padding: 12px">🔎<br><b>Type-Safe Retrieval</b><br><span style="color:#64748B">by module type, no string keys, no downcast</span></td><td align="center" width="25%" style="padding: 12px">⚡<br><b>Extensible on Demand</b><br><span style="color:#64748B">18 optional features, all gated, zero default cost</span></td></tr>
+<tr><td align="center" width="25%" style="padding: 12px">🧩<br><b>Standard Module Interface</b><br><span style="color:#64748B">uniform contract, one-line macro declaration</span></td><td align="center" width="25%" style="padding: 12px">🏗️<br><b>Build-Time Validation</b><br><span style="color:#64748B">typestate dependency-graph checks before startup</span></td><td align="center" width="25%" style="padding: 12px">🔎<br><b>Type-Safe Retrieval</b><br><span style="color:#64748B">by module type, no string keys, no downcast</span></td><td align="center" width="25%" style="padding: 12px">⚡<br><b>Extensible on Demand</b><br><span style="color:#64748B">19 optional features, all gated, zero default cost</span></td></tr>
 </table>
 
 </div>
@@ -76,7 +76,7 @@ Modules declare a contract via `ModuleMeta` + `AutoBuilder`; the Kit centralizes
 <td width="50%">🌍 <b>ICU4X Internationalization</b><br><sub>Locale-aware number / date / plural / collation formatting, plus built-in Fluent FTL translation (<code>tr()</code>) for English and Chinese.</sub></td>
 </tr>
 <tr>
-<td width="50%">🧱 <b>Minimal Default Dependencies</b><br><sub><code>default = []</code>: zero default dependencies; <code>confers</code>, <code>serde</code>, <code>serde_json</code>, <code>icu</code>, etc. are all optional and feature-gated.</sub></td>
+<td width="50%">🧱 <b>Minimal Default Dependencies</b><br><sub><code>default = []</code>: no optional feature enabled; only 3 mandatory deps ship by default (Fluent translation <code>fluent-bundle</code> / <code>unic-langid</code> and the <code>log</code> facade), while <code>confers</code>, <code>serde</code>, <code>serde_json</code>, <code>icu</code>, etc. are all optional and feature-gated.</sub></td>
 <td width="50%">🚫 <b>unsafe denied by default</b><br><sub><code>#![deny(unsafe_code)]</code> is enforced crate-wide; only 6 locally audited exemptions exist (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, RefCell-guard lifetime re-anchoring ×2.</sub></td>
 </tr>
 </table>
@@ -91,7 +91,7 @@ Modules declare a contract via `ModuleMeta` + `AutoBuilder`; the Kit centralizes
 - **Scoped dependencies** (`request-scope`): `Scope` / `AsyncScope` per-request instance isolation.
 - **Feature toggles** (`toggle`): `enable_toggle` / `is_toggle_enabled` / `register_if_toggle` runtime string-keyed enable/disable.
 - **Module decorators** (`decorator`): `decorate::<M>(fn)` post-build capability wrapping/enhancement.
-- **Structured build reports** (`report`): `BuildReport` JSON export plus `graph_dot()` / `graph_mermaid()` dependency-graph exports.
+- **Structured build reports** (`report`): `BuildReport` JSON export plus `contract_manifest()`; the `graph_dot()` / `graph_mermaid()` dependency-graph text exports have no feature gate and are available by default.
 - **Preset modules** (`presets` / `presets-remote`): `ConfersConfigModule` turns the confers config hub into a first-class Kit module, with remote config source support.
 - **Sub-Kit composition** (`compose`): register a child `Kit` as a single module in a parent `Kit`, with namespaced capabilities.
 - **Version negotiation** (`version-negotiation`): `ModuleMeta::VERSION` vs `required_versions` semver-compat validation at `build()` time.
@@ -125,7 +125,7 @@ Minimum Supported Rust Version (MSRV): **1.97.1** (edition 2024).
 cargo add trait-kit
 ```
 
-The default features only include the core `ModuleMeta` + `AutoBuilder` + `Kit`, with no extra dependencies.
+The default features (`default = []`) only include the core `ModuleMeta` + `AutoBuilder` + `Kit`. The crate always ships 3 mandatory dependencies — Fluent translation (`fluent-bundle` / `unic-langid`) and the `log` facade — while all remaining dependencies (`confers`, `serde`, `serde_json`, `icu`, etc.) are optional and feature-gated.
 
 ### 💡 Minimal Example
 
@@ -177,7 +177,7 @@ fn main() {
 
 - **Module**: a type implementing `ModuleMeta` (name + dependency declaration) and `AutoBuilder` (capability construction); the `impl_module_meta!` macro removes the hand-written impl.
 - **Capability**: the `Clone` value a module produces at build time, stored in the `TypeMap` and retrieved by module type.
-- **Typestate**: `Kit<Unbuilt>` only registers, `Kit<Ready>` only retrieves; misuse is a compile-time error.
+- **Typestate**: `Kit<Unbuilt>` registers modules and configs, `Kit<Ready>` retrieves capabilities; compile-time rejection covers `optional()` on `Kit<Unbuilt>` and register/build on `Kit<Ready>` (retrieval methods defined on `impl<S> Kit<S>` — `require` / `require_all` / `resolve` / `config` / `get_arc` — compile in both states, for use inside `AutoBuilder::build` callbacks; `require_ref` / `contains` / `factory` exist only on `Kit<Ready>`).
 - **Feature gates**: async, config, lifecycle, and other capabilities are enabled on demand; see [Feature Flags](#-feature-flags).
 
 ### ⚙️ Module with Configuration
@@ -303,18 +303,18 @@ For the complete `Kit<Unbuilt>` / `Kit<Ready>` method list (including feature ga
 <tr><td><code>async</code></td><td>—</td><td><code>AsyncKit</code>: <code>Send + Sync</code> async capability management, no extra deps.</td><td>—</td></tr>
 <tr><td><code>confers</code></td><td><code>dep:confers</code>, <code>dep:serde</code>, <code>dep:serde_json</code>, <code>confers/feature-toggle</code></td><td><code>Configurable</code> + <code>ModuleConfig</code> trait + <code>Config</code> derive re-export.</td><td>—</td></tr>
 <tr><td><code>reload</code></td><td><code>confers</code></td><td><code>subscribe</code> / <code>reload_config</code> hot-reload subscriptions.</td><td>—</td></tr>
-<tr><td><code>encryption</code></td><td><code>confers</code>, <code>confers/encryption</code></td><td><code>set_encrypted</code> / <code>get_encrypted</code> encrypted config storage.</td><td>—</td></tr>
+<tr><td><code>encryption</code></td><td><code>reload</code>, <code>confers</code>, <code>confers/encryption</code>, <code>dep:zeroize</code></td><td><code>set_encrypted</code> / <code>get_encrypted</code> encrypted config storage.</td><td>—</td></tr>
 <tr><td><code>di</code></td><td>—</td><td>Interface/implementation separation: <code>register_as</code> / <code>resolve</code> with <code>dyn Trait</code> type erasure.</td><td>—</td></tr>
 <tr><td><code>lifecycle</code></td><td>—</td><td>Lifecycle hooks: <code>on_ready</code> (after build) + <code>on_shutdown</code> (cleanup).</td><td>—</td></tr>
 <tr><td><code>health</code></td><td>—</td><td>Health checks: <code>HealthCheck</code> trait + <code>HealthStatus</code> reporting; <code>AsyncHealthCheck</code> (health+async) <code>check</code> is intentionally synchronous — run network probes once in <code>on_ready</code> and cache the verdict, or use the <code>probe</code> feature's <code>ServiceProbe</code>; never do network I/O inside <code>check</code>.</td><td>—</td></tr>
-<tr><td><code>probe</code></td><td><code>health</code></td><td>Service probe registry: object-safe async <code>ServiceProbe</code> probes — <code>register_probe</code>/<code>unregister_probe</code>/<code>probe_names</code> (dynamic, any state marker), <code>AsyncKit&lt;Ready&gt;::run_probes()</code> (per-probe records + worst-of aggregate + JSON; <code>latency_ms</code> is framework-measured wall time), <code>probe_aggregate()</code> (worst-of verdict), plus <code>run_probes_with_timeout()</code>/<code>probe_aggregate_with_timeout()</code> (hard per-probe bound; a hung probe is recorded unhealthy and the pass continues); probes auto-unregister on shutdown and the registry is marked stopped — post-shutdown <code>run_probes()</code> reports the explicit not-serviceable verdict (<code>stopped=true</code>); an empty registry ≠ all healthy. Division of labor: <code>check</code> reads cached state only — <code>ServiceProbe</code> is where real network probing belongs.</td><td>—</td></tr>
+<tr><td><code>probe</code></td><td><code>health</code>, <code>dep:futures-timer</code></td><td>Service probe registry: object-safe async <code>ServiceProbe</code> probes — <code>register_probe</code>/<code>unregister_probe</code>/<code>probe_names</code> (dynamic, any state marker), <code>AsyncKit&lt;Ready&gt;::run_probes()</code> (per-probe records + worst-of aggregate + JSON; <code>latency_ms</code> is framework-measured wall time), <code>probe_aggregate()</code> (worst-of verdict), plus <code>run_probes_with_timeout()</code>/<code>probe_aggregate_with_timeout()</code> (hard per-probe bound; a hung probe is recorded unhealthy and the pass continues); probes auto-unregister on shutdown and the registry is marked stopped — post-shutdown <code>run_probes()</code> reports the explicit not-serviceable verdict (<code>stopped=true</code>); an empty registry ≠ all healthy. Division of labor: <code>check</code> reads cached state only — <code>ServiceProbe</code> is where real network probing belongs.</td><td>—</td></tr>
 <tr><td><code>request-scope</code></td><td>—</td><td>Scoped dependencies: <code>Scope</code> / <code>AsyncScope</code> per-request instance isolation.</td><td>—</td></tr>
 <tr><td><code>toggle</code></td><td>—</td><td>Feature toggle: runtime string-keyed module enable/disable.</td><td>—</td></tr>
 <tr><td><code>observer</code></td><td>—</td><td>Build observability: <code>BuildObserver</code> callbacks (start/complete/error).</td><td>—</td></tr>
 <tr><td><code>decorator</code></td><td>—</td><td>Module decorator: post-build capability wrapping/enhancement.</td><td>—</td></tr>
 <tr><td><code>shutdown</code></td><td>—</td><td>Graceful shutdown coordinator: phased ordered shutdown + timeout force-exit.</td><td>—</td></tr>
 <tr><td><code>i18n</code></td><td><code>dep:icu</code>, <code>dep:writeable</code>, <code>dep:sys-locale</code></td><td>ICU4X internationalization: locale-aware number/date/plural/collation formatting.</td><td>—</td></tr>
-<tr><td><code>report</code></td><td><code>dep:serde</code>, <code>dep:serde_json</code></td><td>Structured build report: <code>BuildReport</code> JSON, dependency-graph DOT/Mermaid exports.</td><td>—</td></tr>
+<tr><td><code>report</code></td><td><code>dep:serde</code>, <code>dep:serde_json</code></td><td>Structured build report: <code>BuildReport</code> JSON and <code>contract_manifest()</code> (the dependency-graph DOT/Mermaid exports <code>graph_dot()</code> / <code>graph_mermaid()</code> are ungated, available by default).</td><td>—</td></tr>
 <tr><td><code>presets</code></td><td><code>confers</code></td><td>Preset module packages: <code>ConfersConfigModule</code> (the config hub as a Kit module) + composition builder.</td><td>—</td></tr>
 <tr><td><code>compose</code></td><td>—</td><td>Sub-Kit composition: register a child <code>Kit</code> as a single parent module (namespaced capabilities + cross-Kit dependency validation).</td><td>—</td></tr>
 <tr><td><code>presets-remote</code></td><td><code>presets</code>, <code>confers/remote</code>, <code>async</code></td><td>Remote config bridge: <code>ConfersConfigModule</code> over the confers remote <code>AsyncSource</code> (the remote module builds through <code>AsyncKit</code>, hence implies <code>async</code>).</td><td>—</td></tr>
@@ -337,7 +337,7 @@ trait-kit = { version = "0.5.0-rc.6", features = ["encryption"] }
 | Document | Description |
 |----------|-------------|
 | [📖 User Guide](docs/USER_GUIDE.md) | Complete tutorial from installation to advanced usage |
-| [📘 API Reference](docs/API_REFERENCE.md) | Quick reference for all public APIs, each annotated with its feature gate |
+| [📘 API Reference](docs/API_REFERENCE.md) | Quick reference for the core public APIs, each annotated with its feature gate (not exhaustive; the full list lives in rustdoc / docs.rs) |
 | [🏗️ Architecture](docs/ARCHITECTURE.md) | Design patterns, data flow, thread-safety model, and directory layout |
 | [🧪 Test Scenarios](docs/TEST_SCENARIOS.md) | Exhaustive acceptance-scenario matrix mapped to e2e tests |
 | [⚡ Performance](docs/PERFORMANCE.md) | Criterion benchmark setup, baseline data, and reproduction method |
@@ -350,7 +350,7 @@ trait-kit = { version = "0.5.0-rc.6", features = ["encryption"] }
 
 ## 💻 Examples
 
-`examples/` is a standalone workspace member `trait-kit-examples` (`publish = false`) with 20 standalone runnable examples covering every public API and feature gate. Run with:
+`examples/` is a standalone workspace member `trait-kit-examples` (`publish = false`) with 20 standalone runnable examples covering the core usage of 13 feature gates (`probe` / `report` / `compose` / `presets` / `presets-remote` / `version-negotiation` have no dedicated example yet; see the [📘 API Reference](docs/API_REFERENCE.md)). Run with:
 
 ```sh
 cargo run -p trait-kit-examples --example <name> --features <feature>
@@ -385,7 +385,7 @@ See [examples/README.md](examples/README.md) for details.
 
 ## 🏗️ Architecture
 
-The trait-kit workspace has four members: the main `trait-kit` crate, the proc-macro crates `trait-kit-derive` and `trait-kit-macros`, and the examples crate `trait-kit-examples`; the main crate's `src/` is organized into the `core` interface layer, the `kit` capability management center, and the `i18n` layer.
+The trait-kit workspace has three members: the main `trait-kit` crate, the proc-macro crate `trait-kit-macros` (`trait-kit-derive` was merged into it and retired in 0.5.0-rc.5), and the examples crate `trait-kit-examples`; the main crate's `src/` is organized into the `core` interface layer, the `kit` capability management center, and the `i18n` layer.
 
 **Core Design**:
 
@@ -399,7 +399,7 @@ The workspace diagram, dependency-graph validation, data flow, thread-safety mod
 
 ### 🔄 Build Lifecycle
 
-All capability retrieval happens after `build()`: registration methods live on `Kit<Unbuilt>`, retrieval methods on `Kit<Ready>`, and "require before build" is ruled out at compile time (asserted by trybuild UI tests in `tests/ui/`).
+Capability retrieval centers on `build()`: registration methods live on `Kit<Unbuilt>`, retrieval methods on `Kit<Ready>`. Compile-time rejection (asserted by trybuild UI tests in `tests/ui/`) covers `optional()` on `Kit<Unbuilt>` and register/build on `Kit<Ready>`; retrieval methods defined on `impl<S> Kit<S>` — `require()` / `require_all()` / `resolve()` / `config()` / `get_arc()` — also compile on `Kit<Unbuilt>` (for use inside `AutoBuilder::build` callbacks) and return a runtime error for unbuilt modules, while `require_ref` / `contains` / `factory` exist only on `Kit<Ready>`.
 
 | Phase | Typestate | Available operations |
 |-------|-----------|----------------------|
@@ -420,13 +420,13 @@ trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.6 via 
 | 2. Module config metadata | `confers` | `ModuleConfig` trait declares `PATH` and `default_value()`, binding a config type to its module's config path |
 | 3. Hot reload | `reload` | `subscribe::<C>()` subscriptions + `reload_config::<C>()` reload with subscriber notification |
 | 4. Encrypted storage | `encryption` | `set_encrypted` / `get_encrypted`: XChaCha20-Poly1305 AEAD with keys derived via HKDF from the master key and `ModuleConfig::PATH` |
-| 5. Config inheritance | `confers` + `trait-kit-derive` | Four-layer system: `merge_json_deep` deep merge → `ConfigInherit` compile-time safe field override → `SharedConfig` cross-type shared fields → `populate_defaults` zero-config defaults |
+| 5. Config inheritance | `confers` + `trait-kit-macros` | Four-layer system: `merge_json_deep` deep merge → `ConfigInherit` compile-time safe field override → `SharedConfig` cross-type shared fields → `populate_defaults` zero-config defaults |
 
 Typical usage of config loading and config inheritance (fully runnable versions live in the `confers_loader` and `config_inheritance` examples):
 
 ```rust,ignore
 use trait_kit::prelude::*;
-use trait_kit_derive::{ConfigInherit, SharedConfig};
+use trait_kit_macros::{ConfigInherit, SharedConfig};
 
 // Levels 1-2: derive-based config loading + module config metadata
 #[derive(Debug, Clone, serde::Deserialize, confers::Config)]
@@ -446,12 +446,12 @@ struct DbConfig {
 
 let mut kit = Kit::new();
 kit.load_config::<TraitKitConfig>()?;        // load from env/defaults via confers
-kit.populate_defaults::<DbConfig>()?;   // zero-config defaults
-kit.extract_shared::<TraitKitConfig>()?;     // extract shared fields
-kit.inject_shared::<DbConfig>()?;       // inject into DbConfig
+kit.populate_defaults::<DbConfig>();         // zero-config defaults (returns whether anything was written)
+kit.extract_shared::<TraitKitConfig>();      // extract shared fields
+kit.inject_shared::<DbConfig>();             // inject into DbConfig
 ```
 
-- `trait-kit-derive` provides the `#[derive(ConfigInherit)]` and `#[derive(SharedConfig)]` macros; shared fields use `serde_json::Value` to preserve type information.
+- `trait-kit-macros` provides the `#[derive(Module)]` (generates a `ModuleMeta` impl, equivalent to `impl_module_meta!`), `#[derive(ConfigInherit)]`, and `#[derive(SharedConfig)]` macros; shared fields use `serde_json::Value` to preserve type information.
 - `AsyncKit` offers a fully symmetric `Send + Sync` config API.
 
 ---
@@ -464,13 +464,13 @@ kit.inject_shared::<DbConfig>()?;       // inject into DbConfig
 |------|----------|-------------|
 | Unit tests | `src/` (`#[cfg(test)]`) | Module-internal logic |
 | Integration tests | `tests/` (6 targets) + `tests/e2e/` (13 registered targets) | `basic`, `config_inheritance_e2e`, `e2e_core`, `e2e_async`, `e2e_concurrency`, `e2e_feature_combinations`, etc. |
-| Compile-time UI tests | `tests/compile_fail.rs` + `tests/ui/` (3 cases) | trybuild-based: assert typestate misuse (e.g. require before build) fails to compile |
+| Compile-time UI tests | `tests/compile_fail.rs` + `tests/ui/` (4 cases) + `tests/ui/probe_sensitive/` (probe-gated group, 1 case) | trybuild-based: assert typestate misuse (`optional()` on `Kit<Unbuilt>`, register/build on `Kit<Ready>`) fails to compile |
 | Macro-crate tests | `trait-kit-macros/tests/` | `#[derive(Module)]` expansion correctness and compile-fail cases |
 | Doc tests | `rust` code blocks in the README and doc comments | Compiled and run by `cargo test` |
 | Example validation | `examples/` (20) | Each example runs standalone; failed assertions panic |
 | Benchmarks | `benches/kit_bench.rs` | criterion benchmarks (requires the `toggle` feature) |
 
-Test scale: the main crate's `src/` and `tests/` contain **795** `#[test]` functions (as of **0.5.0-rc.6**, via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `trait-kit-macros/tests/`.
+Test scale: the main crate's `src/` and `tests/` contain **911** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `trait-kit-macros/tests/`.
 
 ### Common Commands (same as CI)
 
@@ -509,7 +509,7 @@ Baseline numbers, the measurement environment, and reproduction commands live in
 
 - **Vulnerability reporting**: do not open public issues; use GitHub's private [Security Advisories](https://github.com/Kirky-X/trait-kit/security/advisories/new) channel ("Report a vulnerability"). The maintainer commits to acknowledging reports within 48 hours and providing an initial assessment within 7 days (see [SECURITY.md](docs/SECURITY.md)).
 - **unsafe denied by default**: `#![deny(unsafe_code)]` is enforced crate-wide; only 6 locally audited exemptions (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, RefCell-guard lifetime re-anchoring ×2.
-- **Compile-time misuse prevention**: typestate turns "require before build" into a compile error; the dependency graph is checked for missing deps and cycles at `build()`.
+- **Compile-time misuse prevention**: typestate turns `optional()` on `Kit<Unbuilt>` and register/build on `Kit<Ready>` into compile errors (trybuild UI tests); the dependency graph is checked for missing deps and cycles at `build()`.
 - **Explicit thread-safety boundary**: the sync `Kit` is `!Sync` (compiler-enforced, see the `static_assertions` assertions); use `AsyncKit` (`Send + Sync`) for multi-threading.
 - **Encrypted config storage** (`encryption`): XChaCha20-Poly1305 AEAD with field keys derived via HKDF from the master key and `ModuleConfig::PATH`; `EncryptedBlob`'s `Debug` implementation never leaks encrypted material.
 - **Supply-chain gates**: `cargo deny check` (`deny.toml`: advisories / licenses / bans / sources) + `cargo audit` are mandatory CI gates; CodeQL static analysis runs continuously; the lefthook private-key scan blocks credentials from entering the repo.
@@ -526,7 +526,7 @@ Entries carry over the existing plan; status is aligned with the current reposit
 
 <table>
 <tr><th>Status</th><th>Item</th><th>Description</th></tr>
-<tr><td>✅</td><td><b>0.5.0-rc.2</b> (2026-09-03)</td><td>Docs & Kit API table sync; workspace dependency path localization (<code>path</code> + <code>version</code> dual specification).</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.6</b> (2026-09-21)</td><td>rc.4–rc.6 released: observability ports and event bus, full Toggle implementation, <code>trait-kit-derive</code> merged into <code>trait-kit-macros</code>, <code>confers</code> dependency moved to crates.io (see the <a href="docs/CHANGELOG.md">CHANGELOG</a>).</td></tr>
 <tr><td>✅</td><td><b>Performance benchmarks</b></td><td>Criterion benchmarks in <code>benches/kit_bench.rs</code> and the <code>docs/PERFORMANCE.md</code> baseline report are in place (baseline 2026-09-10).</td></tr>
 <tr><td>📋</td><td><b>0.5.0 stable release</b></td><td>After the minor version bump, sync the <code>path + version</code> dependency requirements of downstream crates (oxcache, dbnexus, inklog, limiteron, sdforge) per the workspace release plan.</td></tr>
 <tr><td>✅</td><td><b>cfg gate completeness</b></td><td><code>--no-default-features --features async</code> and <code>async,observer</code> check combos, <code>clippy --features async --all-targets</code> are warning-free, and async doc tests all pass — the gate gap is resolved (re-verified 2026-09-27).</td></tr>
@@ -572,9 +572,10 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 
 See [CHANGELOG.md](docs/CHANGELOG.md). Recent highlights:
 
-- **0.5.0-rc.2** (2026-09-03): docs version and Kit API table sync; `confers` dependency path localization (`path` + `version` dual specification).
+- **0.5.0-rc.6** (2026-09-21): `confers` dependency moved to crates.io; dependency upgrades (syn 3.0, criterion 0.8, rustls 0.23.45); release process hardening (publish `trait-kit-macros` before the main crate).
+- **0.5.0-rc.5** (2026-09-14): `trait-kit-derive` merged into `trait-kit-macros` (`ConfigInherit` / `SharedConfig` migration; derive sub-crate retired).
+- **0.5.0-rc.4** (2026-09-13): observability ports (`MetricsPort` / `LogPort`), runtime `EventBus`, full Toggle implementation, symmetric AsyncKit config API (rc.3 was never released separately; folded into this section).
 - **0.4.2** (2026-08-06): fixed the `AsyncKit::decorate()` storage-key bug (decorators previously never applied).
-- **0.4.1** (2026-08-06): i18n enhancements (`tr()` / `I18nManager` no longer require the `i18n` feature); `EncryptedBlob` Debug no longer leaks encrypted material; new config extension API docs and examples.
 
 ---
 
@@ -591,7 +592,7 @@ Copyright (c) 2026 Kirky.X🌠
 - [`confers`](https://crates.io/crates/confers) — the underlying config loading, hot-reload, and encrypted storage capabilities.
 - [ICU4X](https://github.com/unicode-org/icu4x) — internationalization formatting (number/date/plural/collation).
 - [Project Fluent](https://projectfluent.org/) — the Fluent FTL message localization approach.
-- [syn](https://github.com/dtolnay/syn) / [quote](https://github.com/dtolnay/quote) / [proc-macro2](https://github.com/dtolnay/proc-macro2) — the proc-macro foundation (for `trait-kit-derive` and `trait-kit-macros`).
+- [syn](https://github.com/dtolnay/syn) / [quote](https://github.com/dtolnay/quote) / [proc-macro2](https://github.com/dtolnay/proc-macro2) — the proc-macro foundation (for `trait-kit-macros`).
 - [The Rust Community](https://www.rust-lang.org/community) — for the excellent language ecosystem and tooling.
 
 ---

@@ -475,3 +475,592 @@ mod shutdown_bridge_e2e {
         );
     }
 }
+
+// ─── 异步构建回调内 require 依赖 + 读 config（DI 注入路径 async 面） ────
+
+/// 10 层异步依赖链：每层 build 内 require 前一层（被依赖者先构建）。
+macro_rules! async_chain_link {
+    ($ty:ident, $name:literal) => {
+        struct $ty;
+        impl trait_kit::core::ModuleMeta for $ty {
+            const NAME: &'static str = $name;
+            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                &[]
+            }
+        }
+        impl AsyncAutoBuilder for $ty {
+            type Capability = std::sync::Arc<u32>;
+            type Error = TraitKitError;
+            fn build<'a>(
+                _kit: &'a AsyncKit,
+            ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(std::sync::Arc::new(1u32)) })
+            }
+        }
+    };
+    ($ty:ident, $name:literal, $dep:ty) => {
+        struct $ty;
+        impl trait_kit::core::ModuleMeta for $ty {
+            const NAME: &'static str = $name;
+            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                static DEPS: &[(&str, std::any::TypeId)] = &[(
+                    <$dep as trait_kit::core::ModuleMeta>::NAME,
+                    std::any::TypeId::of::<$dep>(),
+                )];
+                DEPS
+            }
+        }
+        impl AsyncAutoBuilder for $ty {
+            type Capability = std::sync::Arc<u32>;
+            type Error = TraitKitError;
+            fn build<'a>(
+                kit: &'a AsyncKit,
+            ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+            {
+                Box::pin(async move {
+                    // DI 注入路径：异步构建体内 require 依赖（拓扑序保证可取）。
+                    let dep = kit.require::<$dep>()?;
+                    Ok(std::sync::Arc::new(*dep + 1))
+                })
+            }
+        }
+    };
+}
+
+async_chain_link!(DiChain0, "di-chain-0");
+async_chain_link!(DiChain1, "di-chain-1", DiChain0);
+async_chain_link!(DiChain2, "di-chain-2", DiChain1);
+async_chain_link!(DiChain3, "di-chain-3", DiChain2);
+async_chain_link!(DiChain4, "di-chain-4", DiChain3);
+async_chain_link!(DiChain5, "di-chain-5", DiChain4);
+async_chain_link!(DiChain6, "di-chain-6", DiChain5);
+async_chain_link!(DiChain7, "di-chain-7", DiChain6);
+async_chain_link!(DiChain8, "di-chain-8", DiChain7);
+async_chain_link!(DiChain9, "di-chain-9", DiChain8);
+
+/// 依赖 + 配置同用的消费模块（异步面 DI 注入路径全量形态）。
+struct AsyncDiCfgConsumer;
+impl trait_kit::core::ModuleMeta for AsyncDiCfgConsumer {
+    const NAME: &'static str = "async-di-cfg-consumer";
+    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+        static DEPS: &[(&str, std::any::TypeId)] =
+            &[(DiChain2::NAME, std::any::TypeId::of::<DiChain2>())];
+        DEPS
+    }
+}
+impl AsyncAutoBuilder for AsyncDiCfgConsumer {
+    type Capability = std::sync::Arc<(u32, u32)>;
+    type Error = TraitKitError;
+    fn build<'a>(
+        kit: &'a AsyncKit,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>> {
+        Box::pin(async move {
+            let dep = kit.require::<DiChain2>()?;
+            let cfg = kit.config::<u32>()?;
+            Ok(std::sync::Arc::new((*dep, cfg)))
+        })
+    }
+}
+
+/// 异步构建体内 require 依赖 + 读 config：被依赖者先建、配置可读、
+/// 10 层深链逐层 DI 成功（能力值沿链 +1）。
+#[test]
+fn e2e_async_build_requires_dependency_and_reads_config() {
+    let mut kit = AsyncKit::new();
+    kit.set_config(777u32);
+    kit.register::<DiChain0>().expect("register");
+    kit.register::<DiChain1>().expect("register");
+    kit.register::<DiChain2>().expect("register");
+    kit.register::<DiChain3>().expect("register");
+    kit.register::<DiChain4>().expect("register");
+    kit.register::<DiChain5>().expect("register");
+    kit.register::<DiChain6>().expect("register");
+    kit.register::<DiChain7>().expect("register");
+    kit.register::<DiChain8>().expect("register");
+    kit.register::<DiChain9>().expect("register");
+    kit.register::<AsyncDiCfgConsumer>().expect("register");
+    let ready = block_on(kit.build()).expect("async 依赖链 build 应成功");
+
+    // 10 层链逐层 require：链尾能力 = 1 + 9 次自增。
+    assert_eq!(
+        *ready.require::<DiChain9>().unwrap(),
+        10,
+        "10 层异步链应按拓扑序逐层注入构建"
+    );
+    // 依赖 + config 同用：能力含两者数据。
+    let (dep_val, cfg_val) = *ready.require::<AsyncDiCfgConsumer>().unwrap();
+    assert_eq!(dep_val, 3, "DiChain2 能力 = 1 + 2 次自增");
+    assert_eq!(cfg_val, 777, "异步构建体内应读到 Unbuilt 态 set_config 值");
+}
+
+// ─── AsyncKit::register_if 真/假双分支 + 已注册冲突 ─────────────────
+
+struct RegisterIfOn;
+impl_module_meta!(RegisterIfOn, "register-if-on");
+impl AsyncAutoBuilder for RegisterIfOn {
+    type Capability = std::sync::Arc<u32>;
+    type Error = TraitKitError;
+    fn build<'a>(
+        _kit: &'a AsyncKit,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>> {
+        Box::pin(async { Ok(std::sync::Arc::new(1u32)) })
+    }
+}
+
+struct RegisterIfOff;
+impl_module_meta!(RegisterIfOff, "register-if-off");
+impl AsyncAutoBuilder for RegisterIfOff {
+    type Capability = std::sync::Arc<u32>;
+    type Error = TraitKitError;
+    fn build<'a>(
+        _kit: &'a AsyncKit,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>> {
+        Box::pin(async { Ok(std::sync::Arc::new(2u32)) })
+    }
+}
+
+/// register_if 谓词真 → 注册成功可取；假 → 跳过（require 报缺失）；
+/// 已注册模块再注册 → AlreadyRegistered。
+#[test]
+fn e2e_async_register_if_true_false_and_conflict() {
+    // 谓词真：注册成功。
+    let mut kit = AsyncKit::new();
+    let registered = kit
+        .register_if::<RegisterIfOn>(|_k| true)
+        .expect("register_if 不应返回错误");
+    assert!(registered, "谓词真应返回 true（已注册）");
+    let ready = block_on(kit.build()).expect("build 应成功");
+    assert_eq!(*ready.require::<RegisterIfOn>().unwrap(), 1);
+
+    // 谓词假：跳过注册，build 后 require 报缺失。
+    let mut skipped = AsyncKit::new();
+    let registered = skipped
+        .register_if::<RegisterIfOff>(|_k| false)
+        .expect("register_if 不应返回错误");
+    assert!(!registered, "谓词假应返回 false（跳过）");
+    let ready = block_on(skipped.build()).expect("build 应成功");
+    let err = ready
+        .require::<RegisterIfOff>()
+        .expect_err("跳过注册的模块 require 应报缺失");
+    assert!(matches!(err, TraitKitError::MissingCapability { .. }));
+
+    // 已注册模块再次 register_if（谓词真）→ AlreadyRegistered。
+    let mut dup = AsyncKit::new();
+    dup.register::<RegisterIfOn>().unwrap();
+    let err = dup
+        .register_if::<RegisterIfOn>(|_k| true)
+        .expect_err("重复注册应返回错误");
+    assert!(matches!(err, TraitKitError::AlreadyRegistered { .. }));
+}
+
+// ─── AsyncKit::factory：非单例 + 失败传播 ──────────────────────────
+
+struct FactoryFreshMod;
+impl_module_meta!(FactoryFreshMod, "factory-fresh-mod");
+impl AsyncAutoBuilder for FactoryFreshMod {
+    type Capability = std::sync::Arc<u32>;
+    type Error = TraitKitError;
+    fn build<'a>(
+        _kit: &'a AsyncKit,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>> {
+        static CALLS: AtomicU32 = AtomicU32::new(0);
+        Box::pin(async move { Ok(std::sync::Arc::new(CALLS.fetch_add(1, Ordering::SeqCst))) })
+    }
+}
+
+struct FactoryFailingMod;
+impl_module_meta!(FactoryFailingMod, "factory-failing-mod");
+impl AsyncAutoBuilder for FactoryFailingMod {
+    type Capability = std::sync::Arc<u32>;
+    type Error = TraitKitError;
+    fn build<'a>(
+        _kit: &'a AsyncKit,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>> {
+        Box::pin(async {
+            Err(TraitKitError::MissingCapability {
+                key: "factory boom".into(),
+            })
+        })
+    }
+}
+
+/// factory 闭包每次调用产出全新实例（非单例），与 require 单例对比；
+/// 闭包返回 Err → BuildFailed{context=NAME}，source 下探原错误。
+#[test]
+fn e2e_async_factory_fresh_instances_and_error_propagation() {
+    // 注意：FactoryFailingMod 不能注册进 kit——模块构建失败即整体失败
+    // 是 Kit 契约；factory::<M> 只借 Ready Kit 引用重跑 M::build，故
+    // 失败模块仅以类型出现、不入注册表。
+    let mut kit = AsyncKit::new();
+    kit.register::<FactoryFreshMod>().unwrap();
+    let ready = block_on(kit.build()).expect("build 应成功");
+
+    // require 单例语义（对照）。
+    let singleton_first = ready.require::<FactoryFreshMod>().unwrap();
+    let singleton_second = ready.require::<FactoryFreshMod>().unwrap();
+    assert!(std::sync::Arc::ptr_eq(&singleton_first, &singleton_second));
+
+    // factory 非单例：两次调用产出不同实例，计数器各自递增。
+    let produce = ready.factory::<FactoryFreshMod>();
+    let a = block_on(produce()).expect("第一次 factory 调用应成功");
+    let b = block_on(produce()).expect("第二次 factory 调用应成功");
+    assert_ne!(*a, *b, "factory 每次调用应执行构建体（非缓存单例）");
+
+    // 失败传播：context==NAME、source 下探原始错误文本。
+    let failing = ready.factory::<FactoryFailingMod>();
+    let err = block_on(failing()).expect_err("factory 构建失败应返回错误");
+    match err {
+        TraitKitError::BuildFailed { context, source } => {
+            assert_eq!(context, "factory-failing-mod");
+            assert!(
+                source.to_string().contains("factory boom"),
+                "source 应下探原错误文本：got '{source}'"
+            );
+        }
+        other => panic!("expected BuildFailed, got: {other}"),
+    }
+}
+
+// ─── 异步构建体 panic 直接穿透 build().await（无 catch_unwind 隔离） ───
+
+struct AsyncPanicMod;
+impl_module_meta!(AsyncPanicMod, "async-panic-mod");
+impl AsyncAutoBuilder for AsyncPanicMod {
+    type Capability = std::sync::Arc<u32>;
+    type Error = TraitKitError;
+    fn build<'a>(
+        _kit: &'a AsyncKit,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>> {
+        Box::pin(async {
+            panic!("async build panic blast");
+        })
+    }
+}
+
+/// 与 sync lazy 面（catch_unwind 隔离为 BuildFailed）显式对照：async
+/// 构建体 panic 沿 build().await 穿透到调用方，不转 BuildFailed。
+#[test]
+#[should_panic(expected = "async build panic blast")]
+fn e2e_async_build_body_panic_propagates_to_caller() {
+    let mut kit = AsyncKit::new();
+    kit.register::<AsyncPanicMod>().unwrap();
+    let _ = block_on(kit.build());
+}
+
+// ─── with_max_concurrency(0) 钳位为 1：限流下界峰值验证 ─────────────
+
+static E2E_IN_FLIGHT: AtomicU32 = AtomicU32::new(0);
+static E2E_PEAK: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// 每实例一次性挂起点：让并发执行器产生交错，从而暴露真实 in-flight 峰值。
+struct E2eYieldOnce {
+    yielded: bool,
+}
+impl Future for E2eYieldOnce {
+    type Output = ();
+    fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
+        let this = &mut *self;
+        if this.yielded {
+            Poll::Ready(())
+        } else {
+            this.yielded = true;
+            Poll::Pending
+        }
+    }
+}
+
+macro_rules! in_flight_mod {
+    ($ty:ident, $name:literal) => {
+        struct $ty;
+        impl trait_kit::core::ModuleMeta for $ty {
+            const NAME: &'static str = $name;
+            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                &[]
+            }
+        }
+        impl AsyncAutoBuilder for $ty {
+            type Capability = std::sync::Arc<()>;
+            type Error = TraitKitError;
+            fn build<'a>(
+                _kit: &'a AsyncKit,
+            ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+            {
+                Box::pin(async {
+                    let cur = E2E_IN_FLIGHT.fetch_add(1, Ordering::SeqCst) + 1;
+                    E2E_PEAK.fetch_max(cur as usize, Ordering::SeqCst);
+                    E2eYieldOnce { yielded: false }.await;
+                    E2E_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+                    Ok(std::sync::Arc::new(()))
+                })
+            }
+        }
+    };
+}
+
+in_flight_mod!(FluxModA, "flux-a");
+in_flight_mod!(FluxModB, "flux-b");
+in_flight_mod!(FluxModC, "flux-c");
+in_flight_mod!(FluxModD, "flux-d");
+in_flight_mod!(FluxModE, "flux-e");
+in_flight_mod!(FluxModF, "flux-f");
+in_flight_mod!(FluxModG, "flux-g");
+in_flight_mod!(FluxModH, "flux-h");
+
+fn reset_flux_counters() {
+    E2E_IN_FLIGHT.store(0, Ordering::SeqCst);
+    E2E_PEAK.store(0, Ordering::SeqCst);
+}
+
+/// with_max_concurrency(0) 钳位为 1（limit.max(1)）：8 个独立模块构建
+/// 并发峰值 == 1；对照 limit=1 同样峰值 1；默认（无限制）峰值 >= 2。
+#[test]
+fn e2e_async_max_concurrency_zero_clamps_to_one() {
+    // 档位一：limit=0 → 钳位为 1。
+    let mut kit = AsyncKit::new();
+    register_flux(&mut kit);
+    kit.with_max_concurrency(0);
+    reset_flux_counters();
+    block_on(kit.build()).expect("钳位档 build 应成功");
+    assert_eq!(
+        E2E_PEAK.load(Ordering::SeqCst),
+        1,
+        "with_max_concurrency(0) 应钳位为 1（并发峰值==1）"
+    );
+
+    // 档位二：limit=1 → 峰值同样为 1。
+    let mut kit = AsyncKit::new();
+    register_flux(&mut kit);
+    kit.with_max_concurrency(1);
+    reset_flux_counters();
+    block_on(kit.build()).expect("limit=1 档 build 应成功");
+    assert_eq!(E2E_PEAK.load(Ordering::SeqCst), 1, "limit=1 时峰值应为 1");
+
+    // 档位三：默认（无限制）→ 峰值超过 1（挂起点交错暴露并发）。
+    let mut kit = AsyncKit::new();
+    register_flux(&mut kit);
+    reset_flux_counters();
+    block_on(kit.build()).expect("默认档 build 应成功");
+    assert!(
+        E2E_PEAK.load(Ordering::SeqCst) > 1,
+        "默认无限制时并发峰值应大于 1：got {}",
+        E2E_PEAK.load(Ordering::SeqCst)
+    );
+}
+
+// ─── AsyncKit::graph_dot / graph_mermaid 导出（async 面图导出） ──────
+
+struct GraphExportDep;
+impl_module_meta!(GraphExportDep, "graph-export-dep");
+impl AsyncAutoBuilder for GraphExportDep {
+    type Capability = std::sync::Arc<u32>;
+    type Error = TraitKitError;
+    fn build<'a>(
+        _kit: &'a AsyncKit,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>> {
+        Box::pin(async { Ok(std::sync::Arc::new(1u32)) })
+    }
+}
+
+struct GraphExportConsumer;
+impl_module_meta!(
+    GraphExportConsumer,
+    "graph-export-consumer",
+    deps = [GraphExportDep]
+);
+impl AsyncAutoBuilder for GraphExportConsumer {
+    type Capability = std::sync::Arc<u32>;
+    type Error = TraitKitError;
+    fn build<'a>(
+        _kit: &'a AsyncKit,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>> {
+        Box::pin(async { Ok(std::sync::Arc::new(2u32)) })
+    }
+}
+
+/// 注册带依赖模块 build 后：DOT/Mermaid 含全部节点名与边关系；
+/// 空 AsyncKit<Ready> 也能导出合法头。
+#[test]
+fn e2e_async_graph_export_dot_and_mermaid() {
+    let mut kit = AsyncKit::new();
+    kit.register::<GraphExportDep>().unwrap();
+    kit.register::<GraphExportConsumer>().unwrap();
+    let ready = block_on(kit.build()).expect("build 应成功");
+
+    let dot = ready.graph_dot();
+    assert!(dot.contains("digraph"), "DOT 应含 digraph 头：{dot}");
+    assert!(dot.contains("graph-export-dep") && dot.contains("graph-export-consumer"));
+    assert!(
+        dot.contains("graph-export-dep") && dot.contains("->"),
+        "DOT 应表达边关系：{dot}"
+    );
+
+    let mermaid = ready.graph_mermaid();
+    assert!(
+        mermaid.contains("graph TD"),
+        "Mermaid 应含 graph TD 头：{mermaid}"
+    );
+    assert!(mermaid.contains("graph-export-dep") && mermaid.contains("graph-export-consumer"));
+    assert!(mermaid.contains("-->"), "Mermaid 应表达边关系：{mermaid}");
+
+    // 空 Ready Kit 也能导出（仅头，无节点）。
+    let empty = block_on(AsyncKit::new().build()).expect("空 kit build 应成功");
+    assert!(empty.graph_dot().contains("digraph"));
+    assert!(empty.graph_mermaid().contains("graph TD"));
+}
+
+// ─── AsyncKit::emit_event 自定义事件直达总线 ────────────────────────
+
+/// with_event_bus 后 emit_event(自定义 KitEvent) 订阅者收到；Unbuilt/Ready
+/// 两态 emit 均可用；未注入时 NoOp 不 panic。
+#[test]
+fn e2e_async_emit_event_reaches_injected_bus_in_both_states() {
+    use trait_kit::kit::events::{EventBus, KitEvent, MemoryEventBus};
+
+    let bus = std::sync::Arc::new(MemoryEventBus::new());
+    let received = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = std::sync::Arc::clone(&received);
+    bus.subscribe(move |event: &KitEvent| {
+        sink.lock().unwrap().push(event.clone());
+    });
+
+    // Unbuilt 态 emit。
+    let mut kit = AsyncKit::new();
+    kit.with_event_bus(Some(
+        std::sync::Arc::clone(&bus) as std::sync::Arc<dyn EventBus>
+    ));
+    kit.emit_event(KitEvent::ConfigChanged {
+        key: "custom/unbuilt".into(),
+        summary: "emitted while unbuilt".into(),
+    });
+
+    // Ready 态 emit。
+    let ready = block_on(kit.build()).expect("build 应成功");
+    ready.emit_event(KitEvent::ConfigChanged {
+        key: "custom/ready".into(),
+        summary: "emitted while ready".into(),
+    });
+
+    let events = received.lock().unwrap();
+    assert_eq!(events.len(), 2, "两个事件都应到达订阅者");
+    assert_eq!(events[0].kind(), "config_changed");
+    assert_eq!(
+        events[0],
+        KitEvent::ConfigChanged {
+            key: "custom/unbuilt".into(),
+            summary: "emitted while unbuilt".into(),
+        }
+    );
+    assert_eq!(
+        events[1],
+        KitEvent::ConfigChanged {
+            key: "custom/ready".into(),
+            summary: "emitted while ready".into(),
+        }
+    );
+
+    // 未注入 bus：emit 为 NoOp，不 panic。
+    let bare = AsyncKit::new();
+    bare.emit_event(KitEvent::ConfigChanged {
+        key: "noop".into(),
+        summary: "no bus".into(),
+    });
+}
+
+// ─── on_ready 失败 → 无任何 on_shutdown 执行（async 对位） ───────────
+
+#[cfg(feature = "lifecycle")]
+mod async_ready_discard_on_ready_failure_e2e {
+    use super::block_on;
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use trait_kit::core::lifecycle::AsyncLifecycle;
+    use trait_kit::impl_module_meta;
+    use trait_kit::prelude::*;
+
+    static ASYNC_SHUTDOWN_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    struct AsyncHealthyShutdownMod;
+    impl_module_meta!(AsyncHealthyShutdownMod, "async-healthy-shutdown-mod");
+    impl AsyncAutoBuilder for AsyncHealthyShutdownMod {
+        type Capability = std::sync::Arc<u32>;
+        type Error = TraitKitError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(std::sync::Arc::new(1u32)) })
+        }
+    }
+    impl AsyncLifecycle for AsyncHealthyShutdownMod {
+        fn on_shutdown<'a>(
+            _cap: &'a std::sync::Arc<u32>,
+        ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+            Box::pin(async {
+                ASYNC_SHUTDOWN_COUNT.fetch_add(1, Ordering::SeqCst);
+            })
+        }
+    }
+
+    struct AsyncFailingReadyMod;
+    impl_module_meta!(AsyncFailingReadyMod, "async-failing-ready-mod");
+    impl AsyncAutoBuilder for AsyncFailingReadyMod {
+        type Capability = std::sync::Arc<u32>;
+        type Error = TraitKitError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, TraitKitError>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(std::sync::Arc::new(2u32)) })
+        }
+    }
+    impl AsyncLifecycle for AsyncFailingReadyMod {
+        fn on_ready<'a>(
+            _kit: &'a AsyncKit<AsyncReady>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), TraitKitError>> + Send + 'a>> {
+            Box::pin(async {
+                Err(TraitKitError::MissingCapability {
+                    key: "async on-ready boom".into(),
+                })
+            })
+        }
+        fn on_shutdown<'a>(
+            _cap: &'a std::sync::Arc<u32>,
+        ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+            Box::pin(async {
+                ASYNC_SHUTDOWN_COUNT.fetch_add(1, Ordering::SeqCst);
+            })
+        }
+    }
+
+    /// async 面同型：on_ready 失败 → build 失败（LifecycleFailed），
+    /// 无任何 async on_shutdown 被执行。
+    #[test]
+    fn e2e_async_on_ready_failure_discards_ready_and_runs_no_shutdown() {
+        let before = ASYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst);
+        let mut kit = AsyncKit::new();
+        kit.register::<AsyncHealthyShutdownMod>().unwrap();
+        kit.register::<AsyncFailingReadyMod>().unwrap();
+        kit.register_lifecycle::<AsyncHealthyShutdownMod>();
+        kit.register_lifecycle::<AsyncFailingReadyMod>();
+
+        let err = block_on(kit.build()).expect_err("async on_ready 失败应使 build 失败");
+        assert!(matches!(err, TraitKitError::LifecycleFailed { .. }));
+        assert_eq!(
+            ASYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst),
+            before,
+            "async on_ready 失败后任何 on_shutdown 都不得执行"
+        );
+    }
+}
+
+fn register_flux(kit: &mut AsyncKit) {
+    kit.register::<FluxModA>().expect("register");
+    kit.register::<FluxModB>().expect("register");
+    kit.register::<FluxModC>().expect("register");
+    kit.register::<FluxModD>().expect("register");
+    kit.register::<FluxModE>().expect("register");
+    kit.register::<FluxModF>().expect("register");
+    kit.register::<FluxModG>().expect("register");
+    kit.register::<FluxModH>().expect("register");
+}

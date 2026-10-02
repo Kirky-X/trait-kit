@@ -1,0 +1,7 @@
+error[E0599]: no method named `optional` found for struct `trait_kit::AsyncKit` in the current scope
+  --> tests/ui/async_unbuilt_cannot_optional.rs:33:17
+   |
+33 |     assert!(kit.optional::<MyModule>().is_none());
+   |                 ^^^^^^^^ method not found in `trait_kit::AsyncKit`
+   |
+   = note: the method was found for `trait_kit::AsyncKit<AsyncReady>`

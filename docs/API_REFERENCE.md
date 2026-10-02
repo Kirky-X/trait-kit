@@ -1,6 +1,6 @@
 # 📘 Trait-Kit API 参考
 
-trait-kit 的完整 API 参考。按模块组织，标注各 API 所需的 feature flag（当前版本 **0.5.0-rc.6**）。
+trait-kit 的 API 参考。覆盖核心与常用公开项——非穷尽全量，完整清单以 rustdoc / docs.rs 为准；按模块组织，标注各 API 所需的 feature flag（当前版本 **0.5.0-rc.6**）。
 
 ## 📋 目录
 
@@ -83,7 +83,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `register_lifecycle::<M>()` | `lifecycle` | 注册生命周期钩子 |
 | `register_health_check::<M>()` | `health` | 注册健康检查 |
 | `with_observer(obs)` | `observer` | 附加构建观察者 |
-| `decorate::<M>(f)` | `decorator` | 注册能力装饰器 |
+| `decorate::<M>(f)` | `decorator` | 注册能力装饰器（目标未注册时 `build()` 期 panic） |
 | `try_decorate::<M>(f)` | `decorator` | 装饰器注册（目标未注册时返回 `DecoratorTargetMissing`） |
 | `override_module::<M>(cap)` | — | 覆盖模块能力（测试注入） |
 | `override_module_strict::<M>(cap)` | — | 覆盖并验证依赖存在性 |
@@ -116,6 +116,8 @@ pub trait AutoBuilder: ModuleMeta {
 
 #### `Kit<Ready>` — 运行阶段
 
+> `require` / `get_arc` / `require_all` / `resolve` / `config` / `config_arc` / `subscribe` / `reload_config` / `merge_config` 定义在 `impl<S> Kit<S>` 上，`Kit<Unbuilt>` 态亦可编译调用（供 `AutoBuilder::build` 回调读取依赖与配置）；`require_ref` / `contains` / `factory` 定义在 `impl Kit<Ready>` 上，`Kit<Unbuilt>` 态调用即编译错误。下表列出时以主要使用场景为准。编译期排除的误用包括：`Kit<Unbuilt>` 上的 `optional()`（`unbuilt_cannot_optional`）与 `Kit<Ready>` 上的注册/构建方法（`ready_cannot_register` / `ready_cannot_build`，UI 测试断言）。
+
 | 方法 | Feature | 说明 |
 |---|---|---|
 | `require::<M>()` | — | 检索能力（Clone，缺失则报错；`register_lazy` 模块首次调用触发构建并缓存） |
@@ -130,16 +132,15 @@ pub trait AutoBuilder: ModuleMeta {
 | `config_arc::<C>()` | — | 以 `Arc` 快照检索配置 |
 | `factory::<M>()` | — | 创建工厂闭包，每次调用产生新实例 |
 | `create_scope()` | `request-scope` | 创建空 `Scope`（与 Kit 能力互相独立） |
-| `create_scope_from(self)` | `request-scope` | 消费 Kit 创建带父上下文的 `Scope`（`scope.parent::<T>()` 只读查询） |
+| `create_scope_from(self)` | `request-scope` | 从持有的 `Rc<Kit>`（`self: &Rc<Self>`）创建带父上下文的 `Scope`，不消费 Kit（父侧为 `Rc::downgrade` 弱引用，防保留环；`scope.parent::<T>()` 只读查询） |
 | `health_check::<M>()` | `health` | 查询单模块健康状态 |
 | `health_report()` | `health` | 查询所有模块健康报告 |
 | `health_aggregate()` | `health` + `report` | worst-of 整体状态 + 各模块明细（modules 顺序不承诺确定；每次调用执行全部 checker，注入事件总线时发布 HealthChanged） |
 | `health_json()` | `health` + `report` | 健康聚合 JSON 导出（供 /healthz 消费） |
 | `record_health_history()` / `health_history()` | `health` | 环形缓冲健康采样与读取 |
 | `shutdown()` | `lifecycle` | 按逆拓扑序执行 `on_shutdown` |
-| `set_config::<C>(value)` | — | 运行时更新配置 |
 | `subscribe::<C>(cb)` | `reload` | 订阅热重载 |
-| `reload_config::<C>()` | `reload` | 重新加载配置 |
+| `reload_config::<C>()` | `reload` | 重新加载配置（Ready 态写配置的唯一路径；`set_config` 仅 `Kit<Unbuilt>` 可用，运行期更新配置另可用 `merge_config`，`confers` feature） |
 | `enable_toggle(key, bool)` / `is_toggle_enabled(key)` | `toggle` | 运行时修改/查询 feature flag |
 | `set_toggle` / `get_toggle` / `remove_toggle` / `list_toggles` | `toggle` | 类型化开关句柄 |
 | `get_encrypted::<C>(key)` | `encryption` | 解密检索配置 |
@@ -187,6 +188,24 @@ impl_async_auto_builder!(MyModule, Arc<Cap>, MyError, |kit| Box::pin(async move 
 }));
 ```
 
+### derive 宏（`trait-kit-macros` crate）
+
+三个 derive 由独立 crate `trait-kit-macros` 提供，不随 prelude 导出，需在 `Cargo.toml` 中显式依赖 `trait-kit-macros`：
+
+| derive | 辅助属性 | 说明 |
+|---|---|---|
+| `#[derive(Module)]` | `#[module(...)]` | 为 struct 生成 `ModuleMeta` 实现（等价于 `impl_module_meta!`）：`name = "literal"` 覆盖诊断名（默认 struct 标识符），`deps(TypeA, TypeB)` 或 `deps = [TypeA, TypeB]` 声明依赖；不支持泛型 struct |
+| `#[derive(ConfigInherit)]` | `#[config_inherit(nested)]` | 编译期安全的字段级覆盖类型 + `ConfigInherit` 实现 |
+| `#[derive(SharedConfig)]` | `#[shared(field1, field2)]` | 自动生成 `extract_shared` / `inject_shared`（跨类型共享字段） |
+
+```rust,ignore
+use trait_kit_macros::Module;
+
+#[derive(Module)]
+#[module(name = "my-module", deps(DepA, DepB))]
+struct MyModule;
+```
+
 ### 依赖图导出
 
 | API | 说明 |
@@ -194,7 +213,7 @@ impl_async_auto_builder!(MyModule, Arc<Cap>, MyError, |kit| Box::pin(async move 
 | `DependencyGraph` | 依赖图容器（Kahn 拓扑排序 + DFS 环检测） |
 | `GraphError` / `ModuleEntry` | 图校验错误与模块图节点 |
 
-方法级导出（`graph_dot()` / `graph_mermaid()` / `module_count()` / `build_report()` `report`）见 [Kit API](#kit-api) 的 `Kit<Ready>` 表，不再重复列出。
+方法级导出：`graph_dot()` / `graph_mermaid()` / `module_count()` 无 feature 门控，`build_report()` 需 `report` feature，见 [Kit API](#kit-api) 的 `Kit<Ready>` 表，不再重复列出。
 
 ### 事件总线与观测端口
 
@@ -260,7 +279,7 @@ fmt.format_date(2026, 9, 10)?;
 | `ShutdownCoordinator`, `ShutdownPhase`, `ShutdownPhaseResult`, `ShutdownResult` | `shutdown` |
 | `AsyncShutdownCoordinator` | `shutdown` + `async` |
 
-> derive 宏（`#[derive(ConfigInherit)]` / `#[derive(SharedConfig)]`）不随 prelude 导出，需在 `Cargo.toml` 中显式依赖 `trait-kit-macros`。
+> derive 宏（`#[derive(Module)]` / `#[derive(ConfigInherit)]` / `#[derive(SharedConfig)]`）不随 prelude 导出，需在 `Cargo.toml` 中显式依赖 `trait-kit-macros`，见 [derive 宏](#derive-宏trait-kit-macros-crate)。
 
 ---
 
@@ -582,7 +601,7 @@ pub trait BuildObserver: Send + Sync + 'static {
 | `SubKitSpec` / `SubKitModule` / `SubKitHandle` | `compose` | 子 Kit 以单一模块身份注册进父 Kit（能力命名空间隔离 + 跨 Kit 依赖校验） |
 | `ConfersConfigModule` | `presets` | confers 配置中心作为 Kit 模块纳入体系（`presets-remote` 走 confers 远程 `AsyncSource`） |
 
-`report` feature 的 `BuildReport` / `graph_dot` / `graph_mermaid` 见 [Kit API](#kit-api) 的 `Kit<Ready>` 表与 [依赖图导出](#依赖图导出) 一节。
+`report` feature 的 `BuildReport` / `contract_manifest`，以及无门控的 `graph_dot` / `graph_mermaid` 依赖图文本导出，见 [Kit API](#kit-api) 的 `Kit<Ready>` 表与 [依赖图导出](#依赖图导出) 一节。
 
 `BuildReport` 的 override 语义分两层：
 

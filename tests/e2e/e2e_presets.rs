@@ -337,3 +337,198 @@ fn pre03_derive_macros_not_reexported_via_prelude() {
         "宏包应保持 workspace 成员（derive 宏的唯一提供方）"
     );
 }
+
+// ─── presets 注册面异常（ProviderNotInjected / 二次注册） ──────────────
+
+use std::sync::Arc;
+
+/// confers ConfigValue 的简单内存 provider mock（镜像 src 内部测试形态）。
+#[cfg(feature = "presets")]
+struct PresetMapProvider {
+    pairs: std::collections::HashMap<String, confers::AnnotatedValue>,
+}
+
+#[cfg(feature = "presets")]
+impl PresetMapProvider {
+    fn from_pairs<const N: usize>(pairs: [(&str, confers::ConfigValue); N]) -> Arc<Self> {
+        let map = pairs
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k.to_string(),
+                    confers::AnnotatedValue::new(v, confers::SourceId::default(), k),
+                )
+            })
+            .collect();
+        Arc::new(Self { pairs: map })
+    }
+}
+
+#[cfg(feature = "presets")]
+impl confers::ConfigProvider for PresetMapProvider {
+    fn get_raw(&self, key: &str) -> Option<&confers::AnnotatedValue> {
+        self.pairs.get(key)
+    }
+
+    fn keys(&self) -> Vec<String> {
+        self.pairs.keys().cloned().collect()
+    }
+}
+
+/// 跳过 register_confers_config 直接 register ConfersConfigModule →
+/// build 失败且 source 为 ProviderNotInjected（Display 含指引文本）；
+/// register_confers_config 成功后二次注册 → AlreadyRegistered。
+#[cfg(feature = "presets")]
+#[test]
+fn e2e_presets_provider_not_injected_and_duplicate_registration() {
+    use trait_kit::kit::presets::{ConfersConfigModule, PresetError, register_confers_config};
+
+    // 分支一：未注入 provider 直接 register。
+    let mut kit = Kit::new();
+    kit.register::<ConfersConfigModule>()
+        .expect("register 本身应成功");
+    let err = kit.build().expect_err("无 provider 构建必须失败");
+    match &err {
+        TraitKitError::BuildFailed { context, source } => {
+            assert_eq!(context, "confers-config", "context 应为模块 NAME");
+            let preset_err = source
+                .downcast_ref::<PresetError>()
+                .expect("source 应为 PresetError::ProviderNotInjected");
+            assert!(matches!(preset_err, PresetError::ProviderNotInjected));
+        }
+        other => panic!("expected BuildFailed, got: {other:?}"),
+    }
+    assert!(
+        err.to_string().contains("register_confers_config"),
+        "Display 应含注入指引文本：got '{err}'"
+    );
+
+    // 分支二：成功注入后再注册同模块 → AlreadyRegistered。
+    let provider = PresetMapProvider::from_pairs([("k", confers::ConfigValue::String("v".into()))]);
+    let mut kit = Kit::new();
+    register_confers_config(&mut kit, provider).expect("首次注册应成功");
+    let provider2 =
+        PresetMapProvider::from_pairs([("k", confers::ConfigValue::String("v".into()))]);
+    let err = register_confers_config(&mut kit, provider2)
+        .expect_err("二次注册必须返回 AlreadyRegistered");
+    assert!(matches!(err, TraitKitError::AlreadyRegistered { .. }));
+}
+
+// ─── presets-remote 异常面（RemoteLoad / 无 slot ProviderNotInjected） ──
+
+#[cfg(all(feature = "presets-remote", feature = "async"))]
+mod presets_remote_error_e2e {
+    use std::sync::Arc;
+    use std::task::{Context, Poll, Waker};
+    use trait_kit::kit::presets::PresetError;
+    use trait_kit::kit::presets::remote::{
+        ConfersRemoteConfigModule, register_confers_remote_config,
+    };
+    use trait_kit::prelude::*;
+
+    fn block_on<F: Future>(future: F) -> F::Output {
+        let waker = Waker::noop();
+        let mut cx = Context::from_waker(waker);
+        let mut future = std::pin::pin!(future);
+        loop {
+            match future.as_mut().poll(&mut cx) {
+                Poll::Ready(v) => return v,
+                Poll::Pending => std::hint::spin_loop(),
+            }
+        }
+    }
+
+    /// load 返回 Err 的远端源。
+    struct FailingSource;
+    #[async_trait::async_trait]
+    impl confers::interface::AsyncSource for FailingSource {
+        async fn load(&self) -> confers::ConfigResult<confers::AnnotatedValue> {
+            Err(confers::ConfigError::FileNotFound {
+                filename: std::path::PathBuf::from("e2e-remote-mock"),
+                source: None,
+            })
+        }
+        fn source_id(&self) -> &confers::SourceId {
+            static ID: std::sync::OnceLock<confers::SourceId> = std::sync::OnceLock::new();
+            ID.get_or_init(confers::SourceId::default)
+        }
+        fn name(&self) -> &str {
+            "e2e-failing-source"
+        }
+    }
+
+    /// AsyncSource::load 失败 → build().await 失败，错误文本含源错误，
+    /// source 链下探到 PresetError::RemoteLoad。
+    #[test]
+    fn e2e_presets_remote_source_failure_fails_build() {
+        let mut kit = AsyncKit::new();
+        register_confers_remote_config(&mut kit, Arc::new(FailingSource)).expect("注册助手应成功");
+        let err = block_on(kit.build()).expect_err("远端源失败必须使 build 失败");
+        assert!(
+            err.to_string().contains("e2e-remote-mock"),
+            "错误文本应携带源错误信息：got '{err}'"
+        );
+        if let TraitKitError::BuildFailed { source, .. } = &err {
+            let preset_err = source.downcast_ref::<PresetError>();
+            assert!(
+                matches!(preset_err, Some(PresetError::RemoteLoad { .. })),
+                "source 应为 PresetError::RemoteLoad：got {preset_err:?}"
+            );
+        } else {
+            panic!("expected BuildFailed, got: {err:?}");
+        }
+    }
+
+    /// 无 RemoteSourceSlot 配置直接 register → ProviderNotInjected 分支。
+    #[test]
+    fn e2e_presets_remote_without_slot_reports_provider_not_injected() {
+        let mut kit = AsyncKit::new();
+        kit.register::<ConfersRemoteConfigModule>()
+            .expect("register 应成功");
+        let err = block_on(kit.build()).expect_err("无 slot 构建必须失败");
+        match &err {
+            TraitKitError::BuildFailed { source, .. } => {
+                let preset_err = source
+                    .downcast_ref::<PresetError>()
+                    .expect("source 应为 PresetError");
+                assert!(matches!(preset_err, PresetError::ProviderNotInjected));
+            }
+            other => panic!("expected BuildFailed, got: {other:?}"),
+        }
+    }
+}
+
+/// 类型化访问器防错：get_string 于 int 值、get_int 于 string 值、
+/// 未知 key 均返回 None，不 panic。
+#[cfg(feature = "presets")]
+#[test]
+fn e2e_presets_handle_typed_accessors_return_none_on_mismatch() {
+    use trait_kit::kit::presets::{ConfersConfigModule, register_confers_config};
+
+    let provider = PresetMapProvider::from_pairs([
+        ("str.key", confers::ConfigValue::String("text".into())),
+        ("int.key", confers::ConfigValue::I64(42)),
+    ]);
+    let mut kit = Kit::new();
+    register_confers_config(&mut kit, provider).expect("register preset");
+    let ready = kit.build().expect("build ok");
+    let handle = ready.require::<ConfersConfigModule>().expect("require");
+
+    assert_eq!(
+        handle.get_string("int.key"),
+        None,
+        "get_string 于 int 值应返回 None"
+    );
+    assert_eq!(
+        handle.get_int("str.key"),
+        None,
+        "get_int 于 string 值应返回 None"
+    );
+    assert_eq!(
+        handle.get_string("absent.key"),
+        None,
+        "未知 key 应返回 None"
+    );
+    assert_eq!(handle.get_int("int.key"), Some(42));
+    assert_eq!(handle.get_string("str.key").as_deref(), Some("text"));
+}

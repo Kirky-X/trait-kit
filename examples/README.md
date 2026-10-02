@@ -1,6 +1,6 @@
 # trait-kit-examples
 
-本示例集合覆盖 `trait-kit` 全部公开 API 与所有 feature 门控。每个示例都是独立的二进制，并通过 `required-features` 门控，仅在启用对应 feature 时才会编译。
+本示例集合覆盖 `trait-kit` 核心 API 与 13 个 feature 门控的用法（`probe` / `report` / `compose` / `presets` / `presets-remote` / `version-negotiation` 暂无专属示例）。每个示例都是独立的二进制，并通过 `required-features` 门控，仅在启用对应 feature 时才会编译。
 
 最低支持 Rust 版本（MSRV）：**1.97.1+**。
 
@@ -46,8 +46,8 @@ cargo run -p trait-kit-examples --example health_check --features health
 # observer：BuildObserver 回调
 cargo run -p trait-kit-examples --example observability --features observer
 
-# scope：每请求实例隔离
-cargo run -p trait-kit-examples --example scope_basic --features scope
+# request-scope：每请求实例隔离
+cargo run -p trait-kit-examples --example scope_basic --features request-scope
 
 # toggle：运行时 feature 开关式模块启用/禁用
 cargo run -p trait-kit-examples --example toggle_basic --features toggle
@@ -61,8 +61,8 @@ cargo run -p trait-kit-examples --example factory
 # decorator：构建后能力包装
 cargo run -p trait-kit-examples --example decorator --features decorator
 
-# interface：dyn Trait 依赖注入
-cargo run -p trait-kit-examples --example interface --features interface
+# di：dyn Trait 依赖注入（旧名 interface 已为 deprecated 别名）
+cargo run -p trait-kit-examples --example interface --features di
 
 # i18n：ICU4X 本地化格式化
 cargo run -p trait-kit-examples --example i18n --features i18n
@@ -72,7 +72,7 @@ cargo run -p trait-kit-examples --example i18n --features i18n
 
 | 示例 | Feature | 演示内容 |
 | ------------------ | ---------------- | --------------------------------------------------------------------------------------------- |
-| `default_basic` | `default` | `ModuleMeta` + `AutoBuilder` + `Kit::new`/`register`/`build`/`require`/`contains`/`optional` |
+| `default_basic` | — | `ModuleMeta` + `AutoBuilder` + `Kit::new`/`register`/`build`/`require`/`contains`/`optional` |
 | `confers_loader` | `confers` | `#[derive(Config)]` + `Configurable` 实现 + `Kit::load_config` + 环境变量回退 |
 | `confers_macros` | `confers` | `ModuleConfig` trait（`PATH` + `default_value`）+ 模块在 `build()` 中消费配置 |
 | `validation` | `confers` | `Validatable` trait + `Kit::load_and_validate` — 加载时配置校验 |
@@ -85,12 +85,12 @@ cargo run -p trait-kit-examples --example i18n --features i18n
 | `shutdown` | `shutdown` | `ShutdownCoordinator` 分阶段优雅关闭（`StopRequests` → `DrainQueue` → `CloseConnections`）+ 阶段/全局超时控制 |
 | `health_check` | `health` | `HealthCheck` trait + `HealthStatus` + `register_health_check` + `health_check` + `health_report` |
 | `observability` | `observer` | `BuildObserver` trait + `with_observer` + `on_module_start`/`on_module_built` 回调 |
-| `scope_basic` | `scope` | `Scope::new`/`register`/`require`/`contains` + 每请求实例隔离 + 懒构建缓存 |
+| `scope_basic` | `request-scope` | `Scope::new`/`register`/`require`/`contains` + 每请求实例隔离 + 懒构建缓存 |
 | `toggle_basic` | `toggle` | `enable_toggle` + `is_toggle_enabled` + `register_if_toggle` — 运行时 feature 开关控制 |
 | `conditional` | — | `register_if::<M>(predicate)` + 运行时谓词门控注册 |
 | `factory` | — | `Kit<Ready>::factory::<M>()` + 每次调用创建实例（对比单例 `require()`） |
 | `decorator` | `decorator` | `Kit::decorate::<M>(fn)` + 构建后能力转换 |
-| `interface` | `interface` | `InterfaceBuilder` + `register_as::<M>()` + `resolve::<dyn Trait>()` 类型擦除 DI |
+| `interface` | `di` | `InterfaceBuilder` + `register_as::<M>()` + `resolve::<dyn Trait>()` 类型擦除 DI |
 | `i18n` | `i18n` | `I18nFormatter` + `format_number`/`format_date`/`plural_category`/`compare` + 错误处理 |
 
 ## 说明

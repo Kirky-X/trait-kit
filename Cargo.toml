@@ -31,9 +31,9 @@ license = "MIT"
 [workspace.lints.clippy]
 
 [workspace.dependencies]
-confers = { version = "0.6.0-rc.5", default-features = false }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+confers = { version = "0.6.0-rc.6", default-features = false }
+serde = { version = "1.0", default-features = false, features = ["std", "derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
 trait-kit = { path = ".", default-features = false }
 
 [dependencies]
@@ -41,8 +41,8 @@ confers = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 icu = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
-writeable = { version = "0.6", optional = true }
-sys-locale = { version = "0.3", optional = true }
+writeable = { version = "0.6", default-features = false, features = ["alloc"], optional = true }
+sys-locale = { version = "0.3", default-features = false, optional = true }
 # Runtime-agnostic timer for `run_probes_with_timeout` / `probe_aggregate_with_timeout`:
 # a global background thread drives the delays, so the futures stay executor-independent
 # (no tokio/async-std coupling). Native std backend needs no feature; the wasm
@@ -50,8 +50,9 @@ sys-locale = { version = "0.3", optional = true }
 futures-timer = { version = "3.0", default-features = false, optional = true }
 # Fluent FTL message translation (concurrent bundle). Always on: `tr()` /
 # `I18nManager` work with or without the `i18n` feature (en-US fallback).
-fluent-bundle = "0.16"
-unic-langid = "0.9"
+# 两者默认特性为空集，显式关闭仅作声明（无可裁剪面）。
+fluent-bundle = { version = "0.16", default-features = false }
+unic-langid = { version = "0.9", default-features = false }
 # Structured logging facade for degradation events (`soft_build` fallback
 # path, `register_shutdown_into` bridge-failure logging). Always on:
 # `soft_build` is ungated public API, so a `dep:log` feature would split the
@@ -59,16 +60,23 @@ unic-langid = "0.9"
 # surface in whatever subscriber the consumer installs (log-native, or
 # bridged by tracing-subscriber's default `tracing-log` support).
 log = { version = "0.4", default-features = false, features = ["std"] }
+# confers 0.6 起 `derive_field_key` 返回 `Zeroizing<[u8; 32]>`（密钥材料 drop
+# 自清零），trait-kit 的 `derive_kit_field_key` 透传该容器，需显式命名类型。
+zeroize = { version = "1.9", default-features = false, features = ["alloc"], optional = true }
 
 [dev-dependencies]
+# thiserror 无 std 时走 core::error::Error；serial_test 只用同步 #[serial]，
+# 砍掉 logging/async 默认特性携带的 log 与 futures-executor/futures-util
+# （env_logger 属非默认的 test_logging 特性，本就不在裁剪面内）。
 thiserror = { version = "2.0", default-features = false }
-serial_test = "4.0"
-static_assertions = "1.1"
-trybuild = "1.0"
+serial_test = { version = "4.0", default-features = false }
+static_assertions = { version = "1.1", default-features = false }
+trybuild = { version = "1.0", default-features = false }
 criterion = { version = "0.8", default-features = false, features = [
     "cargo_bench_support",
 ] }
-async-trait = "0.1"
+# async-trait 无任何 feature，显式关闭仅为声明统一。
+async-trait = { version = "0.1", default-features = false }
 serde_json = { workspace = true }
 trait-kit-macros = { version = "0.5.0-rc.6", path = "trait-kit-macros" }
 
@@ -93,7 +101,7 @@ confers = ["dep:confers", "dep:serde", "dep:serde_json", "confers/feature-toggle
 reload = ["confers"]
 # Encrypted config storage (maps to confers `encryption` feature).
 # 文档声称的三层继承链 `encryption` → `reload` → `confers` 在此定义成立。
-encryption = ["reload", "confers", "confers/encryption"]
+encryption = ["reload", "confers", "confers/encryption", "dep:zeroize"]
 # Interface/implementation separation: register_as / resolve behind a feature gate.
 di = []
 # Deprecated alias of `di`.

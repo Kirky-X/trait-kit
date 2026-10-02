@@ -17,10 +17,20 @@ workspace = true
 proc-macro = true
 
 [dependencies]
-syn = { version = "3.0", features = ["full", "extra-traits"] }
-quote = "1.0"
-proc-macro2 = "1.0"
+# syn 默认特性 = derive+parsing+printing+clone-impls+proc-macro，此处显式重申。
+# 不启用 extra-traits：本 crate 不对 syn AST 做 Debug/Eq 断言，该特性只会给
+# 所有下游的宏编译平添 impl 生成成本。
+syn = { version = "3.0", default-features = false, features = [
+    "derive",
+    "full",
+    "parsing",
+    "printing",
+    "clone-impls",
+    "proc-macro",
+] }
+quote = { version = "1.0", default-features = false, features = ["proc-macro"] }
+proc-macro2 = { version = "1.0", default-features = false, features = ["proc-macro"] }
 
 [dev-dependencies]
 trait-kit = { path = "..", version = "0.5.0-rc.6", default-features = false }
-trybuild = "1.0"
+trybuild = { version = "1.0", default-features = false }

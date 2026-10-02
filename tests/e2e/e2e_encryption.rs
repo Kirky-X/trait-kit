@@ -59,7 +59,7 @@ fn e2e_reexported_crypto_roundtrip_via_trait_kit_path() {
     let cipher = XChaCha20Crypto::new();
     let plaintext = b"trait-kit e2e secret payload".to_vec();
     let (nonce, ciphertext) = cipher
-        .encrypt(&plaintext, &field_key)
+        .encrypt(&plaintext, &*field_key)
         .expect("合法 32 字节密钥加密应成功");
 
     assert_eq!(
@@ -74,14 +74,129 @@ fn e2e_reexported_crypto_roundtrip_via_trait_kit_path() {
     );
 
     let roundtrip = cipher
-        .decrypt(&nonce, &ciphertext, &field_key)
+        .decrypt(&nonce, &ciphertext, &*field_key)
         .expect("同密钥解密应成功");
-    assert_eq!(roundtrip, plaintext, "roundtrip 应还原明文");
+    assert_eq!(*roundtrip, plaintext, "roundtrip 应还原明文");
 
     // 错误密钥（不同 PATH 派生）解密 → CryptoError（Poly1305 校验失败）。
     let other_key = derive_field_key(&master, "other/path", "v1").unwrap();
     assert!(
-        cipher.decrypt(&nonce, &ciphertext, &other_key).is_err(),
+        cipher.decrypt(&nonce, &ciphertext, &*other_key).is_err(),
         "跨字段密钥解密必须失败（密钥隔离）"
     );
+}
+
+// ─── ConfersKeyProvider 桥接 confers SecretKeyProvider（e2e 层） ──────
+
+/// confers 生态桥接：ConfersKeyProvider 包裹任意 confers
+/// SecretKeyProvider → roundtrip 成功、provider_type 透传、get_key 失败
+/// 时 fail-closed 为 BuildFailed{context="key provider (<type>)"}。
+/// （src 内部单测 key_provider_tests 为同型锚点，本用例固化 e2e 面。）
+#[cfg(feature = "confers")]
+mod confers_key_provider_bridge_e2e {
+    use trait_kit::kit::config::{ConfersKeyProvider, KeyProvider};
+    use trait_kit::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct BridgeSecret {
+        token: String,
+    }
+    impl ModuleConfig for BridgeSecret {
+        const PATH: &'static str = "e2e/key-provider-bridge";
+        fn default_value() -> Self {
+            Self {
+                token: String::new(),
+            }
+        }
+    }
+
+    /// 正常 32 字节 confers provider mock。
+    struct WorkingConfersProvider;
+    impl confers::secret::SecretKeyProvider for WorkingConfersProvider {
+        fn get_key(&self) -> Result<confers::SecretBytes, confers::CryptoError> {
+            Ok(confers::SecretBytes::new(vec![7u8; 32]))
+        }
+        fn provider_type(&self) -> &'static str {
+            "e2e-bridge"
+        }
+    }
+
+    /// get_key 返回 Err 的 confers provider（fail-closed 路径）。
+    struct FailingConfersProvider;
+    impl confers::secret::SecretKeyProvider for FailingConfersProvider {
+        fn get_key(&self) -> Result<confers::SecretBytes, confers::CryptoError> {
+            Err(confers::CryptoError::InvalidKeyLength(4))
+        }
+        fn provider_type(&self) -> &'static str {
+            "e2e-broken"
+        }
+    }
+
+    /// 短钥 confers provider（<16 字节，get 侧下限校验）。
+    struct ShortKeyConfersProvider;
+    impl confers::secret::SecretKeyProvider for ShortKeyConfersProvider {
+        fn get_key(&self) -> Result<confers::SecretBytes, confers::CryptoError> {
+            Ok(confers::SecretBytes::new(vec![1u8; 8]))
+        }
+        fn provider_type(&self) -> &'static str {
+            "e2e-short"
+        }
+    }
+
+    #[test]
+    fn e2e_confers_key_provider_roundtrip_and_fail_closed() {
+        // 成功路径：经 provider set → get_encrypted(同钥) roundtrip。
+        let kit = Kit::new();
+        let provider = ConfersKeyProvider::new(WorkingConfersProvider);
+        kit.set_encrypted_with_key_provider(
+            &BridgeSecret {
+                token: "bridge-secret".into(),
+            },
+            &provider,
+        )
+        .expect("经 confers provider 加密应成功");
+        let ready = kit.build().expect("build 应成功");
+        let plain: BridgeSecret = ready
+            .get_encrypted(provider.master_key().expect("key").expose())
+            .expect("同钥解密应成功");
+        assert_eq!(plain.token, "bridge-secret");
+        // provider_type 透传内层类型名。
+        assert_eq!(provider.provider_type(), "e2e-bridge");
+
+        // fail-closed：get_key 返回 Err → BuildFailed，context 指明
+        // key provider 与内层类型名（不落空钥路径）。
+        let broken = Kit::new();
+        let err = broken
+            .set_encrypted_with_key_provider(
+                &BridgeSecret { token: "x".into() },
+                &ConfersKeyProvider::new(FailingConfersProvider),
+            )
+            .expect_err("get_key 失败必须 fail-closed");
+        match &err {
+            TraitKitError::BuildFailed { context, .. } => {
+                assert!(
+                    context.contains("key provider") && context.contains("e2e-broken"),
+                    "context 应含 key provider 与内层类型名：got '{context}'"
+                );
+            }
+            other => panic!("expected BuildFailed, got: {other:?}"),
+        }
+        assert_eq!(
+            err.kind(),
+            trait_kit::ErrorKind::InitFailed,
+            "fail-closed 应归类 InitFailed"
+        );
+
+        // fail-closed：短钥同样立即拒绝（不落空钥/弱钥路径）。
+        let short = Kit::new();
+        assert!(
+            short
+                .set_encrypted_with_key_provider(
+                    &BridgeSecret { token: "x".into() },
+                    &ConfersKeyProvider::new(ShortKeyConfersProvider),
+                )
+                .is_err(),
+            "短钥必须立即拒绝"
+        );
+    }
 }

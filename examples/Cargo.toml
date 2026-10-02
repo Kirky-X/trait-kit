@@ -17,7 +17,7 @@ trait-kit-macros = { version = "0.5.0-rc.6", path = "../trait-kit-macros" }
 # references confers::* / serde::* paths from the *caller's* crate.
 serde = { workspace = true, optional = true }
 confers = { workspace = true, optional = true }
-serde_json = { version = "1.0", optional = true }
+serde_json = { workspace = true, optional = true }
 
 [features]
 default = []

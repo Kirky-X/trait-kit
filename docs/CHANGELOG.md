@@ -54,12 +54,48 @@
 - **API**：`ProbeReport` 新增 `stopped: bool` 字段（结构体字面量构造方需同步）；`register_probe` 签名从泛型 `Arc<P>` 收紧为 `Arc<dyn ServiceProbe>`（与 `with_observer` 惯例对齐，调用点源码不变）；`ServiceProbe::probe` 文档将"实现内自设超时"从建议升级为契约，并要求取消安全（有界变体在超时处 drop 探针 future）
 - **API**：`Kit::take_config_overrides()` / `AsyncKit::take_config_overrides()`（`report` 特性）——排空并返回 `config_overrides` 历史（记录序），高频 `merge_config` 的长生命周期 Kit 在轮转点调用以防无界累积（每条约 40B，`build_report()` 快照整段 clone）；`BuildReport::config_overrides` 文档从权衡说明升级为使用警告
 - **依赖**：新增 optional `futures-timer 3.0`（`default-features = false`，经 `probe` feature 挂载）——运行时无关的全局定时器线程，超时变体所需；不引入 tokio/async-std 耦合
+- **依赖**：`confers` req 0.6.0-rc.5 → 0.6.0-rc.6（crates.io）——0.6.0-rc.6 起 `derive_field_key` 返回 `Zeroizing<[u8; 32]>`（密钥材料 drop 自清零），trait-kit 的 `derive_kit_field_key` 透传该容器并需显式命名类型，为此新增 optional `zeroize 1.9`（`default-features = false, features = ["alloc"]`，经 `encryption` feature 挂载）
 - **API**：`ShutdownPhaseResult` 新增 `hook_failures: usize` 字段（结构体字面量构造方需同步）；`is_ok()` 语义收紧为 `!timed_out && hook_failures == 0`，`into_result()` 对"仅 hook panic"场景返回 `BuildFailed`
 - **API**：`AsyncShutdownCoordinator::pending_local_hook_count()` 返回类型改为 `Result<usize, TraitKitError>`——锁中毒不再 panic 击穿宿主监控线程，与同 impl 块 `register_local_hook`/`shutdown_local` 的错误纪律一致；`AsyncKit::register_shutdown_into` 桥接部分失败时，返回的 `TraitKitError::BuildFailed` 以 i18n context 报告桥接操作/阶段与 stranded 计数、原错误整体降为 source（包装对任意错误变体通用），程序化检测清理丢失不再依赖 log subscriber
 - **文档**：README/README_EN/SECURITY 的"无 unsafe"表述修正为"默认禁用 + 6 处经审计豁免"；API_REFERENCE 补 lazy 模块检索口径
+- **文档漂移批量修正**（以代码实测为准）：USER_GUIDE/CONTRIBUTING 的"无 unsafe"表述同步为 6 处豁免口径；README/README_EN/USER_GUIDE 修正默认依赖表述（`fluent-bundle`/`unic-langid`/`log` 为 Always-on 必选依赖）与 feature 计数 18→19；workspace 成员表述统一为三个（`trait-kit-derive` 已并入 `trait-kit-macros`，含 ARCHITECTURE 架构图双节点合并）；README/README_EN 修正 typestate 编译期排除范围（`optional()` on `Unbuilt` 与 register/build on `Ready`，`require()` 双态可编译）与 `set_config`/`reload_config` 态归属；`graph_dot()`/`graph_mermaid()` 门控归属修正（无门控，仅 `build_report()`/`contract_manifest()` 属 `report`）；API_REFERENCE 修正 `create_scope_from` 签名（`&Rc<Kit>` 弱引用，不消费 Kit）并补录 `#[derive(Module)]`；测试计数 795→911；examples/README 运行命令迁正名 feature（`request-scope`/`di`）；CONTRIBUTING pre-commit 钩子表对齐实际（无 cargo-deny、大文件阈值 1000KB）；SECURITY 修正发布扫描工具表述（实际门禁为 cargo-audit+cargo-deny/CodeQL/detect-secrets）；CHANGELOG 正文版本节恢复时间倒序（rc.6→rc.5→rc.4）
 - **文档**：README/README_EN 路线图关闭"cfg 门控完整性"条目——`--no-default-features --features async` 与 `async,observer` 组合 check、`clippy --features async --all-targets` 零告警，`cargo test --features async --doc` 全通过，async × observer 门控缺口经复测确认已消除
 - **依赖**：新增非 optional `log 0.4`（`default-features = false, features = ["std"]`，零传递依赖 facade）——新增的 `soft_build` 可降级构建助手的 `error!` 降级日志所需；所有消费者升级 rc+1 后依赖闭包将新增 `log`
 - **构建**：`shutdown.rs` 的 `crate::i18n::tr` 导入补 `#[cfg(feature = "async")]` 门控，`shutdown`∧¬`async` 组合（含 `lifecycle,shutdown`、`observer,lifecycle,shutdown`）不再产生 `unused_imports` 告警，`-D warnings` 构建在这些组合下恢复可用
+
+---
+
+## [0.5.0-rc.6] - 2026-09-21
+
+### Added
+
+- **AsyncKit 版本协商补齐**：negotiate feature 下 AsyncKit 与同步 Kit 同口径的版本兼容校验
+
+### Changed
+
+- **i18n 整改**：接入 unify-rust-i18n 统一错误与消息文案
+- **confers 依赖改走 crates.io**：移除跨仓 path，req 升 0.6.0-rc.5
+- **依赖升级**：syn 2.0.119 → 3.0.5、criterion 0.7.0 → 0.8.2、rustls 0.23.45（RUSTSEC-2026-0285）
+- **供应链与工程加固**：detect-secrets 基线、pre-commit 门禁、typos 词表白名单、path-only 依赖补全 version 字段
+- **发布流程加固**：先发 trait-kit-macros 再发主 crate，crates.io 发布后硬校验，校验 curl 补 User-Agent 并加重试
+
+### Fixed
+
+- **encryption 继承链对齐**：di/request-scope/version-negotiation 特性正名
+- ReloadSubscriber 别名与 AsyncDecoMod 测试模块随使用处特性门控
+
+---
+
+## [0.5.0-rc.5] - 2026-09-14
+
+### Changed
+
+- **trait-kit-derive 并入 trait-kit-macros**：ConfigInherit/SharedConfig 迁移，derive 子包退役；PRE-03 契约与 docs/deny.toml 同步，CI 门禁收敛
+
+### Fixed
+
+- cargo-deny path-only 通配依赖违规：trait-kit-macros 的 dev-dependency trait-kit 补 version 声明
+- release 工作流 publish 步骤幂等容错：本地先行发布/重跑 tag 撞车不阻断 Release 交付
 
 ---
 
@@ -106,40 +142,6 @@
 - `derive_kit_field_key` 改为 `pub(crate)` 供 `async_kit.rs` 跨模块访问
 - OCR 审查修复组：事件总线回调持锁死锁、密钥擦除补 `inline(never)`、`ConfersToggle::remove` 补移除语义、`to_json`/`health_json` 返回 `Result`、`interpolate_json_value` 迭代化
 - lifecycle 测试共享计数器互斥串行（并行 build 各触发 on_ready 的计数污染致偶发红）
-
----
-
-## [0.5.0-rc.5] - 2026-09-14
-
-### Changed
-
-- **trait-kit-derive 并入 trait-kit-macros**：ConfigInherit/SharedConfig 迁移，derive 子包退役；PRE-03 契约与 docs/deny.toml 同步，CI 门禁收敛
-
-### Fixed
-
-- cargo-deny path-only 通配依赖违规：trait-kit-macros 的 dev-dependency trait-kit 补 version 声明
-- release 工作流 publish 步骤幂等容错：本地先行发布/重跑 tag 撞车不阻断 Release 交付
-
----
-
-## [0.5.0-rc.6] - 2026-09-21
-
-### Added
-
-- **AsyncKit 版本协商补齐**：negotiate feature 下 AsyncKit 与同步 Kit 同口径的版本兼容校验
-
-### Changed
-
-- **i18n 整改**：接入 unify-rust-i18n 统一错误与消息文案
-- **confers 依赖改走 crates.io**：移除跨仓 path，req 升 0.6.0-rc.5
-- **依赖升级**：syn 2.0.119 → 3.0.5、criterion 0.7.0 → 0.8.2、rustls 0.23.45（RUSTSEC-2026-0285）
-- **供应链与工程加固**：detect-secrets 基线、pre-commit 门禁、typos 词表白名单、path-only 依赖补全 version 字段
-- **发布流程加固**：先发 trait-kit-macros 再发主 crate，crates.io 发布后硬校验，校验 curl 补 User-Agent 并加重试
-
-### Fixed
-
-- **encryption 继承链对齐**：di/request-scope/version-negotiation 特性正名
-- ReloadSubscriber 别名与 AsyncDecoMod 测试模块随使用处特性门控
 
 ---
 

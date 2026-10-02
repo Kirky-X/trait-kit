@@ -21,14 +21,13 @@ trait-kit 的架构设计围绕一个核心目标：**在应用启动时，以�
 
 ## 🗺️ 整体架构
 
-trait-kit workspace 由四个成员组成。主 crate 的 `src/` 分三层：`core` 接口层、`kit` 能力管理中心、`i18n` 国际化。
+trait-kit workspace 由三个成员组成（主 crate、过程宏 crate、示例 crate）。主 crate 的 `src/` 分三层：`core` 接口层、`kit` 能力管理中心、`i18n` 国际化。
 
 ```mermaid
 flowchart TD
     subgraph ws["trait-kit workspace"]
         TK["trait-kit 主 crate<br/>core / kit / i18n"]
-        DER["trait-kit-macros<br/>Module + ConfigInherit + SharedConfig"]
-        MAC["trait-kit-macros<br/>derive Module"]
+        MAC["trait-kit-macros<br/>derive Module / ConfigInherit / SharedConfig"]
         EX["trait-kit-examples<br/>20 个可运行示例"]
     end
 
@@ -41,10 +40,9 @@ flowchart TD
     TK --> CORE
     TK --> KIT
     TK --> I18N
-    TK -->|"dev-dependency"| DER
     MAC -->|"dev-dependency（测试）"| TK
     EX --> TK
-    EX --> DER
+    EX --> MAC
 ```
 
 `kit` 管理中心内部的组件关系：
@@ -86,8 +84,8 @@ Kit<Unbuilt>                    Kit<Ready>
 │ register_as()   │             │ require_all()   │
 │ set_config()    │             │ resolve()       │
 │ build()         │             │ contains()      │
-│ shutdown()      │             │ health_check()  │
-└─────────────────┘             │ shutdown()      │
+└─────────────────┘             │ health_check()  │
+                                │ shutdown()      │
                                 └─────────────────┘
 ```
 
@@ -242,7 +240,8 @@ src/
 │   ├── macros.rs       # impl_module_meta! / impl_auto_builder! / impl_async_auto_builder!
 │   ├── health.rs       # HealthCheck / AsyncHealthCheck / HealthStatus
 │   ├── lifecycle.rs    # Lifecycle / AsyncLifecycle
-│   └── observer.rs     # BuildObserver
+│   ├── observer.rs     # BuildObserver
+│   └── probe.rs        # ServiceProbe / ProbeReport / ProbeEntry（probe feature）
 ├── kit/
 │   ├── mod.rs          # Kit 模块声明 + re-export
 │   ├── kit.rs          # Kit<Unbuilt> → Kit<Ready> typestate 实现
@@ -251,6 +250,7 @@ src/
 │   ├── typemap.rs      # TypeMap：TypeId 键值存储
 │   ├── scope.rs        # Scope / AsyncScope
 │   ├── shutdown.rs     # ShutdownCoordinator / AsyncShutdownCoordinator
+│   ├── soft_build.rs   # soft_build 降级构建助手（失败时落 fallback 能力）
 │   ├── toggle.rs       # ToggleBackend / MemoryToggle / 类型化开关句柄
 │   ├── async_kit.rs    # AsyncKit（并发构建 + Send + Sync）
 │   ├── async_typemap.rs # AsyncTypeMap

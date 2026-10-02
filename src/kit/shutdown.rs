@@ -53,7 +53,6 @@ use std::cell::RefCell;
 use std::sync::{Arc, RwLock};
 
 use crate::error::TraitKitError;
-#[cfg(feature = "async")]
 use crate::i18n::tr;
 
 /// 关闭阶段，按枚举定义顺序依次执行。
@@ -404,8 +403,9 @@ impl ShutdownResult {
         let failures: usize = self.phases.iter().map(|p| p.hook_failures).sum();
         Err(TraitKitError::BuildFailed {
             context: "shutdown".into(),
-            source: Box::new(std::io::Error::other(format!(
-                "{failures} shutdown hook(s) panicked and were isolated"
+            source: Box::new(std::io::Error::other(tr(
+                "trait-kit-error-shutdown-hooks-panicked",
+                &[("failures", &failures.to_string())],
             ))),
         })
     }
@@ -2010,5 +2010,166 @@ mod async_tests {
             source_msg.contains("RwLock poisoned"),
             "source 链须可追溯到锁中毒根因，实际: {source_msg}"
         );
+    }
+}
+
+// ─── into_result hook-failure branch ───────────────────────────────────────
+
+#[cfg(test)]
+mod into_result_failures_tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// 只有 hook panic（无超时阶段）时 `into_result` 返回 `BuildFailed`，
+    /// 错误信息携带被隔离的 hook 数量。
+    #[test]
+    fn shutdown_result_into_result_reports_isolated_hook_failures() {
+        let result = ShutdownResult {
+            phases: vec![
+                ShutdownPhaseResult {
+                    phase: ShutdownPhase::StopRequests,
+                    timed_out: false,
+                    elapsed: Duration::from_millis(1),
+                    hook_failures: 2,
+                },
+                ShutdownPhaseResult {
+                    phase: ShutdownPhase::DrainQueue,
+                    timed_out: false,
+                    elapsed: Duration::from_millis(1),
+                    hook_failures: 1,
+                },
+            ],
+        };
+        assert!(!result.is_ok());
+        assert!(result.timed_out_phases().is_empty());
+        let err = result.into_result().unwrap_err();
+        let TraitKitError::BuildFailed { context, source } = &err else {
+            panic!("expected BuildFailed, got {err:?}")
+        };
+        assert_eq!(context, "shutdown");
+        let msg = format!("{source}");
+        assert!(
+            msg.contains('3'),
+            "failure count should appear in the message: {msg}"
+        );
+    }
+}
+
+// ─── async global deadline skips remaining phases at the boundary ─────────
+
+#[cfg(all(test, feature = "async"))]
+mod async_deadline_tests {
+    use super::*;
+    use crate::test_helpers::block_on;
+
+    /// 全局预算在阶段边界耗尽时，剩余阶段整体跳过（`timed_out`、
+    /// 零耗时、零 hook 执行）。
+    #[test]
+    fn async_zero_global_timeout_skips_all_phases() {
+        block_on(async {
+            let coord = AsyncShutdownCoordinator::new();
+            coord.set_global_timeout(Duration::ZERO).unwrap();
+
+            let result = coord.shutdown().await.unwrap();
+            assert_eq!(
+                result.timed_out_phases(),
+                vec![
+                    ShutdownPhase::StopRequests,
+                    ShutdownPhase::DrainQueue,
+                    ShutdownPhase::CloseConnections
+                ],
+                "every phase past the exhausted budget is skipped"
+            );
+            for phase in &result.phases {
+                assert_eq!(phase.elapsed, Duration::ZERO, "skipped phases cost 0");
+                assert_eq!(phase.hook_failures, 0);
+            }
+        });
+    }
+}
+
+// ─── shutdown_local: local hooks + exhausted global budget ──────────────
+
+#[cfg(all(test, feature = "async"))]
+mod async_shutdown_local_tests {
+    use super::*;
+    use crate::test_helpers::block_on;
+    use std::sync::{Arc, Mutex, RwLock};
+
+    /// 持有 `RwLock` 读卫的 `!Send` future：证明 local 槽位不要求 `Send`。
+    struct LocalGuardFuture {
+        _guard: Arc<RwLock<u32>>,
+        log: Arc<Mutex<Vec<&'static str>>>,
+    }
+    impl Future for LocalGuardFuture {
+        type Output = ();
+        fn poll(self: Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> Poll<()> {
+            self.log.lock().unwrap().push("local");
+            Poll::Ready(())
+        }
+    }
+
+    #[test]
+    fn local_hooks_run_after_send_hooks_in_registration_order() {
+        let order: Arc<Mutex<Vec<&'static str>>> = Arc::new(Mutex::new(Vec::new()));
+        let guard = Arc::new(RwLock::new(7u32));
+
+        block_on(async {
+            let coord = AsyncShutdownCoordinator::new();
+            let first = Arc::clone(&order);
+            coord
+                .register_hook(ShutdownPhase::DrainQueue, move || {
+                    let log = Arc::clone(&first);
+                    Box::pin(async move {
+                        log.lock().unwrap().push("send-1");
+                    })
+                })
+                .unwrap();
+            let second = Arc::clone(&order);
+            coord
+                .register_hook(ShutdownPhase::DrainQueue, move || {
+                    let log = Arc::clone(&second);
+                    Box::pin(async move {
+                        log.lock().unwrap().push("send-2");
+                    })
+                })
+                .unwrap();
+            let g = Arc::clone(&guard);
+            let third = Arc::clone(&order);
+            coord
+                .register_local_hook(ShutdownPhase::DrainQueue, move || {
+                    Box::pin(LocalGuardFuture {
+                        _guard: g,
+                        log: third,
+                    })
+                })
+                .unwrap();
+            assert_eq!(coord.pending_local_hook_count().unwrap(), 1);
+
+            let result = coord.shutdown_local().await.unwrap();
+            assert!(result.is_ok(), "no timeouts, no failures: {result:?}");
+            assert_eq!(coord.pending_local_hook_count().unwrap(), 0, "drained");
+        });
+
+        assert_eq!(
+            order.lock().unwrap().clone(),
+            vec!["send-1", "send-2", "local"],
+            "send hooks in registration order, then the local slot"
+        );
+    }
+
+    #[test]
+    fn shutdown_local_with_exhausted_budget_skips_every_phase() {
+        block_on(async {
+            let coord = AsyncShutdownCoordinator::new();
+            coord.set_global_timeout(Duration::ZERO).unwrap();
+
+            let result = coord.shutdown_local().await.unwrap();
+            assert!(
+                result.phases.iter().all(|p| p.timed_out),
+                "global budget exhausted at every phase boundary: {result:?}"
+            );
+            assert!(result.phases.iter().all(|p| p.elapsed == Duration::ZERO));
+        });
     }
 }
