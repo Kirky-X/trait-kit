@@ -491,8 +491,8 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 # Dependency audit (advisories / licenses / bans / sources)
 cargo deny check
 
-# Coverage gate (CI coverage job: ≥ 90% line coverage)
-cargo llvm-cov --workspace --all-features --fail-under-lines 90
+# Coverage gate (CI coverage job: ≥ 95% line coverage)
+cargo llvm-cov --workspace --all-features --fail-under-lines 95
 ```
 
 ---
@@ -550,7 +550,7 @@ Contributions are welcome! For full environment setup, the TDD workflow, and com
 - Commit messages follow **conventional commits** (`feat(scope): ...`, `fix(scope): ...`, `docs: ...`, etc.), enforced by the lefthook `commit-msg` hook.
 - **lefthook** hook gates (`lefthook.yml`):
   - `pre-commit`: `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo deny check`, private-key content scan;
-  - `pre-push`: `cargo audit`, coverage ≥ 90% lines.
+  - `pre-push`: `cargo audit`, coverage ≥ 95% lines.
 - Never bypass the hooks with `--no-verify`.
 
 ### Development Commands

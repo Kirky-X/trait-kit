@@ -485,8 +485,8 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 # 依赖审计（advisories / licenses / bans / sources）
 cargo deny check
 
-# 覆盖率门禁（CI coverage job：行覆盖 ≥ 90%）
-cargo llvm-cov --workspace --all-features --fail-under-lines 90
+# 覆盖率门禁（CI coverage job：行覆盖 ≥ 95%）
+cargo llvm-cov --workspace --all-features --fail-under-lines 95
 ```
 
 ---
@@ -544,7 +544,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 90
 - 提交信息遵循 **conventional commits**（`feat(scope): ...`、`fix(scope): ...`、`docs: ...` 等），由 lefthook `commit-msg` 钩子校验。
 - **lefthook** 钩子门禁（`lefthook.yml`）：
   - `pre-commit`：`cargo fmt --check`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo deny check`、私钥内容扫描；
-  - `pre-push`：`cargo audit`、覆盖率 ≥ 90% 行覆盖。
+  - `pre-push`：`cargo audit`、覆盖率 ≥ 95% 行覆盖。
 - 禁止使用 `--no-verify` 跳过钩子。
 
 ### 开发命令
