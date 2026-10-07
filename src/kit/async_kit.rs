@@ -749,13 +749,7 @@ impl AsyncKit {
                             key: module_name.to_string(),
                         })?;
                 // Observer: notify build start when the future is queued.
-                #[cfg(feature = "observer")]
-                {
-                    let observers = self.observer.observers.read().expect("lock poisoned");
-                    for obs in observers.iter() {
-                        obs.on_module_start(module_name);
-                    }
-                }
+                self.notify_build_start(module_name);
                 let started_at = if timing_enabled {
                     Some(std::time::Instant::now())
                 } else {
@@ -776,45 +770,16 @@ impl AsyncKit {
                 match outcome {
                     Ok(boxed) => {
                         // Apply decorators (keyed by capability TypeId)
-                        #[cfg(feature = "decorator")]
-                        let boxed = {
-                            let cap_type_id = self
-                                .decorator
-                                .decorator_module_to_cap
-                                .read()
-                                .expect("lock poisoned")
-                                .get(&type_id)
-                                .copied()
-                                .unwrap_or(type_id);
-                            self.apply_decorators(cap_type_id, boxed)
-                        };
+                        let boxed = self.wrap_decorated(type_id, boxed);
                         self.capabilities.insert_boxed(type_id, boxed);
-                        // Report: record the module fact in completion order.
-                        // This loop is the serial post-`batch.await` section,
-                        // so the report state has no concurrent writers. The
-                        // elapsed time measures from when the build future was
-                        // queued (same semantic as the observer/event-bus
-                        // consumers above).
-                        #[cfg(feature = "report")]
-                        {
-                            let report_deps = self.graph.dependency_names(type_id);
-                            let report_elapsed_us = started_at.map_or(0, |t| {
-                                u64::try_from(t.elapsed().as_micros()).unwrap_or(u64::MAX)
-                            });
-                            self.report
-                                .push_built(module_name, report_elapsed_us, report_deps);
-                        }
-                        #[cfg(feature = "observer")]
-                        {
-                            let observers = self.observer.observers.read().expect("lock poisoned");
-                            for obs in observers.iter() {
-                                // Completion-order callback within the layer.
-                                obs.on_module_built(
-                                    module_name,
-                                    started_at.map_or(std::time::Duration::ZERO, |t| t.elapsed()),
-                                );
-                            }
-                        }
+                        // Report/observer: record the module fact in completion
+                        // order. This loop is the serial post-`batch.await`
+                        // section, so the report state has no concurrent
+                        // writers. The elapsed time measures from when the
+                        // build future was queued (same semantic as the
+                        // observer/event-bus consumers above).
+                        self.record_built(type_id, module_name, started_at);
+                        self.notify_build_completed(module_name, started_at);
                         if event_bus_present {
                             self.publish_event(super::events::KitEvent::ModuleBuilt {
                                 module: module_name,
@@ -829,13 +794,7 @@ impl AsyncKit {
                             context: module_name.to_string(),
                             source: e,
                         };
-                        #[cfg(feature = "observer")]
-                        {
-                            let observers = self.observer.observers.read().expect("lock poisoned");
-                            for obs in observers.iter() {
-                                obs.on_build_error(module_name, &err);
-                            }
-                        }
+                        self.notify_build_error(module_name, &err);
                         return Err(err);
                     }
                 }
@@ -852,14 +811,7 @@ impl AsyncKit {
         // 4. Transition to Ready: reuse all containers, swap the state marker.
         //    `builders` was drained (not moved) above; the empty map is reused.
         #[cfg(feature = "lifecycle")]
-        let ready_callbacks: Vec<(TypeId, AsyncReadyCallback)> = {
-            self.lifecycle
-                .ready_callbacks
-                .write()
-                .expect("lock poisoned")
-                .drain(..)
-                .collect()
-        };
+        let ready_callbacks: Vec<(TypeId, AsyncReadyCallback)> = self.take_ready_callbacks();
 
         // Sort the async shutdown hooks by topological index (stable sort):
         // the reverse-order drain in `shutdown_async` then executes them in
@@ -869,16 +821,12 @@ impl AsyncKit {
         // tail (`usize::MAX`), mirroring the on_ready sort below.
         #[cfg(feature = "lifecycle")]
         {
-            let topo_index: HashMap<TypeId, usize> = sorted
-                .iter()
-                .enumerate()
-                .map(|(idx, id)| (*id, idx))
-                .collect();
-            self.lifecycle
+            let mut hooks = self
+                .lifecycle
                 .async_shutdown_callbacks
                 .write()
-                .expect("lock poisoned")
-                .sort_by_key(|(type_id, _)| topo_index.get(type_id).copied().unwrap_or(usize::MAX));
+                .expect("lock poisoned");
+            crate::core::lifecycle::sort_by_topo_order(&mut hooks, &sorted);
         }
 
         let kit = AsyncKit {
@@ -919,14 +867,8 @@ impl AsyncKit {
         // for modules absent from the dependency graph.
         #[cfg(feature = "lifecycle")]
         {
-            let topo_index: HashMap<TypeId, usize> = sorted
-                .iter()
-                .enumerate()
-                .map(|(idx, id)| (*id, idx))
-                .collect();
             let mut on_ready: Vec<(TypeId, AsyncReadyCallback)> = ready_callbacks;
-            on_ready
-                .sort_by_key(|(type_id, _)| topo_index.get(type_id).copied().unwrap_or(usize::MAX));
+            crate::core::lifecycle::sort_by_topo_order(&mut on_ready, &sorted);
             for (_type_id, callback) in &on_ready {
                 callback(&kit).await?;
             }
@@ -1181,6 +1123,31 @@ impl AsyncKit {
 }
 
 impl<S> AsyncKit<S> {
+    /// Drain the pending `on_ready` callbacks (the `build()` hand-off to the
+    /// ready kit; the ready kit's own registry starts empty).
+    #[cfg(feature = "lifecycle")]
+    fn take_ready_callbacks(&self) -> Vec<(TypeId, AsyncReadyCallback)> {
+        self.lifecycle
+            .ready_callbacks
+            .write()
+            .expect("lock poisoned")
+            .drain(..)
+            .collect()
+    }
+
+    /// Drain the registered async shutdown hooks (`shutdown_async()` /
+    /// `register_shutdown_into()`); both consumers need each hook to run
+    /// exactly once.
+    #[cfg(feature = "lifecycle")]
+    fn take_shutdown_hooks(&self) -> Vec<(TypeId, AsyncShutdownHookFn)> {
+        self.lifecycle
+            .async_shutdown_callbacks
+            .write()
+            .expect("lock poisoned")
+            .drain(..)
+            .collect()
+    }
+
     /// Publish `event` to the injected bus (no-op when absent). Internal
     /// helper keeping the `Option` check in exactly one place.
     fn publish_event(&self, event: super::events::KitEvent) {
@@ -1272,10 +1239,9 @@ impl<S> AsyncKit<S> {
     /// `register_shutdown_into`): a shut-down kit has no services left to
     /// probe, and the stopped mark keeps `run_probes()` from reporting the
     /// cleared registry as healthy-by-convention. Both callers are
-    /// lifecycle-gated, so the helper carries the same escape hatch for
-    /// `probe` ∧ ¬`lifecycle`.
-    #[cfg(feature = "probe")]
-    #[cfg_attr(not(feature = "lifecycle"), allow(dead_code))]
+    /// lifecycle-gated, so the helper only exists under the same
+    /// conjunction.
+    #[cfg(all(feature = "probe", feature = "lifecycle"))]
     fn clear_probes(&self) {
         // 顺序即正确性：必须先置 stopped 再清注册表。读者（`run_probes` /
         // `probe_aggregate`）先读注册表、后读 stopped——若先清空再置位，
@@ -1293,6 +1259,115 @@ impl<S> AsyncKit<S> {
             .write()
             .expect("probe registry lock poisoned")
             .clear();
+    }
+
+    // Build-step paired stubs for `build()` (observer / report / decorator).
+    // Both cfg arms share identical signatures so the build loop carries no
+    // cfg attributes; the `not(...)` arms are zero-sized no-ops the optimizer
+    // erases (same discipline as the sync `Kit`'s `notify_*` helpers).
+
+    #[cfg(feature = "observer")]
+    fn notify_build_start(&self, module_name: &'static str) {
+        let observers = self.observer.observers.read().expect("lock poisoned");
+        for obs in observers.iter() {
+            obs.on_module_start(module_name);
+        }
+    }
+
+    #[cfg(not(feature = "observer"))]
+    #[allow(clippy::unused_self)] // signature parity with the observer arm
+    fn notify_build_start(&self, _module_name: &'static str) {}
+
+    #[cfg(feature = "observer")]
+    fn notify_build_completed(
+        &self,
+        module_name: &'static str,
+        started_at: Option<std::time::Instant>,
+    ) {
+        let observers = self.observer.observers.read().expect("lock poisoned");
+        for obs in observers.iter() {
+            // Completion-order callback within the layer.
+            obs.on_module_built(
+                module_name,
+                started_at.map_or(std::time::Duration::ZERO, |t| t.elapsed()),
+            );
+        }
+    }
+
+    #[cfg(not(feature = "observer"))]
+    #[allow(clippy::unused_self)] // signature parity with the observer arm
+    fn notify_build_completed(
+        &self,
+        _module_name: &'static str,
+        _started_at: Option<std::time::Instant>,
+    ) {
+    }
+
+    #[cfg(feature = "observer")]
+    fn notify_build_error(&self, module_name: &'static str, err: &TraitKitError) {
+        let observers = self.observer.observers.read().expect("lock poisoned");
+        for obs in observers.iter() {
+            obs.on_build_error(module_name, err);
+        }
+    }
+
+    #[cfg(not(feature = "observer"))]
+    #[allow(clippy::unused_self)] // signature parity with the observer arm
+    fn notify_build_error(&self, _module_name: &'static str, _err: &TraitKitError) {}
+
+    #[cfg(feature = "report")]
+    fn record_built(
+        &self,
+        type_id: TypeId,
+        module_name: &'static str,
+        started_at: Option<std::time::Instant>,
+    ) {
+        let report_deps = self.graph.dependency_names(type_id);
+        let report_elapsed_us = started_at.map_or(0, |t| {
+            u64::try_from(t.elapsed().as_micros()).unwrap_or(u64::MAX)
+        });
+        self.report
+            .push_built(module_name, report_elapsed_us, report_deps);
+    }
+
+    #[cfg(not(feature = "report"))]
+    #[allow(clippy::unused_self)] // signature parity with the report arm
+    fn record_built(
+        &self,
+        _type_id: TypeId,
+        _module_name: &'static str,
+        _started_at: Option<std::time::Instant>,
+    ) {
+    }
+
+    /// Apply registered decorators for one build result (keyed by the
+    /// capability `TypeId` recorded by `decorate()`, falling back to the
+    /// module's own `TypeId`); identity without the `decorator` feature.
+    #[cfg(feature = "decorator")]
+    fn wrap_decorated(
+        &self,
+        type_id: TypeId,
+        boxed: Box<dyn Any + Send + Sync>,
+    ) -> Box<dyn Any + Send + Sync> {
+        let cap_type_id = self
+            .decorator
+            .decorator_module_to_cap
+            .read()
+            .expect("lock poisoned")
+            .get(&type_id)
+            .copied()
+            .unwrap_or(type_id);
+        self.apply_decorators(cap_type_id, boxed)
+    }
+
+    #[cfg(not(feature = "decorator"))]
+    #[allow(clippy::unused_self, clippy::needless_pass_by_value)] // signature parity
+    fn wrap_decorated(
+        &self,
+        _type_id: TypeId,
+        boxed: Box<dyn Any + Send + Sync>,
+    ) -> Box<dyn Any + Send + Sync> {
+        boxed
     }
 
     /// Apply registered decorators for a capability (keyed by capability `TypeId`).
@@ -1659,14 +1734,7 @@ impl AsyncKit<Ready> {
     /// Panics if the internal `RwLock` is poisoned.
     #[cfg(feature = "lifecycle")]
     pub async fn shutdown_async(&self) {
-        let async_hooks: Vec<(TypeId, AsyncShutdownHookFn)> = {
-            self.lifecycle
-                .async_shutdown_callbacks
-                .write()
-                .expect("lock poisoned")
-                .drain(..)
-                .collect()
-        };
+        let async_hooks: Vec<(TypeId, AsyncShutdownHookFn)> = self.take_shutdown_hooks();
         // Reverse order = reverse topological order (hooks were stable-sorted
         // by topological index in `build()`): dependents complete before the
         // modules they depend on. Each hook is awaited before the next starts.
@@ -1726,14 +1794,7 @@ impl AsyncKit<Ready> {
         phase: super::shutdown::ShutdownPhase,
     ) -> Result<usize, TraitKitError> {
         use crate::i18n::tr;
-        let hooks: Vec<(TypeId, AsyncShutdownHookFn)> = {
-            self.lifecycle
-                .async_shutdown_callbacks
-                .write()
-                .expect("lock poisoned")
-                .drain(..)
-                .collect()
-        };
+        let hooks: Vec<(TypeId, AsyncShutdownHookFn)> = self.take_shutdown_hooks();
         let count = hooks.len();
         // 桥接后组件清理的唯一执行者是协调器，Kit 的探针注册表随之清空并
         // 标记 stopped：关闭编排启动后服务面即下线，残留探针只会探到死

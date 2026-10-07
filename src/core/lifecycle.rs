@@ -81,6 +81,20 @@ pub trait AsyncLifecycle: crate::core::AsyncAutoBuilder {
     }
 }
 
+/// Stable-sort `(module TypeId, callback)` pairs by their position in the
+/// validated topological order `sorted`; modules absent from the graph keep
+/// registration order at the tail (`usize::MAX`). Shared by the sync/async
+/// `build()` hand-off (shutdown hooks + `on_ready` ordering) so reverse
+/// iteration really runs in reverse topological order.
+pub(crate) fn sort_by_topo_order<C>(
+    callbacks: &mut [(std::any::TypeId, C)],
+    sorted: &[std::any::TypeId],
+) {
+    let topo_index: std::collections::HashMap<std::any::TypeId, usize> =
+        sorted.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+    callbacks.sort_by_key(|(type_id, _)| topo_index.get(type_id).copied().unwrap_or(usize::MAX));
+}
+
 #[cfg(all(test, feature = "lifecycle"))]
 mod tests {
     use super::*;

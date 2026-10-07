@@ -59,6 +59,32 @@ type ObserverList = [(); 0];
 #[cfg(feature = "decorator")]
 type DecoratorFn = Box<dyn Fn(Box<dyn Any>) -> Box<dyn Any>>;
 
+/// Timing bundle for one eager module build, consumed by `record_built`.
+/// The feature-owned instants exist only under their consuming feature, so
+/// `not(observer)`/`not(report)` builds carry no timing code beyond the
+/// event-bus `Option` (the same paired-stub discipline as `ObserverList`).
+struct StepTimers {
+    #[cfg(feature = "observer")]
+    observer: std::time::Instant,
+    #[cfg(feature = "report")]
+    report: std::time::Instant,
+    /// `None` whenever no bus is injected: per-module instants are bus-only.
+    event: Option<std::time::Instant>,
+}
+
+impl StepTimers {
+    /// Observer elapsed must stop before decorators run (historical
+    /// observer-only semantics, frozen by e2e); `Duration::ZERO` — erased
+    /// by the optimizer — without the `observer` feature.
+    #[cfg_attr(not(feature = "observer"), allow(clippy::unused_self))]
+    fn observer_elapsed(&self) -> std::time::Duration {
+        #[cfg(feature = "observer")]
+        return self.observer.elapsed();
+        #[cfg(not(feature = "observer"))]
+        return std::time::Duration::ZERO;
+    }
+}
+
 /// HKDF key-derivation version label bound into every per-field key.
 /// Bumping this rotates all encrypted configs without changing master keys.
 #[cfg(feature = "encryption")]
@@ -936,34 +962,16 @@ impl Kit {
 
         // Extract ready_callbacks before moving self
         #[cfg(feature = "lifecycle")]
-        let ready_callbacks: Vec<(TypeId, ReadyCallback)> = {
-            self.lifecycle
-                .ready_callbacks
-                .borrow_mut()
-                .drain(..)
-                .collect()
-        };
-        #[cfg(feature = "lifecycle")]
-        let shutdown_callbacks: Vec<(TypeId, ShutdownCallback)> = {
-            self.lifecycle
-                .shutdown_callbacks
-                .borrow_mut()
-                .drain(..)
-                .collect()
-        };
-        #[cfg(feature = "lifecycle")]
+        let ready_callbacks: Vec<(TypeId, ReadyCallback)> = self.take_ready_callbacks();
         // Stable topological sort so `shutdown()`'s reverse iteration really
         // runs in reverse topological order: dependents (consumers) shut down
         // before the modules they depend on. Callbacks whose module is absent
         // from the graph sort last (relative order preserved via stable sort).
-        let shutdown_callbacks: Vec<(TypeId, ShutdownCallback)> = {
-            let topo_index: std::collections::HashMap<TypeId, usize> =
-                sorted.iter().enumerate().map(|(i, id)| (*id, i)).collect();
-            let mut callbacks = shutdown_callbacks;
-            callbacks
-                .sort_by_key(|(type_id, _)| topo_index.get(type_id).copied().unwrap_or(usize::MAX));
-            callbacks
-        };
+        #[cfg(feature = "lifecycle")]
+        let mut shutdown_callbacks: Vec<(TypeId, ShutdownCallback)> =
+            self.take_shutdown_callbacks();
+        #[cfg(feature = "lifecycle")]
+        crate::core::lifecycle::sort_by_topo_order(&mut shutdown_callbacks, &sorted);
 
         // Structural build time stops here (lifecycle on_ready callbacks are
         // excluded from the report's total).
@@ -1062,23 +1070,18 @@ impl Kit {
         let event_bus_present = self.ports.event_bus.borrow().is_some();
         for type_id in sorted {
             let module_name = self.module_name(*type_id);
-
-            // Report: dependency names for this module (cheap Vec, report only).
-            #[cfg(feature = "report")]
-            let report_deps = self.graph.dependency_names(*type_id);
+            let report_deps = self.report_deps_of(*type_id);
 
             // [Override] Priority 1: check overrides map first.
             if let Some(boxed) = self.overrides.borrow_mut().remove(type_id) {
                 self.capabilities.insert_boxed(*type_id, boxed);
-                #[cfg(feature = "report")]
-                self.report.push_overridden(module_name, report_deps);
+                self.record_overridden(module_name, report_deps);
                 continue;
             }
 
             // [Lazy] Skip lazy-registered modules — deferred to first require().
             if self.lazy_builders.borrow().contains_key(type_id) {
-                #[cfg(feature = "report")]
-                self.report.push_lazy(module_name, report_deps);
+                self.record_lazy(module_name, report_deps);
                 continue;
             }
 
@@ -1093,47 +1096,23 @@ impl Kit {
             // the cfg-gated `observers_snapshot` / `notify_*` helpers below,
             // so this loop body exists exactly once for both configurations.
             let observers = self.observers_snapshot();
-            #[cfg(feature = "observer")]
-            let start_instant = std::time::Instant::now();
-            #[cfg(feature = "report")]
-            let report_start = std::time::Instant::now();
-            let event_start = event_bus_present.then(std::time::Instant::now);
+            let timers = Self::start_step_timers(event_bus_present);
             Self::notify_module_start(&observers, module_name);
 
             match (build_fn)(self) {
                 Ok(boxed) => {
                     // `elapsed` is taken before decorators run, matching the
                     // historical observer-only behavior.
-                    #[cfg(feature = "observer")]
-                    let elapsed = start_instant.elapsed();
-                    #[cfg(feature = "decorator")]
-                    let boxed = {
-                        let cap_type_id = self
-                            .decorator
-                            .decorator_module_to_cap
-                            .borrow()
-                            .get(type_id)
-                            .copied()
-                            .unwrap_or(*type_id);
-                        self.apply_decorators(cap_type_id, boxed)
-                    };
+                    let observer_elapsed = timers.observer_elapsed();
+                    let boxed = self.wrap_decorated(*type_id, boxed);
                     self.capabilities.insert_boxed(*type_id, boxed);
-                    #[cfg(feature = "observer")]
-                    Self::notify_module_built(&observers, module_name, elapsed);
-                    #[cfg(feature = "report")]
-                    self.report.push_built(
+                    self.record_built(
+                        &timers,
+                        &observers,
                         module_name,
-                        u64::try_from(report_start.elapsed().as_micros()).unwrap_or(u64::MAX),
                         report_deps,
+                        observer_elapsed,
                     );
-                    if let Some(event_start) = event_start {
-                        let elapsed_us =
-                            u64::try_from(event_start.elapsed().as_micros()).unwrap_or(u64::MAX);
-                        self.publish_event(super::events::KitEvent::ModuleBuilt {
-                            module: module_name,
-                            elapsed_us,
-                        });
-                    }
                 }
                 Err(e) => {
                     let err = TraitKitError::BuildFailed {
@@ -1152,6 +1131,121 @@ impl Kit {
             self.capabilities.insert_boxed(type_id, boxed);
         }
         Ok(())
+    }
+
+    // Build-step paired stubs for `build_eager_modules` (report / decorator /
+    // timing). Both cfg arms share identical signatures so the loop body
+    // carries no cfg attributes; the `not(...)` arms are zero-sized no-ops
+    // the optimizer erases (same discipline as the observer helpers below).
+
+    /// Report-only dependency names of one module (cheap Vec, report only).
+    #[cfg(feature = "report")]
+    fn report_deps_of(&self, type_id: TypeId) -> Vec<&'static str> {
+        self.graph.dependency_names(type_id)
+    }
+
+    #[cfg(not(feature = "report"))]
+    #[allow(clippy::unused_self)] // signature parity with the report arm
+    fn report_deps_of(&self, _type_id: TypeId) -> Vec<&'static str> {
+        Vec::new()
+    }
+
+    #[cfg(feature = "report")]
+    fn record_overridden(&self, module_name: &'static str, report_deps: Vec<&'static str>) {
+        self.report.push_overridden(module_name, report_deps);
+    }
+
+    #[cfg(not(feature = "report"))]
+    #[allow(clippy::unused_self, clippy::needless_pass_by_value)] // signature parity
+    fn record_overridden(&self, _module_name: &'static str, _report_deps: Vec<&'static str>) {}
+
+    #[cfg(feature = "report")]
+    fn record_lazy(&self, module_name: &'static str, report_deps: Vec<&'static str>) {
+        self.report.push_lazy(module_name, report_deps);
+    }
+
+    #[cfg(not(feature = "report"))]
+    #[allow(clippy::unused_self, clippy::needless_pass_by_value)] // signature parity
+    fn record_lazy(&self, _module_name: &'static str, _report_deps: Vec<&'static str>) {}
+
+    #[cfg(feature = "report")]
+    #[cfg_attr(not(feature = "observer"), allow(clippy::trivially_copy_pass_by_ref))]
+    fn record_built(
+        &self,
+        timers: &StepTimers,
+        observers: &ObserverList,
+        module_name: &'static str,
+        report_deps: Vec<&'static str>,
+        observer_elapsed: std::time::Duration,
+    ) {
+        Self::notify_module_built(observers, module_name, observer_elapsed);
+        self.report.push_built(
+            module_name,
+            u64::try_from(timers.report.elapsed().as_micros()).unwrap_or(u64::MAX),
+            report_deps,
+        );
+        if let Some(event_start) = timers.event {
+            let elapsed_us = u64::try_from(event_start.elapsed().as_micros()).unwrap_or(u64::MAX);
+            self.publish_event(super::events::KitEvent::ModuleBuilt {
+                module: module_name,
+                elapsed_us,
+            });
+        }
+    }
+
+    #[cfg(not(feature = "report"))]
+    #[allow(clippy::unused_self, clippy::needless_pass_by_value)] // signature parity
+    #[cfg_attr(not(feature = "observer"), allow(clippy::trivially_copy_pass_by_ref))]
+    fn record_built(
+        &self,
+        timers: &StepTimers,
+        observers: &ObserverList,
+        module_name: &'static str,
+        _report_deps: Vec<&'static str>,
+        observer_elapsed: std::time::Duration,
+    ) {
+        Self::notify_module_built(observers, module_name, observer_elapsed);
+        if let Some(event_start) = timers.event {
+            let elapsed_us = u64::try_from(event_start.elapsed().as_micros()).unwrap_or(u64::MAX);
+            self.publish_event(super::events::KitEvent::ModuleBuilt {
+                module: module_name,
+                elapsed_us,
+            });
+        }
+    }
+
+    /// Apply registered decorators for one eager build result (keyed by the
+    /// capability `TypeId` recorded by `decorate()`, falling back to the
+    /// module's own `TypeId`); identity without the `decorator` feature.
+    /// The lazy `require()` path deliberately skips the fallback — its
+    /// decorators apply only to explicitly decorated modules (frozen by
+    /// e2e DEC-07) — so it does not route through this helper.
+    #[cfg(feature = "decorator")]
+    fn wrap_decorated(&self, type_id: TypeId, boxed: Box<dyn Any>) -> Box<dyn Any> {
+        let cap_type_id = self
+            .decorator
+            .decorator_module_to_cap
+            .borrow()
+            .get(&type_id)
+            .copied()
+            .unwrap_or(type_id);
+        self.apply_decorators(cap_type_id, boxed)
+    }
+
+    #[cfg(not(feature = "decorator"))]
+    #[allow(clippy::unused_self, clippy::needless_pass_by_value)] // signature parity
+    fn wrap_decorated(&self, _type_id: TypeId, boxed: Box<dyn Any>) -> Box<dyn Any> {
+        boxed
+    }
+
+    fn start_step_timers(event_bus_present: bool) -> StepTimers {
+        StepTimers {
+            #[cfg(feature = "observer")]
+            observer: std::time::Instant::now(),
+            #[cfg(feature = "report")]
+            report: std::time::Instant::now(),
+            event: event_bus_present.then(std::time::Instant::now),
+        }
     }
 
     // Observer notification helpers for `build_eager_modules`. Both cfg arms
@@ -1192,10 +1286,7 @@ impl Kit {
         }
     }
 
-    // Not called without `observer` (its only call site is observer-gated),
-    // kept for signature parity with the observer arm.
     #[cfg(not(feature = "observer"))]
-    #[expect(dead_code, reason = "调用点在 observer 门内，本桩仅为签名对齐")]
     #[allow(clippy::trivially_copy_pass_by_ref)] // signature parity
     fn notify_module_built(
         _list: &ObserverList,
@@ -2280,6 +2371,28 @@ impl Kit {
 // ─── Config inheritance (confers feature) ─────────────────────────────────
 
 impl<S> Kit<S> {
+    /// Drain the pending `on_ready` callbacks (the `build()` hand-off to the
+    /// ready kit; the ready kit's own registry starts empty).
+    #[cfg(feature = "lifecycle")]
+    fn take_ready_callbacks(&self) -> Vec<(TypeId, ReadyCallback)> {
+        self.lifecycle
+            .ready_callbacks
+            .borrow_mut()
+            .drain(..)
+            .collect()
+    }
+
+    /// Drain the registered `on_shutdown` callbacks (`build()` hand-off and
+    /// `shutdown()`); both consumers need each callback to run exactly once.
+    #[cfg(feature = "lifecycle")]
+    fn take_shutdown_callbacks(&self) -> Vec<(TypeId, ShutdownCallback)> {
+        self.lifecycle
+            .shutdown_callbacks
+            .borrow_mut()
+            .drain(..)
+            .collect()
+    }
+
     /// Populate the config `TypeMap` with `C::default_value()` if no value of
     /// type `C` is present.
     ///
@@ -2545,12 +2658,7 @@ impl Kit<Ready> {
     /// Requires the `lifecycle` feature.
     #[cfg(feature = "lifecycle")]
     pub fn shutdown(&self) {
-        let callbacks: Vec<(TypeId, ShutdownCallback)> = self
-            .lifecycle
-            .shutdown_callbacks
-            .borrow_mut()
-            .drain(..)
-            .collect();
+        let callbacks: Vec<(TypeId, ShutdownCallback)> = self.take_shutdown_callbacks();
         // Reverse order: last built → first shut down
         for (_type_id, callback) in callbacks.iter().rev() {
             // Contract: a failed shutdown does not block other modules.
