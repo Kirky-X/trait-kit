@@ -56,6 +56,10 @@ pub trait ModuleMeta: 'static {
 | `required_versions()` | 对依赖模块要求的最低版本 `(name, min_version)` 列表，默认为空 |
 | `i18n_ftl()` `i18n` | 模块自带的 `(locale, ftl_source)` 翻译片段，`build()` 时合并为 kit 本地翻译 overlay |
 
+### `version-negotiation` — 版本协商
+
+`build()` 时按 semver 校验 `VERSION` 声明与依赖方 `required_versions()` 的兼容性（声明本身无门控，见上表 `VERSION` / `required_versions()`）。依赖模块缺失（无已注册提供方）时不进入协商，由依赖图直接报缺失错误。旧 feature 名 `negotiate` 保留为兼容别名（转发到 `version-negotiation`，已标记 deprecated）。
+
 ### `AutoBuilder`
 
 同步模块构建 trait。
