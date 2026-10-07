@@ -45,7 +45,6 @@ impl I18nFormatter {
             .map_err(|e| I18nError::FormatError(e.to_string()))?;
 
         Ok(Self {
-            locale: parsed,
             decimal_formatter,
             plural_rules,
             collator,

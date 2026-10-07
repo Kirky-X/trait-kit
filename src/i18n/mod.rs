@@ -46,8 +46,6 @@ use icu::datetime::fieldsets::YMD;
 #[cfg(feature = "i18n")]
 use icu::decimal::DecimalFormatter;
 #[cfg(feature = "i18n")]
-use icu::locale::Locale;
-#[cfg(feature = "i18n")]
 use icu::plurals::PluralRules;
 
 // ─── I18nError ──────────────────────────────────────────────────────────────
@@ -127,10 +125,6 @@ impl std::error::Error for I18nError {}
 #[cfg(feature = "i18n")]
 #[derive(Debug)]
 pub struct I18nFormatter {
-    /// 已解析的 locale。
-    /// 测试用于断言解析结果；生产路径经各格式化器隐式持有。
-    #[allow(dead_code, reason = "introspection + test assertions")]
-    pub(crate) locale: Locale,
     /// 小数（数字）格式化器。
     pub(crate) decimal_formatter: DecimalFormatter,
     /// 该 locale 的复数规则。
@@ -647,24 +641,6 @@ mod tests {
     }
 
     // ─── I18nFormatter 测试 ─────────────────────────────────────────────────
-
-    #[cfg(feature = "i18n")]
-    #[test]
-    fn test_locale_parsing_en() {
-        let fmt = I18nFormatter::new("en-US");
-        assert!(fmt.is_ok(), "en-US should parse successfully");
-        let fmt = fmt.unwrap();
-        assert_eq!(fmt.locale.to_string(), "en-US");
-    }
-
-    #[cfg(feature = "i18n")]
-    #[test]
-    fn test_locale_parsing_zh() {
-        let fmt = I18nFormatter::new("zh-CN");
-        assert!(fmt.is_ok(), "zh-CN should parse successfully");
-        let fmt = fmt.unwrap();
-        assert_eq!(fmt.locale.to_string(), "zh-CN");
-    }
 
     #[cfg(feature = "i18n")]
     #[test]

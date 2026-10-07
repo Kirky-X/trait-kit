@@ -2694,18 +2694,10 @@ mod negotiation_parity_tests {
         }
     }
 
-    trait ParityGreet: 'static {
-        /// 占位方法仅用于证明接口可经 `Arc<dyn ParityGreet>` 擦除调用。
-        #[allow(dead_code)]
-        fn ping(&self) -> u32;
-    }
+    trait ParityGreet: 'static {}
 
     struct ParityGreeter;
-    impl ParityGreet for ParityGreeter {
-        fn ping(&self) -> u32 {
-            1
-        }
-    }
+    impl ParityGreet for ParityGreeter {}
 
     struct ParityAsProvider;
     impl ModuleMeta for ParityAsProvider {

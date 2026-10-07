@@ -389,15 +389,26 @@ mod gap_354_scope_module_self_contained {
 }
 
 // 场景 355：Scope !Send + !Sync（单线程契约）、AsyncScope Send + Sync
-// 的编译期负向/正向断言。
+// 的编译期负向/正向断言。AsyncScope 导出需 request-scope ∧ async 双门，
+// 断言随之拆分：Scope 的单线程契约在 request-scope 单开组合仍被验证。
 #[cfg(feature = "request-scope")]
 mod gap_355_scope_threading_contract {
-    use static_assertions::{assert_impl_all, assert_not_impl_any};
-    use trait_kit::kit::{AsyncScope, Scope};
+    use static_assertions::assert_not_impl_any;
+    use trait_kit::kit::Scope;
 
     #[test]
-    fn scope_single_thread_async_scope_send_sync() {
+    fn scope_single_thread_contract() {
         assert_not_impl_any!(Scope: Send, Sync);
+    }
+}
+
+#[cfg(all(feature = "request-scope", feature = "async"))]
+mod gap_355_async_scope_threading_contract {
+    use static_assertions::assert_impl_all;
+    use trait_kit::kit::AsyncScope;
+
+    #[test]
+    fn async_scope_send_sync_contract() {
         assert_impl_all!(AsyncScope: Send, Sync);
     }
 }

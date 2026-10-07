@@ -340,6 +340,8 @@ fn pre03_derive_macros_not_reexported_via_prelude() {
 
 // ─── presets 注册面异常（ProviderNotInjected / 二次注册） ──────────────
 
+// 本段全部消费者均挂 presets 门；import 同门，其余组合下编译期闲置。
+#[cfg(feature = "presets")]
 use std::sync::Arc;
 
 /// confers ConfigValue 的简单内存 provider mock（镜像 src 内部测试形态）。

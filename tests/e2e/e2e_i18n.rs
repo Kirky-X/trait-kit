@@ -12,18 +12,6 @@
 
 #![cfg(feature = "i18n")]
 
-use trait_kit::i18n::I18nManager;
-
-/// 将本测试进程的全局 I18nManager 锚定为 zh-CN。
-///
-/// 所有测试首行调用：OnceLock 竞争双方都写入同一 locale，胜者恒为
-/// zh-CN，因此无需 serial 门控。
-// 调用方均位于 shutdown 门控模块内，仅启用 i18n 时本函数编译期闲置。
-#[cfg_attr(not(feature = "shutdown"), allow(dead_code))]
-fn ensure_zh() {
-    I18nManager::init_with_locale("zh-CN");
-}
-
 #[cfg(feature = "shutdown")]
 mod i18n_shutdown_e2e {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,7 +19,13 @@ mod i18n_shutdown_e2e {
     use trait_kit::i18n::I18nManager;
     use trait_kit::kit::{ShutdownCoordinator, ShutdownPhase};
 
-    use super::ensure_zh;
+    /// 将本测试进程的全局 I18nManager 锚定为 zh-CN。
+    ///
+    /// 所有测试首行调用：OnceLock 竞争双方都写入同一 locale，胜者恒为
+    /// zh-CN，因此无需 serial 门控。
+    fn ensure_zh() {
+        I18nManager::init_with_locale("zh-CN");
+    }
 
     /// `ShutdownTimedOut` 的 Display 经 `tr()` 查询 zh 目录，
     /// 超时阶段名以 `as_str()` 原文嵌入本地化模板。

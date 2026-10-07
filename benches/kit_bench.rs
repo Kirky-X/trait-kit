@@ -37,13 +37,26 @@ use trait_kit::kit::{Kit, Ready};
 
 /// Typed configuration payload used by the config benchmarks.
 #[derive(Debug, Clone)]
-#[allow(
-    dead_code,
-    reason = "fields exercise realistic clone cost in read bench"
-)]
 struct BenchConfig {
+    // Sole hand-written reader of url/retries is the confers-gated
+    // `apply_override`; combos without `confers` (the bench only compiles
+    // when `toggle` is on) leave them unread in rustc's view.
+    #[cfg_attr(
+        not(feature = "confers"),
+        allow(dead_code, reason = "read by the confers-gated apply_override")
+    )]
     url: String,
+    #[cfg_attr(
+        not(feature = "confers"),
+        allow(dead_code, reason = "read by the confers-gated apply_override")
+    )]
     retries: u32,
+    // rustc does not credit derived impls as readers: the Vec heap
+    // allocation is part of the realistic clone cost the read bench measures.
+    #[allow(
+        dead_code,
+        reason = "consumed by derived Clone; clone-cost realism for the read bench"
+    )]
     timeouts: Vec<u64>,
 }
 
