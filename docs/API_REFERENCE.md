@@ -415,6 +415,7 @@ pub trait AsyncAutoBuilder: ModuleMeta {
 | `build_report()` `report` | 结构化构建报告（JSON），与同步 `Kit<Ready>` 对位；async 构建状态集仅 `built`（无 override/lazy 面） |
 | `contract_manifest()` `report` | 契约清单导出（NAME/VERSION/capability/deps），与同步 `Kit<Ready>` 对位 |
 | `take_config_overrides()` `report` | 排空并返回 `config_overrides` 历史（构建前 `AsyncKit<Unbuilt>` 态 API，与 `set_config` 同口径——累积仅发生在构建前，Ready 后历史冻结、无运行期无界累积；排空动作语义（换出并返回记录序）与同步侧一致） |
+| `populate_defaults::<C>()` | 任意状态可用的配置面入口：空 Kit 时填充 `C::default_value()`、已有值不覆盖，返回 `bool` 表示是否发生填充。`AsyncKit` 版本的约束为 `C: ModuleConfig + Send + Sync`（同步 `Kit` 仅要求 `C: ModuleConfig`）——差异源于 `AsyncKit` 是共享 `Send + Sync` 类型 |
 
 ### `di` — 接口/实现分离
 
@@ -494,6 +495,27 @@ pub trait AsyncHealthCheck: AsyncAutoBuilder {
 }
 ```
 
+#### `HealthAggregate` / `HealthModuleEntry` `health` + `report`
+
+```rust
+pub struct HealthAggregate {
+    pub status: &'static str,             // worst-of 整体状态名
+    pub healthy: bool,                    // 便捷位：status == "healthy"
+    pub modules: Vec<HealthModuleEntry>,  // 各模块明细
+}
+
+pub struct HealthModuleEntry {
+    pub module: &'static str,             // 模块名（ModuleMeta::NAME）
+    pub status: &'static str,             // 扁平状态名：healthy / degraded / unhealthy
+    pub detail: Option<String>,           // degraded / unhealthy 的明细，无则 None
+}
+```
+
+两者仅在 `health` + `report` 同时启用时存在并派生 `serde::Serialize`；`HealthAggregate::to_json()` 即 `/healthz` 载荷。
+整体状态是全部已注册 checker 的 worst-of（`unhealthy` > `degraded` > `healthy`），空集按约定为 healthy；
+`modules` 顺序跟随 checker 注册表的迭代顺序、**不承诺确定性**。`detail` 原样进入对外 JSON——
+checker 实现方不得在其中写入凭据、连接串或内网拓扑。
+
 ### `probe` — 服务探针注册面
 
 `probe = ["health"]`。与 `HealthCheck`/`AsyncHealthCheck` 的分工：`check` 刻意同步、只读缓存状态，跑在报告路径；`ServiceProbe` 才做真正的异步网络探活，只在显式调用时执行（延迟由框架在 `probe().await` 外侧实测，见 `ProbeEntry::latency_ms`）。对象安全 `trait`，手写 `Pin<Box<dyn Future>>` 分派（对齐 `AsyncLifecycle`，不引 `async-trait`）。
@@ -541,6 +563,79 @@ impl AsyncKit<Ready> {
 ```
 
 `ProbeReport { overall, healthy, probes: Vec<ProbeEntry { name, status, detail, latency_ms }>, stopped }` 在 `report` 特性下派生 `Serialize` 并提供 `to_json()`。`latency_ms` 为框架在 `probe().await` 外侧实测的墙钟延迟（不采信实现自报的 `ProbeOutcome::latency`——后者仅为实现方诊断字段）；`detail` 原样进入对外 JSON 载荷，**不得包含凭据/连接串/内网拓扑**。`stopped == true` 表示本报告不来自探针执行：注册表已被停机协议清空，结论为显性不可服务（`overall == "unhealthy"`、`probes == []`）——空注册表 ≠ 全部健康，就绪消费方必须区分。shutdown 协同：`shutdown_async()`（`probe`+`lifecycle`）与 `register_shutdown_into()`（`probe`+`lifecycle`+`shutdown`）完成后自动注销全部探针并标记 stopped——已停机的 Kit 无服务可探。
+
+### `report` — 构建报告与契约清单
+
+`report` 特性把构建过程的可观测产物固化为两个可序列化结构，均由 `Kit<Ready>` / `AsyncKit<Ready>` 的方法产出（`build_report()` / `contract_manifest()` / `take_config_overrides()`，见 [Kit API](#kit-api) 与 [`async`](#async--异步模块构建) 的对应表）。
+
+#### `BuildReport`
+
+```rust
+pub struct BuildReport {
+    pub schema_version: u32,                        // 报告结构版本，当前 SCHEMA_VERSION = 1
+    pub topo_order: Vec<&'static str>,              // 校验通过的拓扑序模块名
+    pub modules: Vec<ModuleReportEntry>,            // 按构建完成序的逐模块记录
+    pub overrides: Vec<OverrideRecord>,             // 注册期观察到的能力覆盖（override_module 家族）
+    pub config_overrides: Vec<ConfigOverrideRecord>, // 配置级覆盖记录（merge_config 家族）
+}
+```
+
+| 方法 | 说明 |
+|------|------|
+| `to_json()` | 序列化为 JSON 字符串（返回 `serde_json::Result`，不把错误嵌进看似合法的 JSON 体） |
+| `from_json_str(s)` | 反序列化为 `serde_json::Value` 供消费方按字段读取 |
+
+`schema_version` 在结构性破坏变更时递增；`SCHEMA_VERSION` 为当前值的公开常量。
+
+#### 逐条目类型
+
+```rust
+pub struct ModuleReportEntry {
+    pub name: &'static str,               // ModuleMeta::NAME
+    pub state: ModuleBuildState,          // 能力如何产出
+    pub deps: Vec<&'static str>,          // 声明的依赖名
+    pub elapsed_us: Option<u64>,          // 构建耗时（微秒）；仅 state == Built 时为 Some
+}
+
+pub enum ModuleBuildState {   // serde 以 snake_case 输出
+    Built,       // 由 build_fn 在 Kit::build 期间构建
+    Lazy,        // 延迟：build_fn 在首次 require() 时执行
+    Overridden,  // 由预构建的能力覆盖满足（override_module 家族）
+}
+
+pub struct OverrideRecord {
+    pub module: &'static str,   // 被覆盖的模块名；从未注册过的类型覆盖为 "(unregistered)"
+    pub source: &'static str,   // 哪个 API 注入了该覆盖
+}
+
+pub struct ConfigOverrideRecord {
+    pub config: &'static str,   // 被覆盖的配置类型名（std::any::type_name，仅供诊断，按后缀匹配）
+    pub source: &'static str,   // 应用该覆盖的 API（如 "merge_config"）
+    pub applied: bool,          // false = 目标配置不存在、该次覆盖被丢弃
+}
+```
+
+> `config` 字段来自 `std::any::type_name`，其精确格式在不同编译器/版本间不承诺稳定——只作诊断用途，禁止按全等匹配。
+> `config_overrides` 的记录序仅在单线程顺序调用下等于调用序；`AsyncKit` 为共享 `Send + Sync` 类型，并发 `merge_config` 的记录序是加锁到达序，且读-改-写非原子。
+> 该历史**无上限累积**（每条约 40 B），高频 `merge_config` 的长生命周期 Kit 需在轮转点用 `take_config_overrides()` 排空，否则每次 `build_report()` 快照都整段 clone。
+
+#### `ContractManifest` / `ContractEntry`
+
+```rust
+pub struct ContractManifest {
+    pub schema_version: u32,            // 清单结构版本，当前 CONTRACT_SCHEMA_VERSION = 1
+    pub modules: Vec<ContractEntry>,    // 每个已注册模块一条，注册序
+}
+
+pub struct ContractEntry {
+    pub module: &'static str,      // ModuleMeta::NAME
+    pub version: &'static str,     // 声明的能力版本 ModuleMeta::VERSION
+    pub capability: &'static str,  // 能力具体类型名（std::any::type_name）
+    pub deps: Vec<&'static str>,   // 依赖模块名
+}
+```
+
+`ContractManifest::to_json()` 产出机器可读契约清单（供消费方做版本/依赖门禁）；`CONTRACT_SCHEMA_VERSION` 为当前版本常量。
 
 ### `observer` — 构建可观测
 
