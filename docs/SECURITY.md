@@ -32,7 +32,8 @@
 ## 🚨 漏洞报告流程
 
 - **请不要通过公开 GitHub Issue 报告安全漏洞**，避免漏洞细节在修复前暴露。
-- 请使用 GitHub 的私密漏洞报告通道 [Security Advisories](https://github.com/Kirky-X/trait-kit/security/advisories/new)（仓库页面 **Security → Report a vulnerability**）。
+- **首选渠道**：GitHub 的私密漏洞报告通道 [Security Advisories](https://github.com/Kirky-X/trait-kit/security/advisories/new)（仓库页面 **Security → Report a vulnerability**）。
+- **备选渠道**：首选通道不可用时，发送邮件至 **Kirky-X@outlook.com**。
 - 报告时请尽量包含：影响版本、复现步骤或概念验证代码、影响评估。
 - 维护者承诺 **48 小时内确认**收到报告、**7 天内给出初步评估**；确认后会评估严重性、开发修复并在补丁发布时致谢报告者（除非您希望匿名）。
 
