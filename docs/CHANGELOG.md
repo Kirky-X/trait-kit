@@ -11,6 +11,7 @@
 <summary>📑 目录</summary>
 
 - [Unreleased](#unreleased)
+- [`0.5.0-rc.8`](#050-rc8---2026-10-08)
 - [`0.5.0-rc.7`](#050-rc7---2026-10-03)
 - [`0.5.0-rc.6`](#050-rc6---2026-09-21)
 - [`0.5.0-rc.5`](#050-rc5---2026-09-14)
@@ -30,11 +31,19 @@
 
 ---
 
+
 ## [Unreleased]
+
+## [`0.5.0-rc.8`] - 2026-10-08
+
+### Removed
+
+- **公共 API 收缩：`BuildReport::from_json_str` 删除**：`src/kit/report.rs` 中仅测试使用的便捷反序列化方法移除，`docs/API_REFERENCE.md` 方法表同步；消费方如需按字段读取，可对 `to_json()` 输出自行反序列化。
 
 ### Changed
 
 - **proc-macro 子 crate 目录更名**：`trait-kit-macros/` → `macros/`，与 base 其余仓的子 crate 目录惯例（confers/oxcache/dbnexus/limiteron/sdforge 均为 `macros/`）统一。包名 `trait-kit-macros` 不变（crates.io 已注册且下游按名依赖），发布产物与用户可见 API 零影响；同步更新 workspace `members` 与两处 `path` 依赖（主 crate 与 `examples/`）、`release.yml` 发布步骤的 `working-directory`、`typos.toml` 的 trybuild 夹具豁免 glob、`deny.toml` 注释指向，以及 README/README_EN 的目录表格与测试规模引用
+- **死代码清理与重复收敛**：失读项删除并以门控精确化替代失真标记；成对桩抽取收敛构建流水线与生命周期收集重复。
 
 ---
 
