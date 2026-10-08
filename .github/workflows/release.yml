@@ -74,7 +74,7 @@ jobs:
         if: env.HAS_CARGO_TOKEN == 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        working-directory: trait-kit-macros
+        working-directory: macros
         run: cargo publish
         # 本地/重跑路径已发布时撞车属幂等成功，不阻断 Release 交付
         continue-on-error: true

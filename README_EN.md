@@ -465,12 +465,12 @@ kit.inject_shared::<DbConfig>();             // inject into DbConfig
 | Unit tests | `src/` (`#[cfg(test)]`) | Module-internal logic |
 | Integration tests | `tests/` (6 targets) + `tests/e2e/` (13 registered targets) | `basic`, `config_inheritance_e2e`, `e2e_core`, `e2e_async`, `e2e_concurrency`, `e2e_feature_combinations`, etc. |
 | Compile-time UI tests | `tests/compile_fail.rs` + `tests/ui/` (4 cases) + `tests/ui/probe_sensitive/` (probe-gated group, 1 case) | trybuild-based: assert typestate misuse (`optional()` on `Kit<Unbuilt>`, register/build on `Kit<Ready>`) fails to compile |
-| Macro-crate tests | `trait-kit-macros/tests/` | `#[derive(Module)]` expansion correctness and compile-fail cases |
+| Macro-crate tests | `macros/tests/` | `#[derive(Module)]` expansion correctness and compile-fail cases |
 | Doc tests | `rust` code blocks in the README and doc comments | Compiled and run by `cargo test` |
 | Example validation | `examples/` (20) | Each example runs standalone; failed assertions panic |
 | Benchmarks | `benches/kit_bench.rs` | criterion benchmarks (requires the `toggle` feature) |
 
-Test scale: the main crate's `src/` and `tests/` contain **911** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `trait-kit-macros/tests/`.
+Test scale: the main crate's `src/` and `tests/` contain **911** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `macros/tests/`.
 
 ### Common Commands (same as CI)
 

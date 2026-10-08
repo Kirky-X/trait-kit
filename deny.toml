@@ -35,7 +35,7 @@ license-files = [{ path = "LICENSE", hash = 0xfb13e7ad }]
 
 [bans]
 multiple-versions = "warn"
-wildcards = "warn"  # trait-kit-macros dev-dep 故意 path-only（注释见 trait-kit-macros/Cargo.toml）
+wildcards = "warn"  # trait-kit-macros dev-dep 故意 path-only（注释见 macros/Cargo.toml）
 
 [[bans.deny]]
 name = "serde_yaml" # deprecated, use serde_yaml_ng

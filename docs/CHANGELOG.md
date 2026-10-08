@@ -32,6 +32,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **proc-macro 子 crate 目录更名**：`trait-kit-macros/` → `macros/`，与 base 其余仓的子 crate 目录惯例（confers/oxcache/dbnexus/limiteron/sdforge 均为 `macros/`）统一。包名 `trait-kit-macros` 不变（crates.io 已注册且下游按名依赖），发布产物与用户可见 API 零影响；同步更新 workspace `members` 与两处 `path` 依赖（主 crate 与 `examples/`）、`release.yml` 发布步骤的 `working-directory`、`typos.toml` 的 trybuild 夹具豁免 glob、`deny.toml` 注释指向，以及 README/README_EN 的目录表格与测试规模引用
+
 ---
 
 ## [0.5.0-rc.7] - 2026-10-03

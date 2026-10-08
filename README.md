@@ -459,12 +459,12 @@ kit.inject_shared::<DbConfig>();             // 注入到 DbConfig
 | 单元测试 | `src/`（`#[cfg(test)]`） | 模块内部逻辑 |
 | 集成测试 | `tests/`（6 个目标）+ `tests/e2e/`（13 个注册目标） | `basic`、`config_inheritance_e2e`、`e2e_core`、`e2e_async`、`e2e_concurrency`、`e2e_feature_combinations` 等 |
 | 编译期 UI 测试 | `tests/compile_fail.rs` + `tests/ui/`（4 个用例）+ `tests/ui/probe_sensitive/`（probe 门控组 1 个） | 基于 trybuild，断言 typestate 误用（未构建即检索等）无法编译 |
-| 宏 crate 测试 | `trait-kit-macros/tests/` | `#[derive(Module)]` 展开正确性与编译失败用例 |
+| 宏 crate 测试 | `macros/tests/` | `#[derive(Module)]` 展开正确性与编译失败用例 |
 | 文档测试 | README 与 doc 注释中的 `rust` 代码块 | 随 `cargo test` 编译运行 |
 | 示例验证 | `examples/`（20 个） | 每个示例独立运行，断言失败即 panic |
 | 基准测试 | `benches/kit_bench.rs` | criterion 基准（需 `toggle` feature） |
 
-测试规模：主 crate `src/` 与 `tests/` 共 **911** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `trait-kit-macros/tests/` 6 个。
+测试规模：主 crate `src/` 与 `tests/` 共 **911** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `macros/tests/` 6 个。
 
 ### 常用命令（与 CI 一致）
 

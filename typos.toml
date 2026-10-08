@@ -12,10 +12,10 @@ extend-exclude = [
   # 全文 202 行皆为机器生成的字符串，拼写检查只会产生误报并整体重写该文件。
   "docs/assets/*.svg",
 
-  # trybuild 反向夹具：trait-kit-macros/tests/ui/ 下的 .rs 是「故意写错」的编译失败用例，
+  # trybuild 反向夹具：macros/tests/ui/ 下的 .rs 是「故意写错」的编译失败用例，
   # .stderr 是 trybuild 自动生成/覆盖的错误信息快照（原样保留夹具中的拼写）。
   # 对它们做拼写纠正会摧毁测试本意，并使 .stderr 断言随之失配。
-  "trait-kit-macros/tests/ui/*",
+  "macros/tests/ui/*",
 ]
 
 [default.extend-words]
