@@ -122,13 +122,12 @@ fn e2e_require_ref_borrow_survives_reload_and_set_config() {
     assert_eq!(ready.config::<FreshCfg>().unwrap().v, 9);
 }
 
-// ─── BuildReport::to_json / from_json_str 往返序列化（report 落点） ────
+// ─── BuildReport::to_json → serde_json 解析往返序列化（report 落点） ────
 
 #[cfg(feature = "report")]
 mod build_report_json_roundtrip_e2e {
     use std::sync::Arc;
     use trait_kit::impl_module_meta;
-    use trait_kit::kit::report::BuildReport;
     use trait_kit::prelude::*;
 
     struct RptEagerDep;
@@ -172,7 +171,7 @@ mod build_report_json_roundtrip_e2e {
     }
 
     /// eager/lazy/override 三态 + merge_config 记录的 build_report 经
-    /// to_json → from_json_str 往返：JSON 合法且 modules/topo_order/
+    /// to_json → serde_json 解析往返：JSON 合法且 modules/topo_order/
     /// overrides/config_overrides 字段齐全可回读（消费方落盘/上报通路）。
     #[test]
     fn e2e_build_report_json_roundtrip_includes_all_sections() {
@@ -214,7 +213,7 @@ mod build_report_json_roundtrip_e2e {
         let _ = ready.require::<RptJsonLazy>().unwrap();
 
         let json = ready.build_report().to_json().expect("序列化应成功");
-        let value = BuildReport::from_json_str(&json).expect("往返解析应成功");
+        let value = serde_json::from_str::<serde_json::Value>(&json).expect("往返解析应成功");
 
         assert_eq!(value["schema_version"], 1);
         // topo_order：依赖先于消费者。

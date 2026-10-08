@@ -587,9 +587,9 @@ pub struct BuildReport {
 | 方法 | 说明 |
 |------|------|
 | `to_json()` | 序列化为 JSON 字符串（返回 `serde_json::Result`，不把错误嵌进看似合法的 JSON 体） |
-| `from_json_str(s)` | 反序列化为 `serde_json::Value` 供消费方按字段读取 |
 
 `schema_version` 在结构性破坏变更时递增；`SCHEMA_VERSION` 为当前值的公开常量。
+消费方按字段读取时，自行用 `serde_json::from_str` 解析 `to_json()` 的输出。
 
 #### 逐条目类型
 

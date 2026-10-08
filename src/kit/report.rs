@@ -433,16 +433,6 @@ impl BuildReport {
     pub fn to_json(&self) -> serde_json::Result<String> {
         serde_json::to_string(self)
     }
-
-    /// Parse a JSON string back into a generic JSON value (test helper for
-    /// downstream round-trip assertions).
-    ///
-    /// # Errors
-    ///
-    /// Returns the `serde_json` error if the string is not valid JSON.
-    pub fn from_json_str(s: &str) -> Result<serde_json::Value, serde_json::Error> {
-        serde_json::from_str(s)
-    }
 }
 
 #[cfg(test)]
@@ -586,7 +576,7 @@ mod tests {
         let ready = kit.build().expect("build ok");
 
         let json = ready.build_report().to_json().expect("serialize report");
-        let value = BuildReport::from_json_str(&json).expect("valid JSON");
+        let value = serde_json::from_str::<serde_json::Value>(&json).expect("valid JSON");
         assert_eq!(value["schema_version"], 1);
         assert_eq!(value["topo_order"][0], "rpt-leaf");
         assert_eq!(value["modules"].as_array().map(Vec::len), Some(2));
@@ -803,7 +793,7 @@ mod tests {
             let ready = kit.build().expect("build ok");
 
             let json = ready.build_report().to_json().expect("serialize report");
-            let value = BuildReport::from_json_str(&json).expect("valid JSON");
+            let value = serde_json::from_str::<serde_json::Value>(&json).expect("valid JSON");
             assert_eq!(value["config_overrides"][0]["source"], "merge_config");
             assert_eq!(value["config_overrides"][0]["applied"], true);
         }
