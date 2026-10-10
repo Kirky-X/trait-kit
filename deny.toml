@@ -32,6 +32,10 @@ unused-allowed-license = "warn"
 name = "trait-kit"
 expression = "MIT"
 license-files = [{ path = "LICENSE", hash = 0xfb13e7ad }]
+[[licenses.clarify]]
+name = "trait-kit-macros"
+expression = "MIT"
+license-files = [{ path = "../LICENSE", hash = 0xfb13e7ad }]
 
 [bans]
 multiple-versions = "warn"
