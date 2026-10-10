@@ -76,8 +76,8 @@ Modules declare a contract via `ModuleMeta` + `AutoBuilder`; the Kit centralizes
 <td width="50%">🌍 <b>ICU4X Internationalization</b><br><sub>Locale-aware number / date / plural / collation formatting, plus built-in Fluent FTL translation (<code>tr()</code>) for English and Chinese.</sub></td>
 </tr>
 <tr>
-<td width="50%">🧱 <b>Minimal Default Dependencies</b><br><sub><code>default = []</code>: no optional feature enabled; only 3 mandatory deps ship by default (Fluent translation <code>fluent-bundle</code> / <code>unic-langid</code> and the <code>log</code> facade), while <code>confers</code>, <code>serde</code>, <code>serde_json</code>, <code>icu</code>, etc. are all optional and feature-gated.</sub></td>
-<td width="50%">🚫 <b>unsafe denied by default</b><br><sub><code>#![deny(unsafe_code)]</code> is enforced crate-wide; only 6 locally audited exemptions exist (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, RefCell-guard lifetime re-anchoring ×2.</sub></td>
+<td width="50%">🧱 <b>Minimal Default Dependencies</b><br><sub><code>default = []</code>: no optional feature enabled; only 3 mandatory deps ship by default (Fluent translation <code>fluent-bundle</code> / <code>unic-langid</code> and the <code>log</code> facade), while <code>confers</code>, <code>serde</code>, <code>serde_json</code>, <code>icu_*</code> (ICU4X components), etc. are all optional and feature-gated.</sub></td>
+<td width="50%">🚫 <b>unsafe denied by default</b><br><sub><code>#![deny(unsafe_code)]</code> is enforced crate-wide; only 6 locally audited exemptions exist (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×2 (1 <code>RefCell</code> / 1 <code>RwLock</code>).</sub></td>
 </tr>
 </table>
 
@@ -125,7 +125,7 @@ Minimum Supported Rust Version (MSRV): **1.97.1** (edition 2024).
 cargo add trait-kit
 ```
 
-The default features (`default = []`) only include the core `ModuleMeta` + `AutoBuilder` + `Kit`. The crate always ships 3 mandatory dependencies — Fluent translation (`fluent-bundle` / `unic-langid`) and the `log` facade — while all remaining dependencies (`confers`, `serde`, `serde_json`, `icu`, etc.) are optional and feature-gated.
+The default features (`default = []`) only include the core `ModuleMeta` + `AutoBuilder` + `Kit`. The crate always ships 3 mandatory dependencies — Fluent translation (`fluent-bundle` / `unic-langid`) and the `log` facade — while all remaining dependencies (`confers`, `serde`, `serde_json`, `icu_*` (ICU4X components), etc.) are optional and feature-gated.
 
 ### 💡 Minimal Example
 
@@ -313,7 +313,7 @@ For the complete `Kit<Unbuilt>` / `Kit<Ready>` method list (including feature ga
 <tr><td><code>observer</code></td><td>—</td><td>Build observability: <code>BuildObserver</code> callbacks (start/complete/error).</td><td>—</td></tr>
 <tr><td><code>decorator</code></td><td>—</td><td>Module decorator: post-build capability wrapping/enhancement.</td><td>—</td></tr>
 <tr><td><code>shutdown</code></td><td>—</td><td>Graceful shutdown coordinator: phased ordered shutdown + timeout force-exit.</td><td>—</td></tr>
-<tr><td><code>i18n</code></td><td><code>dep:icu</code>, <code>dep:writeable</code>, <code>dep:sys-locale</code></td><td>ICU4X internationalization: locale-aware number/date/plural/collation formatting.</td><td>—</td></tr>
+<tr><td><code>i18n</code></td><td><code>dep:icu_collator</code>, <code>dep:icu_datetime</code>, <code>dep:icu_decimal</code>, <code>dep:icu_locale</code>, <code>dep:icu_plurals</code>, <code>dep:writeable</code>, <code>dep:sys-locale</code></td><td>ICU4X internationalization: locale-aware number/date/plural/collation formatting (component sub-crates, not the <code>icu</code> facade).</td><td>—</td></tr>
 <tr><td><code>report</code></td><td><code>dep:serde</code>, <code>dep:serde_json</code></td><td>Structured build report: <code>BuildReport</code> JSON and <code>contract_manifest()</code> (the dependency-graph DOT/Mermaid exports <code>graph_dot()</code> / <code>graph_mermaid()</code> are ungated, available by default).</td><td>—</td></tr>
 <tr><td><code>presets</code></td><td><code>confers</code></td><td>Preset module packages: <code>ConfersConfigModule</code> (the config hub as a Kit module) + composition builder.</td><td>—</td></tr>
 <tr><td><code>compose</code></td><td>—</td><td>Sub-Kit composition: register a child <code>Kit</code> as a single parent module (namespaced capabilities + cross-Kit dependency validation).</td><td>—</td></tr>
@@ -327,7 +327,7 @@ Enable the desired level in `Cargo.toml`:
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.5.0-rc.6", features = ["encryption"] }
+trait-kit = { version = "0.5.0-rc.7", features = ["encryption"] }
 ```
 
 ---
@@ -412,7 +412,7 @@ The actual execution path inside `build()` (missing-dep check → cycle detectio
 
 ### ⚙️ Configuration: confers Integration
 
-trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.6 via three-level feature flags; each level inherits the previous one, forming a layered capability system.
+trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.6 through the three-level feature inheritance chain `confers` → `reload` → `encryption`; the table below expands it into five capability layers, where layers 1 and 2 both belong to the `confers` feature and layer 5's `ConfigInherit` / `SharedConfig` derives come from `trait-kit-macros` (a separate direct dependency).
 
 | Level | Feature | Capability |
 |-------|---------|------------|
@@ -470,7 +470,7 @@ kit.inject_shared::<DbConfig>();             // inject into DbConfig
 | Example validation | `examples/` (20) | Each example runs standalone; failed assertions panic |
 | Benchmarks | `benches/kit_bench.rs` | criterion benchmarks (requires the `toggle` feature) |
 
-Test scale: the main crate's `src/` and `tests/` contain **911** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `macros/tests/`.
+Test scale: the main crate's `src/` and `tests/` contain **922** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `macros/tests/`.
 
 ### Common Commands (same as CI)
 
@@ -499,7 +499,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 ## 📊 Performance
 
-Performance comes from design: typestate moves dependency-graph validation entirely into `build()`, capability retrieval on `Kit<Ready>` is a `TypeId` lookup + clone, and the sync `Kit` is lock-free via `RefCell`. The criterion benchmark setup covers the build / require / config / toggle hot-path axes (`benches/kit_bench.rs`; benchmark targets require `--features toggle`); the baseline (2026-09-10) measured `require` on the same magnitude as a bare `Arc::clone` + `TypeId` lookup, validating the "zero-cost capability retrieval" design goal — for large capability structs prefer `require_ref` (borrowed read).
+Performance comes from design: typestate moves dependency-graph validation entirely into `build()`, capability retrieval on `Kit<Ready>` is a `TypeId` lookup + clone, and the sync `Kit` is lock-free via `RefCell`. The criterion benchmark setup covers the build / require / config / toggle hot-path axes (`benches/kit_bench.rs`; benchmark targets require `--features toggle`); the baseline (2026-09-29 quiet re-run) measured `require` (~16 ns) on the same magnitude as a bare `Arc::clone` + `TypeId` lookup, validating the "zero-cost capability retrieval" design goal — for large capability structs prefer `require_ref` (borrowed read).
 
 Baseline numbers, the measurement environment, and reproduction commands live in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
@@ -508,7 +508,7 @@ Baseline numbers, the measurement environment, and reproduction commands live in
 ## 🔒 Security
 
 - **Vulnerability reporting**: do not open public issues; use GitHub's private [Security Advisories](https://github.com/Kirky-X/trait-kit/security/advisories/new) channel ("Report a vulnerability"). The maintainer commits to acknowledging reports within 48 hours and providing an initial assessment within 7 days (see [SECURITY.md](docs/SECURITY.md)).
-- **unsafe denied by default**: `#![deny(unsafe_code)]` is enforced crate-wide; only 6 locally audited exemptions (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, RefCell-guard lifetime re-anchoring ×2.
+- **unsafe denied by default**: `#![deny(unsafe_code)]` is enforced crate-wide; only 6 locally audited exemptions (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×2 (1 `RefCell` / 1 `RwLock`).
 - **Compile-time misuse prevention**: typestate turns `optional()` on `Kit<Unbuilt>` and register/build on `Kit<Ready>` into compile errors (trybuild UI tests); the dependency graph is checked for missing deps and cycles at `build()`.
 - **Explicit thread-safety boundary**: the sync `Kit` is `!Sync` (compiler-enforced, see the `static_assertions` assertions); use `AsyncKit` (`Send + Sync`) for multi-threading.
 - **Encrypted config storage** (`encryption`): XChaCha20-Poly1305 AEAD with field keys derived via HKDF from the master key and `ModuleConfig::PATH`; `EncryptedBlob`'s `Debug` implementation never leaks encrypted material.
@@ -526,8 +526,9 @@ Entries carry over the existing plan; status is aligned with the current reposit
 
 <table>
 <tr><th>Status</th><th>Item</th><th>Description</th></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.7</b> (2026-10-03)</td><td>Current release: service-probe registry (new <code>probe</code> feature), async health aggregation (<code>health_aggregate</code> / <code>health_json</code>), explicit <code>config_overrides</code> in build reports, feature-matrix and benchmark-regression CI gates; fixes for version-negotiation path parity, unified lazy retrieval semantics, and shutdown-coordinator hook panic isolation (see the <a href="docs/CHANGELOG.md">CHANGELOG</a>).</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.6</b> (2026-09-21)</td><td>rc.4–rc.6 released: observability ports and event bus, full Toggle implementation, <code>trait-kit-derive</code> merged into <code>trait-kit-macros</code>, <code>confers</code> dependency moved to crates.io (see the <a href="docs/CHANGELOG.md">CHANGELOG</a>).</td></tr>
-<tr><td>✅</td><td><b>Performance benchmarks</b></td><td>Criterion benchmarks in <code>benches/kit_bench.rs</code> and the <code>docs/PERFORMANCE.md</code> baseline report are in place (baseline 2026-09-10).</td></tr>
+<tr><td>✅</td><td><b>Performance benchmarks</b></td><td>Criterion benchmarks in <code>benches/kit_bench.rs</code> and the <code>docs/PERFORMANCE.md</code> baseline report are in place (current baseline 2026-09-29).</td></tr>
 <tr><td>📋</td><td><b>0.5.0 stable release</b></td><td>After the minor version bump, sync the <code>path + version</code> dependency requirements of downstream crates (oxcache, dbnexus, inklog, limiteron, sdforge) per the workspace release plan.</td></tr>
 <tr><td>✅</td><td><b>cfg gate completeness</b></td><td><code>--no-default-features --features async</code> and <code>async,observer</code> check combos, <code>clippy --features async --all-targets</code> are warning-free, and async doc tests all pass — the gate gap is resolved (re-verified 2026-09-27).</td></tr>
 </table>
@@ -543,7 +544,7 @@ Contributions are welcome! For full environment setup, the TDD workflow, and com
 ### Build Requirements
 
 - Rust **1.97.1** or later (stable, see `rust-toolchain.toml`; edition 2024).
-- No external tooling required (no protoc, no openssl, no system libraries; only the workspace member `examples` may need `protobuf-compiler` for local confers integration).
+- No external tooling required (no protoc, no openssl, no system libraries; `confers` comes from crates.io, so no `protobuf-compiler` is needed anywhere in the workspace).
 
 ### Commit Convention and Local Gates
 
@@ -572,6 +573,7 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 
 See [CHANGELOG.md](docs/CHANGELOG.md). Recent highlights:
 
+- **0.5.0-rc.7** (2026-10-03): service-probe registry (new `probe` feature), async health aggregation, explicit `config_overrides` in build reports, feature-matrix and benchmark-regression CI gates; fixes for version-negotiation path parity, unified lazy retrieval semantics, and more.
 - **0.5.0-rc.6** (2026-09-21): `confers` dependency moved to crates.io; dependency upgrades (syn 3.0, criterion 0.8, rustls 0.23.45); release process hardening (publish `trait-kit-macros` before the main crate).
 - **0.5.0-rc.5** (2026-09-14): `trait-kit-derive` merged into `trait-kit-macros` (`ConfigInherit` / `SharedConfig` migration; derive sub-crate retired).
 - **0.5.0-rc.4** (2026-09-13): observability ports (`MetricsPort` / `LogPort`), runtime `EventBus`, full Toggle implementation, symmetric AsyncKit config API (rc.3 was never released separately; folded into this section).

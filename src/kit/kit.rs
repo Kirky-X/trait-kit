@@ -664,11 +664,13 @@ impl Kit {
             .borrow_mut()
             .insert(TypeId::of::<M>(), Box::new(capability));
         #[cfg(feature = "report")]
-        self.report
-            .push_override_record(super::report::OverrideRecord {
+        self.report.push_override_record(
+            TypeId::of::<M>(),
+            super::report::OverrideRecord {
                 module: M::NAME,
                 source: "override_module",
-            });
+            },
+        );
     }
 
     /// Override a module's capability with a pre-built value, but still
@@ -705,11 +707,13 @@ impl Kit {
             .borrow_mut()
             .insert(TypeId::of::<M>(), Box::new(capability));
         #[cfg(feature = "report")]
-        self.report
-            .push_override_record(super::report::OverrideRecord {
+        self.report.push_override_record(
+            TypeId::of::<M>(),
+            super::report::OverrideRecord {
                 module: M::NAME,
                 source: "override_module_strict",
-            });
+            },
+        );
         Ok(())
     }
 
@@ -1128,6 +1132,10 @@ impl Kit {
         // Handle modules that were overridden but NOT registered.
         let remaining: Vec<(TypeId, Box<dyn Any>)> = self.overrides.borrow_mut().drain().collect();
         for (type_id, boxed) in remaining {
+            // Leftover overrides target types absent from the graph: no module
+            // name exists for the report, record the unregistered placeholder.
+            #[cfg(feature = "report")]
+            self.report.mark_override_unregistered(type_id);
             self.capabilities.insert_boxed(type_id, boxed);
         }
         Ok(())
@@ -2524,10 +2532,11 @@ impl Kit<Ready> {
     /// Retrieve a capability by reference, avoiding `Clone`.
     ///
     /// Unlike `require()`, this returns a `Ref` borrowing the stored value
-    /// directly, with no clone overhead. The `Ref` holds a read lock on the
-    /// interior `RefCell` — while it is alive, calling `reload_config` or
-    /// any mutating method will panic (`borrow_mut` conflict). Keep the
-    /// `Ref` lifetime short.
+    /// directly, with no clone overhead. The `Ref` holds a read borrow on the
+    /// capabilities `TypeMap`; configuration writes (`reload_config` /
+    /// `merge_config` / `populate_defaults`) target the separate `configs`
+    /// `TypeMap` and do not conflict with a live guard. For the lazy path,
+    /// see the borrow-conflict caveat below.
     ///
     /// Read-only: never triggers a lazy build. For `register_lazy` modules
     /// the cached value is borrowable after the first `require()`.

@@ -273,7 +273,6 @@ pub fn derive_shared_config(input: TokenStream) -> TokenStream {
         _ => panic!("SharedConfig only supports structs"),
     };
 
-    // Build a map from field name to field type for validation
     let field_map: std::collections::HashMap<String, &syn::Type> = fields
         .iter()
         .filter_map(|f| f.ident.as_ref().map(|ident| (ident.to_string(), &f.ty)))

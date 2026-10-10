@@ -372,7 +372,6 @@ mod async_tests {
     fn async_lifecycle_default_on_shutdown_completes() {
         let cap = Arc::new(AsyncTestCap);
         block_on(AsyncTestModule::on_shutdown(&cap));
-        // Should not panic
     }
 
     #[test]

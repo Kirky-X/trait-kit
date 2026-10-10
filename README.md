@@ -74,8 +74,8 @@
 <td width="50%" style="vertical-align:top; padding: 12px">🌍 <b>ICU4X 国际化</b><br><span style="color:#64748B">区域感知的数字 / 日期 / 复数 / 排序格式化，内置 Fluent FTL 中英文消息翻译（<code>tr()</code>）。</span></td>
 </tr>
 <tr>
-<td width="50%" style="vertical-align:top; padding: 12px">🧱 <b>极简默认依赖</b><br><span style="color:#64748B"><code>default = []</code> 不启用任何可选 feature；仅固定携带 Fluent 翻译（<code>fluent-bundle</code> / <code>unic-langid</code>）与 <code>log</code> 门面 3 个必选依赖，<code>confers</code>、<code>serde</code>、<code>serde_json</code>、<code>icu</code> 等其余依赖全部经 feature 门控可选。</span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">🚫 <b>默认禁用 unsafe</b><br><span style="color:#64748B"><code>#![deny(unsafe_code)]</code> 全 crate 强制；仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、RefCell guard 生命周期重锚 ×2）。</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🧱 <b>极简默认依赖</b><br><span style="color:#64748B"><code>default = []</code> 不启用任何可选 feature；仅固定携带 Fluent 翻译（<code>fluent-bundle</code> / <code>unic-langid</code>）与 <code>log</code> 门面 3 个必选依赖，<code>confers</code>、<code>serde</code>、<code>serde_json</code>、<code>icu_*</code>（ICU4X 组件）等其余依赖全部经 feature 门控可选。</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🚫 <b>默认禁用 unsafe</b><br><span style="color:#64748B"><code>#![deny(unsafe_code)]</code> 全 crate 强制；仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：<code>RefCell</code> / <code>RwLock</code> 各 1）。</span></td>
 </tr>
 </table>
 
@@ -119,7 +119,7 @@ trait-kit 提供 DI 框架的**标准化**，同时保持手动装配的**显式
 cargo add trait-kit
 ```
 
-默认特性（`default = []`）只含核心 `ModuleMeta` + `AutoBuilder` + `Kit`；crate 固定携带 Fluent 翻译（`fluent-bundle` / `unic-langid`）与 `log` 门面 3 个必选依赖，其余依赖（`confers`、`serde`、`serde_json`、`icu` 等）全部经 feature 门控可选。
+默认特性（`default = []`）只含核心 `ModuleMeta` + `AutoBuilder` + `Kit`；crate 固定携带 Fluent 翻译（`fluent-bundle` / `unic-langid`）与 `log` 门面 3 个必选依赖，其余依赖（`confers`、`serde`、`serde_json`、`icu_*` 等 ICU4X 组件）全部经 feature 门控可选。
 
 ### 💡 最小示例
 
@@ -305,7 +305,7 @@ fn main() {
 <tr><td><code>observer</code></td><td>—</td><td>构建可观测：<code>BuildObserver</code> 回调（开始/完成/错误）。</td><td>—</td></tr>
 <tr><td><code>decorator</code></td><td>—</td><td>模块装饰器：构建后能力包装/增强。</td><td>—</td></tr>
 <tr><td><code>shutdown</code></td><td>—</td><td>优雅关闭协调器：分阶段有序关闭 + 超时强退。</td><td>—</td></tr>
-<tr><td><code>i18n</code></td><td><code>dep:icu</code>, <code>dep:writeable</code>, <code>dep:sys-locale</code></td><td>ICU4X 国际化：本地化数字/日期/复数/排序格式化。</td><td>—</td></tr>
+<tr><td><code>i18n</code></td><td><code>dep:icu_collator</code>, <code>dep:icu_datetime</code>, <code>dep:icu_decimal</code>, <code>dep:icu_locale</code>, <code>dep:icu_plurals</code>, <code>dep:writeable</code>, <code>dep:sys-locale</code></td><td>ICU4X 国际化：本地化数字/日期/复数/排序格式化（按组件引入，不引 <code>icu</code> 门面 crate）。</td><td>—</td></tr>
 <tr><td><code>report</code></td><td><code>dep:serde</code>, <code>dep:serde_json</code></td><td>结构化构建报告：<code>BuildReport</code> JSON 与 <code>contract_manifest()</code> 契约清单（依赖图 DOT/Mermaid 导出 <code>graph_dot()</code> / <code>graph_mermaid()</code> 无门控，默认可用）。</td><td>—</td></tr>
 <tr><td><code>presets</code></td><td><code>confers</code></td><td>预设模块包：<code>ConfersConfigModule</code>（配置中心作为 Kit 模块）+ 组合 builder。</td><td>—</td></tr>
 <tr><td><code>compose</code></td><td>—</td><td>子 Kit 组合：子 <code>Kit</code> 注册为父 <code>Kit</code> 的单一模块（能力命名空间隔离 + 跨 Kit 依赖校验）。</td><td>—</td></tr>
@@ -321,7 +321,7 @@ fn main() {
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.5.0-rc.6", features = ["encryption"] }
+trait-kit = { version = "0.5.0-rc.7", features = ["encryption"] }
 ```
 
 ---
@@ -406,7 +406,7 @@ workspace 结构图、依赖图验证、数据流、线程安全模型与目录�
 
 ### ⚙️ 配置：confers 集成
 
-trait-kit 通过三级 feature flag 集成 [`confers`](https://crates.io/crates/confers) 0.6，每一级继承前一级，形成分层能力系统。
+trait-kit 通过 `confers` → `reload` → `encryption` 三级 feature 继承链集成 [`confers`](https://crates.io/crates/confers) 0.6；下表按能力面展开五层，其中第 1、2 层同属 `confers` feature，第 5 层的 `ConfigInherit` / `SharedConfig` derive 来自 `trait-kit-macros`（需另行直接依赖）。
 
 | 层级 | Feature | 能力 |
 |------|---------|------|
@@ -464,7 +464,7 @@ kit.inject_shared::<DbConfig>();             // 注入到 DbConfig
 | 示例验证 | `examples/`（20 个） | 每个示例独立运行，断言失败即 panic |
 | 基准测试 | `benches/kit_bench.rs` | criterion 基准（需 `toggle` feature） |
 
-测试规模：主 crate `src/` 与 `tests/` 共 **911** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `macros/tests/` 6 个。
+测试规模：主 crate `src/` 与 `tests/` 共 **922** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `macros/tests/` 6 个。
 
 ### 常用命令（与 CI 一致）
 
@@ -493,7 +493,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 ## 📊 性能
 
-性能来自设计层面：typestate 把依赖图验证全部前置到 `build()`，`Kit<Ready>` 上的能力检索是 `TypeId` 查表 + 克隆；同步 `Kit` 基于 `RefCell` 无锁设计。criterion 基准设施覆盖 build / require / config / toggle 四个热路径轴（`benches/kit_bench.rs`，基准项需 `--features toggle`）；基线（2026-09-10）实测 `require` 与裸 `Arc::clone` + `TypeId` 查找同量级，验证了"零开销能力检索"的设计目标，大结构能力建议改用 `require_ref`（借用读）。
+性能来自设计层面：typestate 把依赖图验证全部前置到 `build()`，`Kit<Ready>` 上的能力检索是 `TypeId` 查表 + 克隆；同步 `Kit` 基于 `RefCell` 无锁设计。criterion 基准设施覆盖 build / require / config / toggle 四个热路径轴（`benches/kit_bench.rs`，基准项需 `--features toggle`）；基线（2026-09-29 安静复测）实测 `require`（≈16 ns）与裸 `Arc::clone` + `TypeId` 查找同量级，验证了"零开销能力检索"的设计目标，大结构能力建议改用 `require_ref`（借用读）。
 
 基线数字、测量环境与复现命令见 [⚡ 性能基准](docs/PERFORMANCE.md)。
 
@@ -502,7 +502,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 ## 🔒 安全
 
 - **漏洞报告**：请勿通过公开 Issue 报告，使用 GitHub 私密通道 [Security Advisories](https://github.com/Kirky-X/trait-kit/security/advisories/new)（"Report a vulnerability"）。维护者承诺 48 小时内确认、7 天内给出初步评估（见 [SECURITY.md](docs/SECURITY.md)）。
-- **默认禁用 unsafe**：`#![deny(unsafe_code)]` 全 crate 强制；仅 6 处经 SAFETY 论证与 review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、RefCell guard 生命周期重锚 ×2）。
+- **默认禁用 unsafe**：`#![deny(unsafe_code)]` 全 crate 强制；仅 6 处经 SAFETY 论证与 review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：`RefCell` / `RwLock` 各 1）。
 - **编译期排除误用**：typestate 将 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建误用前置为编译错误（trybuild UI 测试断言）；依赖图在 `build()` 时做缺失依赖与环检测。
 - **明确的线程安全边界**：同步 `Kit` 为 `!Sync`（编译器强制，见 `static_assertions` 断言），多线程用 `AsyncKit`（`Send + Sync`）。
 - **加密配置存储**（`encryption`）：XChaCha20-Poly1305 AEAD，HKDF 从主密钥与 `ModuleConfig::PATH` 派生字段密钥；`EncryptedBlob` 的 `Debug` 实现不泄露加密材料。
@@ -520,8 +520,9 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 <table>
 <tr><th>状态</th><th>条目</th><th>说明</th></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.7</b>（2026-10-03）</td><td>当前版本：服务探针注册面（新 <code>probe</code> feature）、async 健康聚合（<code>health_aggregate</code> / <code>health_json</code>）、构建报告 <code>config_overrides</code> 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一、关闭协调器 hook panic 隔离等（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.6</b>（2026-09-21）</td><td>rc.4–rc.6 已发布：观测端口与事件总线、Toggle 完整落地、<code>trait-kit-derive</code> 并入 <code>trait-kit-macros</code>、<code>confers</code> 依赖改走 crates.io（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
-<tr><td>✅</td><td><b>性能基准</b></td><td>criterion 基准 <code>benches/kit_bench.rs</code> 与 <code>docs/PERFORMANCE.md</code> 基线报告已建立（基线 2026-09-10）。</td></tr>
+<tr><td>✅</td><td><b>性能基准</b></td><td>criterion 基准 <code>benches/kit_bench.rs</code> 与 <code>docs/PERFORMANCE.md</code> 基线报告已建立（现行基线 2026-09-29）。</td></tr>
 <tr><td>📋</td><td><b>0.5.0 正式发布</b></td><td>次版本位 +1 后，按工作区发布计划同步下游仓库（oxcache、dbnexus、inklog、limiteron、sdforge）的 <code>path + version</code> 依赖要求。</td></tr>
 <tr><td>✅</td><td><b>cfg 门控完整性</b></td><td><code>--no-default-features --features async</code> 与 <code>async,observer</code> 组合 check、<code>clippy --features async --all-targets</code> 零告警，async doc 测试全通过——门控缺口已消除（2026-09-27 复测确认）。</td></tr>
 </table>
@@ -537,7 +538,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 ### 构建要求
 
 - Rust **1.97.1** 或更高版本（stable，见 `rust-toolchain.toml`，edition 2024）。
-- 无需外部工具链（无 protoc、无 openssl、无系统库；仅 workspace 成员 `examples` 的 confers 联调路径可能需要 `protobuf-compiler`）。
+- 无需外部工具链（无 protoc、无 openssl、无系统库；`confers` 依赖走 crates.io，全 workspace 均无需 `protobuf-compiler`）。
 
 ### 提交规范与本地门禁
 
@@ -566,6 +567,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 详见 [CHANGELOG.md](docs/CHANGELOG.md)。近期版本要点：
 
+- **0.5.0-rc.7**（2026-10-03）：服务探针注册面（新 `probe` feature）、async 健康聚合、构建报告 `config_overrides` 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一等。
 - **0.5.0-rc.6**（2026-09-21）：`confers` 依赖改走 crates.io；依赖升级（syn 3.0、criterion 0.8、rustls 0.23.45）；发布流程加固（先发 `trait-kit-macros` 再发主 crate）。
 - **0.5.0-rc.5**（2026-09-14）：`trait-kit-derive` 并入 `trait-kit-macros`（`ConfigInherit` / `SharedConfig` 迁移，derive 子包退役）。
 - **0.5.0-rc.4**（2026-09-13）：观测端口（`MetricsPort` / `LogPort`）、运行时事件总线 `EventBus`、Toggle 完整落地、AsyncKit 配置对称补齐（rc.3 未单独发布，并入本节）。

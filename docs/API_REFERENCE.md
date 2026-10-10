@@ -1,6 +1,6 @@
 # 📘 Trait-Kit API 参考
 
-trait-kit 的 API 参考。覆盖核心与常用公开项——非穷尽全量，完整清单以 rustdoc / docs.rs 为准；按模块组织，标注各 API 所需的 feature flag（当前版本 **0.5.0-rc.6**）。
+trait-kit 的 API 参考。覆盖核心与常用公开项——非穷尽全量，完整清单以 rustdoc / docs.rs 为准；按模块组织，标注各 API 所需的 feature flag（当前版本 **0.5.0-rc.7**）。
 
 ## 📋 目录
 
@@ -100,7 +100,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `snapshot_config::<C>()` | `confers` | 快照当前配置（返回是否成功） |
 | `restore_config::<C>()` | `confers` | 回滚配置到最近快照 |
 | `has_snapshot::<C>()` | `confers` | 检查指定类型快照是否存在 |
-| `populate_defaults::<C>()` | `confers` | 空 Kit 时填充 `ModuleConfig::default_value()` |
+| `populate_defaults::<C>()` | `confers` | 空 Kit 时填充 `ModuleConfig::default_value()`（`impl<S>`，两态可用） |
 | `merge_config::<C>(ovr)` | `confers` | 任意状态可用（`impl<S>`，构建期与运行期皆可调用）；应用 `ConfigInherit` 字段覆盖；每次调用记录进 `build_report().config_overrides`（`report` 特性，`applied=false` = 目标配置不存在被丢弃；记录无上限，高频调用配 `take_config_overrides()` 轮转） |
 | `extract_shared::<C>()` | `confers` | 从配置提取共享字段到 overlay |
 | `inject_shared::<C>()` | `confers` | 从 overlay 注入共享字段到配置 |
@@ -144,7 +144,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `record_health_history()` / `health_history()` | `health` | 环形缓冲健康采样与读取 |
 | `shutdown()` | `lifecycle` | 按逆拓扑序执行 `on_shutdown` |
 | `subscribe::<C>(cb)` | `reload` | 订阅热重载 |
-| `reload_config::<C>()` | `reload` | 重新加载配置（Ready 态写配置的唯一路径；`set_config` 仅 `Kit<Unbuilt>` 可用，运行期更新配置另可用 `merge_config`，`confers` feature） |
+| `reload_config::<C>()` | `reload` | 重新加载配置（Ready 态可用；`set_config` 仅 `Kit<Unbuilt>` 可用，运行期写配置另有 `merge_config` / `populate_defaults` 等 `confers` 面方法） |
 | `enable_toggle(key, bool)` / `is_toggle_enabled(key)` | `toggle` | 运行时修改/查询 feature flag |
 | `set_toggle` / `get_toggle` / `remove_toggle` / `list_toggles` | `toggle` | 类型化开关句柄 |
 | `get_encrypted::<C>(key)` | `encryption` | 解密检索配置 |
@@ -352,12 +352,12 @@ pub trait SharedConfig: Clone + 'static {
 #### `populate_defaults`
 
 ```rust
-impl Kit {
+impl<S> Kit<S> {
     pub fn populate_defaults<C: ModuleConfig>(&self) -> bool;
 }
 ```
 
-空 Kit 时填充 `C::default_value()`，已有值不覆盖。返回 `true` 表示填充了默认值。
+空 Kit 时填充 `C::default_value()`，已有值不覆盖。返回 `true` 表示填充了默认值。定义在 `impl<S> Kit<S>`，`Kit<Unbuilt>` 与 `Kit<Ready>` 两态均可用。
 
 ---
 
@@ -413,13 +413,13 @@ pub trait AsyncAutoBuilder: ModuleMeta {
 |---|---|
 | `with_max_concurrency(limit)` | 按拓扑分层并发构建的并发上限 |
 | `create_scope()` | 创建异步作用域 |
-| `AsyncKit<Ready>` 配置面 | `load_config` 系列、`subscribe` / `reload_config`、`snapshot_config` / `restore_config`、`set_encrypted` / `get_encrypted` 与同步 Kit 能力一致 |
+| 配置面（`AsyncKit<Unbuilt>`） | `load_config` 系列、`subscribe` / `reload_config`、`snapshot_config` / `restore_config`、`set_encrypted` / `get_encrypted` 与同步 `Kit` 的配置能力一致；这些方法定义在 `AsyncKit<Unbuilt>`（构建前配置面），`AsyncKit<Ready>` 仅保留只读检索（`config` / `config_arc` / `contains_config`） |
 | `health_aggregate()` | `health` + `report` | worst-of 整体状态 + 各模块明细（`/healthz` 结构化载荷），与同步 `Kit<Ready>` 口径一致（空集 healthy-by-convention；modules 顺序不承诺确定；每次调用执行全部 checker，注入事件总线时发布 HealthChanged） |
 | `health_json()` | `health` + `report` | 健康聚合 JSON 导出，与同步 `Kit<Ready>` 对位 |
 | `build_report()` `report` | 结构化构建报告（JSON），与同步 `Kit<Ready>` 对位；async 构建状态集仅 `built`（无 override/lazy 面） |
 | `contract_manifest()` `report` | 契约清单导出（NAME/VERSION/capability/deps），与同步 `Kit<Ready>` 对位 |
 | `take_config_overrides()` `report` | 排空并返回 `config_overrides` 历史（构建前 `AsyncKit<Unbuilt>` 态 API，与 `set_config` 同口径——累积仅发生在构建前，Ready 后历史冻结、无运行期无界累积；排空动作语义（换出并返回记录序）与同步侧一致） |
-| `populate_defaults::<C>()` | 任意状态可用的配置面入口：空 Kit 时填充 `C::default_value()`、已有值不覆盖，返回 `bool` 表示是否发生填充。`AsyncKit` 版本的约束为 `C: ModuleConfig + Send + Sync`（同步 `Kit` 仅要求 `C: ModuleConfig`）——差异源于 `AsyncKit` 是共享 `Send + Sync` 类型 |
+| `populate_defaults::<C>()` | 构建前 `AsyncKit<Unbuilt>` 态配置面入口（与同 impl 块的 `merge_config` / `take_config_overrides` 同口径；Ready 态无此方法——异步配置面为构建期关注点）：空 Kit 时填充 `C::default_value()`、已有值不覆盖，返回 `bool` 表示是否发生填充。`AsyncKit` 版本的约束为 `C: ModuleConfig + Send + Sync`（同步 `Kit` 仅要求 `C: ModuleConfig`）——差异源于 `AsyncKit` 是共享 `Send + Sync` 类型 |
 
 ### `di` — 接口/实现分离
 
@@ -587,9 +587,9 @@ pub struct BuildReport {
 | 方法 | 说明 |
 |------|------|
 | `to_json()` | 序列化为 JSON 字符串（返回 `serde_json::Result`，不把错误嵌进看似合法的 JSON 体） |
+| `from_json_str(s)` | 反序列化为 `serde_json::Value` 供消费方按字段读取 |
 
 `schema_version` 在结构性破坏变更时递增；`SCHEMA_VERSION` 为当前值的公开常量。
-消费方按字段读取时，自行用 `serde_json::from_str` 解析 `to_json()` 的输出。
 
 #### 逐条目类型
 

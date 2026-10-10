@@ -191,7 +191,6 @@ impl ToggleBackend for ConfersToggle {
     fn set(&mut self, key: String, value: ToggleValue) {
         match &value {
             ToggleValue::Bool(enabled) => {
-                // Register in confers if not present, then set state
                 if !self.registry.is_enabled(&key)
                     && !self.registry.list().iter().any(|i| i.name == key)
                 {
@@ -202,7 +201,6 @@ impl ToggleBackend for ConfersToggle {
                 } else {
                     self.registry.disable(&key);
                 }
-                // Remove from typed side if it was there
                 self.typed_side.remove(&key);
                 // A fresh set re-activates the key after a prior remove.
                 self.removed.remove(&key);
@@ -219,7 +217,6 @@ impl ToggleBackend for ConfersToggle {
         if let Some(v) = self.typed_side.remove(key) {
             return Some(v);
         }
-        // Check confers registry
         let infos = self.registry.list();
         for info in &infos {
             if info.name == key {

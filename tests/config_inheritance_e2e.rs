@@ -64,7 +64,6 @@ struct CacheConfig {
 fn e2e_config_inheritance_a_b_project_scenario() {
     let kit = Kit::new();
 
-    // Step 1: Project A sets its application config
     kit.set_config(TraitKitConfig {
         host: "prod.example.com".into(),
         port: 8080,
@@ -72,33 +71,28 @@ fn e2e_config_inheritance_a_b_project_scenario() {
         log_level: "info".into(),
     });
 
-    // Step 2: Project A sets its cache config
     kit.set_config(CacheConfig {
         host: "cache.example.com".into(),
         port: 6379,
         ttl_seconds: 300,
     });
 
-    // Step 3: Project B's DbConfig gets default values
     assert!(kit.populate_defaults::<DbConfig>());
     // Second call should not override
     assert!(!kit.populate_defaults::<DbConfig>());
 
-    // Verify defaults were populated
     let db_before: DbConfig = kit.config().unwrap();
     assert_eq!(db_before.host, "localhost");
     assert_eq!(db_before.port, 3306);
 
-    // Step 4: Extract shared fields from TraitKitConfig (last extractor wins)
     kit.extract_shared::<TraitKitConfig>();
 
-    // Also extract from CacheConfig — this overrides host/port in the overlay
+    // Also extract from CacheConfig — last extractor wins, overriding
+    // host/port in the overlay
     kit.extract_shared::<CacheConfig>();
 
-    // Step 5: Inject shared fields into DbConfig
     kit.inject_shared::<DbConfig>();
 
-    // Step 6: Verify
     let db_after: DbConfig = kit.config().unwrap();
     // CacheConfig was extracted last, so its values win
     assert_eq!(db_after.host, "cache.example.com");
@@ -123,7 +117,6 @@ fn e2e_config_inheritance_a_b_project_scenario() {
 fn e2e_merge_config_then_shared_inheritance() {
     let kit = Kit::new();
 
-    // Set TraitKitConfig
     kit.set_config(TraitKitConfig {
         host: "shared-host".into(),
         port: 9090,
@@ -131,7 +124,6 @@ fn e2e_merge_config_then_shared_inheritance() {
         log_level: "debug".into(),
     });
 
-    // Set DbConfig with defaults
     kit.populate_defaults::<DbConfig>();
 
     // Apply a compile-time safe override to DbConfig
@@ -142,13 +134,11 @@ fn e2e_merge_config_then_shared_inheritance() {
         database: Some("production_db".into()),
     });
 
-    // Verify merge_config worked
     let db: DbConfig = kit.config().unwrap();
     assert_eq!(db.host, "localhost"); // default kept
     assert_eq!(db.max_connections, 100); // overridden
     assert_eq!(db.database, "production_db"); // overridden
 
-    // Now extract shared from TraitKitConfig and inject into DbConfig
     kit.extract_shared::<TraitKitConfig>();
     kit.inject_shared::<DbConfig>();
 

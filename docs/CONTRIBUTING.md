@@ -38,7 +38,7 @@ uv tool install pre-commit   # 或 pip install pre-commit
 pre-commit install
 ```
 
-> trait-kit 本体无系统库依赖；workspace 成员 `examples` 通过 path 依赖 `confers`，若 `cargo check` 报 protoc 缺失，安装 protobuf-compiler 即可（CI 中已安装）。
+> trait-kit 本体无系统库依赖；workspace 成员 `examples` 的 `confers` 依赖走 crates.io（无跨仓 path），全 workspace 均无需 `protoc` / `protobuf-compiler`。
 
 ### 常用命令
 
@@ -99,8 +99,8 @@ cargo test --features i18n
 
 - 遵循现有代码库的命名与模块组织惯例（`src/core` 接口层、`src/kit` 管理中心、`src/i18n` 国际化）。
 - **简洁优先**：只写能解决问题的最少代码，不添加不必要的注释、docstring 或类型标注。
-- **依赖必须通过 feature 门控**：可选依赖（`confers`、`serde`、`serde_json` 等）禁止进入默认特性；`icu` / `writeable` / `sys-locale` 仅为 `i18n` feature 的可选依赖。
-- **无新增 unsafe**：crate 全局 `#![deny(unsafe_code)]`，现存仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、RefCell guard 生命周期重锚 ×2，见 [安全文档](SECURITY.md)）。任何 PR 不得引入新的 `unsafe`；确有必要时须附 SAFETY 注释并在 PR 中单独论证。
+- **依赖必须通过 feature 门控**：可选依赖（`confers`、`serde`、`serde_json` 等）禁止进入默认特性；`icu_collator` / `icu_datetime` / `icu_decimal` / `icu_locale` / `icu_plurals`（ICU4X 组件子 crate，不引 `icu` 门面 crate）/ `writeable` / `sys-locale` 仅为 `i18n` feature 的可选依赖。
+- **无新增 unsafe**：crate 全局 `#![deny(unsafe_code)]`，现存仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：`RefCell` / `RwLock` 各 1，见 [安全文档](SECURITY.md)）。任何 PR 不得引入新的 `unsafe`；确有必要时须附 SAFETY 注释并在 PR 中单独论证。
 - **错误显性化**：新错误场景在 `TraitKitError` 中新增变体（或复用现有变体），错误消息接入 `tr()` 本地化（`src/i18n/messages/{zh,en}.ftl`），严禁吞错或藏进默认值。
 - **文档示例必须可验证**：README / docs 中的代码示例与实际 API 签名一致；API 变更时同步 [docs/API_REFERENCE.md](API_REFERENCE.md) 与 [docs/USER_GUIDE.md](USER_GUIDE.md)。
 

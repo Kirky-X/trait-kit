@@ -34,7 +34,7 @@ impl Configurable for TraitKitConfig {
 fn main() {
     unsafe { std::env::remove_var("TRAIT_KIT_EXAMPLE_HOST") };
 
-    // 1. No env override — load_sync() falls back to #[config(default)].
+    // No env override — load_sync() falls back to #[config(default)].
     let kit = Kit::new();
     kit.load_config::<TraitKitConfig>()
         .expect("load_config should fall back to defaults");
@@ -47,7 +47,7 @@ fn main() {
     assert_eq!(config.host, "localhost");
     assert_eq!(config.port, 8080);
 
-    // 2. Env override — confers' load_sync() picks up APP_HOST from the environment.
+    // Env override — confers' load_sync() picks up APP_HOST from the environment.
     //    (Numeric fields aren't auto-parsed from env strings; only String fields
     //    demonstrate env override in this example.)
     unsafe { std::env::set_var("TRAIT_KIT_EXAMPLE_HOST", "10.0.0.1") };

@@ -72,7 +72,6 @@ mod tests {
     #[test]
     fn override_module_strict_succeeds_when_deps_registered() {
         let mut kit = Kit::new();
-        // Register the dependency first
         kit.register::<MockCapability>().unwrap();
         // Now strict override of the dependent module should succeed
         let result = kit.override_module_strict::<DependentModule>(Arc::new(AtomicUsize::new(99)));
@@ -120,9 +119,7 @@ mod tests {
         // Register the module (so it's in the graph and gets sorted)
         let mut kit = kit;
         kit.register::<CountingModule>().unwrap();
-        // Override with a capability value of 42
         kit.override_module::<CountingModule>(Arc::new(AtomicUsize::new(42)));
-        // Build
         let built = kit.build().unwrap();
         // require() should return the override value (42), not the build_fn value (0)
         let cap = built.require::<CountingModule>().unwrap();
@@ -148,6 +145,43 @@ mod tests {
         let built = kit.build().unwrap();
         let cap = built.require::<MockCapability>().unwrap();
         assert_eq!(cap.load(Ordering::SeqCst), 77);
+    }
+
+    /// Lazy-registered module with an override: the override wins and the lazy
+    /// builder is never invoked (not at build, not at first `require`).
+    #[test]
+    fn build_override_takes_priority_over_register_lazy() {
+        static LAZY_BUILDS: AtomicUsize = AtomicUsize::new(0);
+
+        struct LazyOverridden;
+        impl ModuleMeta for LazyOverridden {
+            const NAME: &'static str = "lazy-overridden";
+            fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                &[]
+            }
+        }
+        impl AutoBuilder for LazyOverridden {
+            type Capability = Arc<AtomicUsize>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+                LAZY_BUILDS.fetch_add(1, Ordering::SeqCst);
+                Ok(Arc::new(AtomicUsize::new(0)))
+            }
+        }
+
+        LAZY_BUILDS.store(0, Ordering::SeqCst);
+        let mut kit = Kit::new();
+        kit.register_lazy::<LazyOverridden>().unwrap();
+        kit.override_module::<LazyOverridden>(Arc::new(AtomicUsize::new(88)));
+        let built = kit.build().unwrap();
+
+        let cap = built.require::<LazyOverridden>().unwrap();
+        assert_eq!(cap.load(Ordering::SeqCst), 88, "override value");
+        assert_eq!(
+            LAZY_BUILDS.load(Ordering::SeqCst),
+            0,
+            "lazy builder must never run"
+        );
     }
 
     #[test]
@@ -194,7 +228,6 @@ mod tests {
     #[test]
     fn register_lazy_adds_to_dependency_graph() {
         let mut kit = Kit::new();
-        // Register dependency first
         kit.register::<MockCapability>().unwrap();
         // Register lazy module that depends on MockCapability
         kit.register_lazy::<DependentModule>().unwrap();
@@ -565,7 +598,6 @@ mod tests {
 
         let caps = built.require_all::<MultiModuleA>().unwrap();
         assert_eq!(caps.len(), 3);
-        // Verify order matches registration: 10, 20, 30
         assert_eq!(
             caps[0].load(Ordering::SeqCst),
             10,

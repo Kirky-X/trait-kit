@@ -431,6 +431,25 @@ mod core_scenarios {
         assert_eq!(*cap, 555);
     }
 
+    // === A27: override_module wins over register_lazy (lazy builder never runs) ===
+    #[test]
+    #[serial]
+    fn a27_override_module_takes_priority_over_register_lazy() {
+        COUNTED_BUILDS.store(0, Ordering::SeqCst);
+        let mut kit = Kit::new();
+        kit.register_lazy::<CountedModule>().expect("register_lazy");
+        kit.override_module::<CountedModule>(Arc::new(999u32));
+        let built = kit.build().expect("build");
+        // The injected value wins; the lazy builder is never triggered —
+        // neither at build() nor at the first require().
+        assert_eq!(*built.require::<CountedModule>().expect("require"), 999);
+        assert_eq!(
+            COUNTED_BUILDS.load(Ordering::SeqCst),
+            0,
+            "lazy builder must not run when an override exists"
+        );
+    }
+
     // === A08: override_module_strict succeeds when deps registered ===
     struct StrictTarget;
     impl_module_meta!(StrictTarget, "strict-target", deps = [AlphaModule]);
@@ -926,7 +945,6 @@ mod core_scenarios {
     #[test]
     fn c06_large_number_of_modules_100_registers_and_builds() {
         let mut kit = Kit::new();
-        // Register all 100 modules (each as a fresh register call).
         macro_rules! register_all {
             ($($name:ident),+ $(,)?) => {
                 $(
@@ -975,7 +993,6 @@ mod core_scenarios {
     #[test]
     fn c07_many_config_types_20_set_and_read() {
         let kit = Kit::new();
-        // Set 20 distinct config types.
         macro_rules! set_all {
             ($($name:ident),+ $(,)?) => {
                 $(
@@ -993,7 +1010,6 @@ mod core_scenarios {
         let built = kit.build().expect("build should succeed");
         assert_eq!(built.config::<Cfg00>().unwrap(), Cfg00(100));
         assert_eq!(built.config::<Cfg19>().unwrap(), Cfg19(119));
-        // Verify all 20 are present.
         assert!(built.contains_config::<Cfg00>());
         assert!(built.contains_config::<Cfg09>());
         assert!(built.contains_config::<Cfg19>());
@@ -1524,7 +1540,6 @@ mod async_scenarios {
         let built = block_on(kit.build()).expect("build");
         let cap = built.require::<MacroAsyncModule>().expect("require");
         assert_eq!(cap.value, 26);
-        // Verify NAME and dependencies via ModuleMeta trait.
         assert_eq!(MacroAsyncModule::NAME, "macro-async");
         assert!(MacroAsyncModule::dependencies().is_empty());
     }
@@ -1759,7 +1774,7 @@ mod interface_scenarios {
 
 #[cfg(feature = "i18n")]
 mod i18n_scenarios {
-    use icu::plurals::PluralCategory;
+    use icu_plurals::PluralCategory;
     use std::cmp::Ordering;
     use trait_kit::i18n::{I18nError, I18nFormatter};
 
@@ -2197,7 +2212,6 @@ mod encryption_boundary {
     #[test]
     fn c15_large_config_value_encryption_1mb() {
         let kit = Kit::new();
-        // Build a 1MB payload (1_048_576 bytes).
         let large_payload = "x".repeat(1_048_576);
         let original = BoundaryConfig {
             payload: large_payload,

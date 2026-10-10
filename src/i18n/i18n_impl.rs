@@ -5,16 +5,16 @@
 use std::cmp::Ordering;
 use std::str::FromStr;
 
-use icu::collator::Collator;
-use icu::collator::options::CollatorOptions;
-use icu::datetime::DateTimeFormatter;
-use icu::datetime::fieldsets::YMD;
-use icu::datetime::input::Date;
-use icu::decimal::DecimalFormatter;
-use icu::decimal::input::Decimal;
-use icu::decimal::options::DecimalFormatterOptions;
-use icu::locale::Locale;
-use icu::plurals::{PluralCategory, PluralRules, PluralRulesOptions};
+use icu_collator::Collator;
+use icu_collator::options::CollatorOptions;
+use icu_datetime::DateTimeFormatter;
+use icu_datetime::fieldsets::YMD;
+use icu_datetime::input::Date;
+use icu_decimal::DecimalFormatter;
+use icu_decimal::input::Decimal;
+use icu_decimal::options::DecimalFormatterOptions;
+use icu_locale::Locale;
+use icu_plurals::{PluralCategory, PluralRules, PluralRulesOptions};
 use writeable::Writeable;
 
 use super::{I18nError, I18nFormatter};

@@ -22,7 +22,7 @@
 
 | 版本线 | 当前版本 | 状态 |
 |--------|---------|------|
-| 0.5.x | 0.5.0-rc.6 | 开发主线（预发布） |
+| 0.5.x | 0.5.0-rc.7 | 开发主线（预发布） |
 | 0.4.x | 0.4.2 | 上一稳定线，仅接受关键修复 |
 
 > trait-kit 遵循语义化版本：0.x 阶段次版本位的升级可能包含破坏性变更（如 0.4.0 的 BREAKING CHANGES），升级时请阅读 [CHANGELOG](CHANGELOG.md)。
@@ -47,7 +47,7 @@
 
 ### 默认禁用 unsafe 代码
 
-整个 crate 标注 `#![deny(unsafe_code)]`，编译期强制排除未定义行为的主要来源之一。依赖图校验、类型检索等均以安全 Rust 实现。现存 6 处经 SAFETY 论证与 code review 的局部豁免（`#[allow(unsafe_code)]`）：typestate 布局断言 cast ×3（`Kit`/`AsyncKit` 的 require/factory 路径）、volatile 密钥清零 ×1、`TypeMap` guard 生命周期重锚 ×2——每处均附 SAFETY 注释并纳入 review 门禁。
+整个 crate 标注 `#![deny(unsafe_code)]`，编译期强制排除未定义行为的主要来源之一。依赖图校验、类型检索等均以安全 Rust 实现。现存 6 处经 SAFETY 论证与 code review 的局部豁免（`#[allow(unsafe_code)]`）：typestate 布局断言 cast ×3（`Kit`/`AsyncKit` 的 require/factory 路径）、volatile 密钥清零 ×1、guard 生命周期重锚 ×2（`TypeMap` 的 `RefCell` 守卫与 `AsyncTypeMap` 的 `RwLock` 读守卫各 1）——每处均附 SAFETY 注释并纳入 review 门禁。
 
 ### 类型安全的能力检索
 

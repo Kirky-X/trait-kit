@@ -10,6 +10,7 @@
 //! feature no timing/stat collection code exists in the build path — the
 //! default build is zero-cost.
 
+use std::any::TypeId;
 use std::cell::RefCell;
 
 #[cfg(feature = "async")]
@@ -17,13 +18,21 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 
+/// Module-name placeholder in [`OverrideRecord`] for an override whose target
+/// type was never registered in the dependency graph (no name to report).
+pub(crate) const UNREGISTERED_OVERRIDE: &str = "(unregistered)";
+
 /// Feature-gated fields aggregated on `Kit` (same pattern as `ObserverFields`).
 #[derive(Default)]
 pub(crate) struct ReportFields {
     /// Per-module build records in build-completion order.
     modules: RefCell<Vec<ModuleReportEntry>>,
-    /// Override records captured at `override_module(_strict)` call time.
-    overrides: RefCell<Vec<OverrideRecord>>,
+    /// Override records captured at `override_module(_strict)` call time,
+    /// paired with the target module `TypeId`. `build()` rewrites the name to
+    /// [`UNREGISTERED_OVERRIDE`] for records whose type never entered the
+    /// graph — the pairing keeps that rewrite unambiguous when two module
+    /// types share a `NAME`.
+    overrides: RefCell<Vec<(TypeId, OverrideRecord)>>,
     /// Config override records captured at `merge_config` call time.
     config_overrides: RefCell<Vec<ConfigOverrideRecord>>,
     /// Topological order (module names) captured after `graph.validate()`.
@@ -67,8 +76,20 @@ impl ReportFields {
 
     /// Record an override registration (source: `override_module` or
     /// `override_module_strict`).
-    pub(crate) fn push_override_record(&self, record: OverrideRecord) {
-        self.overrides.borrow_mut().push(record);
+    pub(crate) fn push_override_record(&self, type_id: TypeId, record: OverrideRecord) {
+        self.overrides.borrow_mut().push((type_id, record));
+    }
+
+    /// Mark every record targeting `type_id` as a never-registered module.
+    /// `build()` calls this for overrides left over after the topological
+    /// loop: their type is absent from the graph, so the report records
+    /// [`UNREGISTERED_OVERRIDE`] instead of a module name.
+    pub(crate) fn mark_override_unregistered(&self, type_id: TypeId) {
+        for (id, record) in self.overrides.borrow_mut().iter_mut() {
+            if *id == type_id {
+                record.module = UNREGISTERED_OVERRIDE;
+            }
+        }
     }
 
     /// Record a config-level override (`merge_config`): `applied == false`
@@ -118,7 +139,12 @@ impl ReportFields {
         BuildReport {
             topo_order: self.topo_order.borrow().clone(),
             modules: self.modules.borrow().clone(),
-            overrides: self.overrides.borrow().clone(),
+            overrides: self
+                .overrides
+                .borrow()
+                .iter()
+                .map(|(_, record)| record.clone())
+                .collect(),
             config_overrides: self.config_overrides.borrow().clone(),
             total_elapsed_us: *self.total_elapsed_us.borrow(),
             ..BuildReport::default()
@@ -433,6 +459,16 @@ impl BuildReport {
     pub fn to_json(&self) -> serde_json::Result<String> {
         serde_json::to_string(self)
     }
+
+    /// Parse a JSON string back into a generic JSON value (test helper for
+    /// downstream round-trip assertions).
+    ///
+    /// # Errors
+    ///
+    /// Returns the `serde_json` error if the string is not valid JSON.
+    pub fn from_json_str(s: &str) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::from_str(s)
+    }
 }
 
 #[cfg(test)]
@@ -560,6 +596,56 @@ mod tests {
     }
 
     #[test]
+    fn build_report_marks_never_registered_override() {
+        let mut kit = Kit::new();
+        kit.register::<RptLeaf>().expect("register");
+        kit.override_module::<RptLeaf>(Arc::new(Cap(5)));
+        // RptLazy is never registered: its override lands in the build tail.
+        kit.override_module::<RptLazy>(Arc::new(Cap(9)));
+
+        let ready = kit.build().expect("build ok");
+        let report = ready.build_report();
+        assert_eq!(report.overrides.len(), 2, "{:?}", report.overrides);
+        assert_eq!(report.overrides[0].module, "rpt-leaf");
+        assert_eq!(report.overrides[0].source, "override_module");
+        assert_eq!(report.overrides[1].module, UNREGISTERED_OVERRIDE);
+        assert_eq!(report.overrides[1].source, "override_module");
+        // The override still serves require(), it is only nameless in the report.
+        assert_eq!(
+            ready.require::<RptLazy>().expect("unregistered override").0,
+            9
+        );
+    }
+
+    #[test]
+    fn build_report_keeps_name_for_override_registered_after_call() {
+        let mut kit = Kit::new();
+        // Registration order is irrelevant: only a type that NEVER enters the
+        // graph is reported as "(unregistered)".
+        kit.override_module::<RptLeaf>(Arc::new(Cap(3)));
+        kit.register::<RptLeaf>().expect("register after override");
+
+        let ready = kit.build().expect("build ok");
+        let report = ready.build_report();
+        assert_eq!(report.overrides.len(), 1);
+        assert_eq!(report.overrides[0].module, "rpt-leaf");
+    }
+
+    #[test]
+    fn build_report_strict_override_of_unregistered_target() {
+        let mut kit = Kit::new();
+        kit.register::<RptLeaf>().expect("register");
+        kit.override_module_strict::<RptLazy>(Arc::new(Cap(11)))
+            .expect("no deps → strict override of unregistered target is allowed");
+
+        let ready = kit.build().expect("build ok");
+        let report = ready.build_report();
+        assert_eq!(report.overrides.len(), 1);
+        assert_eq!(report.overrides[0].module, UNREGISTERED_OVERRIDE);
+        assert_eq!(report.overrides[0].source, "override_module_strict");
+    }
+
+    #[test]
     fn build_report_total_elapsed_recorded() {
         let mut kit = Kit::new();
         kit.register::<RptLeaf>().expect("register");
@@ -576,7 +662,7 @@ mod tests {
         let ready = kit.build().expect("build ok");
 
         let json = ready.build_report().to_json().expect("serialize report");
-        let value = serde_json::from_str::<serde_json::Value>(&json).expect("valid JSON");
+        let value = BuildReport::from_json_str(&json).expect("valid JSON");
         assert_eq!(value["schema_version"], 1);
         assert_eq!(value["topo_order"][0], "rpt-leaf");
         assert_eq!(value["modules"].as_array().map(Vec::len), Some(2));
@@ -620,20 +706,17 @@ mod tests {
         fields.push_built("a", 12, vec![]);
         fields.push_lazy("b", vec!["a"]);
         fields.push_overridden("c", vec![]);
-        fields.push_override_record(OverrideRecord {
-            module: "c",
-            source: "override_module",
-        });
+        fields.push_override_record(
+            TypeId::of::<RptLeaf>(),
+            OverrideRecord {
+                module: "c",
+                source: "override_module",
+            },
+        );
         fields.set_topo_order(vec!["a", "b", "c"]);
         fields.set_total_elapsed_us(100);
 
-        let report = BuildReport {
-            topo_order: fields.topo_order.borrow().clone(),
-            modules: fields.modules.borrow().clone(),
-            overrides: fields.overrides.borrow().clone(),
-            total_elapsed_us: *fields.total_elapsed_us.borrow(),
-            ..BuildReport::default()
-        };
+        let report = fields.snapshot();
         assert_eq!(report.modules.len(), 3);
         assert_eq!(report.overrides.len(), 1);
         assert_eq!(report.total_elapsed_us, Some(100));
@@ -793,7 +876,7 @@ mod tests {
             let ready = kit.build().expect("build ok");
 
             let json = ready.build_report().to_json().expect("serialize report");
-            let value = serde_json::from_str::<serde_json::Value>(&json).expect("valid JSON");
+            let value = BuildReport::from_json_str(&json).expect("valid JSON");
             assert_eq!(value["config_overrides"][0]["source"], "merge_config");
             assert_eq!(value["config_overrides"][0]["applied"], true);
         }

@@ -19,10 +19,11 @@ proc-macro = true
 [dependencies]
 # syn 默认特性 = derive+parsing+printing+clone-impls+proc-macro，此处显式重申。
 # 不启用 extra-traits：本 crate 不对 syn AST 做 Debug/Eq 断言，该特性只会给
-# 所有下游的宏编译平添 impl 生成成本。
+# 所有下游的宏编译平添 impl 生成成本。不启用 full：三个 derive 只解析
+# `DeriveInput` 与 `#[module(...)]`/字段属性（`Expr`/`Type`/`Meta` 在 derive 下
+# 即可用），不需要 Item/File 等整树 AST。
 syn = { version = "3.0", default-features = false, features = [
     "derive",
-    "full",
     "parsing",
     "printing",
     "clone-impls",

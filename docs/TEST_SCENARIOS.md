@@ -2,13 +2,13 @@
 
 > 适用版本：trait-kit **0.5.0-rc.2**（矩阵编写与对账基线；0.5.0-rc.3 起 feature 面扩展见 [CHANGELOG](CHANGELOG.md)，场景口径不变）
 > 用途：穷举全部验收场景，作为 `tests/e2e/` E2E 测试的对账基线。
-> 编写依据（只读核对）：`Cargo.toml [features]`、`src/lib.rs` 导出面、`src/core`（meta/macros/health/lifecycle/observer）、`src/kit`（kit/graph/typemap/config/scope/toggle/shutdown/async_kit/async_typemap）、`src/i18n`（FTL 目录 + ICU4X）、`trait-kit-macros`（ConfigInherit/SharedConfig）、`tests/`、`tests/ui/`（3 个 trybuild 用例）、`examples/`（20 个示例）。
+> 编写依据（只读核对）：`Cargo.toml [features]`、`src/lib.rs` 导出面、`src/core`（meta/macros/health/lifecycle/observer）、`src/kit`（kit/graph/typemap/config/scope/toggle/shutdown/async_kit/async_typemap）、`src/i18n`（FTL 目录 + ICU4X）、`trait-kit-macros`（ConfigInherit/SharedConfig）、`tests/`、`tests/ui/`（4 个 + `probe_sensitive/` 1 个，共 5 个 trybuild 用例）、`examples/`（20 个示例）。
 > 所有引用的既有测试名均经 `grep` 核实存在。
 > 组合兼容性经 `cargo check --all-features` 实测通过（exit 0）。
 >
 > **落地对账（已回填）**：
 > 1. §2 全部场景已落地 `tests/e2e/`（13 个文件，根 `Cargo.toml` 显式 `[[test]]` 注册，目标名 `e2e_*`）；逐场景执行结果见 `reviews/acceptance-report.md` 台账。
-> 2. **真实行为核正 2 处**（RLD-07、CCY-06）：原推测 `require_ref` 借用期间 `reload_config`/`set_config` 会 borrow 冲突 panic；实现核实 `configs` 与 `capabilities` 为两个独立 `TypeMap`（`src/kit/kit.rs`），借用存活期间配置写入正常工作；已按真实行为固化（防回归：若未来合并两 TypeMap，测试将失败并暴露隐蔽 panic）。另 `set_config` 为 `Kit<Unbuilt>` 态方法，Ready 态写配置唯一路径是 `reload_config`。
+> 2. **真实行为核正 2 处**（RLD-07、CCY-06）：原推测 `require_ref` 借用期间 `reload_config`/`set_config` 会 borrow 冲突 panic；实现核实 `configs` 与 `capabilities` 为两个独立 `TypeMap`（`src/kit/kit.rs`），借用存活期间配置写入正常工作；已按真实行为固化（防回归：若未来合并两 TypeMap，测试将失败并暴露隐蔽 panic）。另 `set_config` 为 `Kit<Unbuilt>` 态方法，Ready 态写配置路径包括 `reload_config` / `merge_config` / `populate_defaults`。
 > 3. **CCY-03 等效落地**：未走 trybuild（stderr 快照依赖 feature 集，组合矩阵下脆弱），以 `tests/basic.rs:11-12` 的 `static_assertions::assert_not_impl_any!(Kit<Unbuilt>: Sync)`（含 `Kit<Ready>`）编译期断言等效固化。
 > 4. 既有场景引用声明：各 e2e 文件头注释已标注「本文件新增落地 vs 既有覆盖引用」的逐场景归属。
 
@@ -61,9 +61,9 @@
 
 1. **`src/kit/toggle.rs` 是 doc-only 模块（10 行，0.5.0-rc.2 时点；rc.3 已升级为完整开关实现，见 [CHANGELOG](CHANGELOG.md)）**：toggle 能力并非独立运行时，而是实现为 `Kit`/`Kit<Ready>` 上的方法（`enable_toggle` / `is_toggle_enabled` / `register_if_toggle`），底层为 `RefCell<HashMap<String, bool>>`。验收时按 Kit 方法口径测，不存在独立注册表 API。
 2. **sync `Kit` 为 `RefCell` 实现（`!Sync`），`AsyncKit` 为 `AsyncTypeMap` 实现（`Send + Sync`）**：两条产品线并发模型不同。sync 线所有 API 仅限单线程使用；负向 `!Sync` 断言目前缺失（CCY-03）。
-3. **`tests/e2e_feature_combinations.rs` 与 `tests/e2e_advanced.rs` 内大量测试用 `#[cfg(all(test, feature = …))]` 门控**：裸 `cargo test`（无 feature）只执行 no-feature 组；验收必须按 feature 矩阵分别跑 `cargo test --features <组合>`，否则组合组静默不编译、不执行。
-4. **typestate 违规目前只有 3 个 trybuild 用例守卫**（`tests/ui/ready_cannot_build.rs`、`ready_cannot_register.rs`、`unbuilt_cannot_optional.rs`），由 `tests/compile_fail.rs` 单 runner 驱动；Ready 态其余违规面（如 Ready 上 `override_module_strict` 不存在等）随 API 增长需补 UI 用例。
-5. `tests/e2e_advanced.rs` 头部注明其场景 ID 沿用 `temp/feature-analysis.md` 的 B/A/E/C 系列（B=基础、A=高级、E=错误、C=覆盖率补盲），本矩阵已将其全部吸纳并重编号。
+3. **`tests/e2e/e2e_feature_combinations.rs` 与 `tests/e2e/e2e_advanced.rs` 内大量测试用 `#[cfg(all(test, feature = …))]` 门控**：裸 `cargo test`（无 feature）只执行 no-feature 组；验收必须按 feature 矩阵分别跑 `cargo test --features <组合>`，否则组合组静默不编译、不执行。
+4. **typestate 违规由 5 个 trybuild 用例守卫**（`tests/ui/` 下 `ready_cannot_build.rs`、`ready_cannot_register.rs`、`unbuilt_cannot_optional.rs`、`async_unbuilt_cannot_optional.rs` 4 个，另 `tests/ui/probe_sensitive/async_ready_cannot_register.rs` 1 个 probe 门控组），由 `tests/compile_fail.rs` 单 runner 驱动；Ready 态其余违规面（如 Ready 上 `override_module_strict` 不存在等）随 API 增长需补 UI 用例。
+5. `tests/e2e/e2e_advanced.rs` 头部注明其场景 ID 沿用 `temp/feature-analysis.md` 的 B/A/E/C 系列（B=基础、A=高级、E=错误、C=覆盖率补盲），本矩阵已将其全部吸纳并重编号。
 6. examples crate（`trait-kit-examples`）每个示例显式 `[[example]]` 注册并带 `required-features`，默认不编译；跑示例必须传对应 feature。
 7. **无 `autotests = false`**：`tests/` 下新增 E2E 文件会被自动发现，无需增补 `[[test]]` 段（与 confers 不同）；但 feature 门控文件需自带 `#![cfg(feature = "…")]` 头。（落地更正：E2E 文件最终移入 `tests/e2e/` 子目录承载；子目录内文件不被自动发现，已在根 `Cargo.toml` 显式注册 13 个 `[[test]]` 目标，目标名保持 `e2e_*`，zh/en i18n 仍为独立进程二进制。）
 
@@ -135,7 +135,7 @@
 | REG-13 | multi 绑定与单绑定 `register` 共存：`require` 取单例、`require_all` 取聚合，互不干扰 | 边界 | — | 无 | `tests/e2e_advanced.rs::a05_multi_binding_coexists_with_single_binding`、`src/kit/kit.rs::require_all_coexists_with_require_for_single_binding` | tests/e2e/e2e_core.rs |
 | REG-14 | multi 重复注册同一模块 / 已 `register` 过的模块再 `register_multi` → `AlreadyRegistered` | 异常 | — | 无 | `tests/e2e_advanced.rs::e06_register_multi_duplicate_returns_already_registered`、`src/kit/kit.rs::register_multi_returns_already_registered_if_already_registered_via_register` | tests/e2e/e2e_core.rs |
 | REG-15 | `register_if` 谓词真/假双分支：真则注册、假则跳过且返回 false | 正常 | — | 无 | `src/kit/kit.rs::register_if_true_registers_module`、`register_if_false_skips_module`；examples/conditional（运行验收） | tests/e2e/e2e_core.rs |
-| REG-16 | `override_module` 注入预构建能力，跳过 `build_fn`（模块无需先注册）；未注册 override 在 build 尾部补插 | 正常 | — | 无 | `tests/e2e_advanced.rs::a06_override_module_skips_build_fn`、`a07_override_module_on_unregistered_module`、`src/kit/kit.rs::build_inserts_unregistered_override_after_topo_loop` | tests/e2e/e2e_core.rs |
+| REG-16 | `override_module` 注入预构建能力，跳过 `build_fn`（模块无需先注册；对 `register_lazy` 模块优先，lazy builder 零执行）；未注册 override 在 build 尾部补插，且不进图/契约清单，`build_report.overrides` 记 `"(unregistered)"`（从未注册过的类型） | 正常 | — | 无 | `tests/e2e_advanced.rs::a06_override_module_skips_build_fn`、`a07_override_module_on_unregistered_module`、`a27_override_module_takes_priority_over_register_lazy`、`src/kit/kit.rs::build_inserts_unregistered_override_after_topo_loop`、`build_override_takes_priority_over_register_lazy`、`src/kit/report.rs::build_report_marks_never_registered_override`、`build_report_keeps_name_for_override_registered_after_call`、`build_report_strict_override_of_unregistered_target`、`tests/e2e/e2e_config.rs::e2e_unregistered_override_outside_graph_and_manifest`、`e2e_override_wins_over_lazy_registration` | tests/e2e/e2e_core.rs |
 | REG-17 | `override_module_strict` 依赖未注册 → `DependencyMissing`；依赖齐备则成功 | 异常 | — | 无 | `tests/e2e_advanced.rs::e19_override_module_strict_missing_dep_returns_dependency_missing`、`a08_override_module_strict_succeeds_when_deps_registered` | tests/e2e/e2e_core.rs |
 | REG-18 | overrides 表生命周期：new 后为空、build 后清空（消费语义） | 边界 | — | 无 | `src/kit/kit.rs::overrides_field_is_empty_on_new`、`overrides_field_is_empty_after_build` | tests/e2e/e2e_core.rs |
 | REG-19 | typestate 编译期违规：`Kit<Ready>` 上调 `build()`/`register()`、`Kit<Unbuilt>` 上调 `optional()` 均编译失败（E0119/E0599 级错误，stderr 快照锁定） | 异常 | — | 无 | `tests/compile_fail.rs::compile_fail_tests`（驱动 `tests/ui/ready_cannot_build.rs`、`ready_cannot_register.rs`、`unbuilt_cannot_optional.rs` 三例） | tests/ui/（新增 ui 用例） |
@@ -210,7 +210,7 @@
 | RLD-04 | 同类型多个订阅者全部按注册序收到通知 | 边界 | reload | 无 | `tests/basic.rs::reload_config_invokes_multiple_subscribers`、`src/kit/kit.rs::reload_config_fires_all_subscribers` | tests/e2e/e2e_config.rs |
 | RLD-05 | 无订阅者时 `reload_config` 成功 no-op | 边界 | reload | 无 | `tests/basic.rs::subscribe_and_reload_with_no_subscribers_succeeds` | tests/e2e/e2e_config.rs |
 | RLD-06 | 订阅者 panic 语义固化：新值已存储、剩余订阅者被跳过（panic 穿透 `reload_config`，文档化行为） | 异常 | reload | 无 | 无→需新增 | tests/e2e/e2e_config.rs |
-| RLD-07 | `require_ref` 借用存活期间调用 `reload_config`。**真实行为核正**（落地阶段核实）：`configs` 与 `capabilities` 为两个独立 `TypeMap`（`src/kit/kit.rs`），借用存活期间 `reload_config` 写配置不触能力借用、正常工作，无 borrow 冲突；同时固化 `set_config` 为 Unbuilt 态方法（Ready 态写配置唯一路径为 `reload_config`），以防未来合并两 TypeMap 引入隐蔽 panic | 边界 | reload | 无 | `src/kit/typemap.rs::inner_ref_panics_if_mutably_borrowed`（TypeMap 层既有） | tests/e2e/e2e_config.rs::e2e_require_ref_borrow_survives_reload_and_set_config + tests/e2e/e2e_concurrency.rs |
+| RLD-07 | `require_ref` 借用存活期间调用 `reload_config`。**真实行为核正**（落地阶段核实）：`configs` 与 `capabilities` 为两个独立 `TypeMap`（`src/kit/kit.rs`），借用存活期间 `reload_config` 写配置不触能力借用、正常工作，无 borrow 冲突；同时固化 `set_config` 为 Unbuilt 态方法（Ready 态写配置路径含 `reload_config` / `merge_config` / `populate_defaults`），以防未来合并两 TypeMap 引入隐蔽 panic | 边界 | reload | 无 | `src/kit/typemap.rs::inner_ref_panics_if_mutably_borrowed`（TypeMap 层既有） | tests/e2e/e2e_config.rs::e2e_require_ref_borrow_survives_reload_and_set_config + tests/e2e/e2e_concurrency.rs |
 | RLD-08 | feature 链映射：`reload` 自动启用 `confers`（已剪除 `confers/watch` 死链），`subscribe/reload_config` 经 Kit 自有 SubscriberMap 工作 | 正常 | reload | 无 | `Cargo.toml` 声明核对 + `tests/e2e_feature_combinations.rs::e2e_confers_plus_reload` | tests/e2e/e2e_feature_combinations.rs |
 | RLD-09 | examples/hot_reload 运行验收：改值 → reload → 回调打印新值 | 正常 | reload | 无 | examples/hot_reload（运行验收） | tests/e2e/e2e_feature_combinations.rs（引用示例） |
 
@@ -464,7 +464,8 @@
 reload     → confers（已剪除 confers/watch 死链）
 encryption → confers, confers/encryption
 confers    → dep:confers, dep:serde, dep:serde_json
-i18n       → dep:icu, dep:writeable, dep:sys-locale
+i18n       → dep:icu_collator, dep:icu_datetime, dep:icu_decimal, dep:icu_locale,
+             dep:icu_plurals（ICU4X 组件子 crate）, dep:writeable, dep:sys-locale
 probe      → health, dep:futures-timer（运行时无关定时器）
 presets / presets-remote / report / version-negotiation / compose / di
            → 各自的依赖声明见 Cargo.toml（单一事实源）
@@ -515,7 +516,7 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 
 **无。** trait-kit 是纯内存库，全部 238 个场景的依赖服务为"无"，理由如下：
 
-1. **零 docker-compose 依赖**：仓库不存在 `docker-compose*.yml`；`Cargo.toml` 直接依赖仅 `confers`（可选）、`serde`/`serde_json`（可选）、`icu`/`writeable`/`sys-locale`（i18n 可选），无任何数据库/消息队列/网络服务客户端。
+1. **零 docker-compose 依赖**：仓库不存在 `docker-compose*.yml`；`Cargo.toml` 直接依赖仅 `confers`（可选）、`serde`/`serde_json`（可选）、`icu_*`（ICU4X 组件子 crate）/`writeable`/`sys-locale`（i18n 可选），无任何数据库/消息队列/网络服务客户端。
 2. **confers 依赖面是纯进程内 trait**：trait-kit 仅消费 confers 的同步配置加载（`Config::load_sync` 桥接到 `Configurable::load`）、`watch`（进程内订阅回调，非文件 inotify）与 `encryption`（纯加密原语 XChaCha20/HKDF）三个能力面，**不触碰 confers 的 remote/etcd/consul/nats/redis 等需要 docker 服务的 feature**（trait-kit 的 feature 链从未开启它们）。
 3. **"外部资源"仅两类且均可本地化**：本地文件（仅 confers `#[derive(Config)]` 的文件加载路径，E2E 用 `std::env::temp_dir()` 临时文件即可）与无（其余全为内存操作）。
 
@@ -530,8 +531,8 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 | 层级 | 内容 | 命令 | 允许 mock？ |
 |------|------|------|-----------|
 | L1 单元 | src 内联 394 个 `#[test]`（16 处 `#[cfg(test)]` + 38 处 `#[cfg(all(test, feature = …))]` 门控块，覆盖 16 个文件） | `cargo test --all-features --lib` | 允许 |
-| L2 集成 | `tests/{basic,e2e_advanced,e2e_feature_combinations,config_inherit_derive,shared_config_derive,config_inheritance_e2e}.rs`（185 个测试函数；注意 §重要发现-3：feature 组按 `--features` 分轮执行） | `cargo test --features confers,reload,encryption && cargo test --features async,lifecycle,health,request-scope,toggle,observer,decorator,shutdown,di && cargo test --features i18n` | 允许（纯内存） |
-| L2b 编译期 | `tests/ui/` 3 个 trybuild 用例（typestate 违规） | `cargo test --test compile_fail` | — |
+| L2 集成 | `tests/` 顶层 6 个集成文件（`basic` / `config_inherit_derive` / `shared_config_derive` / `config_inheritance_e2e` / `api_reference_gate` / `e2e_gap_round1`，共 74 个测试函数）+ `tests/e2e/` 13 个注册目标（197 个测试函数；`e2e_advanced` / `e2e_feature_combinations` 等已迁入子目录，见 §5.3；注意 §重要发现-3：feature 组按 `--features` 分轮执行） | `cargo test --features confers,reload,encryption && cargo test --features async,lifecycle,health,request-scope,toggle,observer,decorator,shutdown,di && cargo test --features i18n` | 允许（纯内存） |
+| L2b 编译期 | `tests/ui/` 4 个 trybuild 用例 + `tests/ui/probe_sensitive/` 1 个（probe 门控组；typestate 违规） | `cargo test --test compile_fail` | — |
 | L3 examples | 20 个示例逐一运行（见 5.2，需按 `required-features` 传 feature） | `cargo run -p trait-kit-examples --features <f> --example <name>` | 禁 mock |
 | L4 E2E | `tests/e2e/`（本文档 §2 场景 ID 落点，13 个文件已落地） | `cargo test --features <组合> --test e2e_<名>`（子目录不被自动发现，已由根 `Cargo.toml` 显式 `[[test]]` 注册 13 个目标） | 禁 mock |
 
@@ -582,14 +583,15 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 | e2e_feature_combinations.rs | CMP-01…15、RLD-08/09、ENC-13、LCY-08/09、OBS-06、DEC-06、SCP-10、TGL-08 | 否 |
 | e2e_concurrency.rs | CCY-01…07 | 否 |
 | e2e_presets.rs | PRS-01…06、TGL-09、PRE-03 | 否 |
-| tests/ui/（扩展） | REG-19（现有 3 例）；CCY-03 已等效落地于 tests/basic.rs（见头部对账 3） | 否 |
+| e2e_hooks.rs | LCY-05/07、HLT-07、OBS-05（运行时钩子缺口固化；其余 LCY/HLT/OBS 场景引用既有覆盖） | 否 |
+| tests/ui/（扩展） | REG-19（现有 5 例：`tests/ui/` 4 个 + `tests/ui/probe_sensitive/` 1 个）；CCY-03 已等效落地于 tests/basic.rs（见头部对账 3） | 否 |
 
-> 实际落位共 13 个文件（上表 10 个 + 既有 `e2e_advanced.rs` 84 例为 B/A/E/C 系列场景主体承载 + `e2e_i18n_en.rs` en 侧独立进程目标）；`basic.rs`、`compile_fail.rs` 等顶层文件保持 tests/ 自动发现。
+> 实际落位共 13 个文件（上表 11 个 + 既有 `e2e_advanced.rs` 84 例为 B/A/E/C 系列场景主体承载 + `e2e_i18n_en.rs` en 侧独立进程目标）；`basic.rs`、`compile_fail.rs` 等顶层文件保持 tests/ 自动发现。
 
 ### 5.4 建议执行顺序
 
 1. L1 全绿：`cargo test --all-features --lib`（394 个内联测试）。
-2. L2 按 feature 分轮全绿（§5.1 三轮命令）+ L2b trybuild 3 例。
+2. L2 按 feature 分轮全绿（§5.1 三轮命令）+ L2b trybuild 5 例。
 3. L3 20 个示例按 feature 逐一运行（5.2 清单）。
 4. 落地 `tests/e2e/`（10 个文件），优先补 CMP-10…15、CCY-03/06、DEC-03/04/07/08、ASK-13、ERR-07、RLD-06、HLT-07、LCY-05、SHD-13、CAP-11（19 处纯缺口 + 13 处需补断言，既有覆盖最薄）。
 5. PRS 编译门禁进 CI：无 feature / 单 feature ×13 / `--all-features` 三档，每个 PR 与 nightly 各跑一轮；examples crate 门控编译随 PRS-06 固化。
@@ -617,7 +619,8 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 | 依赖本地临时文件的场景 | ≤3（CFG 组 confers derive 文件加载路径） |
 | 完全无外部依赖（纯内存）的场景 | 235+ |
 
-> 既有测试资产基线（grep 实测）：src 内联 **394** 个 `#[test]`；`tests/` **185** 个测试函数（basic 45 / e2e_advanced 84 / e2e_feature_combinations 42 / config_inherit_derive 6 / shared_config_derive 5 / config_inheritance_e2e 2 / compile_fail 1 runner→3 个 ui 用例）；examples **20** 个。
+> 既有测试资产基线（编写时 rc.2 时点 grep 实测）：src 内联 **394** 个 `#[test]`；`tests/` **185** 个测试函数（basic 45 / e2e_advanced 84 / e2e_feature_combinations 42 / config_inherit_derive 6 / shared_config_derive 5 / config_inheritance_e2e 2 / compile_fail 1 runner→当时 3 个 ui 用例；e2e_* 文件当时位于 `tests/` 顶层，落地后迁入 `tests/e2e/`，见 §重要发现-7）；examples **20** 个。
+> 落地后现状（当前仓库 grep 实测）：`tests/` 共 **272** 个测试函数——`tests/e2e/` 13 个注册目标 197 个、顶层 6 个集成文件 74 个、`compile_fail.rs` 1 runner 驱动 5 个 ui 用例（4 + probe 敏感组 1）；src 内联 **650** 个（`src` + `tests` 合计 922，与 README 测试规模口径一致）。
 > 说明：既有覆盖口径存在合法重叠（一条场景可同时引用 tests/ 集成测试与 src 内联测试）；"需新增"取最强缺口判定。后续落地阶段允许将粒度过细的场景合并实现，但 **ID 保持稳定**以便追溯。
 
 ### 编写基线核对说明

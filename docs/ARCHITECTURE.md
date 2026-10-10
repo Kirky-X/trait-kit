@@ -130,15 +130,14 @@ graph LR
     R --> E["encryption"]
 
     subgraph zc["零依赖独立 feature"]
-        Z["async / di / lifecycle / health<br/>request-scope / toggle / observer / decorator / shutdown"]
+        Z["async / di / lifecycle / health<br/>request-scope / toggle / observer / decorator / shutdown<br/>version-negotiation / compose"]
     end
 
     subgraph dep["带可选依赖的 feature"]
-        D1["i18n<br/>icu / writeable / sys-locale"]
+        D1["i18n<br/>icu_* 组件 / writeable / sys-locale"]
         D2["report<br/>serde / serde_json"]
         PR["probe<br/>futures-timer（→health）"]
         P["presets / presets-remote"]
-        N["version-negotiation / compose"]
     end
 
     P --> C

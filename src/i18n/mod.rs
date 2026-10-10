@@ -38,15 +38,15 @@ use fluent_bundle::{FluentArgs, FluentResource, FluentValue};
 use unic_langid::LanguageIdentifier;
 
 #[cfg(feature = "i18n")]
-use icu::collator::CollatorBorrowed;
+use icu_collator::CollatorBorrowed;
 #[cfg(feature = "i18n")]
-use icu::datetime::DateTimeFormatter;
+use icu_datetime::DateTimeFormatter;
 #[cfg(feature = "i18n")]
-use icu::datetime::fieldsets::YMD;
+use icu_datetime::fieldsets::YMD;
 #[cfg(feature = "i18n")]
-use icu::decimal::DecimalFormatter;
+use icu_decimal::DecimalFormatter;
 #[cfg(feature = "i18n")]
-use icu::plurals::PluralRules;
+use icu_plurals::PluralRules;
 
 // ─── I18nError ──────────────────────────────────────────────────────────────
 
@@ -411,7 +411,7 @@ mod tests {
     use std::cmp::Ordering;
 
     #[cfg(feature = "i18n")]
-    use icu::plurals::PluralCategory;
+    use icu_plurals::PluralCategory;
 
     use serial_test::serial;
 

@@ -26,7 +26,7 @@ trait-kit 解决的问题是：**在应用启动时，以类型安全、可验�
 - **模块**通过 `ModuleMeta` + `AutoBuilder` 两个 trait 定义统一契约，用 `impl_module_meta!` 宏一行声明。
 - **Kit** 是能力与配置的集中管理中心：`Kit<Unbuilt>` 阶段注册模块与配置，`build()` 验证依赖图后得到 `Kit<Ready>`，此后只读检索能力。
 - **能力**按模块类型存储和检索（`kit.require::<LoggerModule>()`），无需字符串键、无需 downcast。
-- 整个 crate 标注 `#![deny(unsafe_code)]`，仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、RefCell guard 生命周期重锚 ×2），详见 [安全文档](SECURITY.md)。
+- 整个 crate 标注 `#![deny(unsafe_code)]`，仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：`RefCell` / `RwLock` 各 1），详见 [安全文档](SECURITY.md)。
 
 适合"手动装配太散、完整 DI 框架太重"的中间场景。API 全集见 [📘 API 参考](API_REFERENCE.md)，设计细节见 [🏗️ 架构文档](ARCHITECTURE.md)。
 
@@ -44,7 +44,7 @@ trait-kit 解决的问题是：**在应用启动时，以类型安全、可验�
 cargo add trait-kit
 ```
 
-默认特性（`default = []`）只含核心 `ModuleMeta` + `AutoBuilder` + `Kit`。crate 固定携带 Fluent 翻译（`fluent-bundle` / `unic-langid`）与 `log` 门面 3 个必选依赖，其余依赖（`confers`、`serde`、`icu` 等）全部经 feature 门控可选。
+默认特性（`default = []`）只含核心 `ModuleMeta` + `AutoBuilder` + `Kit`。crate 固定携带 Fluent 翻译（`fluent-bundle` / `unic-langid`）与 `log` 门面 3 个必选依赖，其余依赖（`confers`、`serde`、`icu_*` 等 ICU4X 组件）全部经 feature 门控可选。
 
 ### 第一个模块
 
@@ -135,7 +135,7 @@ impl_module_meta!(StorageModule, "storage", deps = [LoggerModule]);
 
 ### 手动存取
 
-`set_config` 仅在 `Kit<Unbuilt>` 上可调用；模块在 `build()` 时通过 `kit.config::<C>()` 检索。`Kit<Ready>` 上写配置的唯一路径是 `reload_config::<C>()`（`reload` feature）与 `merge_config::<C>(ovr)`（`confers` feature）：
+`set_config` 仅在 `Kit<Unbuilt>` 上可调用；模块在 `build()` 时通过 `kit.config::<C>()` 检索。`Kit<Ready>` 上写配置的路径包括 `reload_config::<C>()`（`reload` feature）、`merge_config::<C>(ovr)` 与 `populate_defaults::<C>()`（`confers` feature）：
 
 ```rust
 use std::sync::Arc;
@@ -270,7 +270,7 @@ kit.merge_config::<DbConfig>(ovr);         // 编译期安全字段覆盖
 
 ### 异步模块 `async`
 
-`AsyncKit` 与 `Kit` API 对称，能力类型要求 `Send + Sync`，构建方法为异步（`AsyncAutoBuilder`），使用 `AsyncKit::new()` → `register::<M>()` → `build().await` → `require::<M>().await` 的流程。
+`AsyncKit` 与 `Kit` API 对称，能力类型要求 `Send + Sync`，构建方法为异步（`AsyncAutoBuilder`），使用 `AsyncKit::new()` → `register::<M>()` → `build().await` → `require::<M>()` 的流程（`require` 为同步方法，无需 `.await`）。
 
 完整可运行示例见 [`examples/src/kit/async_basic.rs`](../examples/src/kit/async_basic.rs)：
 

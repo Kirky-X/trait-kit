@@ -122,12 +122,13 @@ fn e2e_require_ref_borrow_survives_reload_and_set_config() {
     assert_eq!(ready.config::<FreshCfg>().unwrap().v, 9);
 }
 
-// ─── BuildReport::to_json → serde_json 解析往返序列化（report 落点） ────
+// ─── BuildReport::to_json / from_json_str 往返序列化（report 落点） ────
 
 #[cfg(feature = "report")]
 mod build_report_json_roundtrip_e2e {
     use std::sync::Arc;
     use trait_kit::impl_module_meta;
+    use trait_kit::kit::report::BuildReport;
     use trait_kit::prelude::*;
 
     struct RptEagerDep;
@@ -171,7 +172,7 @@ mod build_report_json_roundtrip_e2e {
     }
 
     /// eager/lazy/override 三态 + merge_config 记录的 build_report 经
-    /// to_json → serde_json 解析往返：JSON 合法且 modules/topo_order/
+    /// to_json → from_json_str 往返：JSON 合法且 modules/topo_order/
     /// overrides/config_overrides 字段齐全可回读（消费方落盘/上报通路）。
     #[test]
     fn e2e_build_report_json_roundtrip_includes_all_sections() {
@@ -213,7 +214,7 @@ mod build_report_json_roundtrip_e2e {
         let _ = ready.require::<RptJsonLazy>().unwrap();
 
         let json = ready.build_report().to_json().expect("序列化应成功");
-        let value = serde_json::from_str::<serde_json::Value>(&json).expect("往返解析应成功");
+        let value = BuildReport::from_json_str(&json).expect("往返解析应成功");
 
         assert_eq!(value["schema_version"], 1);
         // topo_order：依赖先于消费者。
@@ -243,13 +244,14 @@ mod build_report_json_roundtrip_e2e {
             .expect("lazy 条目");
         assert_eq!(lazy["state"], "lazy");
 
-        // overrides：module-level override 记录来源。
+        // overrides：module-level override 记录来源；未注册目标无图内名字，
+        // 记 "(unregistered)" 占位（来源字段仍可回读）。
         let overrides = value["overrides"].as_array().expect("overrides 数组");
         assert!(
             overrides
                 .iter()
-                .any(|o| o["module"] == "rpt-json-overridden"),
-            "override 记录应出现在报告中：{overrides:?}"
+                .any(|o| o["module"] == "(unregistered)" && o["source"] == "override_module"),
+            "未注册 override 应以 (unregistered) 出现在报告中：{overrides:?}"
         );
 
         // config_overrides：merge_config 记录 applied==true。
@@ -259,6 +261,78 @@ mod build_report_json_roundtrip_e2e {
 
         // total_elapsed_us 往返可读。
         assert!(value["total_elapsed_us"].as_u64().is_some());
+    }
+
+    /// 仅 override 未注册模块：require 成功，但不进依赖图计数、不进契约清单；
+    /// build_report.overrides 以 "(unregistered)" 占位记录该次注入。
+    #[test]
+    fn e2e_unregistered_override_outside_graph_and_manifest() {
+        use trait_kit::kit::Kit;
+
+        let mut kit = Kit::new();
+        kit.register::<RptEagerDep>().unwrap();
+        kit.override_module::<RptJsonOverridden>(Arc::new(42));
+
+        let ready = kit.build().expect("build 应成功");
+        assert_eq!(
+            *ready
+                .require::<RptJsonOverridden>()
+                .expect("未注册 override 仍可 require"),
+            42,
+            "注入值应生效（build_fn 的 panic 不应触发）"
+        );
+        assert_eq!(ready.module_count(), 1, "override 不进依赖图");
+        let manifest = ready.contract_manifest();
+        assert_eq!(manifest.modules.len(), 1, "override 不进契约清单");
+        assert!(
+            manifest.modules.iter().all(|m| m.module == "rpt-json-dep"),
+            "清单仅含 register* 记录：{:?}",
+            manifest.modules
+        );
+        let report = ready.build_report();
+        let record = report
+            .overrides
+            .iter()
+            .find(|r| r.module == "(unregistered)")
+            .expect("未注册 override 的占位记录");
+        assert_eq!(record.source, "override_module");
+    }
+
+    /// register_lazy 模块存在 override 时：注入值优先，lazy builder 永不执行；
+    /// 该模块仍在图与契约清单中（override 只改变能力来源，不改变注册事实）。
+    #[test]
+    fn e2e_override_wins_over_lazy_registration() {
+        use trait_kit::kit::Kit;
+
+        let mut kit = Kit::new();
+        kit.register_lazy::<RptJsonLazy>().unwrap();
+        kit.override_module::<RptJsonLazy>(Arc::new(77));
+
+        let ready = kit.build().expect("build 应成功");
+        // lazy builder 返回 3，override 返回 77：拿到 77 说明 builder 未执行。
+        assert_eq!(*ready.require::<RptJsonLazy>().expect("require"), 77);
+        assert_eq!(ready.module_count(), 1, "register_lazy 已进图");
+        assert!(
+            ready
+                .contract_manifest()
+                .modules
+                .iter()
+                .any(|m| m.module == "rpt-json-lazy"),
+            "register_lazy 模块应在契约清单中"
+        );
+        let report = ready.build_report();
+        let entry = report
+            .modules
+            .iter()
+            .find(|m| m.name == "rpt-json-lazy")
+            .expect("lazy 模块报告条目");
+        assert_eq!(
+            entry.state,
+            trait_kit::kit::report::ModuleBuildState::Overridden,
+            "能力来源应记为 overridden"
+        );
+        assert_eq!(report.overrides.len(), 1);
+        assert_eq!(report.overrides[0].module, "rpt-json-lazy");
     }
 }
 

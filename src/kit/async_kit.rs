@@ -4691,14 +4691,12 @@ mod async_config_inheritance_tests {
     fn async_extract_inject_shared_flow() {
         let kit = AsyncKit::new();
 
-        // Set DbConfig with specific host/port
         kit.set_config(AsyncDbConfig {
             host: "shared-host".into(),
             port: 9999,
             max_connections: 20,
         });
 
-        // Set AsyncAppConfig with different host/port
         kit.set_config(AsyncAppConfig {
             host: "app-host".into(),
             port: 8080,
@@ -5285,7 +5283,7 @@ mod async_report_tests {
     fn async_build_report_json_round_trips() {
         let built = build_two_modules();
         let json = built.build_report().to_json().expect("serialize report");
-        let value = serde_json::from_str::<serde_json::Value>(&json).expect("valid JSON");
+        let value = crate::kit::report::BuildReport::from_json_str(&json).expect("valid JSON");
         assert_eq!(value["schema_version"], 1);
         assert_eq!(value["modules"].as_array().map(Vec::len), Some(2));
         let top = value["modules"]
