@@ -11,6 +11,7 @@
 <summary>📑 目录</summary>
 
 - [Unreleased](#unreleased)
+- [`0.5.0-rc.8`](#050-rc8---2026-10-08)
 - [`0.5.0-rc.7`](#050-rc7---2026-10-03)
 - [`0.5.0-rc.6`](#050-rc6---2026-09-21)
 - [`0.5.0-rc.5`](#050-rc5---2026-09-14)
@@ -30,11 +31,19 @@
 
 ---
 
+
 ## [Unreleased]
+
+## [`0.5.0-rc.8`] - 2026-10-08
+
+### Removed
+
+- **公共 API 收缩：`BuildReport::from_json_str` 删除**：`src/kit/report.rs` 中仅测试使用的便捷反序列化方法移除，`docs/API_REFERENCE.md` 方法表同步；消费方如需按字段读取，可对 `to_json()` 输出自行反序列化。
 
 ### Changed
 
 - **proc-macro 子 crate 目录更名**：`trait-kit-macros/` → `macros/`，与 base 其余仓的子 crate 目录惯例（confers/oxcache/dbnexus/limiteron/sdforge 均为 `macros/`）统一。包名 `trait-kit-macros` 不变（crates.io 已注册且下游按名依赖），发布产物与用户可见 API 零影响；同步更新 workspace `members` 与两处 `path` 依赖（主 crate 与 `examples/`）、`release.yml` 发布步骤的 `working-directory`、`typos.toml` 的 trybuild 夹具豁免 glob、`deny.toml` 注释指向，以及 README/README_EN 的目录表格与测试规模引用
+- **死代码清理与重复收敛**：失读项删除并以门控精确化替代失真标记；成对桩抽取收敛构建流水线与生命周期收集重复。
 - **依赖裁剪（ICU4X 按组件引入）**：`icu` 门面 crate 改为 `icu_collator` / `icu_datetime` / `icu_decimal` / `icu_locale` / `icu_plurals` 五个组件子 crate（全部 `default-features = false` + 显式 `compiled_data`）——门面 crate 无条件依赖全部 13 个组件，其 `compiled_data` 会把 casemap/segmenter/list 等无关组件的代码与编译数据一并编进产物。裁剪后 `i18n` 单开的依赖图 75 → 66 个包（减少 9 个：`icu`、`icu_casemap(_data)`、`icu_segmenter(_data)`、`icu_list(_data)`、`icu_properties_data`，以及 `icu_list` 带入的 `regex-automata`；无新增包）；以相同声明的基线工程实测，这些 crate 的 release rlib 合计 27,300,650 字节（27.30 MB / 26.04 MiB；逐项为十进制 MB：`icu_segmenter_data` 12.36M、`icu_segmenter` 8.70M、`regex-automata` 2.10M、`icu_properties_data` 1.86M、`icu_list` 0.92M、`icu_casemap` 0.79M、`icu_list_data` 0.45M、`icu_casemap_data` 0.09M、`icu` 0.02M，逐项四舍五入，合计以字节数为准）。注：`--all-features` 下 `icu_properties_data` 仍会经 `reqwest → url → idna → idna_adapter` 链进入依赖图（与本 crate 的 i18n 无关，`icu_collator` 未开启 `icu_properties/compiled_data`）。`i18n` 对外 API 与行为不变（数字/日期/复数/排序仍走同一批组件，仅内部导入路径 `icu::*` → `icu_*::*`）
 - **依赖**：`syn` 关闭 `full`（三个 derive 只解析 `DeriveInput` 与 `#[module(...)]` 属性，`derive` 特性即可覆盖，不再编译 `Item`/`File` 整树 AST）；`cargo update` 刷新锁定版本（`trybuild` 1.0.121 → 1.0.122、`zeroize` 1.9.0 → 1.9.1 及 `tokio`/`hyper`/`zerocopy` 等传递依赖）；自研依赖 `confers` / `confers-macros` 保持 0.6.0-rc.6 不动（版本定值归发布链）
 - **CI**：actions 升到最新——`dtolnay/rust-toolchain`（1.97.1 分支头 `cf201f3`）、`taiki-e/install-action` v2.87.27、`actions/upload-artifact` v7.0.2、`github/codeql-action` v4.38.3
