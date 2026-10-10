@@ -8,7 +8,10 @@
 //! build, require, lifecycle, health, factory, decorator) with `RwLock`
 //! instead of `RefCell` and async build functions returning
 //! `Pin<Box<dyn Future + Send>>`. Sync-only surfaces (lazy, multi-binding,
-//! interface, override, toggle, reload, encryption, snapshot) live on `Kit`.
+//! interface, override, toggle, snapshot) live on `Kit`; reload and
+//! encryption exist on both sides — the async reload registry dispatches
+//! over confers `DynamicField` (subscriber panics isolated), while the sync
+//! side keeps its hand-rolled `Rc`/`RefCell` map (panics propagate).
 //!
 //! # Sync/Async 行为对照清单
 //! 修改任一侧时同步核对另一侧（sync 侧为 `kit.rs`）：
@@ -116,18 +119,30 @@ struct ConfersFields {
 }
 
 /// Fields gated behind the `reload` feature (async counterpart).
+///
+/// Per-config-type reload notification registry backed by confers
+/// [`DynamicField`](confers::DynamicField): each `C` owns one epoch field
+/// (`update(get() + 1)` fans out to that type's subscribers only) and keeps
+/// its `CallbackGuard`s alive for the kit's lifetime, mirroring the
+/// "subscriptions never deregister" contract of the former hand-rolled map.
 #[cfg(feature = "reload")]
 #[derive(Default)]
 struct ReloadFields {
-    /// 已登记的 reload 回调（线程安全闭包）
-    ///
-    /// `Arc<dyn Fn() + Send + Sync>` instead of `Rc<dyn Fn()>`.
-    subscribers: Arc<RwLock<HashMap<TypeId, Vec<ReloadSubscriber>>>>,
+    fields: Arc<RwLock<HashMap<TypeId, FieldEntry>>>,
 }
 
-/// 已登记的 reload 回调（线程安全闭包）；仅 `reload` 特性下使用。
+/// One config type's registration slot (reload feature).
+///
+/// `guards` pins each registered `CallbackGuard` for the entry's lifetime so
+/// callbacks are never auto-deregistered (equivalent to the "subscriptions
+/// never deregister" contract). The guards are boxed behind a `Mutex`
+/// because `CallbackGuard` is `Send` but not `Sync`, and the enclosing
+/// `AsyncKit` must stay `Sync`; dropping the entry drops the guards.
 #[cfg(feature = "reload")]
-type ReloadSubscriber = Arc<dyn Fn() + Send + Sync>;
+struct FieldEntry {
+    field: Arc<confers::DynamicField<u64>>,
+    guards: std::sync::Mutex<Vec<confers::CallbackGuard>>,
+}
 
 /// Fields gated behind the `encryption` feature (async counterpart).
 #[cfg(feature = "encryption")]
@@ -2406,21 +2421,35 @@ impl AsyncKit {
     /// Subscribe a callback to be invoked when config of type `C` is reloaded.
     ///
     /// Requires the `reload` feature. Async counterpart of `Kit::subscribe`.
-    /// Callbacks use `Arc<dyn Fn() + Send + Sync>` (thread-safe).
+    /// Callbacks are zero-argument (`impl Fn() + Send + Sync`); pull the new
+    /// value inside the callback via `config::<C>()`. Dispatch runs over
+    /// confers `DynamicField`: a panicking subscriber is isolated (counted,
+    /// later subscribers still notified) — see [`Self::reload_config`].
     ///
     /// # Panics
     ///
-    /// Panics if the reload subscribers lock is poisoned.
+    /// Panics if the reload registry lock is poisoned.
     #[cfg(feature = "reload")]
     pub fn subscribe<C: 'static>(&self, callback: impl Fn() + Send + Sync + 'static) {
-        let callback: Arc<dyn Fn() + Send + Sync> = Arc::new(callback);
-        self.reload
-            .subscribers
+        let mut fields = self
+            .reload
+            .fields
             .write()
-            .expect("reload subscribers lock poisoned")
+            .expect("reload fields lock poisoned");
+        let entry = fields
             .entry(TypeId::of::<C>())
-            .or_default()
-            .push(callback);
+            .or_insert_with(|| FieldEntry {
+                field: Arc::new(confers::DynamicField::new(0)),
+                guards: std::sync::Mutex::new(Vec::new()),
+            });
+        let guard = entry.field.on_change(move |_: &u64| callback());
+        // Guard 常驻注册项：与既有"订阅永不注销"生命周期等价（丢弃 guard
+        // 会注销回调）。
+        entry
+            .guards
+            .lock()
+            .expect("reload guards lock poisoned")
+            .push(guard);
     }
 
     /// Reload a configuration via its `Configurable` implementation and
@@ -2428,13 +2457,18 @@ impl AsyncKit {
     ///
     /// Requires the `reload` feature. Async counterpart of `Kit::reload_config`.
     ///
+    /// The epoch bump dispatches through confers `DynamicField`: a callback
+    /// that panics is isolated and counted, so the remaining subscribers of
+    /// `C` still observe the reload and this call returns normally (unlike
+    /// the sync `Kit::reload_config`, where a subscriber panic propagates).
+    ///
     /// # Errors
     ///
     /// Returns `TraitKitError::BuildFailed` if `Configurable::load` fails.
     ///
     /// # Panics
     ///
-    /// Panics if the reload subscribers lock is poisoned.
+    /// Panics if the reload registry lock is poisoned.
     #[cfg(feature = "reload")]
     pub fn reload_config<C: super::Configurable + Send + Sync>(&self) -> Result<(), TraitKitError> {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
@@ -2442,18 +2476,19 @@ impl AsyncKit {
             source: e,
         })?;
         self.configs.insert(config);
-        let callbacks: Vec<Arc<dyn Fn() + Send + Sync>> = match self
+
+        // Clone the epoch field out, then release the registry lock before
+        // dispatching: `update` re-snapshots its callbacks internally, so no
+        // registry lock is held across user callbacks (CWE-667).
+        let field = self
             .reload
-            .subscribers
+            .fields
             .read()
-            .expect("reload subscribers lock poisoned")
+            .expect("reload fields lock poisoned")
             .get(&TypeId::of::<C>())
-        {
-            Some(subs) => subs.iter().map(Arc::clone).collect(),
-            None => Vec::new(),
-        };
-        for cb in &callbacks {
-            cb();
+            .map(|entry| Arc::clone(&entry.field));
+        if let Some(field) = field {
+            field.update(field.get() + 1);
         }
         Ok(())
     }
@@ -6105,6 +6140,62 @@ mod async_reload_tests {
             matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "reload_config"),
             "expected BuildFailed with the asserted context, got {err:?}"
         );
+    }
+
+    /// 同类型订阅者 panic 不得阻断后续订阅者：先注册 panic 回调，后注册
+    /// 置位回调，`reload_config` 正常返回且置位回调被通知（隔离语义）。
+    #[test]
+    fn reload_config_isolates_panicking_subscriber() {
+        let kit = AsyncKit::new();
+        let notified = Arc::new(AtomicUsize::new(0));
+        let sink = Arc::clone(&notified);
+
+        kit.subscribe::<PingCfg>(|| panic!("subscriber boom"));
+        kit.subscribe::<PingCfg>(move || {
+            sink.fetch_add(1, Ordering::SeqCst);
+        });
+
+        kit.reload_config::<PingCfg>()
+            .expect("panic 应被隔离，reload_config 正常返回");
+        assert_eq!(
+            notified.load(Ordering::SeqCst),
+            1,
+            "panic 之后的订阅者仍应收到本次通知"
+        );
+    }
+
+    /// 零参回调契约：回调内经 `config::<C>()` 读到 `C::load()` 产生的新值。
+    #[test]
+    fn reload_config_callback_reads_new_value_via_config() {
+        let kit = Arc::new(AsyncKit::new());
+        kit.set_config(RelayCfg { v: 1 });
+
+        let observed = Arc::new(AtomicUsize::new(0));
+        let seen = Arc::clone(&observed);
+        let inner = Arc::clone(&kit);
+        kit.subscribe::<RelayCfg>(move || {
+            let current = inner.config::<RelayCfg>().expect("config readable");
+            seen.store(current.v as usize, Ordering::SeqCst);
+        });
+
+        kit.reload_config::<RelayCfg>().expect("reload ok");
+        assert_eq!(
+            observed.load(Ordering::SeqCst),
+            RelayCfg::load().expect("load").v as usize,
+            "回调内经 config::<C>() 应读到新值"
+        );
+    }
+
+    /// 新值不同于 `set_config` 写入的旧值，用于区分新值读取。
+    #[derive(Debug, Clone, PartialEq)]
+    struct RelayCfg {
+        v: u32,
+    }
+
+    impl Configurable for RelayCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Ok(Self { v: 42 })
+        }
     }
 }
 

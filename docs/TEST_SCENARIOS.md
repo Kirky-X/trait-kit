@@ -25,7 +25,7 @@
   - [2.3 能力获取](#23-能力获取cap12-条)
   - [2.4 依赖图](#24-依赖图dep10-条)
   - [2.5 配置中心](#25-配置中心cfg22-条)
-  - [2.6 热重载](#26-热重载rld9-条)
+  - [2.6 热重载](#26-热重载rld10-条)
   - [2.7 加密存储](#27-加密存储enc13-条)
   - [2.8 接口/实现分离](#28-接口实现分离itf9-条)
   - [2.9 生命周期](#29-生命周期lcy9-条)
@@ -96,7 +96,7 @@
 | 21 | 并发与竞态 | CCY | async + 全库 | — |
 | 22 | feature 编译矩阵 | PRS | 全 feature 全量 | `cargo check --features …` |
 
-场景总数：**238**（正常 100 / 异常 57 / 边界 80，另含 1 条正常/异常双断言，程序化核对见 §6）。
+场景总数：**239**（正常 100 / 异常 58 / 边界 80，另含 1 条正常/异常双断言，程序化核对见 §6）。
 
 ---
 
@@ -200,7 +200,7 @@
 | CFG-21 | `interpolate_json_value` 形态矩阵：单变量/多变量/嵌套对象/默认值命中与忽略/未命中保留原文/非字符串不动/对象键不替换/数组元素替换 | 边界 | confers | 无 | `src/kit/kit.rs::basic_var_replacement`、`multiple_vars_in_one_string`、`nested_object_replacement`、`default_value_when_var_missing`、`default_value_ignored_when_var_present`、`no_match_preserved`、`non_string_values_untouched`、`object_keys_not_replaced`、`array_string_elements_replaced` | tests/e2e/e2e_config.rs |
 | CFG-22 | 派生宏端到端：`#[derive(ConfigInherit)]`（含 custom override 名/嵌套委托/pub 可见性）与 `#[derive(SharedConfig)]`，A/B 项目继承场景全链路 | 正常 | confers | 无 | `tests/config_inherit_derive.rs`（6 例）、`tests/shared_config_derive.rs`（5 例）、`tests/config_inheritance_e2e.rs::e2e_config_inheritance_a_b_project_scenario`、`e2e_merge_config_then_shared_inheritance`、`src/kit/kit.rs::config_inheritance_works_on_ready_kit` | tests/e2e/e2e_config.rs |
 
-### 2.6 热重载（RLD，9 条）
+### 2.6 热重载（RLD，10 条）
 
 | ID | 场景描述 | 类型 | 涉及 feature | 依赖服务 | 既有覆盖 | E2E 落点 |
 |----|---------|------|-------------|---------|---------|---------|
@@ -213,6 +213,7 @@
 | RLD-07 | `require_ref` 借用存活期间调用 `reload_config`。**真实行为核正**（落地阶段核实）：`configs` 与 `capabilities` 为两个独立 `TypeMap`（`src/kit/kit.rs`），借用存活期间 `reload_config` 写配置不触能力借用、正常工作，无 borrow 冲突；同时固化 `set_config` 为 Unbuilt 态方法（Ready 态写配置路径含 `reload_config` / `merge_config` / `populate_defaults`），以防未来合并两 TypeMap 引入隐蔽 panic | 边界 | reload | 无 | `src/kit/typemap.rs::inner_ref_panics_if_mutably_borrowed`（TypeMap 层既有） | tests/e2e/e2e_config.rs::e2e_require_ref_borrow_survives_reload_and_set_config + tests/e2e/e2e_concurrency.rs |
 | RLD-08 | feature 链映射：`reload` 自动启用 `confers`（已剪除 `confers/watch` 死链），`subscribe/reload_config` 经 Kit 自有 SubscriberMap 工作 | 正常 | reload | 无 | `Cargo.toml` 声明核对 + `tests/e2e_feature_combinations.rs::e2e_confers_plus_reload` | tests/e2e/e2e_feature_combinations.rs |
 | RLD-09 | examples/hot_reload 运行验收：改值 → reload → 回调打印新值 | 正常 | reload | 无 | examples/hot_reload（运行验收） | tests/e2e/e2e_feature_combinations.rs（引用示例） |
+| RLD-10 | **AsyncKit 订阅者 panic 隔离**（与 RLD-06 同步穿透对照）：同类型先注册 panic 回调、后注册置位回调，`AsyncKit::reload_config` 正常返回 `Ok`、置位回调仍被通知、新值保持已存储。异步侧注册簿记经 confers `DynamicField` 派发，单个订阅者 panic 被隔离计数，不穿透调用方；同步 Kit 侧 RLD-06 panic 穿透语义不受影响 | 异常 | async,reload | 无 | `src/kit/async_kit.rs::async_reload_tests::reload_config_isolates_panicking_subscriber`、`reload_config_callback_reads_new_value_via_config` | src/kit/async_kit.rs（异步 RLD-10）+ tests/e2e/e2e_config.rs（同步 RLD-06） |
 
 ### 2.7 加密存储（ENC，13 条）
 
@@ -514,7 +515,7 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 
 ## 🐳 4. Docker 服务需求汇总
 
-**无。** trait-kit 是纯内存库，全部 238 个场景的依赖服务为"无"，理由如下：
+**无。** trait-kit 是纯内存库，全部 239 个场景的依赖服务为"无"，理由如下：
 
 1. **零 docker-compose 依赖**：仓库不存在 `docker-compose*.yml`；`Cargo.toml` 直接依赖仅 `confers`（可选）、`serde`/`serde_json`（可选）、`icu_*`（ICU4X 组件子 crate）/`writeable`/`sys-locale`（i18n 可选），无任何数据库/消息队列/网络服务客户端。
 2. **confers 依赖面是纯进程内 trait**：trait-kit 仅消费 confers 的同步配置加载（`Config::load_sync` 桥接到 `Configurable::load`）、`watch`（进程内订阅回调，非文件 inotify）与 `encryption`（纯加密原语 XChaCha20/HKDF）三个能力面，**不触碰 confers 的 remote/etcd/consul/nats/redis 等需要 docker 服务的 feature**（trait-kit 的 feature 链从未开启它们）。
@@ -604,9 +605,9 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 
 | 维度 | 数量 |
 |------|------|
-| 场景总数 | **238** |
+| 场景总数 | **239** |
 | 类型=正常 | 100 |
-| 类型=异常 | 57 |
+| 类型=异常 | 58 |
 | 类型=边界 | 80 |
 | 类型=正常/异常（双断言） | 1（I18-07） |
 | 需新增的 E2E 场景（既有覆盖为"无→需新增"） | 19 |

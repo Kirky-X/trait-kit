@@ -119,8 +119,9 @@ async = []
 # through this feature — users add `trait-kit-macros` as a direct dependency
 # to use its derives (see src/kit/mod.rs).
 confers = ["dep:confers", "dep:serde", "dep:serde_json", "confers/feature-toggle"]
-# Hot-reload subscription (Kit 自有 SubscriberMap，不再拉入 confers/watch 的 notify-debouncer-full)。
-reload = ["confers"]
+# Hot-reload subscription (Kit 自有 SubscriberMap，不再拉入 confers/watch 的 notify-debouncer-full；
+# AsyncKit 侧订阅簿记迁至 confers `DynamicField`，故拉入 confers/dynamic)。
+reload = ["confers", "confers/dynamic"]
 # Encrypted config storage (maps to confers `encryption` feature).
 # 文档声称的三层继承链 `encryption` → `reload` → `confers` 在此定义成立。
 encryption = ["reload", "confers", "confers/encryption", "dep:zeroize"]

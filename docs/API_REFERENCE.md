@@ -229,7 +229,7 @@ struct MyModule;
 | `EventBus` trait + `MemoryEventBus` / `NoOpEventBus` | 事件总线（`MemoryEventBus` 含订阅者 panic 隔离），`with_event_bus` 注入 |
 | `MetricsPort` trait（counter/gauge/histogram） | 指标观测端口，`with_metrics_port` 注入 |
 | `LogPort` trait | 结构化日志观测端口，`with_log_port` 注入 |
-| `KeyProvider` trait + `KeyBytes` `encryption` | 密钥提供方抽象，`KeyBytes` 为零化容器 |
+| `KeyProvider` trait + `KeyBytes` `encryption` | 密钥提供方抽象；`KeyBytes` 为 confers `SecretBytes` 别名（构造 `new(Vec<u8>)`、读取 `as_slice()`），Drop 零化覆盖全容量（含 spare capacity），Debug 输出恒为 `[REDACTED]`，不可 Clone |
 
 ### 国际化
 

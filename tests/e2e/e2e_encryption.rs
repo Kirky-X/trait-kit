@@ -157,7 +157,7 @@ mod confers_key_provider_bridge_e2e {
         .expect("经 confers provider 加密应成功");
         let ready = kit.build().expect("build 应成功");
         let plain: BridgeSecret = ready
-            .get_encrypted(provider.master_key().expect("key").expose())
+            .get_encrypted(provider.master_key().expect("key").as_slice())
             .expect("同钥解密应成功");
         assert_eq!(plain.token, "bridge-secret");
         // provider_type 透传内层类型名。

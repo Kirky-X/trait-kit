@@ -583,57 +583,12 @@ mod interpolate_string_tests {
 
 /// Zeroizing master-key container.
 ///
-/// Owns the key bytes and volatile-zeroes them on drop, so a provider's key
-/// does not linger in freed memory. Access via [`KeyBytes::expose`].
+/// Alias of confers [`SecretBytes`](confers::SecretBytes): borrow via
+/// [`KeyBytes::as_slice`], construct via [`KeyBytes::new`]. Drop zeroization
+/// covers the entire allocation — including spare capacity beyond `len` —
+/// whereas the former in-house struct only cleared the initialized range.
 #[cfg(feature = "encryption")]
-pub struct KeyBytes {
-    buf: Vec<u8>,
-}
-
-#[cfg(feature = "encryption")]
-impl KeyBytes {
-    /// Borrow the key bytes (use and drop promptly).
-    #[must_use]
-    pub fn expose(&self) -> &[u8] {
-        &self.buf
-    }
-
-    /// Length of the key in bytes.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.buf.len()
-    }
-
-    /// Whether the key is empty.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.buf.is_empty()
-    }
-}
-
-#[cfg(feature = "encryption")]
-impl From<Vec<u8>> for KeyBytes {
-    fn from(buf: Vec<u8>) -> Self {
-        Self { buf }
-    }
-}
-
-#[cfg(feature = "encryption")]
-impl std::fmt::Debug for KeyBytes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Never leak key material through Debug.
-        write!(f, "KeyBytes(***)")
-    }
-}
-
-#[cfg(feature = "encryption")]
-impl Drop for KeyBytes {
-    fn drop(&mut self) {
-        // Volatile zeroize (same crate-internal helper the encrypted-config
-        // path uses): the compiler must not elide the write.
-        super::kit::zeroize_bytes(&mut self.buf);
-    }
-}
+pub type KeyBytes = confers::SecretBytes;
 
 /// Master-key provider port.
 ///
@@ -689,7 +644,7 @@ where
                     context: format!("key provider ({})", self.inner.provider_type()),
                     source: Box::new(e),
                 })?;
-        Ok(KeyBytes::from(secret.as_slice().to_vec()))
+        Ok(KeyBytes::new(secret.as_slice().to_vec()))
     }
 
     fn provider_type(&self) -> &'static str {
@@ -702,6 +657,11 @@ mod key_provider_tests {
     use super::*;
     use crate::error::TraitKitError;
     use crate::kit::Kit;
+    use static_assertions::assert_not_impl_any;
+
+    // 密钥容器不得可 Clone（克隆即旁路 Drop 零化）：别名底层 confers
+    // `SecretBytes` 显式不实现 Clone，编译期钉住防回归。
+    assert_not_impl_any!(KeyBytes: Clone);
 
     #[derive(Clone, serde::Serialize, serde::Deserialize)]
     struct SecretConfig {
@@ -755,7 +715,7 @@ mod key_provider_tests {
         // Same key material round-trips (`get_encrypted` lives on Kit<Ready>).
         let ready = kit.build().expect("build ok");
         let plain: SecretConfig = ready
-            .get_encrypted(provider.master_key().expect("key").expose())
+            .get_encrypted(provider.master_key().expect("key").as_slice())
             .expect("decrypt");
         assert_eq!(plain.password, "hunter2");
         assert_eq!(provider.provider_type(), "fixed-test");
@@ -779,17 +739,54 @@ mod key_provider_tests {
 
     #[test]
     fn key_bytes_debug_redacts() {
-        let key = KeyBytes::from(vec![1, 2, 3]);
-        assert_eq!(format!("{key:?}"), "KeyBytes(***)");
+        let key = KeyBytes::new(vec![1, 2, 3]);
+        assert_eq!(format!("{key:?}"), "[REDACTED]");
         assert_eq!(key.len(), 3);
     }
 
     #[test]
     fn key_bytes_len_and_is_empty() {
-        assert!(KeyBytes::from(Vec::new()).is_empty(), "empty key is empty");
-        let key = KeyBytes::from(vec![9u8; 32]);
+        assert!(KeyBytes::new(Vec::new()).is_empty(), "empty key is empty");
+        let key = KeyBytes::new(vec![9u8; 32]);
         assert!(!key.is_empty());
         assert_eq!(key.len(), 32);
+    }
+
+    /// 零化覆盖整个分配（含 spare capacity）：容量大于长度的缓冲经显式
+    /// `zeroize()` 后全部字节为零（confer 的 `SecretBytes::drop` 即经
+    /// `Zeroize for SecretBytes` 走同一路径）。
+    ///
+    /// 自研 `KeyBytes` 结构体只清 `len` 范围且无 `zeroize` 入口，本测试
+    /// 随别名替换落地后生效。
+    #[test]
+    #[allow(unsafe_code)]
+    fn key_bytes_zeroize_clears_spare_capacity() {
+        use zeroize::Zeroize;
+
+        let mut inner = Vec::with_capacity(64);
+        inner.extend_from_slice(b"top-secret");
+        let capacity = inner.capacity();
+        assert!(capacity > inner.len(), "fixture needs spare capacity");
+        let ptr = inner.as_ptr();
+
+        let mut key = KeyBytes::new(inner);
+        assert_eq!(key.as_slice(), b"top-secret");
+        key.zeroize();
+
+        // SAFETY: `Vec::zeroize` 先以 volatile 写覆盖 spare capacity 再覆盖
+        // 已初始化元素且不重新分配；`ptr` 取自迁移前持有的分配，读写之间
+        // 无其他指向该分配的引用存活。volatile 读防止断言被优化掉。
+        unsafe {
+            for offset in 0..capacity {
+                assert_eq!(
+                    std::ptr::read_volatile(ptr.add(offset)),
+                    0,
+                    "byte {offset} of the allocation must be zeroed"
+                );
+            }
+        }
+        assert!(key.is_empty(), "zeroize clears the length");
+        assert_eq!(format!("{key:?}"), "[REDACTED]", "零化不破坏 Debug 脱敏");
     }
 
     #[cfg(feature = "confers")]

@@ -2232,7 +2232,7 @@ impl Kit {
         P: super::config::KeyProvider,
     {
         let key = provider.master_key()?;
-        self.set_encrypted::<C>(value, key.expose())
+        self.set_encrypted::<C>(value, key.as_slice())
     }
 
     /// Returns `TraitKitError::BuildFailed` if serialization, key derivation, or

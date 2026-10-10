@@ -302,7 +302,7 @@ For the complete `Kit<Unbuilt>` / `Kit<Ready>` method list (including feature ga
 <tr><th>Feature</th><th>Enables</th><th>Description</th><th>Default</th></tr>
 <tr><td><code>async</code></td><td>—</td><td><code>AsyncKit</code>: <code>Send + Sync</code> async capability management, no extra deps.</td><td>—</td></tr>
 <tr><td><code>confers</code></td><td><code>dep:confers</code>, <code>dep:serde</code>, <code>dep:serde_json</code>, <code>confers/feature-toggle</code></td><td><code>Configurable</code> + <code>ModuleConfig</code> trait + <code>Config</code> derive re-export.</td><td>—</td></tr>
-<tr><td><code>reload</code></td><td><code>confers</code></td><td><code>subscribe</code> / <code>reload_config</code> hot-reload subscriptions.</td><td>—</td></tr>
+<tr><td><code>reload</code></td><td><code>confers</code>, <code>confers/dynamic</code></td><td><code>subscribe</code> / <code>reload_config</code> hot-reload subscriptions.</td><td>—</td></tr>
 <tr><td><code>encryption</code></td><td><code>reload</code>, <code>confers</code>, <code>confers/encryption</code>, <code>dep:zeroize</code></td><td><code>set_encrypted</code> / <code>get_encrypted</code> encrypted config storage.</td><td>—</td></tr>
 <tr><td><code>di</code></td><td>—</td><td>Interface/implementation separation: <code>register_as</code> / <code>resolve</code> with <code>dyn Trait</code> type erasure.</td><td>—</td></tr>
 <tr><td><code>lifecycle</code></td><td>—</td><td>Lifecycle hooks: <code>on_ready</code> (after build) + <code>on_shutdown</code> (cleanup).</td><td>—</td></tr>
