@@ -413,7 +413,7 @@ pub trait AsyncAutoBuilder: ModuleMeta {
 |---|---|
 | `with_max_concurrency(limit)` | 按拓扑分层并发构建的并发上限 |
 | `create_scope()` | 创建异步作用域 |
-| 配置面（`AsyncKit<Unbuilt>`） | `load_config` 系列、`subscribe` / `reload_config`、`snapshot_config` / `restore_config`、`set_encrypted` / `get_encrypted` 与同步 `Kit` 的配置能力一致；这些方法定义在 `AsyncKit<Unbuilt>`（构建前配置面），`AsyncKit<Ready>` 仅保留只读检索（`config` / `config_arc` / `contains_config`） |
+| 配置面（`AsyncKit<Unbuilt>`） | `load_config` 系列、`subscribe` / `reload_config`、`snapshot_config` / `restore_config`、`set_encrypted` / `get_encrypted` 与同步 `Kit` 的配置能力一致；这些方法定义在 `AsyncKit<Unbuilt>`（构建前配置面），`AsyncKit<Ready>` 仅保留只读检索（`config` / `contains_config`；`config_arc` 仅定义在 `AsyncKit<Unbuilt>`，Ready 态无此方法） |
 | `health_aggregate()` | `health` + `report` | worst-of 整体状态 + 各模块明细（`/healthz` 结构化载荷），与同步 `Kit<Ready>` 口径一致（空集 healthy-by-convention；modules 顺序不承诺确定；每次调用执行全部 checker，注入事件总线时发布 HealthChanged） |
 | `health_json()` | `health` + `report` | 健康聚合 JSON 导出，与同步 `Kit<Ready>` 对位 |
 | `build_report()` `report` | 结构化构建报告（JSON），与同步 `Kit<Ready>` 对位；async 构建状态集仅 `built`（无 override/lazy 面） |
