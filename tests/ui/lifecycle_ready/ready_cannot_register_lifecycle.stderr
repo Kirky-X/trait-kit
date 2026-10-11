@@ -1,0 +1,7 @@
+error[E0599]: no method named `register_lifecycle` found for struct `trait_kit::kit::Kit<trait_kit::kit::Ready>` in the current scope
+  --> tests/ui/lifecycle_ready/ready_cannot_register_lifecycle.rs:36:11
+   |
+36 |     ready.register_lifecycle::<MyModule>();
+   |           ^^^^^^^^^^^^^^^^^^ method not found in `trait_kit::kit::Kit<trait_kit::kit::Ready>`
+   |
+   = note: the method was found for `trait_kit::kit::Kit`

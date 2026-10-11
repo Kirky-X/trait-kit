@@ -90,7 +90,7 @@
 | 15 | 优雅关闭 | SHD | shutdown（×async） | `kit::{ShutdownCoordinator, ShutdownPhase, ShutdownPhaseResult, ShutdownResult, AsyncShutdownCoordinator}` |
 | 16 | 异步 Kit | ASK | async | `AsyncKit / AsyncAutoBuilder / AsyncReady / AsyncUnbuilt / AsyncTypeMap`、`AsyncKit::register / build / require / factory / create_scope` |
 | 17 | 国际化 | I18 | i18n | `i18n::{tr, I18nManager, I18nFormatter, I18nError}`、FTL 目录（en/zh）、ICU4X number/date/plural/collation |
-| 18 | 错误体系 | ERR | —（部分变体按 feature 门控） | `TraitKitError`（8 变体）/ `TraitKitResult`，Display 经 `tr()` 走 Fluent 目录 |
+| 18 | 错误体系 | ERR | —（部分变体按 feature 门控） | `TraitKitError`（11 变体）/ `TraitKitResult`，Display 经 `tr()` 走 Fluent 目录 |
 | 19 | prelude 导出面 | PRE | —（随各 feature） | `prelude::*` 再导出一致性 |
 | 20 | feature 组合交互 | CMP | 多 feature 叠加 | — |
 | 21 | 并发与竞态 | CCY | async + 全库 | — |
@@ -531,8 +531,8 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 
 | 层级 | 内容 | 命令 | 允许 mock？ |
 |------|------|------|-----------|
-| L1 单元 | src 内联 394 个 `#[test]`（16 处 `#[cfg(test)]` + 38 处 `#[cfg(all(test, feature = …))]` 门控块，覆盖 16 个文件） | `cargo test --all-features --lib` | 允许 |
-| L2 集成 | `tests/` 顶层 6 个集成文件（`basic` / `config_inherit_derive` / `shared_config_derive` / `config_inheritance_e2e` / `api_reference_gate` / `e2e_gap_round1`，共 74 个测试函数）+ `tests/e2e/` 13 个注册目标（197 个测试函数；`e2e_advanced` / `e2e_feature_combinations` 等已迁入子目录，见 §5.3；注意 §重要发现-3：feature 组按 `--features` 分轮执行） | `cargo test --features confers,reload,encryption && cargo test --features async,lifecycle,health,request-scope,toggle,observer,decorator,shutdown,di && cargo test --features i18n` | 允许（纯内存） |
+| L1 单元 | src 内联 657 个 `#[test]`（38 处 `#[cfg(test)]` + 65 处 `#[cfg(all(test, feature = …))]` 门控块，覆盖 27 个文件） | `cargo test --all-features --lib` | 允许 |
+| L2 集成 | `tests/` 顶层 6 个集成文件（`basic` / `config_inherit_derive` / `shared_config_derive` / `config_inheritance_e2e` / `api_reference_gate` / `e2e_gap_round1`，共 74 个测试函数）+ `tests/e2e/` 13 个注册目标（200 个测试函数；`e2e_advanced` / `e2e_feature_combinations` 等已迁入子目录，见 §5.3；注意 §重要发现-3：feature 组按 `--features` 分轮执行） | `cargo test --features confers,reload,encryption && cargo test --features async,lifecycle,health,request-scope,toggle,observer,decorator,shutdown,di && cargo test --features i18n` | 允许（纯内存） |
 | L2b 编译期 | `tests/ui/` 4 个 trybuild 用例 + `tests/ui/probe_sensitive/` 1 个（probe 门控组；typestate 违规） | `cargo test --test compile_fail` | — |
 | L3 examples | 20 个示例逐一运行（见 5.2，需按 `required-features` 传 feature） | `cargo run -p trait-kit-examples --features <f> --example <name>` | 禁 mock |
 | L4 E2E | `tests/e2e/`（本文档 §2 场景 ID 落点，13 个文件已落地） | `cargo test --features <组合> --test e2e_<名>`（子目录不被自动发现，已由根 `Cargo.toml` 显式 `[[test]]` 注册 13 个目标） | 禁 mock |
@@ -587,11 +587,11 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 | e2e_hooks.rs | LCY-05/07、HLT-07、OBS-05（运行时钩子缺口固化；其余 LCY/HLT/OBS 场景引用既有覆盖） | 否 |
 | tests/ui/（扩展） | REG-19（现有 5 例：`tests/ui/` 4 个 + `tests/ui/probe_sensitive/` 1 个）；CCY-03 已等效落地于 tests/basic.rs（见头部对账 3） | 否 |
 
-> 实际落位共 13 个文件（上表 11 个 + 既有 `e2e_advanced.rs` 84 例为 B/A/E/C 系列场景主体承载 + `e2e_i18n_en.rs` en 侧独立进程目标）；`basic.rs`、`compile_fail.rs` 等顶层文件保持 tests/ 自动发现。
+> 实际落位共 13 个文件（上表 11 个 + 既有 `e2e_advanced.rs` 85 例为 B/A/E/C 系列场景主体承载 + `e2e_i18n_en.rs` en 侧独立进程目标）；`basic.rs`、`compile_fail.rs` 等顶层文件保持 tests/ 自动发现。
 
 ### 5.4 建议执行顺序
 
-1. L1 全绿：`cargo test --all-features --lib`（394 个内联测试）。
+1. L1 全绿：`cargo test --all-features --lib`（657 个内联测试）。
 2. L2 按 feature 分轮全绿（§5.1 三轮命令）+ L2b trybuild 5 例。
 3. L3 20 个示例按 feature 逐一运行（5.2 清单）。
 4. 落地 `tests/e2e/`（10 个文件），优先补 CMP-10…15、CCY-03/06、DEC-03/04/07/08、ASK-13、ERR-07、RLD-06、HLT-07、LCY-05、SHD-13、CAP-11（19 处纯缺口 + 13 处需补断言，既有覆盖最薄）。
@@ -621,11 +621,11 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 | 完全无外部依赖（纯内存）的场景 | 235+ |
 
 > 既有测试资产基线（编写时 rc.2 时点 grep 实测）：src 内联 **394** 个 `#[test]`；`tests/` **185** 个测试函数（basic 45 / e2e_advanced 84 / e2e_feature_combinations 42 / config_inherit_derive 6 / shared_config_derive 5 / config_inheritance_e2e 2 / compile_fail 1 runner→当时 3 个 ui 用例；e2e_* 文件当时位于 `tests/` 顶层，落地后迁入 `tests/e2e/`，见 §重要发现-7）；examples **20** 个。
-> 落地后现状（当前仓库 grep 实测）：`tests/` 共 **272** 个测试函数——`tests/e2e/` 13 个注册目标 197 个、顶层 6 个集成文件 74 个、`compile_fail.rs` 1 runner 驱动 5 个 ui 用例（4 + probe 敏感组 1）；src 内联 **650** 个（`src` + `tests` 合计 922，与 README 测试规模口径一致）。
+> 落地后现状（当前仓库 grep 实测）：`tests/` 共 **275** 个测试函数——`tests/e2e/` 13 个注册目标 200 个、顶层 6 个集成文件 74 个、`compile_fail.rs` 1 runner 驱动 5 个 ui 用例（4 + probe 敏感组 1）；src 内联 **657** 个（`src` + `tests` 合计 932，与 README 测试规模口径一致）。
 > 说明：既有覆盖口径存在合法重叠（一条场景可同时引用 tests/ 集成测试与 src 内联测试）；"需新增"取最强缺口判定。后续落地阶段允许将粒度过细的场景合并实现，但 **ID 保持稳定**以便追溯。
 
 ### 编写基线核对说明
 
-1. **src 内 `#[cfg(test)]` 计数**：初稿口径为 17 处，实测字面 `#[cfg(test)]` 为 **16 处**，另有 38 处 `#[cfg(all(test, feature = …))]` 门控测试块（共 394 个内联测试）。以实测为准。
+1. **src 内 `#[cfg(test)]` 计数**：初稿口径为 17 处，实测字面 `#[cfg(test)]` 为 **38 处**，另有 65 处 `#[cfg(all(test, feature = …))]` 门控测试块（共 657 个内联测试）。以实测为准。
 2. **examples 计数**：初稿口径为 21 个，实测 `examples/Cargo.toml` 显式 `[[example]]` 注册 **20 个**（`examples/src` 下亦为 20 个 .rs 文件）。以实测为准。
 3. **依赖服务**：初稿口径提示"仅 confers feature 需要文件/远程场景"；核对后 trait-kit 的 confers 面只含进程内 trait 桥接，文件路径仅出现在 confers derive 的文件加载（E2E 可用临时文件），**无任何远程场景**（§4）。

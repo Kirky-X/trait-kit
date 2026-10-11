@@ -1,0 +1,11 @@
+error[E0599]: no method named `with_observer` found for struct `trait_kit::kit::Kit<trait_kit::kit::Ready>` in the current scope
+  --> tests/ui/observer_ready/ready_cannot_with_observer.rs:40:11
+   |
+40 |     ready.with_observer(Arc::new(MyObserver));
+   |           ^^^^^^^^^^^^^
+   |
+help: there is a method `with_subscriber` with a similar name
+   |
+40 -     ready.with_observer(Arc::new(MyObserver));
+40 +     ready.with_subscriber(Arc::new(MyObserver));
+   |

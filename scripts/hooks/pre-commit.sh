@@ -101,6 +101,18 @@ if [ "$oversized" -eq 0 ]; then
     check_pass "文件大小均在 1MB 以内"
 fi
 
+# 0c — 私钥 / 凭据内容扫描（与 lefthook no-private-key 同一模式）
+key_hits=$(git diff --cached --name-only --diff-filter=ACMR -z 2>/dev/null \
+    | xargs -0 -r grep -IlE 'BEGIN (RSA|OPENSSH|PGP|EC|PRIVATE) PRIVATE KEY|sk-[A-Za-z0-9]{20,}' 2>/dev/null || true)
+
+if [ -n "$key_hits" ]; then
+    echo "  ${RED}✗${NC} 暂存内容命中疑似私钥 / 凭据："
+    echo "$key_hits" | sed 's/^/    /'
+    check_fail "私钥扫描 — 暂存内容含私钥 / 凭据"
+else
+    check_pass "私钥扫描 — 暂存内容无私钥 / 凭据"
+fi
+
 # ═══════════════════════════════════════════════════════════════════
 # Phase 1 — Format
 # ═══════════════════════════════════════════════════════════════════
@@ -230,13 +242,13 @@ else
     check_fail "cargo test — 存在失败测试"
 fi
 
-# 6b — 覆盖率（可选，≥85%）
+# 6b — 覆盖率（可选，与 CI / lefthook pre-push 统一的 95% 行覆盖硬门禁）
 if cargo llvm-cov --version &>/dev/null; then
-    echo "  ${CYAN}▶${NC} cargo llvm-cov --all-features --fail-under-lines 85..."
-    if cargo llvm-cov --all-features --fail-under-lines 85 2>&1; then
-        check_pass "cargo llvm-cov — 覆盖率 ≥85%"
+    echo "  ${CYAN}▶${NC} cargo llvm-cov --all-features --fail-under-lines 95..."
+    if cargo llvm-cov --all-features --fail-under-lines 95 2>&1; then
+        check_pass "cargo llvm-cov — 覆盖率 ≥95%"
     else
-        check_fail "cargo llvm-cov — 覆盖率低于 85%"
+        check_fail "cargo llvm-cov — 覆盖率低于 95%"
     fi
 else
     check_skip "cargo llvm-cov"

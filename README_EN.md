@@ -77,7 +77,7 @@ Modules declare a contract via `ModuleMeta` + `AutoBuilder`; the Kit centralizes
 </tr>
 <tr>
 <td width="50%">🧱 <b>Minimal Default Dependencies</b><br><sub><code>default = []</code>: no optional feature enabled; only 3 mandatory deps ship by default (Fluent translation <code>fluent-bundle</code> / <code>unic-langid</code> and the <code>log</code> facade), while <code>confers</code>, <code>serde</code>, <code>serde_json</code>, <code>icu_*</code> (ICU4X components), etc. are all optional and feature-gated.</sub></td>
-<td width="50%">🚫 <b>unsafe denied by default</b><br><sub><code>#![deny(unsafe_code)]</code> is enforced crate-wide; only 6 locally audited exemptions exist (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×2 (1 <code>RefCell</code> / 1 <code>RwLock</code>).</sub></td>
+<td width="50%">🚫 <b>unsafe denied by default</b><br><sub><code>#![deny(unsafe_code)]</code> is enforced crate-wide; only 6 locally audited exemptions exist in production code (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×2 (1 <code>RefCell</code> / 1 <code>RwLock</code>), plus 1 test-only exemption (<code>src/kit/config.rs</code>, zeroize spare-capacity assertion).</sub></td>
 </tr>
 </table>
 
@@ -470,7 +470,7 @@ kit.inject_shared::<DbConfig>();             // inject into DbConfig
 | Example validation | `examples/` (20) | Each example runs standalone; failed assertions panic |
 | Benchmarks | `benches/kit_bench.rs` | criterion benchmarks (requires the `toggle` feature) |
 
-Test scale: the main crate's `src/` and `tests/` contain **922** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `macros/tests/`.
+Test scale: the main crate's `src/` and `tests/` contain **932** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `macros/tests/`.
 
 ### Common Commands (same as CI)
 
@@ -499,7 +499,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 ## 📊 Performance
 
-Performance comes from design: typestate moves dependency-graph validation entirely into `build()`, capability retrieval on `Kit<Ready>` is a `TypeId` lookup + clone, and the sync `Kit` is lock-free via `RefCell`. The criterion benchmark setup covers the build / require / config / toggle hot-path axes (`benches/kit_bench.rs`; benchmark targets require `--features toggle`); the baseline (2026-09-29 quiet re-run) measured `require` (~16 ns) on the same magnitude as a bare `Arc::clone` + `TypeId` lookup, validating the "zero-cost capability retrieval" design goal — for large capability structs prefer `require_ref` (borrowed read).
+Performance comes from design: typestate moves dependency-graph validation entirely into `build()`, capability retrieval on `Kit<Ready>` is a `TypeId` lookup + clone, and the sync `Kit` is lock-free via `RefCell`. The criterion benchmark setup covers the build / require / config / toggle hot-path axes (`benches/kit_bench.rs`; benchmark targets require `--features toggle`, and the full 7-benchmark run requires `cargo bench --features toggle,confers` — `config/write_merge_config` needs `confers` and is compiled out when `report` is on, since its record accumulation is unbounded); the baseline (2026-09-29 quiet re-run) measured `require` (~16 ns) on the same magnitude as a bare `Arc::clone` + `TypeId` lookup, validating the "zero-cost capability retrieval" design goal — for large capability structs prefer `require_ref` (borrowed read).
 
 Baseline numbers, the measurement environment, and reproduction commands live in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
@@ -508,7 +508,7 @@ Baseline numbers, the measurement environment, and reproduction commands live in
 ## 🔒 Security
 
 - **Vulnerability reporting**: do not open public issues; use GitHub's private [Security Advisories](https://github.com/Kirky-X/trait-kit/security/advisories/new) channel ("Report a vulnerability"). The maintainer commits to acknowledging reports within 48 hours and providing an initial assessment within 7 days (see [SECURITY.md](docs/SECURITY.md)).
-- **unsafe denied by default**: `#![deny(unsafe_code)]` is enforced crate-wide; only 6 locally audited exemptions (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×2 (1 `RefCell` / 1 `RwLock`).
+- **unsafe denied by default**: `#![deny(unsafe_code)]` is enforced crate-wide; only 6 locally audited exemptions exist in production code (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×2 (1 `RefCell` / 1 `RwLock`), plus 1 test-only exemption (`src/kit/config.rs`, zeroize spare-capacity assertion).
 - **Compile-time misuse prevention**: typestate turns `optional()` on `Kit<Unbuilt>` and register/build on `Kit<Ready>` into compile errors (trybuild UI tests); the dependency graph is checked for missing deps and cycles at `build()`.
 - **Explicit thread-safety boundary**: the sync `Kit` is `!Sync` (compiler-enforced, see the `static_assertions` assertions); use `AsyncKit` (`Send + Sync`) for multi-threading.
 - **Encrypted config storage** (`encryption`): XChaCha20-Poly1305 AEAD with field keys derived via HKDF from the master key and `ModuleConfig::PATH`; `EncryptedBlob`'s `Debug` implementation never leaks encrypted material.
@@ -584,6 +584,8 @@ See [CHANGELOG.md](docs/CHANGELOG.md). Recent highlights:
 ## 📄 License
 
 This project is licensed under **MIT + Commons Clause**: the MIT license with the additional Commons Clause v1.0 condition, which excludes selling the Software without separate written authorization from the Licensor; it is a source-available license, and commercial use requires separate authorization. See [LICENSE](LICENSE).
+
+Package metadata (`Cargo.toml` `license` / `license-file` fields) currently declares the `license` as `MIT`; crates.io reports `MIT` for the version field and license badge. The LICENSE text is authoritative for the actual terms.
 
 Copyright (c) 2026 Kirky.X🌠
 

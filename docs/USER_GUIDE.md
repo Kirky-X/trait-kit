@@ -26,7 +26,7 @@ trait-kit 解决的问题是：**在应用启动时，以类型安全、可验�
 - **模块**通过 `ModuleMeta` + `AutoBuilder` 两个 trait 定义统一契约，用 `impl_module_meta!` 宏一行声明。
 - **Kit** 是能力与配置的集中管理中心：`Kit<Unbuilt>` 阶段注册模块与配置，`build()` 验证依赖图后得到 `Kit<Ready>`，此后只读检索能力。
 - **能力**按模块类型存储和检索（`kit.require::<LoggerModule>()`），无需字符串键、无需 downcast。
-- 整个 crate 标注 `#![deny(unsafe_code)]`，仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：`RefCell` / `RwLock` 各 1），详见 [安全文档](SECURITY.md)。
+- 整个 crate 标注 `#![deny(unsafe_code)]`，生产代码仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：`RefCell` / `RwLock` 各 1），另有 1 处测试模块豁免（`src/kit/config.rs` 的 zeroize spare-capacity 断言），详见 [安全文档](SECURITY.md)。
 
 适合"手动装配太散、完整 DI 框架太重"的中间场景。API 全集见 [📘 API 参考](API_REFERENCE.md)，设计细节见 [🏗️ 架构文档](ARCHITECTURE.md)。
 

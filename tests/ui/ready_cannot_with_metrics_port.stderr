@@ -1,0 +1,11 @@
+error[E0599]: no method named `with_metrics_port` found for struct `trait_kit::kit::Kit<trait_kit::kit::Ready>` in the current scope
+  --> tests/ui/ready_cannot_with_metrics_port.rs:34:11
+   |
+34 |     ready.with_metrics_port(None::<Arc<dyn MetricsPort>>);
+   |           ^^^^^^^^^^^^^^^^^
+   |
+help: there is a method `metrics_port` with a similar name, but with different arguments
+  --> src/kit/kit.rs
+   |
+   |     pub fn metrics_port(&self) -> super::ports::OptionalMetricsPort {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

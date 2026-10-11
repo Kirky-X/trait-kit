@@ -34,18 +34,26 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **依赖**：三方依赖全量核对 crates.io 最新稳定版——`cargo update` 抬 `serde_json` 1.0.151 → 1.0.152（本轮唯一落后项；其余直接依赖均已在其最新稳定版，未引入预发布）；自研依赖声明 req 不变（`confers` 0.6.0-rc.6，版本定值归发布链）
+- **依赖**：特性裁剪四项——`log` 关闭 `std`（`default-features = false` 且不再声明任何特性：本 crate 只用 `log!` 宏与 `set_logger`/`set_max_level`，两者均为 core API，`set_boxed_logger` 不在使用面内）；`zeroize` 关闭 `alloc`（只命名 `Zeroizing<[u8; 32]>`，`Zeroizing` 与 `[u8; 32]: Zeroize` 都在 core，`alloc` 才提供的 `Vec`/`String`/`Box` 实现未使用）；`icu_decimal` 关闭 `alloc`（只留 `compiled_data`：`format_number` 的 `write_to_string` 由 writeable 的 alloc 门控默认方法提供，icu_decimal 的 `alloc` 只额外带来 Display 与委托重载，均未使用；`Cargo.lock` 随之去掉 icu_decimal → serde 边）；`trait-kit-macros` 的 `syn` 关闭 `clone-impls`（宏对 AST 只读不拷贝，展开代码里的 `.clone()` 作用于用户字段类型）。注：本次修改后工作区特性集与已发布 `0.5.0-rc.7` 分叉，rc.7 节记的 `log`（含 `std`）/`zeroize`（含 `alloc`）/`icu_decimal`（含 `alloc`）为该 tag 时点事实
+- **构建**：`trait-kit-macros`（主 crate dev-dep 与 `examples/`）、`macros/` 的 dev-dep `trait-kit` 三处 path 依赖补显式 `default-features = false`，与其余依赖的声明风格统一（两者 default 特性均为空集，行为无变化）
+
 ## [`0.5.0-rc.8`] - 2026-10-08
 
-### Removed
+> ⚠️ **该版本已从 crates.io 撤回（yanked）**：仓库无 `v0.5.0-rc.8` tag；工作区 `Cargo.toml` 版本与 crates.io `max_version` 均为 **0.5.0-rc.7**。本节保留发布记录（目录更名、ICU4X 组件拆分等变更存在于当前工作区，未随任何未撤回版本发布）；其中 `from_json_str` 删除已在后续提交回退，见下。
 
-- **公共 API 收缩：`BuildReport::from_json_str` 删除**：`src/kit/report.rs` 中仅测试使用的便捷反序列化方法移除，`docs/API_REFERENCE.md` 方法表同步；消费方如需按字段读取，可对 `to_json()` 输出自行反序列化。
+### Removed（后已回退）
+
+- **公共 API 收缩：`BuildReport::from_json_str` 删除（已回退）**：该方法（`src/kit/report.rs`，doc 注释标注为 downstream round-trip 断言的 test helper）删除后，因消费方断言需要又被加回；`docs/API_REFERENCE.md` 方法表与代码一致、保持列出。消费方如需按字段读取，可对 `to_json()` 输出自行反序列化。
 
 ### Changed
 
 - **proc-macro 子 crate 目录更名**：`trait-kit-macros/` → `macros/`，与 base 其余仓的子 crate 目录惯例（confers/oxcache/dbnexus/limiteron/sdforge 均为 `macros/`）统一。包名 `trait-kit-macros` 不变（crates.io 已注册且下游按名依赖），发布产物与用户可见 API 零影响；同步更新 workspace `members` 与两处 `path` 依赖（主 crate 与 `examples/`）、`release.yml` 发布步骤的 `working-directory`、`typos.toml` 的 trybuild 夹具豁免 glob、`deny.toml` 注释指向，以及 README/README_EN 的目录表格与测试规模引用
 - **死代码清理与重复收敛**：失读项删除并以门控精确化替代失真标记；成对桩抽取收敛构建流水线与生命周期收集重复。
 - **依赖裁剪（ICU4X 按组件引入）**：`icu` 门面 crate 改为 `icu_collator` / `icu_datetime` / `icu_decimal` / `icu_locale` / `icu_plurals` 五个组件子 crate（全部 `default-features = false` + 显式 `compiled_data`）——门面 crate 无条件依赖全部 13 个组件，其 `compiled_data` 会把 casemap/segmenter/list 等无关组件的代码与编译数据一并编进产物。裁剪后 `i18n` 单开的依赖图 75 → 66 个包（减少 9 个：`icu`、`icu_casemap(_data)`、`icu_segmenter(_data)`、`icu_list(_data)`、`icu_properties_data`，以及 `icu_list` 带入的 `regex-automata`；无新增包）；以相同声明的基线工程实测，这些 crate 的 release rlib 合计 27,300,650 字节（27.30 MB / 26.04 MiB；逐项为十进制 MB：`icu_segmenter_data` 12.36M、`icu_segmenter` 8.70M、`regex-automata` 2.10M、`icu_properties_data` 1.86M、`icu_list` 0.92M、`icu_casemap` 0.79M、`icu_list_data` 0.45M、`icu_casemap_data` 0.09M、`icu` 0.02M，逐项四舍五入，合计以字节数为准）。注：`--all-features` 下 `icu_properties_data` 仍会经 `reqwest → url → idna → idna_adapter` 链进入依赖图（与本 crate 的 i18n 无关，`icu_collator` 未开启 `icu_properties/compiled_data`）。`i18n` 对外 API 与行为不变（数字/日期/复数/排序仍走同一批组件，仅内部导入路径 `icu::*` → `icu_*::*`）
-- **依赖**：`syn` 关闭 `full`（三个 derive 只解析 `DeriveInput` 与 `#[module(...)]` 属性，`derive` 特性即可覆盖，不再编译 `Item`/`File` 整树 AST）；`cargo update` 刷新锁定版本（`trybuild` 1.0.121 → 1.0.122、`zeroize` 1.9.0 → 1.9.1 及 `tokio`/`hyper`/`zerocopy` 等传递依赖）；自研依赖 `confers` / `confers-macros` 保持 0.6.0-rc.6 不动（版本定值归发布链）
+- **依赖**：`syn` 关闭 `full`（三个 derive 只解析 `DeriveInput` 与 `#[module(...)]` 属性，`derive` 特性即可覆盖，不再编译 `Item`/`File` 整树 AST）；`cargo update` 刷新锁定版本（`trybuild` 1.0.121 → 1.0.122、`zeroize` 1.9.0 → 1.9.1 及 `tokio`/`hyper`/`zerocopy` 等传递依赖）；自研依赖的声明 req 不动（版本定值归发布链）：`confers` 保持 0.6.0-rc.6；`confers-macros` 不在本仓声明面内，作为 confers 的传递依赖由 confers 0.6.0-rc.6 的 `^0.6.0-rc.6` req 解析到已发布的 0.6.0-rc.7（`Cargo.lock`）
 - **CI**：actions 升到最新——`dtolnay/rust-toolchain`（1.97.1 分支头 `cf201f3`）、`taiki-e/install-action` v2.87.27、`actions/upload-artifact` v7.0.2、`github/codeql-action` v4.38.3
 
 ### Fixed
@@ -406,7 +414,9 @@
 - `TypeMap` 类型安全存储（以 `TypeId` 为键）
 - 依赖图验证：环检测 + 拓扑排序构建
 
-[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.6...HEAD
+[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.7...HEAD
+[0.5.0-rc.8]: https://crates.io/crates/trait-kit/0.5.0-rc.8
+[0.5.0-rc.7]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.6...v0.5.0-rc.7
 [0.5.0-rc.6]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.5...v0.5.0-rc.6
 [0.5.0-rc.5]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.4...v0.5.0-rc.5
 [0.5.0-rc.4]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.2...v0.5.0-rc.4

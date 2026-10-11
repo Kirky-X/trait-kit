@@ -1,6 +1,6 @@
 # trait-kit-examples
 
-本示例集合覆盖 `trait-kit` 核心 API 与 13 个 feature 门控的用法（`probe` / `report` / `compose` / `presets` / `presets-remote` / `version-negotiation` 暂无专属示例）。每个示例都是独立的二进制，并通过 `required-features` 门控，仅在启用对应 feature 时才会编译。
+本示例集合覆盖 `trait-kit` 核心 API 与 13 个 feature 门控的用法（`probe` / `report` / `compose` / `presets` / `presets-remote` / `version-negotiation` 暂无专属示例）。每个示例都是独立的二进制；20 个示例中 17 个通过 `required-features` 门控（仅在启用对应 feature 时才会编译），`default_basic` / `conditional` / `factory` 3 个无门控、默认即可运行。
 
 最低支持 Rust 版本（MSRV）：**1.97.1+**。
 

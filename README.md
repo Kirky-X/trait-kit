@@ -75,7 +75,7 @@
 </tr>
 <tr>
 <td width="50%" style="vertical-align:top; padding: 12px">🧱 <b>极简默认依赖</b><br><span style="color:#64748B"><code>default = []</code> 不启用任何可选 feature；仅固定携带 Fluent 翻译（<code>fluent-bundle</code> / <code>unic-langid</code>）与 <code>log</code> 门面 3 个必选依赖，<code>confers</code>、<code>serde</code>、<code>serde_json</code>、<code>icu_*</code>（ICU4X 组件）等其余依赖全部经 feature 门控可选。</span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">🚫 <b>默认禁用 unsafe</b><br><span style="color:#64748B"><code>#![deny(unsafe_code)]</code> 全 crate 强制；仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：<code>RefCell</code> / <code>RwLock</code> 各 1）。</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🚫 <b>默认禁用 unsafe</b><br><span style="color:#64748B"><code>#![deny(unsafe_code)]</code> 全 crate 强制；生产代码仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：<code>RefCell</code> / <code>RwLock</code> 各 1），另有 1 处测试模块豁免（<code>src/kit/config.rs</code> 的 zeroize spare-capacity 断言）。</span></td>
 </tr>
 </table>
 
@@ -464,7 +464,7 @@ kit.inject_shared::<DbConfig>();             // 注入到 DbConfig
 | 示例验证 | `examples/`（20 个） | 每个示例独立运行，断言失败即 panic |
 | 基准测试 | `benches/kit_bench.rs` | criterion 基准（需 `toggle` feature） |
 
-测试规模：主 crate `src/` 与 `tests/` 共 **922** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `macros/tests/` 6 个。
+测试规模：主 crate `src/` 与 `tests/` 共 **932** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `macros/tests/` 6 个。
 
 ### 常用命令（与 CI 一致）
 
@@ -493,7 +493,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 ## 📊 性能
 
-性能来自设计层面：typestate 把依赖图验证全部前置到 `build()`，`Kit<Ready>` 上的能力检索是 `TypeId` 查表 + 克隆；同步 `Kit` 基于 `RefCell` 无锁设计。criterion 基准设施覆盖 build / require / config / toggle 四个热路径轴（`benches/kit_bench.rs`，基准项需 `--features toggle`）；基线（2026-09-29 安静复测）实测 `require`（≈16 ns）与裸 `Arc::clone` + `TypeId` 查找同量级，验证了"零开销能力检索"的设计目标，大结构能力建议改用 `require_ref`（借用读）。
+性能来自设计层面：typestate 把依赖图验证全部前置到 `build()`，`Kit<Ready>` 上的能力检索是 `TypeId` 查表 + 克隆；同步 `Kit` 基于 `RefCell` 无锁设计。criterion 基准设施覆盖 build / require / config / toggle 四个热路径轴（`benches/kit_bench.rs`，基准目标需 `--features toggle`，全量 7 项需 `cargo bench --features toggle,confers`——`config/write_merge_config` 依赖 `confers`，且在 `report` 开启时因记录无界累积被编译排除）；基线（2026-09-29 安静复测）实测 `require`（≈16 ns）与裸 `Arc::clone` + `TypeId` 查找同量级，验证了"零开销能力检索"的设计目标，大结构能力建议改用 `require_ref`（借用读）。
 
 基线数字、测量环境与复现命令见 [⚡ 性能基准](docs/PERFORMANCE.md)。
 
@@ -502,7 +502,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 ## 🔒 安全
 
 - **漏洞报告**：请勿通过公开 Issue 报告，使用 GitHub 私密通道 [Security Advisories](https://github.com/Kirky-X/trait-kit/security/advisories/new)（"Report a vulnerability"）。维护者承诺 48 小时内确认、7 天内给出初步评估（见 [SECURITY.md](docs/SECURITY.md)）。
-- **默认禁用 unsafe**：`#![deny(unsafe_code)]` 全 crate 强制；仅 6 处经 SAFETY 论证与 review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：`RefCell` / `RwLock` 各 1）。
+- **默认禁用 unsafe**：`#![deny(unsafe_code)]` 全 crate 强制；生产代码仅 6 处经 SAFETY 论证与 review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：`RefCell` / `RwLock` 各 1），另有 1 处测试模块豁免（`src/kit/config.rs` 的 zeroize spare-capacity 断言）。
 - **编译期排除误用**：typestate 将 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建误用前置为编译错误（trybuild UI 测试断言）；依赖图在 `build()` 时做缺失依赖与环检测。
 - **明确的线程安全边界**：同步 `Kit` 为 `!Sync`（编译器强制，见 `static_assertions` 断言），多线程用 `AsyncKit`（`Send + Sync`）。
 - **加密配置存储**（`encryption`）：XChaCha20-Poly1305 AEAD，HKDF 从主密钥与 `ModuleConfig::PATH` 派生字段密钥；`EncryptedBlob` 的 `Debug` 实现不泄露加密材料。
@@ -578,6 +578,8 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 ## 📄 许可证
 
 本项目基于 **MIT + Commons Clause** 许可证发布：MIT 主许可之上附加 Commons Clause v1.0 条件，未经许可方单独书面授权不得销售本软件；属于 source-available 许可证，商业使用需单独授权。详见 [LICENSE](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE)。
+
+发布包元数据（`Cargo.toml` 的 `license` / `license-file` 字段）当前将 `license` 声明为 `MIT`，crates.io 的版本字段与许可证徽章据此显示 `MIT`；许可条款以 LICENSE 全文为准。
 
 Copyright (c) 2026 Kirky.X🌠
 

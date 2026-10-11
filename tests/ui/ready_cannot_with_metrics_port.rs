@@ -1,0 +1,35 @@
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
+
+// Kit<Ready> cannot call with_metrics_port() — typestate enforces
+// Unbuilt-only.
+//
+// The fixture must produce exactly one error (the E0599 below). Explicit
+// `ModuleMeta` impl instead of `impl_module_meta!`: the macro is not
+// re-exported by the prelude, and a "cannot find macro" failure would
+// cascade into E0277s whose "other types implement this trait" suggestions
+// depend on which feature-gated impls exist in the current build.
+use std::sync::Arc;
+use trait_kit::kit::ports::MetricsPort;
+use trait_kit::prelude::*;
+
+struct MyModule;
+impl ModuleMeta for MyModule {
+    const NAME: &'static str = "my-module";
+}
+impl AutoBuilder for MyModule {
+    type Capability = Arc<u32>;
+    type Error = TraitKitError;
+    fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+        Ok(Arc::new(1))
+    }
+}
+
+fn main() {
+    let mut kit = Kit::new();
+    kit.register::<MyModule>().unwrap();
+    let mut ready = kit.build().unwrap();
+    let _ = &mut ready;
+    // ERROR: with_metrics_port() is only available on Kit<Unbuilt>
+    ready.with_metrics_port(None::<Arc<dyn MetricsPort>>);
+}

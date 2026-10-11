@@ -47,7 +47,7 @@
 
 ### 默认禁用 unsafe 代码
 
-整个 crate 标注 `#![deny(unsafe_code)]`，编译期强制排除未定义行为的主要来源之一。依赖图校验、类型检索等均以安全 Rust 实现。现存 6 处经 SAFETY 论证与 code review 的局部豁免（`#[allow(unsafe_code)]`）：typestate 布局断言 cast ×3（`Kit`/`AsyncKit` 的 require/factory 路径）、volatile 密钥清零 ×1、guard 生命周期重锚 ×2（`TypeMap` 的 `RefCell` 守卫与 `AsyncTypeMap` 的 `RwLock` 读守卫各 1）——每处均附 SAFETY 注释并纳入 review 门禁。
+整个 crate 标注 `#![deny(unsafe_code)]`，编译期强制排除未定义行为的主要来源之一。依赖图校验、类型检索等均以安全 Rust 实现。生产代码现存 6 处经 SAFETY 论证与 code review 的局部豁免（`#[allow(unsafe_code)]`）：typestate 布局断言 cast ×3（`Kit`/`AsyncKit` 的 require/factory 路径）、volatile 密钥清零 ×1、guard 生命周期重锚 ×2（`TypeMap` 的 `RefCell` 守卫与 `AsyncTypeMap` 的 `RwLock` 读守卫各 1）；另有 1 处测试模块豁免（`src/kit/config.rs` 的 `key_bytes_zeroize_clears_spare_capacity`，以 volatile 读校验 spare capacity 已清零）——每处均附 SAFETY 注释并纳入 review 门禁。
 
 ### 类型安全的能力检索
 

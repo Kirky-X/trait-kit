@@ -57,25 +57,21 @@ struct TraitKitConfig {
 fn main() {
     let kit = Kit::new();
 
-    // ── Step 1: Populate defaults for DbConfig (Layer 4: populate_defaults) ──
     let populated = kit.populate_defaults::<DbConfig>();
     println!("DbConfig defaults populated: {populated}");
 
     let db: DbConfig = kit.config().unwrap();
     println!("  DbConfig before inheritance: {db:?}");
 
-    // ── Step 2: Set TraitKitConfig (the shared field source) ──
     kit.set_config(TraitKitConfig {
         host: "prod.example.com".into(),
         port: 8080,
         app_name: "My Production App".into(),
     });
 
-    // ── Step 3: Extract shared fields from TraitKitConfig → overlay ──
     kit.extract_shared::<TraitKitConfig>();
     println!("\nShared fields extracted from TraitKitConfig");
 
-    // ── Step 4: Inject shared fields into DbConfig ──
     kit.inject_shared::<DbConfig>();
 
     let db_after: DbConfig = kit.config().unwrap();
@@ -83,7 +79,6 @@ fn main() {
     assert_eq!(db_after.host, "prod.example.com");
     assert_eq!(db_after.port, 8080);
 
-    // ── Step 5: Apply compile-time safe override (Layer 2: ConfigInherit) ──
     kit.merge_config::<DbConfig>(DbConfigOverride {
         host: None,       // keep inherited value
         port: Some(5432), // override port
@@ -98,7 +93,6 @@ fn main() {
     assert_eq!(db_final.max_connections, 200); // overridden
     assert_eq!(db_final.database, "app_db"); // default
 
-    // ── Step 6: RedisConfig also inherits shared fields ──
     kit.set_config(RedisConfig {
         host: "redis-default".into(),
         port: 6379,

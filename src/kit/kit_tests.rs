@@ -2064,13 +2064,11 @@ mod snapshot_tests {
             value: "original".to_string(),
         });
         kit.snapshot_config::<SnapConfig>();
-        // Modify current config
         kit.set_config(SnapConfig {
             value: "modified".to_string(),
         });
         let current: SnapConfig = kit.config().unwrap();
         assert_eq!(current.value, "modified");
-        // Restore from snapshot
         kit.restore_config::<SnapConfig>()
             .expect("restore should succeed");
         let restored: SnapConfig = kit.config().unwrap();
@@ -2646,10 +2644,8 @@ mod config_inheritance_tests {
 
         let ready = kit.build().expect("build should succeed");
 
-        // extract_shared on Ready kit
         ready.extract_shared::<TestAppConfig>();
 
-        // inject_shared on Ready kit
         ready.inject_shared::<TestDbConfig>();
 
         let db: TestDbConfig = ready.config().expect("db config should exist");
@@ -2657,7 +2653,6 @@ mod config_inheritance_tests {
         assert_eq!(db.port, 9090); // inherited
         assert_eq!(db.max_connections, 10); // unchanged
 
-        // merge_config on Ready kit
         ready.merge_config::<TestDbConfig>(TestDbConfigOverride {
             host: Some("post-merge".into()),
             ..Default::default()

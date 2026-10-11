@@ -1,0 +1,11 @@
+error[E0599]: no method named `set_config` found for struct `trait_kit::kit::Kit<trait_kit::kit::Ready>` in the current scope
+  --> tests/ui/ready_cannot_set_config.rs:32:11
+   |
+32 |     ready.set_config(42u32);
+   |           ^^^^^^^^^^
+   |
+help: there is a method `config` with a similar name, but with different arguments
+  --> src/kit/kit.rs
+   |
+   |     pub fn config<C: Clone + 'static>(&self) -> Result<C, TraitKitError> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

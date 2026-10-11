@@ -19,6 +19,10 @@ extend-exclude = [
 ]
 
 [default.extend-words]
+# ICU4X 组件 crate 的真实名字是 `writeable`（无 r），源码 import 与依赖表中的
+# 引用均为真实标识符，不是 `writable` 的拼写错误。
+writeable = "writeable"
+
 # trybuild 夹具 module_unknown_arg.rs 中故意把 `name` 写成 `nmae`，
 # 用于断言宏对未知参数的报错信息（"unknown `module` argument `nmae`; expected `name` or `deps`"）。
 # 该词在此作为「有意误拼」放行；目录级 exclude 是主要防线，此处为纵深防御。

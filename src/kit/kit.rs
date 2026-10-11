@@ -1410,7 +1410,6 @@ impl Kit {
             return;
         }
 
-        // Store shutdown callback
         let shutdown_cb: ShutdownCallback = Box::new(|caps: &TypeMap| {
             let type_id = TypeId::of::<M>();
             if let Some((_guard, cap_ref)) = caps.get_ref_by_type_id::<M::Capability>(type_id) {
@@ -1422,7 +1421,6 @@ impl Kit {
             .borrow_mut()
             .push((TypeId::of::<M>(), shutdown_cb));
 
-        // Store ready callback
         let ready_cb: ReadyCallback = Box::new(|kit: &Kit<Ready>| {
             M::on_ready(kit).map_err(|e| TraitKitError::LifecycleFailed {
                 context: M::NAME.to_string(),
@@ -2003,7 +2001,6 @@ impl<S> Kit<S> {
                     });
                 }
             };
-            // Cache in OnceLock for future require() / require_ref() calls
             if let Some(slot) = self.lazy_slots.borrow().get(&type_id) {
                 let _ = slot.cell.set(boxed);
             }
@@ -2193,27 +2190,6 @@ impl<S> Kit<S> {
 }
 
 impl Kit {
-    /// Encrypt and store a configuration value.
-    ///
-    /// Requires the `encryption` feature. Serializes `value` to JSON,
-    /// derives a per-field key from `master_key` and `C::PATH` via HKDF, then
-    /// encrypts with XChaCha20-Poly1305. The resulting nonce + ciphertext is
-    /// stored in `encrypted_configs`, separate from the plaintext `TypeMap`.
-    ///
-    /// Layer 3 of the inheritance system: the encryption key is bound to
-    /// `ModuleConfig::PATH`, so the same master key produces different field
-    /// keys for different modules.
-    ///
-    /// # Security
-    ///
-    /// `master_key` is a caller-owned `&[u8]`: this method cannot wipe the
-    /// caller's buffer, so zeroing it remains the caller's responsibility.
-    /// The internally derived per-field `field_key` and the serialized
-    /// `plaintext` are zeroed with a volatile write as soon as they are no
-    /// longer needed.
-    ///
-    /// # Errors
-    ///
     /// Encrypt and store a config value using an injected [`KeyProvider`](crate::kit::config::KeyProvider).
     /// The key is pulled from the provider at call time, never
     /// hardcoded at the call site.
@@ -2238,13 +2214,29 @@ impl Kit {
         self.set_encrypted::<C>(value, key.as_slice())
     }
 
-    /// Returns `TraitKitError::BuildFailed` if serialization, key derivation, or
-    /// encryption fails.
+    /// Encrypt and store a configuration value.
+    ///
+    /// Requires the `encryption` feature. Serializes `value` to JSON,
+    /// derives a per-field key from `master_key` and `C::PATH` via HKDF, then
+    /// encrypts with XChaCha20-Poly1305. The resulting nonce + ciphertext is
+    /// stored in `encrypted_configs`, separate from the plaintext `TypeMap`.
+    ///
+    /// Layer 3 of the inheritance system: the encryption key is bound to
+    /// `ModuleConfig::PATH`, so the same master key produces different field
+    /// keys for different modules.
+    ///
+    /// # Security
+    ///
+    /// `master_key` is a caller-owned `&[u8]`: this method cannot wipe the
+    /// caller's buffer, so zeroing it remains the caller's responsibility.
+    /// The internally derived per-field `field_key` and the serialized
+    /// `plaintext` are zeroed with a volatile write as soon as they are no
+    /// longer needed.
     ///
     /// # Errors
     ///
-    /// Propagates serialization / key-derivation / encryption failures as
-    /// `TraitKitError::BuildFailed`.
+    /// Returns `TraitKitError::BuildFailed` if serialization, key derivation, or
+    /// encryption fails.
     #[cfg(feature = "encryption")]
     pub fn set_encrypted<C>(&self, value: &C, master_key: &[u8]) -> Result<(), TraitKitError>
     where

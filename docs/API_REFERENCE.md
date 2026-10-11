@@ -146,7 +146,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `subscribe::<C>(cb)` | `reload` | 订阅热重载 |
 | `reload_config::<C>()` | `reload` | 重新加载配置（Ready 态可用；`set_config` 仅 `Kit<Unbuilt>` 可用，运行期写配置另有 `merge_config` / `populate_defaults` 等 `confers` 面方法） |
 | `enable_toggle(key, bool)` / `is_toggle_enabled(key)` | `toggle` | 运行时修改/查询 feature flag |
-| `set_toggle` / `get_toggle` / `remove_toggle` / `list_toggles` | `toggle` | 类型化开关句柄 |
+| `set_toggle` / `get_toggle` / `list_toggles` | `toggle` | 类型化开关句柄（`remove_toggle` 仅 `Kit<Unbuilt>`（`impl Kit`）提供，不在本表方法面，见上表） |
 | `get_encrypted::<C>(key)` | `encryption` | 解密检索配置 |
 | `contains_encrypted::<C>()` | `encryption` | 检查加密配置是否存在 |
 | `get_encrypted_with_version::<C>(key, expected_version)` | `encryption` | 按密钥版本解密检索 |

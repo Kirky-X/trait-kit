@@ -21,7 +21,6 @@ struct TraitKitConfig {
 fn main() {
     let kit = Kit::new();
 
-    // ── Step 1: set initial config ──────────────────────────────────────
     kit.set_config(TraitKitConfig {
         debug: false,
         log_level: "info".into(),
@@ -31,13 +30,11 @@ fn main() {
     assert_eq!(current.log_level, "info");
     println!("Step 1: initial config — debug=false, log_level=info");
 
-    // ── Step 2: snapshot the current config ─────────────────────────────
     let snapped = kit.snapshot_config::<TraitKitConfig>();
     assert!(snapped, "snapshot should succeed when config exists");
     assert!(kit.has_snapshot::<TraitKitConfig>());
     println!("Step 2: snapshot created");
 
-    // ── Step 3: override config (e.g. hot-reload scenario) ──────────────
     kit.set_config(TraitKitConfig {
         debug: true,
         log_level: "trace".into(),
@@ -47,7 +44,6 @@ fn main() {
     assert_eq!(updated.log_level, "trace");
     println!("Step 3: config overridden — debug=true, log_level=trace");
 
-    // ── Step 4: restore to snapshot ─────────────────────────────────────
     kit.restore_config::<TraitKitConfig>()
         .expect("restore should succeed");
     let restored: TraitKitConfig = kit.config().expect("config should exist after restore");
@@ -55,7 +51,6 @@ fn main() {
     assert_eq!(restored.log_level, "info");
     println!("Step 4: restored — debug=false, log_level=info");
 
-    // ── Step 5: snapshot for non-existent type returns false ────────────
     assert!(!kit.has_snapshot::<String>());
     let snapped_missing = kit.snapshot_config::<String>();
     assert!(!snapped_missing, "snapshot should fail when config missing");

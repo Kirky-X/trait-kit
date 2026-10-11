@@ -18,14 +18,26 @@ fn main() {
     // ─── 全局 I18nManager 初始化 ─────────────────────────────────────────
     // 自动检测系统语言环境（如 zh-CN、en-US）
     let mgr = I18nManager::init();
-    println!("system locale: {}", mgr.locale_tag());
+    println!(
+        "{}",
+        tr(
+            "trait-kit-example-i18n-system-locale",
+            &[("locale", mgr.locale_tag())]
+        )
+    );
 
     // ─── 消息翻译（tr 便捷函数） ─────────────────────────────────────────
     let msg = tr(
         "trait-kit-error-already-registered",
         &[("module", "my-module")],
     );
-    println!("translated message: {msg}");
+    println!(
+        "{}",
+        tr(
+            "trait-kit-example-i18n-translated-message",
+            &[("message", &msg)]
+        )
+    );
 
     // ─── 指定 locale 翻译 ────────────────────────────────────────────────
     // 注意：全局实例已初始化，init_with_locale 会直接返回现有实例；
@@ -34,43 +46,91 @@ fn main() {
         "trait-kit-error-missing-capability",
         &[("key", "database-pool")],
     );
-    println!("en translation: {en_msg}");
+    println!(
+        "{}",
+        tr(
+            "trait-kit-example-i18n-en-translation",
+            &[("message", &en_msg)]
+        )
+    );
 
     // ─── TraitKitError Display 自动本地化 ────────────────────────────────
     let err = TraitKitError::AlreadyRegistered {
         module: "auth-service",
     };
-    println!("error message: {err}");
+    println!(
+        "{}",
+        tr(
+            "trait-kit-example-i18n-error-message",
+            &[("error", &err.to_string())]
+        )
+    );
 
     let err2 = TraitKitError::MissingCapability {
         key: "cache-backend".into(),
     };
-    println!("error message: {err2}");
+    println!(
+        "{}",
+        tr(
+            "trait-kit-example-i18n-error-message",
+            &[("error", &err2.to_string())]
+        )
+    );
 
     // ─── ICU4X 本地化格式化 ──────────────────────────────────────────────
     // 英文 (US)
     let fmt_en = I18nFormatter::new("en-US").expect("en-US locale");
     let number = fmt_en.format_number(1_234_567.89).expect("format number");
-    println!("en-US number: {number}");
+    println!(
+        "{}",
+        tr(
+            "trait-kit-example-i18n-en-us-number",
+            &[("number", &number)]
+        )
+    );
 
     let date = fmt_en.format_date(2026, 7, 11).expect("format date");
-    println!("en-US date: {date}");
+    println!(
+        "{}",
+        tr("trait-kit-example-i18n-en-us-date", &[("date", &date)])
+    );
 
     // 中文 (简体)
     let fmt_zh = I18nFormatter::new("zh-CN").expect("zh-CN locale");
     let number_zh = fmt_zh.format_number(42_000.5).expect("format number zh");
-    println!("zh-CN number: {number_zh}");
+    println!(
+        "{}",
+        tr(
+            "trait-kit-example-i18n-zh-cn-number",
+            &[("number", &number_zh)]
+        )
+    );
 
     // ─── 复数规则 ────────────────────────────────────────────────────────
     let fmt_plural = I18nFormatter::new("en").expect("en locale");
     let one = fmt_plural.plural_category(1).expect("plural(1)");
     let other = fmt_plural.plural_category(5).expect("plural(5)");
-    println!("en plural: 1 -> {one:?}, 5 -> {other:?}");
+    let one_label = format!("{one:?}");
+    let other_label = format!("{other:?}");
+    println!(
+        "{}",
+        tr(
+            "trait-kit-example-i18n-en-plural",
+            &[("one", &one_label), ("other", &other_label)]
+        )
+    );
 
     // ─── 字符串排序 ──────────────────────────────────────────────────────
     let fmt_collator = I18nFormatter::new("en").expect("en locale");
     let cmp = fmt_collator.compare("apple", "banana").expect("compare");
-    println!("en collation: 'apple' vs 'banana' -> {cmp:?}");
+    let cmp_label = format!("{cmp:?}");
+    println!(
+        "{}",
+        tr(
+            "trait-kit-example-i18n-en-collation",
+            &[("cmp", &cmp_label)]
+        )
+    );
     assert!(cmp.is_lt(), "apple should sort before banana");
 
     // ─── 错误处理 ────────────────────────────────────────────────────────

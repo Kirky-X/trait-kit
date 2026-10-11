@@ -12,39 +12,46 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
+use trait_kit::i18n::tr;
 use trait_kit::kit::shutdown::{ShutdownCoordinator, ShutdownPhase};
 
 static HOOK_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn main() {
-    println!("=== ShutdownCoordinator demo ===\n");
+    println!("{}\n", tr("trait-kit-example-shutdown-title", &[]));
 
     let coord = ShutdownCoordinator::new();
 
     // ─── 阶段 1：停止接收新请求 ─────────────────────────────
     coord.register_hook(ShutdownPhase::StopRequests, || {
         HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        println!("  [phase 1] stop accepting new requests — close HTTP listener");
+        println!(
+            "  {}",
+            tr("trait-kit-example-shutdown-stop-requests-listener", &[])
+        );
     });
     coord.register_hook(ShutdownPhase::StopRequests, || {
         HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        println!("  [phase 1] mark as draining");
+        println!(
+            "  {}",
+            tr("trait-kit-example-shutdown-stop-requests-draining", &[])
+        );
     });
 
     // ─── 阶段 2：排空队列 ──────────────────────────────────
     coord.register_hook(ShutdownPhase::DrainQueue, || {
         HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        println!("  [phase 2] drain pending tasks in the message queue");
+        println!("  {}", tr("trait-kit-example-shutdown-drain-queue", &[]));
     });
 
     // ─── 阶段 3：关闭连接池 ─────────────────────────────────
     coord.register_hook(ShutdownPhase::CloseConnections, || {
         HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        println!("  [phase 3] close database connection pool");
+        println!("  {}", tr("trait-kit-example-shutdown-close-db-pool", &[]));
     });
     coord.register_hook(ShutdownPhase::CloseConnections, || {
         HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        println!("  [phase 3] close Redis connection");
+        println!("  {}", tr("trait-kit-example-shutdown-close-redis", &[]));
     });
 
     // ─── 设置超时 ──────────────────────────────────────────
@@ -52,22 +59,29 @@ fn main() {
     coord.set_global_timeout(Duration::from_secs(30));
 
     // ─── 执行关闭流程 ──────────────────────────────────────
-    println!("running shutdown...\n");
+    println!("{}\n", tr("trait-kit-example-shutdown-running", &[]));
     let results = coord.shutdown();
 
-    println!("\n--- shutdown results ---");
+    println!("\n{}", tr("trait-kit-example-shutdown-results-header", &[]));
     for r in &results.phases {
         let status = if r.is_ok() {
-            "✓ done"
+            tr("trait-kit-example-shutdown-status-done", &[])
         } else {
-            "✗ timed out"
+            tr("trait-kit-example-shutdown-status-timed-out", &[])
         };
+        let phase_debug = format!("{:?}", r.phase);
+        let elapsed = format!("{:?}", r.elapsed);
         println!(
-            "  {} ({:?}): {} (elapsed {:?})",
-            r.phase.as_str(),
-            r.phase,
-            status,
-            r.elapsed
+            "  {}",
+            tr(
+                "trait-kit-example-shutdown-result-line",
+                &[
+                    ("phase", r.phase.as_str()),
+                    ("phase_debug", &phase_debug),
+                    ("status", &status),
+                    ("elapsed", &elapsed),
+                ]
+            )
         );
     }
 
@@ -76,5 +90,11 @@ fn main() {
     assert_eq!(total_hooks, 5, "all 5 hooks should have run");
     assert!(results.is_ok(), "all phases should complete normally");
 
-    println!("\nshutdown: OK ({total_hooks} hooks executed)");
+    println!(
+        "\n{}",
+        tr(
+            "trait-kit-example-shutdown-ok",
+            &[("total_hooks", &total_hooks.to_string())]
+        )
+    );
 }

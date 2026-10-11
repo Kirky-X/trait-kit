@@ -15,6 +15,11 @@
 //! probe 敏感组（tests/ui/probe_sensitive/）：fixture 的 E0599 help 段
 //! 引用 `register_probe`（仅 probe feature 存在），故快照比对需要
 //! async + probe 同时开启——与主组分开门控。
+//!
+//! feature 门控组（tests/ui/{observer,decorator,lifecycle}_ready/）：fixture
+//! 体引用仅在该 feature 下存在的类型/方法（BuildObserver、decorate、
+//! register_lifecycle），无对应 feature 时会产生附带错误，故按 feature
+//! 分组门控。
 
 #[cfg(feature = "async")]
 #[test]
@@ -23,4 +28,10 @@ fn compile_fail_tests() {
     t.compile_fail("tests/ui/*.rs");
     #[cfg(feature = "probe")]
     t.compile_fail("tests/ui/probe_sensitive/*.rs");
+    #[cfg(feature = "observer")]
+    t.compile_fail("tests/ui/observer_ready/*.rs");
+    #[cfg(feature = "decorator")]
+    t.compile_fail("tests/ui/decorator_ready/*.rs");
+    #[cfg(feature = "lifecycle")]
+    t.compile_fail("tests/ui/lifecycle_ready/*.rs");
 }

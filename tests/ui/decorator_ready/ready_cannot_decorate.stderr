@@ -1,0 +1,7 @@
+error[E0599]: no method named `decorate` found for struct `trait_kit::kit::Kit<trait_kit::kit::Ready>` in the current scope
+  --> tests/ui/decorator_ready/ready_cannot_decorate.rs:35:11
+   |
+35 |     ready.decorate::<MyModule>(|cap| cap);
+   |           ^^^^^^^^ method not found in `trait_kit::kit::Kit<trait_kit::kit::Ready>`
+   |
+   = note: the method was found for `trait_kit::kit::Kit`

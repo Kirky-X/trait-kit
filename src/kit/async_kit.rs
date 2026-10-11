@@ -1059,9 +1059,6 @@ impl AsyncKit {
     ///
     /// # Panics
     ///
-    /// Panics if the internal `RwLock` is poisoned.
-    /// # Panics
-    ///
     /// Panics if the log port lock is poisoned.
     pub fn with_log_port(&mut self, port: impl Into<super::ports::OptionalLogPort>) {
         *self.ports.log_port.write().expect("lock poisoned") = port.into();

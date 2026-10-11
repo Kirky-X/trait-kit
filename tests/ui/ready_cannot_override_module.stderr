@@ -1,0 +1,7 @@
+error[E0599]: no method named `override_module` found for struct `trait_kit::kit::Kit<trait_kit::kit::Ready>` in the current scope
+  --> tests/ui/ready_cannot_override_module.rs:32:11
+   |
+32 |     ready.override_module::<MyModule>(Arc::new(2));
+   |           ^^^^^^^^^^^^^^^ method not found in `trait_kit::kit::Kit<trait_kit::kit::Ready>`
+   |
+   = note: the method was found for `trait_kit::kit::Kit`

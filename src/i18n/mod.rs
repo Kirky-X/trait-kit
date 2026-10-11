@@ -453,6 +453,10 @@ mod tests {
     /// 守卫：自硬编码接入的键在 EN/ZH 束中按预期渲染（FTL 行语法错误会
     /// 被 Fluent 静默降级，此处逐字断言以防回退到 key 本身）。
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "键表随接入批次增长，守卫需在同一处逐键断言 EN/ZH 渲染结果"
+    )]
     fn bundle_hardcoded_i18n_keys_render_in_en_and_zh() {
         for (key, args, en, zh) in [
             (
@@ -518,6 +522,65 @@ mod tests {
                  register_confers_config(kit, provider) first",
                 "ConfersConfigModule 构建时未注入 provider；\
                  请先调用 register_confers_config(kit, provider)",
+            ),
+            (
+                "trait-kit-example-shutdown-title",
+                &[][..],
+                "=== ShutdownCoordinator demo ===",
+                "=== ShutdownCoordinator 示例 ===",
+            ),
+            (
+                "trait-kit-example-shutdown-results-header",
+                &[][..],
+                "--- shutdown results ---",
+                "--- 关闭结果 ---",
+            ),
+            (
+                "trait-kit-example-shutdown-result-line",
+                &[
+                    ("phase", "stop_requests"),
+                    ("phase_debug", "StopRequests"),
+                    ("status", "done"),
+                    ("elapsed", "1.2ms"),
+                ][..],
+                "stop_requests (StopRequests): done (elapsed 1.2ms)",
+                "stop_requests (StopRequests): done (耗时 1.2ms)",
+            ),
+            (
+                "trait-kit-example-shutdown-status-done",
+                &[][..],
+                "✓ done",
+                "✓ 完成",
+            ),
+            (
+                "trait-kit-example-shutdown-ok",
+                &[("total_hooks", "5")][..],
+                "shutdown: OK (5 hooks executed)",
+                "shutdown: OK (共执行 5 个钩子)",
+            ),
+            (
+                "trait-kit-example-i18n-system-locale",
+                &[("locale", "zh-cn")][..],
+                "system locale: zh-cn",
+                "系统 locale: zh-cn",
+            ),
+            (
+                "trait-kit-example-i18n-en-us-number",
+                &[("number", "1,234,567.89")][..],
+                "en-US number: 1,234,567.89",
+                "en-US 数字: 1,234,567.89",
+            ),
+            (
+                "trait-kit-example-i18n-en-plural",
+                &[("one", "One"), ("other", "Other")][..],
+                "en plural: 1 -> One, 5 -> Other",
+                "en 复数: 1 -> One, 5 -> Other",
+            ),
+            (
+                "trait-kit-example-i18n-en-collation",
+                &[("cmp", "Less")][..],
+                "en collation: 'apple' vs 'banana' -> Less",
+                "en 排序: 'apple' vs 'banana' -> Less",
             ),
         ] {
             assert_eq!(
