@@ -756,13 +756,17 @@ impl AsyncKit {
             let mut queued: std::collections::VecDeque<QueuedBuild> =
                 std::collections::VecDeque::new();
             for type_id in layer {
-                let module_name = self.graph.name_of(type_id).unwrap_or("<unknown>");
+                let module_name = self.graph.name_of(type_id);
                 let build_fn =
                     builders
                         .remove(&type_id)
                         .ok_or_else(|| TraitKitError::MissingCapability {
-                            key: module_name.to_string(),
+                            key: module_name.map_or_else(
+                                || crate::i18n::tr("trait-kit-diag-unknown", &[]),
+                                str::to_string,
+                            ),
                         })?;
+                let module_name = module_name.unwrap_or("<unknown>");
                 // Observer: notify build start when the future is queued.
                 self.notify_build_start(module_name);
                 let started_at = if timing_enabled {
@@ -806,7 +810,10 @@ impl AsyncKit {
                     }
                     Err(e) => {
                         let err = TraitKitError::BuildFailed {
-                            context: module_name.to_string(),
+                            context: self.graph.name_of(type_id).map_or_else(
+                                || crate::i18n::tr("trait-kit-diag-unknown", &[]),
+                                str::to_string,
+                            ),
                             source: e,
                         };
                         self.notify_build_error(module_name, &err);
@@ -3811,7 +3818,7 @@ mod async_lifecycle_tests {
         assert_eq!(
             ASYNC_LC_SHUTDOWN.load(Ordering::SeqCst),
             before + 1,
-            "shutdown_async() 应恰好执行一次 async on_shutdown"
+            "shutdown_async() must run the async on_shutdown exactly once"
         );
     }
 
@@ -3862,7 +3869,7 @@ mod async_lifecycle_tests {
         assert_eq!(
             ONE_SHOT_COUNT.load(Ordering::SeqCst),
             1,
-            "第二次 shutdown_async() 必须 no-op（钩子已 drain），on_shutdown 恰好执行一次"
+            "the second shutdown_async() must be a no-op (hooks already drained); on_shutdown runs exactly once"
         );
     }
 
@@ -3944,7 +3951,7 @@ mod async_lifecycle_tests {
         assert_eq!(
             order,
             vec!["dependent", "dep"],
-            "依赖者（dependent）必须先于被依赖者（dep）执行 on_shutdown（逆拓扑序）"
+            "the dependent must run on_shutdown before the dep (reverse topological order)"
         );
     }
 }
@@ -5160,11 +5167,11 @@ mod concurrency_tests {
         };
         assert!(
             err.to_string().contains("ver-provider"),
-            "错误应指名提供方: {err}"
+            "the error must name the provider: {err}"
         );
         assert!(
             err.to_string().contains("1.2.0") && err.to_string().contains("2.0.0"),
-            "错误应同时携带 required/provided 版本: {err}"
+            "the error must carry both required/provided versions: {err}"
         );
     }
 
@@ -5175,7 +5182,7 @@ mod concurrency_tests {
         // （仅版本要求、无依赖边时——与 sync Kit 语义一致）。
         let mut kit = AsyncKit::new();
         kit.register::<VerSatisfiedConsumer>().expect("consumer");
-        let kit = block_on(kit.build()).expect("未声明提供方 → 协商跳过");
+        let kit = block_on(kit.build()).expect("undeclared provider -> negotiation skipped");
         let _ = kit;
     }
 }
@@ -6156,11 +6163,11 @@ mod async_reload_tests {
         });
 
         kit.reload_config::<PingCfg>()
-            .expect("panic 应被隔离，reload_config 正常返回");
+            .expect("the panic must be isolated and reload_config must return normally");
         assert_eq!(
             notified.load(Ordering::SeqCst),
             1,
-            "panic 之后的订阅者仍应收到本次通知"
+            "subscribers must still receive this notification after the panic"
         );
     }
 
@@ -6182,7 +6189,7 @@ mod async_reload_tests {
         assert_eq!(
             observed.load(Ordering::SeqCst),
             RelayCfg::load().expect("load").v as usize,
-            "回调内经 config::<C>() 应读到新值"
+            "config::<C>() inside the callback must read the new value"
         );
     }
 

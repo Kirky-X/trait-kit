@@ -53,25 +53,28 @@ mod i18n_shutdown_e2e {
         let result = coord.shutdown();
         assert!(
             !result.phases[0].is_ok(),
-            "StopRequests 累计耗时超过 1ms 阶段超时，应标记 timed_out"
+            "StopRequests cumulative time over the 1ms phase timeout should be marked timed_out"
         );
         assert!(
             !SKIPPED.load(Ordering::SeqCst),
-            "超时后本阶段剩余钩子应被跳过"
+            "remaining hooks in the phase should be skipped after a timeout"
         );
-        assert!(result.phases[1].is_ok(), "DrainQueue 无钩子应正常完成");
+        assert!(
+            result.phases[1].is_ok(),
+            "DrainQueue with no hooks should complete normally"
+        );
 
         let err = result
             .into_result()
-            .expect_err("存在超时阶段时应返回 ShutdownTimedOut");
+            .expect_err("a timed-out phase should yield ShutdownTimedOut");
         let msg = err.to_string();
         assert!(
             msg.contains("优雅关闭"),
-            "zh locale 下 Display 应走 zh 目录：got '{msg}'"
+            "the zh locale Display should use the zh catalog: got '{msg}'"
         );
         assert!(
             msg.contains("stop_requests"),
-            "超时阶段名 stop_requests 应嵌入消息：got '{msg}'"
+            "the timed-out phase name stop_requests should be embedded in the message: got '{msg}'"
         );
     }
 

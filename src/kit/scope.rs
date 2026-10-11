@@ -470,16 +470,16 @@ mod tests {
         let err2 = scope.require::<ScopeFailModule>().unwrap_err();
         assert!(
             matches!(err2, TraitKitError::BuildFailed { .. }),
-            "第二次 require 应重试 builder 并返回 BuildFailed，got {err2:?}"
+            "the second require must retry the builder and return BuildFailed, got {err2:?}"
         );
         assert!(
             !matches!(err2, TraitKitError::MissingCapability { .. }),
-            "第二次 require 不得退化为 MissingCapability"
+            "the second require must not degrade to MissingCapability"
         );
         assert_eq!(
             err1.to_string(),
             err2.to_string(),
-            "两次 require 的错误信息应一致"
+            "the two require calls must report the same error message"
         );
     }
 
@@ -533,7 +533,7 @@ mod tests {
                 err,
                 TraitKitError::BuildFailed { ref context, .. } if context == "cyc-m"
             ),
-            "外层 require 应返回 BuildFailed（内层为 MissingCapability），got {err:?}"
+            "the outer require must return BuildFailed (inner is MissingCapability), got {err:?}"
         );
     }
 

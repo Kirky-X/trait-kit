@@ -108,7 +108,7 @@ mod lifecycle_hooks_e2e {
         assert_eq!(
             order,
             vec!["base-mod", "mid-mod", "top-mod"],
-            "on_ready 应按拓扑序执行：被依赖者先 ready"
+            "on_ready should run in topo order: dependencies ready first"
         );
     }
 
@@ -193,7 +193,7 @@ mod lifecycle_hooks_e2e {
         assert_eq!(
             SHUTDOWN_COUNT.load(Ordering::SeqCst),
             2,
-            "中间模块 on_shutdown panic 后，其余两个模块回调仍应执行"
+            "after a middle module's on_shutdown panics, the other two modules' callbacks should still run"
         );
     }
 }
@@ -255,16 +255,20 @@ mod health_defensive_e2e {
         let ready = kit.build().unwrap();
 
         let report = ready.health_report();
-        assert_eq!(report.len(), 2, "report 应覆盖全部已注册 checker");
+        assert_eq!(
+            report.len(),
+            2,
+            "the report should cover all registered checkers"
+        );
 
         let ghost = report
             .iter()
             .find(|(name, _)| *name == "ghost-mod")
-            .expect("ghost-mod checker 应出现在 report 中");
+            .expect("the ghost-mod checker should appear in the report");
         match &ghost.1 {
             HealthStatus::Unhealthy { detail } => assert_eq!(
                 detail, "capability not found",
-                "未注册模块的 checker 应命中防御分支"
+                "an unregistered module's checker should hit the defensive branch"
             ),
             other => panic!("expected Unhealthy, got: {other:?}"),
         }
@@ -272,8 +276,11 @@ mod health_defensive_e2e {
         let live = report
             .iter()
             .find(|(name, _)| *name == "live-mod")
-            .expect("live-mod checker 应出现在 report 中");
-        assert!(live.1.is_healthy(), "已注册模块应如实上报 Healthy");
+            .expect("the live-mod checker should appear in the report");
+        assert!(
+            live.1.is_healthy(),
+            "a registered module should report Healthy honestly"
+        );
     }
 }
 
@@ -336,7 +343,7 @@ mod observer_registration_order_e2e {
         assert_eq!(
             entries,
             vec!["first", "second", "third"],
-            "三个 observer 应按注册序全部收到 on_module_built"
+            "all three observers should receive on_module_built in registration order"
         );
     }
 }

@@ -90,25 +90,25 @@ fn e2e_async_build_future_drop_is_cancel_safe() {
         let polled = pfut.as_mut().poll(&mut cx);
         assert!(
             matches!(polled, Poll::Pending),
-            "挂起模块应使 build future 返回 Pending"
+            "a suspended module should make the build future return Pending"
         );
         assert_eq!(
             ASK13_STARTED.load(Ordering::SeqCst),
             1,
-            "被取消前模块异步体已开始执行一次"
+            "the module's async body ran once before cancellation"
         );
     } // ← 此处 drop 构建 future（连带消费掉的 AsyncKit 一起释放）
 
     assert_eq!(
         ASK13_COMPLETED.load(Ordering::SeqCst),
         0,
-        "future 被 drop 后异步体不得完成（无半更新状态外泄）"
+        "the async body must not complete after the future is dropped (no half-updated state leaks)"
     );
 
     // 重试构建：同一模块定义在全新 AsyncKit 上重试可成功（cancel-safe）。
     let mut retry = AsyncKit::new();
     retry.register::<CancelMod>().unwrap();
-    let ready = block_on(retry.build()).expect("重试 build 应成功");
+    let ready = block_on(retry.build()).expect("the retry build should succeed");
     let cap = ready.require::<CancelMod>().unwrap();
     assert_eq!(cap.v, 1);
     assert_eq!(ASK13_STARTED.load(Ordering::SeqCst), 2);
@@ -141,11 +141,11 @@ fn e2e_async_kit_decorate_matches_sync_semantics() {
     // 多装饰器按注册顺序洋葱式叠加（与 sync DEC-03 同口径）。
     kit.decorate::<AsyncDecoMod>(|cap: std::sync::Arc<u32>| std::sync::Arc::new(*cap + 1));
     kit.decorate::<AsyncDecoMod>(|cap: std::sync::Arc<u32>| std::sync::Arc::new(*cap * 100));
-    let ready = block_on(kit.build()).expect("build 应成功");
+    let ready = block_on(kit.build()).expect("build should succeed");
     assert_eq!(
         *ready.require::<AsyncDecoMod>().unwrap(),
         800,
-        "async 构建路径应按注册顺序装饰（7+1)*100"
+        "the async build path decorates in registration order ((7+1)*100)"
     );
 }
 
@@ -239,7 +239,7 @@ mod async_health_isomorphism_e2e {
         let mut ak = AsyncKit::new();
         ak.register::<IsoAsyncMod>().unwrap();
         ak.register_health_check::<IsoAsyncMod>();
-        let akr = block_on(ak.build()).expect("async build 应成功");
+        let akr = block_on(ak.build()).expect("the async build should succeed");
         let async_report = akr.health_report();
 
         // 同构断言：报告形状与状态判定一致（模块名不同）。
@@ -248,14 +248,14 @@ mod async_health_isomorphism_e2e {
         assert_eq!(
             sync_report[0].1.is_healthy(),
             async_report[0].1.is_healthy(),
-            "同逻辑 checker 在两条产品线上应产出同型判定"
+            "identical-logic checkers should produce the same kind of verdict on both pipelines"
         );
         assert!(async_report[0].1.is_healthy());
 
         // 未注册 checker 错误口径：与 sync 侧同型（MissingConfig）。
         let err = akr
             .health_check::<GhostAsyncMod>()
-            .expect_err("未注册 checker 应返回错误");
+            .expect_err("an unregistered checker should return an error");
         match err {
             TraitKitError::MissingConfig { key } => assert_eq!(key, "ghost-async-mod"),
             other => panic!("expected MissingConfig, got: {other}"),
@@ -307,20 +307,20 @@ mod async_shutdown_e2e {
         let mut kit = AsyncKit::new();
         kit.register::<ShutdownE2eMod>().unwrap();
         kit.register_lifecycle::<ShutdownE2eMod>();
-        let ready = block_on(kit.build()).expect("build 应成功");
+        let ready = block_on(kit.build()).expect("build should succeed");
 
         block_on(ready.shutdown_async());
         assert_eq!(
             E2E_ASYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst),
             before + 1,
-            "shutdown_async() 应恰好执行一次 async on_shutdown"
+            "shutdown_async() should run the async on_shutdown exactly once"
         );
 
         block_on(ready.shutdown_async());
         assert_eq!(
             E2E_ASYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst),
             before + 1,
-            "shutdown_async() 应为 one-shot（二次调用 no-op）"
+            "shutdown_async() should be one-shot (a second call is a no-op)"
         );
     }
 }
@@ -416,7 +416,7 @@ mod shutdown_bridge_e2e {
         kit.register::<BridgeUp>().unwrap();
         kit.register_lifecycle::<BridgeDown>();
         kit.register_lifecycle::<BridgeUp>();
-        let ready = block_on(kit.build()).expect("build 应成功");
+        let ready = block_on(kit.build()).expect("build should succeed");
 
         let coord = AsyncShutdownCoordinator::new();
         // 模拟宿主 CancellationToken：StopRequests 阶段翻转令牌。
@@ -438,31 +438,35 @@ mod shutdown_bridge_e2e {
         // 桥接：Kit 组件清理转移进 CloseConnections 阶段的 local 槽位。
         let bridged = ready
             .register_shutdown_into(&coord, ShutdownPhase::CloseConnections)
-            .expect("桥接应成功");
-        assert_eq!(bridged, 2, "两个生命周期模块的清理钩子被转移");
+            .expect("bridging should succeed");
+        assert_eq!(
+            bridged, 2,
+            "the cleanup hooks of both lifecycle modules are transferred"
+        );
 
-        let result = block_on(coord.shutdown_local()).expect("shutdown_local 应成功");
+        let result = block_on(coord.shutdown_local()).expect("shutdown_local should succeed");
         assert!(result.is_ok());
         assert_eq!(
             result.phases.len(),
             3,
-            "每阶段一条结果,与 shutdown() 形状一致"
+            "one result per phase, same shape as shutdown()"
         );
         assert_eq!(
             *EVENTS.lock().unwrap(),
             vec!["token-cancelled", "coord-close", "bridge-up", "bridge-down"],
-            "停机顺序:令牌 → 宿主钩子 → 桥接组件清理(依赖者先)"
+            "shutdown order: token -> host hooks -> bridged component cleanup (dependents first)"
         );
 
         // 桥接即所有权转移:两条既有/新增路径二次调用均为 no-op,
         // 组件清理 exactly-once。
         block_on(ready.shutdown_async());
-        let second = block_on(coord.shutdown_local()).expect("二次 shutdown_local 应成功");
+        let second =
+            block_on(coord.shutdown_local()).expect("the second shutdown_local should succeed");
         assert!(second.is_ok());
         assert_eq!(
             EVENTS.lock().unwrap().len(),
             4,
-            "桥接后 shutdown_async() 与二次 shutdown_local() 均为 no-op"
+            "after bridging, shutdown_async() and the second shutdown_local() are both no-ops"
         );
 
         // drop 兜底最后发生:桥接清理先于能力 drop(双机制顺序)。
@@ -471,7 +475,7 @@ mod shutdown_bridge_e2e {
         assert_eq!(
             events.last(),
             Some(&"capability-dropped"),
-            "drop 兜底在桥接清理之后"
+            "the drop fallback runs after bridged cleanup"
         );
     }
 }
@@ -580,18 +584,21 @@ fn e2e_async_build_requires_dependency_and_reads_config() {
     kit.register::<DiChain8>().expect("register");
     kit.register::<DiChain9>().expect("register");
     kit.register::<AsyncDiCfgConsumer>().expect("register");
-    let ready = block_on(kit.build()).expect("async 依赖链 build 应成功");
+    let ready = block_on(kit.build()).expect("the async dependency chain build should succeed");
 
     // 10 层链逐层 require：链尾能力 = 1 + 9 次自增。
     assert_eq!(
         *ready.require::<DiChain9>().unwrap(),
         10,
-        "10 层异步链应按拓扑序逐层注入构建"
+        "a 10-layer async chain should build layer by layer in topo order"
     );
     // 依赖 + config 同用：能力含两者数据。
     let (dep_val, cfg_val) = *ready.require::<AsyncDiCfgConsumer>().unwrap();
-    assert_eq!(dep_val, 3, "DiChain2 能力 = 1 + 2 次自增");
-    assert_eq!(cfg_val, 777, "异步构建体内应读到 Unbuilt 态 set_config 值");
+    assert_eq!(dep_val, 3, "DiChain2 capability = 1 + 2 increments");
+    assert_eq!(
+        cfg_val, 777,
+        "the async build body should read the Unbuilt-state set_config value"
+    );
 }
 
 // ─── AsyncKit::register_if 真/假双分支 + 已注册冲突 ─────────────────
@@ -628,21 +635,27 @@ fn e2e_async_register_if_true_false_and_conflict() {
     let mut kit = AsyncKit::new();
     let registered = kit
         .register_if::<RegisterIfOn>(|_k| true)
-        .expect("register_if 不应返回错误");
-    assert!(registered, "谓词真应返回 true（已注册）");
-    let ready = block_on(kit.build()).expect("build 应成功");
+        .expect("register_if should not return an error");
+    assert!(
+        registered,
+        "a true predicate should return true (registered)"
+    );
+    let ready = block_on(kit.build()).expect("build should succeed");
     assert_eq!(*ready.require::<RegisterIfOn>().unwrap(), 1);
 
     // 谓词假：跳过注册，build 后 require 报缺失。
     let mut skipped = AsyncKit::new();
     let registered = skipped
         .register_if::<RegisterIfOff>(|_k| false)
-        .expect("register_if 不应返回错误");
-    assert!(!registered, "谓词假应返回 false（跳过）");
-    let ready = block_on(skipped.build()).expect("build 应成功");
+        .expect("register_if should not return an error");
+    assert!(
+        !registered,
+        "a false predicate should return false (skipped)"
+    );
+    let ready = block_on(skipped.build()).expect("build should succeed");
     let err = ready
         .require::<RegisterIfOff>()
-        .expect_err("跳过注册的模块 require 应报缺失");
+        .expect_err("requiring a module skipped at registration should report a miss");
     assert!(matches!(err, TraitKitError::MissingCapability { .. }));
 
     // 已注册模块再次 register_if（谓词真）→ AlreadyRegistered。
@@ -650,7 +663,7 @@ fn e2e_async_register_if_true_false_and_conflict() {
     dup.register::<RegisterIfOn>().unwrap();
     let err = dup
         .register_if::<RegisterIfOn>(|_k| true)
-        .expect_err("重复注册应返回错误");
+        .expect_err("duplicate registration should return an error");
     assert!(matches!(err, TraitKitError::AlreadyRegistered { .. }));
 }
 
@@ -694,7 +707,7 @@ fn e2e_async_factory_fresh_instances_and_error_propagation() {
     // 失败模块仅以类型出现、不入注册表。
     let mut kit = AsyncKit::new();
     kit.register::<FactoryFreshMod>().unwrap();
-    let ready = block_on(kit.build()).expect("build 应成功");
+    let ready = block_on(kit.build()).expect("build should succeed");
 
     // require 单例语义（对照）。
     let singleton_first = ready.require::<FactoryFreshMod>().unwrap();
@@ -703,19 +716,22 @@ fn e2e_async_factory_fresh_instances_and_error_propagation() {
 
     // factory 非单例：两次调用产出不同实例，计数器各自递增。
     let produce = ready.factory::<FactoryFreshMod>();
-    let a = block_on(produce()).expect("第一次 factory 调用应成功");
-    let b = block_on(produce()).expect("第二次 factory 调用应成功");
-    assert_ne!(*a, *b, "factory 每次调用应执行构建体（非缓存单例）");
+    let a = block_on(produce()).expect("the first factory call should succeed");
+    let b = block_on(produce()).expect("the second factory call should succeed");
+    assert_ne!(
+        *a, *b,
+        "each factory call should run the build body (not a cached singleton)"
+    );
 
     // 失败传播：context==NAME、source 下探原始错误文本。
     let failing = ready.factory::<FactoryFailingMod>();
-    let err = block_on(failing()).expect_err("factory 构建失败应返回错误");
+    let err = block_on(failing()).expect_err("a failing factory build should return an error");
     match err {
         TraitKitError::BuildFailed { context, source } => {
             assert_eq!(context, "factory-failing-mod");
             assert!(
                 source.to_string().contains("factory boom"),
-                "source 应下探原错误文本：got '{source}'"
+                "the source should drill down to the original error text: got '{source}'"
             );
         }
         other => panic!("expected BuildFailed, got: {other}"),
@@ -821,11 +837,11 @@ fn e2e_async_max_concurrency_zero_clamps_to_one() {
     register_flux(&mut kit);
     kit.with_max_concurrency(0);
     reset_flux_counters();
-    block_on(kit.build()).expect("钳位档 build 应成功");
+    block_on(kit.build()).expect("the clamp-tier build should succeed");
     assert_eq!(
         E2E_PEAK.load(Ordering::SeqCst),
         1,
-        "with_max_concurrency(0) 应钳位为 1（并发峰值==1）"
+        "with_max_concurrency(0) should clamp to 1 (peak concurrency == 1)"
     );
 
     // 档位二：limit=1 → 峰值同样为 1。
@@ -833,17 +849,21 @@ fn e2e_async_max_concurrency_zero_clamps_to_one() {
     register_flux(&mut kit);
     kit.with_max_concurrency(1);
     reset_flux_counters();
-    block_on(kit.build()).expect("limit=1 档 build 应成功");
-    assert_eq!(E2E_PEAK.load(Ordering::SeqCst), 1, "limit=1 时峰值应为 1");
+    block_on(kit.build()).expect("the limit=1 tier build should succeed");
+    assert_eq!(
+        E2E_PEAK.load(Ordering::SeqCst),
+        1,
+        "the peak should be 1 when limit=1"
+    );
 
     // 档位三：默认（无限制）→ 峰值超过 1（挂起点交错暴露并发）。
     let mut kit = AsyncKit::new();
     register_flux(&mut kit);
     reset_flux_counters();
-    block_on(kit.build()).expect("默认档 build 应成功");
+    block_on(kit.build()).expect("the default-tier build should succeed");
     assert!(
         E2E_PEAK.load(Ordering::SeqCst) > 1,
-        "默认无限制时并发峰值应大于 1：got {}",
+        "peak concurrency should exceed 1 when unlimited: got {}",
         E2E_PEAK.load(Ordering::SeqCst)
     );
 }
@@ -885,26 +905,32 @@ fn e2e_async_graph_export_dot_and_mermaid() {
     let mut kit = AsyncKit::new();
     kit.register::<GraphExportDep>().unwrap();
     kit.register::<GraphExportConsumer>().unwrap();
-    let ready = block_on(kit.build()).expect("build 应成功");
+    let ready = block_on(kit.build()).expect("build should succeed");
 
     let dot = ready.graph_dot();
-    assert!(dot.contains("digraph"), "DOT 应含 digraph 头：{dot}");
+    assert!(
+        dot.contains("digraph"),
+        "the DOT output should contain the digraph header: {dot}"
+    );
     assert!(dot.contains("graph-export-dep") && dot.contains("graph-export-consumer"));
     assert!(
         dot.contains("graph-export-dep") && dot.contains("->"),
-        "DOT 应表达边关系：{dot}"
+        "the DOT output should express edge relations: {dot}"
     );
 
     let mermaid = ready.graph_mermaid();
     assert!(
         mermaid.contains("graph TD"),
-        "Mermaid 应含 graph TD 头：{mermaid}"
+        "the Mermaid output should contain the graph TD header: {mermaid}"
     );
     assert!(mermaid.contains("graph-export-dep") && mermaid.contains("graph-export-consumer"));
-    assert!(mermaid.contains("-->"), "Mermaid 应表达边关系：{mermaid}");
+    assert!(
+        mermaid.contains("-->"),
+        "the Mermaid output should express edge relations: {mermaid}"
+    );
 
     // 空 Ready Kit 也能导出（仅头，无节点）。
-    let empty = block_on(AsyncKit::new().build()).expect("空 kit build 应成功");
+    let empty = block_on(AsyncKit::new().build()).expect("an empty kit build should succeed");
     assert!(empty.graph_dot().contains("digraph"));
     assert!(empty.graph_mermaid().contains("graph TD"));
 }
@@ -935,14 +961,14 @@ fn e2e_async_emit_event_reaches_injected_bus_in_both_states() {
     });
 
     // Ready 态 emit。
-    let ready = block_on(kit.build()).expect("build 应成功");
+    let ready = block_on(kit.build()).expect("build should succeed");
     ready.emit_event(KitEvent::ConfigChanged {
         key: "custom/ready".into(),
         summary: "emitted while ready".into(),
     });
 
     let events = received.lock().unwrap();
-    assert_eq!(events.len(), 2, "两个事件都应到达订阅者");
+    assert_eq!(events.len(), 2, "both events should reach the subscriber");
     assert_eq!(events[0].kind(), "config_changed");
     assert_eq!(
         events[0],
@@ -1044,12 +1070,12 @@ mod async_ready_discard_on_ready_failure_e2e {
         kit.register_lifecycle::<AsyncHealthyShutdownMod>();
         kit.register_lifecycle::<AsyncFailingReadyMod>();
 
-        let err = block_on(kit.build()).expect_err("async on_ready 失败应使 build 失败");
+        let err = block_on(kit.build()).expect_err("a failed async on_ready should fail the build");
         assert!(matches!(err, TraitKitError::LifecycleFailed { .. }));
         assert_eq!(
             ASYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst),
             before,
-            "async on_ready 失败后任何 on_shutdown 都不得执行"
+            "no on_shutdown should run after a failed async on_ready"
         );
     }
 }

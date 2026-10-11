@@ -1151,11 +1151,11 @@ mod tests {
         });
 
         let result = coord.shutdown();
-        assert_eq!(CALLED.load(Ordering::SeqCst), 1, "只有第一个 hook 执行");
+        assert_eq!(CALLED.load(Ordering::SeqCst), 1, "only the first hook runs");
         // StopRequests 启动了第一个 hook 但跳过了剩余 hooks → timed_out
         assert!(
             result.phases[0].timed_out,
-            "超全局预算后本阶段剩余 hooks 应被跳过: {result:?}"
+            "the remaining hooks in this phase are skipped after the global budget is exhausted: {result:?}"
         );
         assert!(result.phases[1].timed_out); // DrainQueue 阶段边界被跳过
         assert!(result.phases[2].timed_out); // CloseConnections 阶段边界被跳过
@@ -1356,21 +1356,30 @@ mod tests {
         assert_eq!(
             ran_after.load(Ordering::SeqCst),
             1,
-            "同阶段 panic 之后的 hook 仍须执行"
+            "a hook in the same phase must still run after a panic"
         );
         assert_eq!(
             ran_late_phase.load(Ordering::SeqCst),
             1,
-            "panic 之后的阶段仍须执行"
+            "a later phase must still run after a panic"
         );
         let stop = result
             .phases
             .iter()
             .find(|p| p.phase == ShutdownPhase::StopRequests)
             .expect("StopRequests phase result");
-        assert_eq!(stop.hook_failures, 1, "恰好一个 panic hook 被计数");
-        assert!(!stop.is_ok(), "hook 失败后该阶段 is_ok 必须为 false");
-        assert!(!result.is_ok(), "整体 is_ok 必须反映 hook 失败");
+        assert_eq!(
+            stop.hook_failures, 1,
+            "exactly one panicking hook is counted"
+        );
+        assert!(
+            !stop.is_ok(),
+            "after a hook failure the phase is_ok must be false"
+        );
+        assert!(
+            !result.is_ok(),
+            "the overall is_ok must reflect the hook failure"
+        );
     }
 }
 
@@ -1534,10 +1543,10 @@ mod async_tests {
                 .unwrap();
 
             let result = coord.shutdown().await.unwrap();
-            assert_eq!(CALLED.load(Ordering::SeqCst), 1, "只有第一个 hook 执行");
+            assert_eq!(CALLED.load(Ordering::SeqCst), 1, "only the first hook runs");
             assert!(
                 result.phases[0].timed_out,
-                "超全局预算后本阶段剩余 hooks 应被跳过: {result:?}"
+                "the remaining hooks in this phase are skipped after the global budget is exhausted: {result:?}"
             );
             assert!(result.phases[1].timed_out);
             assert!(result.phases[2].timed_out);
@@ -1613,14 +1622,17 @@ mod async_tests {
             assert_eq!(
                 ran_after.load(Ordering::SeqCst),
                 1,
-                "同阶段 panic 之后的 hook 仍须执行"
+                "a hook in the same phase must still run after a panic"
             );
             let stop = result
                 .phases
                 .iter()
                 .find(|p| p.phase == ShutdownPhase::StopRequests)
                 .expect("StopRequests phase result");
-            assert_eq!(stop.hook_failures, 1, "恰好一个 panic hook 被计数");
+            assert_eq!(
+                stop.hook_failures, 1,
+                "exactly one panicking hook is counted"
+            );
             assert!(!stop.is_ok());
             assert!(!result.is_ok());
         });
@@ -1653,7 +1665,7 @@ mod async_tests {
             assert_eq!(
                 TOUCHED.load(Ordering::SeqCst),
                 1,
-                "local 钩子须由 shutdown_local() 恰好执行一次"
+                "a local hook must be run by shutdown_local() exactly once"
             );
         });
     }
@@ -1679,7 +1691,7 @@ mod async_tests {
             assert_eq!(
                 LOCAL_RUNS.load(Ordering::SeqCst),
                 0,
-                "shutdown() 不得执行 local 钩子"
+                "shutdown() must not run local hooks"
             );
 
             let local_result = coord.shutdown_local().await.unwrap();
@@ -1687,7 +1699,7 @@ mod async_tests {
             assert_eq!(
                 LOCAL_RUNS.load(Ordering::SeqCst),
                 1,
-                "shutdown_local() 执行 local 钩子"
+                "shutdown_local() runs local hooks"
             );
         });
     }
@@ -1706,7 +1718,7 @@ mod async_tests {
                         assert_eq!(
                             ORDER.fetch_add(1, Ordering::SeqCst),
                             1,
-                            "local 钩子在 Send 钩子之后执行"
+                            "local hooks run after Send hooks"
                         );
                     })
                 })
@@ -1714,7 +1726,11 @@ mod async_tests {
             coord
                 .register_hook(ShutdownPhase::DrainQueue, || {
                     Box::pin(async {
-                        assert_eq!(ORDER.fetch_add(1, Ordering::SeqCst), 0, "Send 钩子先执行");
+                        assert_eq!(
+                            ORDER.fetch_add(1, Ordering::SeqCst),
+                            0,
+                            "Send hooks run first"
+                        );
                     })
                 })
                 .unwrap();
@@ -1751,14 +1767,17 @@ mod async_tests {
             assert_eq!(
                 RAN_AFTER.load(Ordering::SeqCst),
                 1,
-                "同阶段 panic 之后的 local 钩子仍须执行"
+                "a local hook in the same phase must still run after a panic"
             );
             let stop = result
                 .phases
                 .iter()
                 .find(|p| p.phase == ShutdownPhase::StopRequests)
                 .expect("StopRequests phase result");
-            assert_eq!(stop.hook_failures, 1, "恰好一个 panic 的 local 钩子被计数");
+            assert_eq!(
+                stop.hook_failures, 1,
+                "exactly one panicking local hook is counted"
+            );
             assert!(!result.is_ok());
         });
     }
@@ -1787,12 +1806,15 @@ mod async_tests {
             // Send 快路径：结果照常成功，local 钩子静默遗留——
             // 遗留必须能被 pending_local_hook_count() 探测。
             let send_result = coord.shutdown().await.unwrap();
-            assert!(send_result.is_ok(), "Send 快路径结果不含 local 信息");
+            assert!(
+                send_result.is_ok(),
+                "the Send fast path result carries no local info"
+            );
             assert_eq!(LOCAL_RUNS.load(Ordering::SeqCst), 0);
             assert_eq!(
                 coord.pending_local_hook_count().unwrap(),
                 2,
-                "遗留的 local 钩子必须可被探测，否则清理丢失不可察觉"
+                "stranded local hooks must be detectable, otherwise lost cleanup goes unnoticed"
             );
 
             let local_result = coord.shutdown_local().await.unwrap();
@@ -1801,7 +1823,7 @@ mod async_tests {
             assert_eq!(
                 coord.pending_local_hook_count().unwrap(),
                 0,
-                "shutdown_local() 正常走完后计数归零"
+                "the count returns to zero after shutdown_local() completes normally"
             );
         });
     }
@@ -1838,19 +1860,19 @@ mod async_tests {
             assert_eq!(
                 result.timed_out_phases(),
                 vec![ShutdownPhase::StopRequests],
-                "local 段超时须合并进该阶段结果"
+                "a local-phase timeout must be merged into that phase's result"
             );
             assert_eq!(
                 RAN.load(Ordering::SeqCst),
                 1,
-                "仅窗口耗尽前的首个 local 钩子执行"
+                "only the first local hook runs before the window is exhausted"
             );
             // 软限制语义：超时跳过的剩余 local 钩子随 drain 丢弃，不遗留——
             // 与 Send 段超时的处置一致。
             assert_eq!(
                 coord.pending_local_hook_count().unwrap(),
                 0,
-                "超时丢弃的 local 钩子不应遗留"
+                "local hooks dropped by the timeout must not be left behind"
             );
         });
     }
@@ -1902,12 +1924,12 @@ mod async_tests {
             assert_eq!(
                 result.timed_out_phases(),
                 vec![ShutdownPhase::DrainQueue],
-                "两段均超时，合并后仍标记该阶段"
+                "when both segments time out the phase is still marked after the merge"
             );
             assert_eq!(
                 RAN.load(Ordering::SeqCst),
                 2,
-                "Send 段与 local 段各执行首个钩子：local 段拿到全新窗口"
+                "the Send segment and the local segment each run their first hook: the local segment gets a fresh window"
             );
             // 单阶段最坏耗时 ≈ 2×阶段超时（两段各用满一个窗口）——
             // 锁定"独立重置窗口"的声明，防止未来实现无意收紧或放宽。
@@ -1918,7 +1940,7 @@ mod async_tests {
                 .expect("DrainQueue phase result");
             assert!(
                 drain.elapsed >= Duration::from_millis(100),
-                "两段各耗满窗口（60ms+60ms），elapsed 应 ≥100ms，实际 {:?}",
+                "both segments exhaust their windows (60ms+60ms), so elapsed should be >=100ms, actual {:?}",
                 drain.elapsed
             );
         });
@@ -1935,10 +1957,10 @@ mod async_tests {
 
         let err = coord
             .pending_local_hook_count()
-            .expect_err("锁中毒时探测必须返回 Err，不得击穿宿主监控线程");
+            .expect_err("probing while the lock is poisoned must return Err, never break through to the host monitor thread");
         assert!(
             err.to_string().contains("pending_local_hook_count"),
-            "错误须可定位到探测操作本身，实际: {err}"
+            "the error must locate the probing operation itself, actual: {err}"
         );
     }
 
@@ -1996,19 +2018,19 @@ mod async_tests {
 
         let err = built
             .register_shutdown_into(&coord, ShutdownPhase::CloseConnections)
-            .expect_err("桥接失败必须返回 Err");
+            .expect_err("a bridge failure must return Err");
         let msg = err.to_string();
         assert!(
             msg.contains("1 remaining lifecycle hook(s) stranded"),
-            "错误须携带 stranded 计数，使程序化检测不依赖 log subscriber，实际: {msg}"
+            "the error must carry the stranded count so programmatic detection does not depend on a log subscriber, actual: {msg}"
         );
         let source_msg = err
             .source()
             .map(std::string::ToString::to_string)
-            .expect("包装错误必须保留协调器拒绝的原始错误为 source");
+            .expect("the wrapped error must keep the coordinator rejection as source");
         assert!(
             source_msg.contains("RwLock poisoned"),
-            "source 链须可追溯到锁中毒根因，实际: {source_msg}"
+            "the source chain must trace back to the lock poisoning root cause, actual: {source_msg}"
         );
     }
 }

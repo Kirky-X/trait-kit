@@ -1120,7 +1120,10 @@ impl Kit {
                 }
                 Err(e) => {
                     let err = TraitKitError::BuildFailed {
-                        context: module_name.to_string(),
+                        context: self
+                            .graph
+                            .name_of(*type_id)
+                            .map_or_else(|| tr("trait-kit-diag-unknown", &[]), str::to_string),
                         source: e,
                     };
                     Self::notify_module_error(&observers, module_name, &err);

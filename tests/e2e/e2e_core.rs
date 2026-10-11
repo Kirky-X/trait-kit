@@ -60,10 +60,10 @@ fn e2e_require_unregistered_returns_missing_capability() {
 
     let err = ready
         .require::<UnregisteredMod>()
-        .expect_err("未注册模块的 require 应返回错误");
+        .expect_err("requiring an unregistered module should return an error");
     match err {
         TraitKitError::MissingCapability { key } => {
-            assert_eq!(key, "unreg-mod", "错误 key 应为模块 NAME");
+            assert_eq!(key, "unreg-mod", "the error key should be the module NAME");
         }
         other => panic!("expected MissingCapability, got: {other}"),
     }
@@ -98,13 +98,16 @@ fn e2e_factory_build_failure_returns_build_failed() {
     let ready = kit.build().unwrap();
 
     let produce = ready.factory::<FailingMod>();
-    let err = produce().expect_err("factory 内 build 失败应返回错误");
+    let err = produce().expect_err("a build failure inside the factory should return an error");
     match err {
         TraitKitError::BuildFailed { context, source } => {
-            assert_eq!(context, "failing-mod", "context 应为模块 NAME");
+            assert_eq!(
+                context, "failing-mod",
+                "the context should be the module NAME"
+            );
             assert!(
                 source.to_string().contains("boom"),
-                "source 应保留底层错误语义：got '{source}'"
+                "the source should preserve the underlying error meaning: got '{source}'"
             );
         }
         other => panic!("expected BuildFailed, got: {other}"),
@@ -123,7 +126,10 @@ fn e2e_factory_success_path_produces_fresh_instances() {
     let b = produce().unwrap();
     assert_eq!(*a, 2);
     assert_eq!(*b, 2);
-    assert!(!Arc::ptr_eq(&a, &b), "factory 每次应产出新实例而非共享单例");
+    assert!(
+        !Arc::ptr_eq(&a, &b),
+        "each factory call should produce a new instance, not a shared singleton"
+    );
 }
 
 // ─── 宏声明模块 build 返回 Err 的传播路径（E2E 层，与内部宏测试互证） ───
@@ -155,13 +161,16 @@ fn e2e_macro_module_build_err_propagates_from_kit_build() {
     kit.register::<MacroFailingMod>().unwrap();
     let err = kit
         .build()
-        .expect_err("宏模块 build Err 应使 kit.build() 整体失败");
+        .expect_err("a macro module's build Err should fail kit.build() as a whole");
     match err {
         TraitKitError::BuildFailed { context, source } => {
-            assert_eq!(context, "macro-failing-mod", "context 应为模块 NAME");
+            assert_eq!(
+                context, "macro-failing-mod",
+                "the context should be the module NAME"
+            );
             assert!(
                 source.to_string().contains("macro boom"),
-                "source 应下探到原始错误文本：got '{source}'"
+                "the source should drill down to the original error text: got '{source}'"
             );
         }
         other => panic!("expected BuildFailed, got: {other}"),
@@ -252,17 +261,18 @@ mod soft_build_degradation_e2e {
         hard.register::<RequiredFailingMod>().unwrap();
         assert!(
             block_on(hard.build()).is_err(),
-            "无 soft_build 的必需模块失败应使整体构建失败"
+            "a required module without soft_build should fail the whole build"
         );
 
         // 实验组：soft_build 包裹的 best-effort 失败 → 降级能力入库。
         let mut kit = AsyncKit::new();
         kit.register::<DegradingMod>().unwrap();
-        let ready = block_on(kit.build()).expect("soft_build 降级路径不应使 kit.build() 失败");
+        let ready = block_on(kit.build())
+            .expect("the soft_build degradation path should not fail kit.build()");
         assert_eq!(
             *ready.require::<DegradingMod>().unwrap(),
             0,
-            "外部失败时应取 fallback 降级值"
+            "the fallback degraded value should be used on external failure"
         );
     }
 }
@@ -282,7 +292,7 @@ fn e2e_get_arc_missing_module_returns_missing_capability() {
 
     let err = ready
         .get_arc::<UnregisteredMod, u32>()
-        .expect_err("未构建模块 get_arc 应报缺失");
+        .expect_err("get_arc on an unbuilt module should report a miss");
     match err {
         TraitKitError::MissingCapability { key } => assert_eq!(key, "unreg-mod"),
         other => panic!("expected MissingCapability, got: {other}"),
@@ -327,7 +337,7 @@ fn e2e_lazy_build_failure_is_retryable_after_slot_restore() {
 
     let err = ready
         .require::<RetryLazyMod>()
-        .expect_err("首次 require 应得到 BuildFailed");
+        .expect_err("the first require should yield BuildFailed");
     match err {
         TraitKitError::BuildFailed { context, source } => {
             assert_eq!(context, "retry-lazy-mod");
@@ -337,8 +347,8 @@ fn e2e_lazy_build_failure_is_retryable_after_slot_restore() {
     }
 
     // 修复外部条件后重试：builder 已放回槽位，构建成功且值可读。
-    let cap = ready
-        .require::<RetryLazyMod>()
-        .expect("槽位恢复后重试应构建成功（非永久 MissingCapability）");
+    let cap = ready.require::<RetryLazyMod>().expect(
+        "a retry after slot recovery should build successfully (not a permanent MissingCapability)",
+    );
     assert_eq!(*cap, 5);
 }

@@ -107,13 +107,15 @@ impl fmt::Display for TraitKitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CycleDetected { cycle } => {
+                let cycle = if cycle.is_empty() {
+                    tr("trait-kit-diag-unknown-cycle", &[])
+                } else {
+                    cycle.join(" → ")
+                };
                 write!(
                     f,
                     "{}",
-                    tr(
-                        "trait-kit-error-cycle-detected",
-                        &[("cycle", &cycle.join(" → "))],
-                    )
+                    tr("trait-kit-error-cycle-detected", &[("cycle", &cycle)])
                 )
             }
             Self::DependencyMissing { module, missing } => {

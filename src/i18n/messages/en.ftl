@@ -4,6 +4,9 @@ trait-kit-error-cycle-detected = dependency cycle detected: { $cycle }
 
 trait-kit-error-dependency-missing = module `{ $module }` depends on `{ $missing }` which is not registered
 
+trait-kit-error-graph-cycle-detected = dependency cycle detected: { $cycle }
+trait-kit-error-graph-dependency-missing = module `{ $module }` depends on unregistered module `{ $missing }`
+
 trait-kit-error-already-registered = module `{ $module }` is already registered
 
 trait-kit-error-build-failed = failed to build `{ $context }`: { $source }
@@ -22,6 +25,8 @@ trait-kit-error-decorator-target-missing = decorator target module `{ $module }`
 trait-kit-error-version-incompatible = module `{ $module }` requires capability `{ $dependency }` >= { $required }, but the provider declares { $provided }
 
 trait-kit-preset-remote-load-failed = remote config source failed: { $message }
+
+trait-kit-preset-provider-not-injected = ConfersConfigModule built without a provider; call register_confers_config(kit, provider) first
 
 # lock-poisoned scaffolding (shutdown coordinator context fragments + source)
 

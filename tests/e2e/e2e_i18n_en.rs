@@ -44,7 +44,7 @@ fn e2e_error_display_all_variants_english() {
     .to_string();
     assert!(
         msg.contains("dependency cycle detected"),
-        "en 目录 CycleDetected：got '{msg}'"
+        "en catalog CycleDetected: got '{msg}'"
     );
     assert!(
         msg.contains("mod-a") && msg.contains("mod-b"),
@@ -127,10 +127,10 @@ fn e2e_error_display_shutdown_timed_out_english() {
     .to_string();
     assert!(
         msg.contains("graceful shutdown timed out"),
-        "en 目录 ShutdownTimedOut：got '{msg}'"
+        "en catalog ShutdownTimedOut: got '{msg}'"
     );
     assert!(
         msg.contains("stop_requests") && msg.contains("close_connections"),
-        "超时阶段名应嵌入消息：got '{msg}'"
+        "timed-out phase names should be embedded in the message: got '{msg}'"
     );
 }

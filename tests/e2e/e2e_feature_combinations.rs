@@ -1058,7 +1058,10 @@ mod shutdown_decorator_e2e {
             let cap = ready.require::<SdMod>().unwrap();
             let observed = Arc::clone(&cap);
             let log = Arc::clone(&observed.log);
-            assert_eq!(observed.val, 40, "decorator 应已包裹基础能力 10*2*2");
+            assert_eq!(
+                observed.val, 40,
+                "the decorator should already wrap the base capability 10*2*2"
+            );
             drop(observed);
 
             // 协调器三阶段先行，随后 Kit 级 on_shutdown 观察到最外层 val=40。
@@ -1080,7 +1083,7 @@ mod shutdown_decorator_e2e {
                 "decorator-drop val=10",
                 "core-drop val=10",
             ],
-            "on_shutdown 应观察最外层，且装饰层先于核心层释放"
+            "on_shutdown should observe the outermost layer, and the decorator layer should release before the core layer"
         );
     }
 }
@@ -1117,7 +1120,7 @@ mod toggle_scope_e2e {
         assert_eq!(
             *scope_on.require::<TsMod>().unwrap(),
             "scoped",
-            "开关开启时作用域内能力可获取"
+            "capabilities in scope can be acquired when the toggle is on"
         );
 
         // 分支二：开关关闭 → 跳过作用域注册，能力不可获取。
@@ -1129,7 +1132,7 @@ mod toggle_scope_e2e {
         assert!(!scope_off.contains::<TsMod>());
         assert!(
             scope_off.require::<TsMod>().is_err(),
-            "开关关闭时作用域内不应注册模块"
+            "modules in scope should not be registered when the toggle is off"
         );
     }
 }
@@ -1195,7 +1198,7 @@ mod interface_decorator_e2e {
         assert_eq!(
             codec.quality(),
             100,
-            "register_as 构建路径产出的接口对象应携带装饰（10 * 10）"
+            "interface objects from the register_as build path should carry the decoration (10 * 10)"
         );
     }
 }
@@ -1259,12 +1262,12 @@ mod encryption_reload_e2e {
         assert_eq!(
             ready.config::<ErRuntimeCfg>().unwrap().v,
             1,
-            "明文配置不受密文存储影响"
+            "plaintext config is unaffected by ciphertext storage"
         );
         assert_eq!(
             ready.get_encrypted::<ErSecret>(&MASTER_KEY).unwrap(),
             secret,
-            "密文 roundtrip 与 reload 链共存"
+            "ciphertext roundtrips coexist with the reload chain"
         );
 
         // Ready 态重载：watch 引擎与加密引擎互不干扰。
@@ -1274,7 +1277,7 @@ mod encryption_reload_e2e {
         assert_eq!(
             ready.get_encrypted::<ErSecret>(&MASTER_KEY).unwrap(),
             secret,
-            "重载后密文原样保留"
+            "ciphertext is preserved as-is after a reload"
         );
     }
 }
@@ -1651,16 +1654,16 @@ fn e2e_confers_toggle_tombstone_then_revive() {
     assert_eq!(
         kit.remove_toggle("e2e-tombstone"),
         Some(ToggleValue::Bool(true)),
-        "remove 应返回 confers registry 中的旧布尔值"
+        "remove should return the old boolean from the confers registry"
     );
     assert_eq!(
         kit.get_toggle("e2e-tombstone"),
         None,
-        "墓碑后 get 不应再返回该 key"
+        "get should no longer return the key after the tombstone"
     );
     assert!(
         !kit.list_toggles().iter().any(|(k, _)| k == "e2e-tombstone"),
-        "墓碑后 list 不应再列出该 key"
+        "list should no longer list the key after the tombstone"
     );
 
     // 复活：fresh set 重新激活该 key。
@@ -1668,10 +1671,10 @@ fn e2e_confers_toggle_tombstone_then_revive() {
     assert_eq!(
         kit.get_toggle("e2e-tombstone"),
         Some(ToggleValue::Bool(true)),
-        "再次 set 应复活墓碑 key"
+        "a second set should revive the tombstoned key"
     );
     assert!(
         kit.list_toggles().iter().any(|(k, _)| k == "e2e-tombstone"),
-        "复活后 list 应重新列出该 key"
+        "list should list the key again after revival"
     );
 }

@@ -786,7 +786,11 @@ mod key_provider_tests {
             }
         }
         assert!(key.is_empty(), "zeroize clears the length");
-        assert_eq!(format!("{key:?}"), "[REDACTED]", "零化不破坏 Debug 脱敏");
+        assert_eq!(
+            format!("{key:?}"),
+            "[REDACTED]",
+            "zeroize must not break Debug redaction"
+        );
     }
 
     #[cfg(feature = "confers")]

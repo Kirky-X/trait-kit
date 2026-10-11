@@ -499,6 +499,26 @@ mod tests {
                 "non-string panic payload",
                 "非字符串 panic 载荷",
             ),
+            (
+                "trait-kit-error-graph-dependency-missing",
+                &[("module", "a"), ("missing", "b")][..],
+                "module `a` depends on unregistered module `b`",
+                "模块 `a` 依赖的模块 `b` 未注册",
+            ),
+            (
+                "trait-kit-error-graph-cycle-detected",
+                &[("cycle", "a -> b")][..],
+                "dependency cycle detected: a -> b",
+                "检测到依赖循环: a -> b",
+            ),
+            (
+                "trait-kit-preset-provider-not-injected",
+                &[][..],
+                "ConfersConfigModule built without a provider; call \
+                 register_confers_config(kit, provider) first",
+                "ConfersConfigModule 构建时未注入 provider；\
+                 请先调用 register_confers_config(kit, provider)",
+            ),
         ] {
             assert_eq!(
                 format_from_bundle("en", key, args).as_deref(),
@@ -586,7 +606,7 @@ mod tests {
         assert_eq!(
             catalog.translate("ovk-a", &[("n", "1")]),
             "Alpha2 1",
-            "跨片段同名消息应后入者覆盖先入者"
+            "later fragments with the same message id must override earlier ones"
         );
         assert_eq!(catalog.translate("ovk-b", &[]), "Beta");
         // overlay 缺 key 返 key 本身（由 Kit::module_tr 再回退全局目录）。
@@ -876,7 +896,7 @@ mod tests {
             upper
                 .translate("trait-kit-error-already-registered", &[])
                 .contains("已注册"),
-            "'ZH' 输入应选择 zh 目录：got '{}'",
+            "'ZH' input must select the zh catalog: got '{}'",
             upper.translate("trait-kit-error-already-registered", &[])
         );
     }

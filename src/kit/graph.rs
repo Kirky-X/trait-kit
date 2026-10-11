@@ -5,6 +5,8 @@
 use std::any::TypeId;
 use std::collections::{HashMap, VecDeque};
 
+use crate::i18n::tr;
+
 /// A node in the dependency graph.
 #[derive(Debug, Clone)]
 pub struct ModuleEntry {
@@ -190,7 +192,9 @@ impl DependencyGraph {
             }
         }
 
-        vec!["<unknown cycle>"]
+        // 环路必然存在（Kahn 已判定）但 DFS 未复现时为防御性落空：以空序列
+        // 作为“未定位”标记，Display 据此渲染 trait-kit-diag-unknown-cycle。
+        Vec::new()
     }
 
     /// Get the registered names of all dependencies for a module.
@@ -334,11 +338,24 @@ impl std::fmt::Display for GraphError {
             Self::DependencyMissing { module, missing } => {
                 write!(
                     f,
-                    "module `{module}` depends on unregistered module `{missing}`"
+                    "{}",
+                    tr(
+                        "trait-kit-error-graph-dependency-missing",
+                        &[("module", *module), ("missing", *missing)],
+                    )
                 )
             }
             Self::CycleDetected { cycle } => {
-                write!(f, "dependency cycle detected: {}", cycle.join(" -> "))
+                let cycle = if cycle.is_empty() {
+                    tr("trait-kit-diag-unknown-cycle", &[])
+                } else {
+                    cycle.join(" -> ")
+                };
+                write!(
+                    f,
+                    "{}",
+                    tr("trait-kit-error-graph-cycle-detected", &[("cycle", &cycle)],)
+                )
             }
         }
     }
@@ -702,7 +719,13 @@ mod tests {
 
         // 可作为 `dyn std::error::Error` 使用（错误处理生态兼容）
         let dyn_err: &dyn std::error::Error = &err;
-        assert!(dyn_err.to_string().contains("unregistered"));
+        // Display 经 i18n `tr()` 渲染（跟随系统 locale），故断言插值参数
+        // 而非消息文本（与 tests/basic.rs 的错误 Display 断言同规）。
+        let dyn_msg = dyn_err.to_string();
+        assert!(
+            dyn_msg.contains('a') && dyn_msg.contains('b'),
+            "dyn Error must be usable with intact interpolated args: {dyn_msg}"
+        );
     }
 
     #[test]

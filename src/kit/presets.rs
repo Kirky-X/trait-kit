@@ -28,9 +28,6 @@ compile_error!(
 
 use crate::core::{AutoBuilder, ModuleMeta};
 use crate::error::TraitKitError;
-// The only `tr` call site is the `presets-remote` Display arm; gating the
-// import keeps `presets` alone warning-free.
-#[cfg(feature = "presets-remote")]
 use crate::i18n::tr;
 use crate::kit::Kit;
 
@@ -158,11 +155,9 @@ pub enum PresetError {
 impl std::fmt::Display for PresetError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ProviderNotInjected => write!(
-                f,
-                "ConfersConfigModule built without a provider; call \
-                 register_confers_config(kit, provider) first"
-            ),
+            Self::ProviderNotInjected => {
+                write!(f, "{}", tr("trait-kit-preset-provider-not-injected", &[]))
+            }
             #[cfg(feature = "presets-remote")]
             Self::RemoteLoad { message } => write!(
                 f,

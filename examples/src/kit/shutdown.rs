@@ -17,34 +17,34 @@ use trait_kit::kit::shutdown::{ShutdownCoordinator, ShutdownPhase};
 static HOOK_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn main() {
-    println!("=== ShutdownCoordinator 示例 ===\n");
+    println!("=== ShutdownCoordinator demo ===\n");
 
     let coord = ShutdownCoordinator::new();
 
     // ─── 阶段 1：停止接收新请求 ─────────────────────────────
     coord.register_hook(ShutdownPhase::StopRequests, || {
         HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        println!("  [phase 1] 停止接收新请求 — 关闭 HTTP listener");
+        println!("  [phase 1] stop accepting new requests — close HTTP listener");
     });
     coord.register_hook(ShutdownPhase::StopRequests, || {
         HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        println!("  [phase 1] 标记为 draining 状态");
+        println!("  [phase 1] mark as draining");
     });
 
     // ─── 阶段 2：排空队列 ──────────────────────────────────
     coord.register_hook(ShutdownPhase::DrainQueue, || {
         HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        println!("  [phase 2] 排空消息队列中的待处理任务");
+        println!("  [phase 2] drain pending tasks in the message queue");
     });
 
     // ─── 阶段 3：关闭连接池 ─────────────────────────────────
     coord.register_hook(ShutdownPhase::CloseConnections, || {
         HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        println!("  [phase 3] 关闭数据库连接池");
+        println!("  [phase 3] close database connection pool");
     });
     coord.register_hook(ShutdownPhase::CloseConnections, || {
         HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        println!("  [phase 3] 关闭 Redis 连接");
+        println!("  [phase 3] close Redis connection");
     });
 
     // ─── 设置超时 ──────────────────────────────────────────
@@ -52,18 +52,18 @@ fn main() {
     coord.set_global_timeout(Duration::from_secs(30));
 
     // ─── 执行关闭流程 ──────────────────────────────────────
-    println!("执行关闭流程...\n");
+    println!("running shutdown...\n");
     let results = coord.shutdown();
 
-    println!("\n--- 关闭结果 ---");
+    println!("\n--- shutdown results ---");
     for r in &results.phases {
         let status = if r.is_ok() {
-            "✓ 完成"
+            "✓ done"
         } else {
-            "✗ 超时"
+            "✗ timed out"
         };
         println!(
-            "  {} ({:?}): {} (耗时 {:?})",
+            "  {} ({:?}): {} (elapsed {:?})",
             r.phase.as_str(),
             r.phase,
             status,
@@ -73,8 +73,8 @@ fn main() {
 
     // ─── 验证 ──────────────────────────────────────────────
     let total_hooks = HOOK_COUNTER.load(Ordering::Relaxed);
-    assert_eq!(total_hooks, 5, "所有 5 个钩子应被执行");
-    assert!(results.is_ok(), "所有阶段应正常完成");
+    assert_eq!(total_hooks, 5, "all 5 hooks should have run");
+    assert!(results.is_ok(), "all phases should complete normally");
 
-    println!("\nshutdown: OK (共执行 {total_hooks} 个钩子)");
+    println!("\nshutdown: OK ({total_hooks} hooks executed)");
 }

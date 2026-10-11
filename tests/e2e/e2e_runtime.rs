@@ -24,25 +24,30 @@ fn e2e_shutdown_timed_out_into_result_and_display() {
         std::thread::sleep(Duration::from_millis(30));
     });
     coord.register_hook(ShutdownPhase::StopRequests, || {
-        panic!("超时后剩余钩子不应执行");
+        panic!("remaining hooks should not run after a timeout");
     });
 
     let result = coord.shutdown();
-    assert!(!result.phases[0].is_ok(), "StopRequests 应标记 timed_out");
+    assert!(
+        !result.phases[0].is_ok(),
+        "StopRequests should be marked timed_out"
+    );
     assert!(result.phases[1].is_ok() && result.phases[2].is_ok());
 
-    let err = result.into_result().expect_err("存在超时阶段时应返回 Err");
+    let err = result
+        .into_result()
+        .expect_err("a timed-out phase should yield Err");
     match &err {
         TraitKitError::ShutdownTimedOut { phases } => {
             assert_eq!(phases, &[ShutdownPhase::StopRequests]);
         }
-        other => panic!("应变体为 ShutdownTimedOut：got {other:?}"),
+        other => panic!("the variant should be ShutdownTimedOut: got {other:?}"),
     }
     // Display 含超时阶段可读名（as_str 原文，locale 无关）。
     let msg = err.to_string();
     assert!(
         msg.contains("stop_requests"),
-        "Display 应含超时阶段名 stop_requests：got '{msg}'"
+        "the Display should contain the timed-out phase name stop_requests: got '{msg}'"
     );
 }
 
@@ -53,14 +58,16 @@ fn e2e_shutdown_global_timeout_display_contains_all_phases() {
     let coord = ShutdownCoordinator::new();
     coord.set_global_timeout(Duration::ZERO);
     coord.register_hook(ShutdownPhase::CloseConnections, || {
-        panic!("全局超时后钩子不应执行");
+        panic!("hooks should not run after a global timeout");
     });
 
     let result = coord.shutdown();
     assert_eq!(result.len(), 3);
-    assert!(!result.is_ok(), "三阶段应全部超时");
+    assert!(!result.is_ok(), "all three phases should time out");
 
-    let err = result.into_result().expect_err("全部超时应返回 Err");
+    let err = result
+        .into_result()
+        .expect_err("an all-timeout run should yield Err");
     let msg = err.to_string();
     for name in [
         ShutdownPhase::StopRequests,
@@ -69,7 +76,7 @@ fn e2e_shutdown_global_timeout_display_contains_all_phases() {
     ] {
         assert!(
             msg.contains(name.as_str()),
-            "Display 应含全部超时阶段名 {}：got '{msg}'",
+            "the Display should contain all timed-out phase names {}: got '{msg}'",
             name.as_str()
         );
     }
@@ -118,7 +125,7 @@ mod health_history_capacity_edge_e2e {
         }
         assert!(
             ready.health_history().is_empty(),
-            "capacity=0 时 record 应为 no-op（history 恒空）"
+            "record should be a no-op when capacity=0 (history stays empty)"
         );
     }
 
@@ -129,12 +136,16 @@ mod health_history_capacity_edge_e2e {
         for _ in 0..4 {
             ready.record_health_history();
         }
-        assert_eq!(ready.health_history().len(), 4, "先采满 4 条");
+        assert_eq!(ready.health_history().len(), 4, "first fill up 4 entries");
 
         // 收缩容量到 2：既有历史立即截断到最近 2 条。
         ready.set_health_history_capacity(2);
         let history = ready.health_history();
-        assert_eq!(history.len(), 2, "收缩容量应立即截断既有历史到最近 k 条");
+        assert_eq!(
+            history.len(),
+            2,
+            "shrinking the capacity should immediately truncate history to the most recent k entries"
+        );
         // 时间戳与状态字段齐全。
         assert!(matches!(history[1].status, HealthStatus::Healthy));
     }

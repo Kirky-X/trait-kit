@@ -1566,11 +1566,14 @@ mod decorator_tests {
         });
         let built = kit.build().unwrap();
         let a = built.require::<SharedCapA>().unwrap();
-        assert_eq!(a.val, "a+decorated", "被装饰的模块 A 应携带装饰");
+        assert_eq!(
+            a.val, "a+decorated",
+            "decorated module A must carry the decoration"
+        );
         let b = built.require::<SharedCapB>().unwrap();
         assert_eq!(
             b.val, "b",
-            "模块 B 未被 decorate，lazy require 不得套用 A 的装饰器"
+            "module B is not decorated; lazy require must not apply A's decorator"
         );
     }
 }
@@ -1909,16 +1912,16 @@ mod ready_tests {
         let err2 = built.require::<LazyFailModule>().unwrap_err();
         assert!(
             matches!(err2, TraitKitError::BuildFailed { .. }),
-            "第二次 require 应重试 builder 并返回 BuildFailed，got {err2:?}"
+            "the second require must retry the builder and return BuildFailed, got {err2:?}"
         );
         assert!(
             !matches!(err2, TraitKitError::MissingCapability { .. }),
-            "第二次 require 不得退化为 MissingCapability"
+            "the second require must not degrade to MissingCapability"
         );
         assert_eq!(
             err.to_string(),
             err2.to_string(),
-            "两次 require 的错误信息应一致"
+            "the two require calls must report the same error message"
         );
     }
 }

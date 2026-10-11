@@ -36,13 +36,23 @@ fn e2e_field_key_derivation_path_isolation() {
     // 隔离：不同 PATH → 不同密钥（XChaCha20 字段密钥不得跨类型复用）。
     assert_ne!(
         db, cache,
-        "不同 C::PATH 必须派生不同字段密钥（HKDF info 隔离）"
+        "different C::PATH values must derive different field keys (HKDF info isolation)"
     );
     // 版本标签参与派生：轮换版本 → 新密钥。
-    assert_ne!(db, db_v2, "不同 key_version 应派生不同字段密钥");
+    assert_ne!(
+        db, db_v2,
+        "different key_version values should derive different field keys"
+    );
     // 确定性：同参重放得到同一密钥（解密依赖此性质）。
-    assert_eq!(db, db_again, "同参派生应稳定");
-    assert_eq!(db.len(), 32, "字段密钥应为 32 字节 XChaCha20 密钥");
+    assert_eq!(
+        db, db_again,
+        "derivation with the same params should be stable"
+    );
+    assert_eq!(
+        db.len(),
+        32,
+        "the field key should be a 32-byte XChaCha20 key"
+    );
 }
 
 /// 再导出原语 roundtrip——`encrypt` 产出 (nonce, ciphertext)，
@@ -60,29 +70,32 @@ fn e2e_reexported_crypto_roundtrip_via_trait_kit_path() {
     let plaintext = b"trait-kit e2e secret payload".to_vec();
     let (nonce, ciphertext) = cipher
         .encrypt(&plaintext, &*field_key)
-        .expect("合法 32 字节密钥加密应成功");
+        .expect("encryption with a valid 32-byte key should succeed");
 
     assert_eq!(
         nonce.len(),
         24,
-        "XNonce 应为 24 字节（XChaCha20 nonce 长度）"
+        "the XNonce should be 24 bytes (the XChaCha20 nonce length)"
     );
     assert_ne!(
         ciphertext.as_slice(),
         plaintext.as_slice(),
-        "密文不得等于明文"
+        "the ciphertext must not equal the plaintext"
     );
 
     let roundtrip = cipher
         .decrypt(&nonce, &ciphertext, &*field_key)
-        .expect("同密钥解密应成功");
-    assert_eq!(*roundtrip, plaintext, "roundtrip 应还原明文");
+        .expect("decryption with the same key should succeed");
+    assert_eq!(
+        *roundtrip, plaintext,
+        "the roundtrip should restore the plaintext"
+    );
 
     // 错误密钥（不同 PATH 派生）解密 → CryptoError（Poly1305 校验失败）。
     let other_key = derive_field_key(&master, "other/path", "v1").unwrap();
     assert!(
         cipher.decrypt(&nonce, &ciphertext, &*other_key).is_err(),
-        "跨字段密钥解密必须失败（密钥隔离）"
+        "decryption with another field's key must fail (key isolation)"
     );
 }
 
@@ -154,11 +167,11 @@ mod confers_key_provider_bridge_e2e {
             },
             &provider,
         )
-        .expect("经 confers provider 加密应成功");
-        let ready = kit.build().expect("build 应成功");
+        .expect("encryption through the confers provider should succeed");
+        let ready = kit.build().expect("build should succeed");
         let plain: BridgeSecret = ready
             .get_encrypted(provider.master_key().expect("key").as_slice())
-            .expect("同钥解密应成功");
+            .expect("decryption with the same key should succeed");
         assert_eq!(plain.token, "bridge-secret");
         // provider_type 透传内层类型名。
         assert_eq!(provider.provider_type(), "e2e-bridge");
@@ -171,12 +184,12 @@ mod confers_key_provider_bridge_e2e {
                 &BridgeSecret { token: "x".into() },
                 &ConfersKeyProvider::new(FailingConfersProvider),
             )
-            .expect_err("get_key 失败必须 fail-closed");
+            .expect_err("a get_key failure must fail closed");
         match &err {
             TraitKitError::BuildFailed { context, .. } => {
                 assert!(
                     context.contains("key provider") && context.contains("e2e-broken"),
-                    "context 应含 key provider 与内层类型名：got '{context}'"
+                    "the context should contain the key provider and the inner type name: got '{context}'"
                 );
             }
             other => panic!("expected BuildFailed, got: {other:?}"),
@@ -184,7 +197,7 @@ mod confers_key_provider_bridge_e2e {
         assert_eq!(
             err.kind(),
             trait_kit::ErrorKind::InitFailed,
-            "fail-closed 应归类 InitFailed"
+            "fail-closed should be classified as InitFailed"
         );
 
         // fail-closed：短钥同样立即拒绝（不落空钥/弱钥路径）。
@@ -196,7 +209,7 @@ mod confers_key_provider_bridge_e2e {
                     &ConfersKeyProvider::new(ShortKeyConfersProvider),
                 )
                 .is_err(),
-            "短钥必须立即拒绝"
+            "a short key must be rejected immediately"
         );
     }
 }

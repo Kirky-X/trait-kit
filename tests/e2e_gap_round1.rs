@@ -61,14 +61,14 @@ mod gap_342_ready_shutdown_twice_noop {
         assert_eq!(
             *SHUT_ORDER.lock().unwrap(),
             vec!["gap342-top", "gap342-leaf"],
-            "首次 shutdown 逆构建序执行"
+            "first shutdown runs in reverse build order"
         );
 
         ready.shutdown();
         assert_eq!(
             *SHUT_ORDER.lock().unwrap(),
             vec!["gap342-top", "gap342-leaf"],
-            "第二次 shutdown 对已 drain 的回调表必须为 no-op"
+            "a second shutdown on an already drained callback table must be a no-op"
         );
     }
 }
@@ -88,15 +88,21 @@ mod gap_343_toggle_non_bool_false {
 
         assert!(
             !kit.is_toggle_enabled("gap343.int"),
-            "Int(1) 非 Bool，必须 false（非真值强制）"
+            "Int(1) is not Bool, so it must be false (no truthy coercion)"
         );
         assert!(!kit.is_toggle_enabled("gap343.float"));
         assert!(
             !kit.is_toggle_enabled("gap343.str"),
-            "Str(\"true\") 非 Bool，必须 false"
+            "Str(\"true\") is not Bool, so it must be false"
         );
-        assert!(kit.is_toggle_enabled("gap343.bool"), "Bool(true) 对照组");
-        assert!(!kit.is_toggle_enabled("gap343.unknown"), "未知 key 对照组");
+        assert!(
+            kit.is_toggle_enabled("gap343.bool"),
+            "Bool(true) control group"
+        );
+        assert!(
+            !kit.is_toggle_enabled("gap343.unknown"),
+            "unknown key control group"
+        );
     }
 }
 
@@ -157,13 +163,13 @@ mod gap_344_health_check_overwrite {
         let status = ready2.health_check::<GapHealthMod>().unwrap();
         assert!(
             matches!(&status, HealthStatus::Degraded { detail } if detail == "second checker"),
-            "应以最新注册的 checker 自报为准，got {status:?}"
+            "the latest registered checker's own report should win, got {status:?}"
         );
         let report = ready2.health_report();
         assert_eq!(
             report.iter().filter(|(n, _)| *n == "gap344-health").count(),
             1,
-            "重复注册不得在报告中累积多条"
+            "re-registration must not accumulate multiple entries in the report"
         );
     }
 }
@@ -189,26 +195,26 @@ mod gap_346_349_version_family_on_unencrypted {
 
         let err = ready
             .encrypted_key_version::<NeverEncrypted>()
-            .expect_err("未加密类型查询 key 版本必须报错");
+            .expect_err("querying the key version of an unencrypted type must error");
         assert!(
             matches!(&err, TraitKitError::MissingConfig { key } if key.contains("NeverEncrypted")),
-            "encrypted_key_version → MissingConfig{{key=类型名}}，got {err:?}"
+            "encrypted_key_version → MissingConfig{{key=type name}}, got {err:?}"
         );
 
         let err = ready
             .get_encrypted_with_version::<NeverEncrypted>(&[1u8; 32], 1)
-            .expect_err("未加密类型按版本读取必须报错");
+            .expect_err("versioned reads of an unencrypted type must error");
         assert!(
             matches!(&err, TraitKitError::MissingConfig { .. }),
-            "get_encrypted_with_version → MissingConfig，got {err:?}"
+            "get_encrypted_with_version -> MissingConfig, got {err:?}"
         );
 
         let err = ready
             .rotate_master_key::<NeverEncrypted>(&[1u8; 32], &[2u8; 32])
-            .expect_err("未加密类型轮换必须报错");
+            .expect_err("rotating an unencrypted type must error");
         assert!(
             matches!(&err, TraitKitError::MissingConfig { .. }),
-            "rotate_master_key → MissingConfig（fail-closed，不凭空建密文），got {err:?}"
+            "rotate_master_key → MissingConfig (fail-closed, no ciphertext is invented), got {err:?}"
         );
     }
 }
@@ -263,18 +269,20 @@ mod gap_350_deserialize_failure_build_failed {
             },
             b"0123456789abcdef",
         )
-        .expect("set 成功（serialize 侧无约束）");
+        .expect("set succeeds (no constraint on the serialize side)");
         let ready = kit.build().unwrap();
 
         let err = ready
             .get_encrypted::<AsymmetricCfg>(b"0123456789abcdef")
-            .expect_err("密钥正确但反序列化失败必须走 serde 失败分支");
+            .expect_err(
+                "a correct key with failed deserialization must take the serde failure branch",
+            );
         match &err {
             TraitKitError::BuildFailed { context, source } => {
                 assert_eq!(context, "get_encrypted");
                 assert!(
                     source.to_string().contains("invalid type"),
-                    "source 应为 serde 反序列化错误（解密已成功）：{source}"
+                    "the source should be a serde deserialization error (decryption already succeeded): {source}"
                 );
             }
             other => panic!("expected BuildFailed, got {other:?}"),
@@ -312,9 +320,12 @@ mod gap_353_config_changed_summary_sequence {
         kit.set_config(GapCfg(1));
         kit.set_config(GapCfg(2));
         kit.set_config_arc(GapCfg(3));
-        assert!(kit.snapshot_config::<GapCfg>(), "快照取当前值");
+        assert!(
+            kit.snapshot_config::<GapCfg>(),
+            "the snapshot captures the current value"
+        );
         kit.set_config_arc(GapCfg(4));
-        kit.restore_config::<GapCfg>().expect("restore 回滚");
+        kit.restore_config::<GapCfg>().expect("restore rolls back");
 
         let summaries: Vec<String> = log.lock().unwrap().iter().map(|(_, s)| s.clone()).collect();
         assert_eq!(
@@ -327,9 +338,13 @@ mod gap_353_config_changed_summary_sequence {
                 "set (replaced)",
                 "restore snapshot",
             ],
-            "摘要序列须精确反映存储语义（restore 在 set 事件之上追加独立审计）"
+            "the summary sequence must exactly reflect storage semantics (restore appends its own audit on top of set events)"
         );
-        assert_eq!(kit.config::<GapCfg>().unwrap(), GapCfg(2), "回滚到快照值");
+        assert_eq!(
+            kit.config::<GapCfg>().unwrap(),
+            GapCfg(2),
+            "rolled back to the snapshot value"
+        );
     }
 }
 
@@ -369,9 +384,9 @@ mod gap_354_scope_module_self_contained {
         let scope = ready.create_scope();
         let mut scope = scope;
         scope.register::<ScopedCfgReader>().unwrap();
-        let err = scope
-            .require::<ScopedCfgReader>()
-            .expect_err("作用域模块读配置必须失败而非回落父 Kit");
+        let err = scope.require::<ScopedCfgReader>().expect_err(
+            "a scoped module's config read must fail instead of falling back to the parent Kit",
+        );
         match err {
             TraitKitError::BuildFailed { context, source } => {
                 assert_eq!(context, "gap354-scoped-reader");
@@ -380,7 +395,7 @@ mod gap_354_scope_module_self_contained {
                         source.downcast_ref::<TraitKitError>(),
                         Some(TraitKitError::MissingConfig { .. })
                     ),
-                    "source 应为 MissingConfig（ParentCfg 不可达），got {source:?}"
+                    "the source should be MissingConfig (ParentCfg unreachable), got {source:?}"
                 );
             }
             other => panic!("expected BuildFailed, got {other:?}"),
@@ -465,13 +480,13 @@ mod gap_356_confers_config_handle_surface {
         let ready = kit.build().expect("build ok");
         let handle = ready.require::<ConfersConfigModule>().expect("require");
 
-        assert_eq!(handle.get_bool("flag.on"), Some(true), "Bool 命中");
+        assert_eq!(handle.get_bool("flag.on"), Some(true), "Bool hit");
         assert_eq!(
             handle.get_bool("str.key"),
             None,
-            "get_bool 于 string 值必须 None（类型不匹配静默）"
+            "get_bool on a string value must be None (type mismatch is silent)"
         );
-        assert_eq!(handle.get_bool("absent"), None, "缺键 None");
+        assert_eq!(handle.get_bool("absent"), None, "absent key yields None");
         assert!(handle.contains("int.key"));
         assert!(!handle.contains("absent"));
         let mut keys = handle.keys();
@@ -483,11 +498,11 @@ mod gap_356_confers_config_handle_surface {
                 "int.key".to_string(),
                 "str.key".to_string()
             ],
-            "keys() 列全键"
+            "keys() lists all keys"
         );
         assert!(
             handle.get_raw("int.key").is_some(),
-            "get_raw 返回原始注解值"
+            "get_raw returns the raw annotation value"
         );
         assert!(handle.get_raw("absent").is_none());
         assert_eq!(handle.get_int("int.key"), Some(7));
@@ -540,17 +555,19 @@ mod gap_360_sub_kit_missing_dep_folds_to_build_failed {
     fn child_missing_dependency_reports_build_failed_with_child_name() {
         let mut kit = Kit::new();
         kit.register::<SubKitModule<BrokenChildSpec>>().unwrap();
-        let err = kit.build().expect_err("子内缺依赖必须使父 build 失败");
+        let err = kit
+            .build()
+            .expect_err("a missing dependency inside the child must fail the parent build");
         match &err {
             TraitKitError::BuildFailed { context, source } => {
                 assert_eq!(
                     context, "gap360-broken-child",
-                    "context 折叠为子 spec NAME（与跨 Kit 声明依赖报 DependencyMissing 形成口径对照）"
+                    "the context collapses to the child spec NAME (contrast with the cross-Kit DependencyMissing wording)"
                 );
                 let text = source.to_string();
                 assert!(
                     text.contains("gap360-child-absent"),
-                    "source 应保留子内 DependencyMissing 详情：{text}"
+                    "the source should keep the inner DependencyMissing detail: {text}"
                 );
                 assert!(
                     !matches!(
@@ -558,7 +575,7 @@ mod gap_360_sub_kit_missing_dep_folds_to_build_failed {
                         Some(TraitKitError::DependencyMissing { module, .. })
                             if *module == "gap360-broken-child"
                     ),
-                    "缺失发生在子图内部，外层不得伪装成跨 Kit 声明依赖口径"
+                    "the miss happens inside the child graph; the outer layer must not fake a cross-Kit dependency message"
                 );
             }
             other => panic!("expected BuildFailed, got {other:?}"),
@@ -666,17 +683,19 @@ mod gap_341_lifecycle_on_unregistered_module_divergence {
         kit.register_lifecycle::<GraphMod>();
         // 只 register_lifecycle、不 register 模块本体。
         kit.register_lifecycle::<GhostMod>();
-        let ready = kit.build().expect("未注册模块的 lifecycle 不应阻断构建");
+        let ready = kit
+            .build()
+            .expect("an unregistered module's lifecycle must not block the build");
         let _ = ready.require::<GraphMod>().unwrap();
         assert_eq!(
             SYNC_GHOST_READY.load(Ordering::SeqCst),
             0,
-            "sync 侧：幽灵模块 on_ready 从未执行（只遍历拓扑序 sorted）"
+            "sync side: a ghost module's on_ready never runs (only the sorted topo order is walked)"
         );
         assert_eq!(
             GRAPH_READY.load(Ordering::SeqCst),
             1,
-            "图内模块 on_ready 正常"
+            "the in-graph module's on_ready runs normally"
         );
     }
 
@@ -686,12 +705,12 @@ mod gap_341_lifecycle_on_unregistered_module_divergence {
         let mut kit = AsyncKit::new();
         kit.register::<GraphMod>().unwrap();
         kit.register_lifecycle::<GhostMod>();
-        let ready = block_on(kit.build()).expect("async 侧同样构建成功");
+        let ready = block_on(kit.build()).expect("the async side builds successfully too");
         let _ = ready.require::<GraphMod>().unwrap();
         assert_eq!(
             ASYNC_GHOST_READY.load(Ordering::SeqCst),
             1,
-            "async 侧：幽灵模块 on_ready 在图内模块之后仍执行（unwrap_or(usize::MAX) 排序）"
+            "async side: a ghost module's on_ready still runs after in-graph modules (unwrap_or(usize::MAX) ordering)"
         );
     }
 

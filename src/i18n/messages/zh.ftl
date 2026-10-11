@@ -4,6 +4,9 @@ trait-kit-error-cycle-detected = 检测到依赖循环: { $cycle }
 
 trait-kit-error-dependency-missing = 模块 `{ $module }` 依赖的 `{ $missing }` 未注册
 
+trait-kit-error-graph-cycle-detected = 检测到依赖循环: { $cycle }
+trait-kit-error-graph-dependency-missing = 模块 `{ $module }` 依赖的模块 `{ $missing }` 未注册
+
 trait-kit-error-already-registered = 模块 `{ $module }` 已注册
 
 trait-kit-error-build-failed = 构建 `{ $context }` 失败: { $source }
@@ -22,6 +25,8 @@ trait-kit-error-decorator-target-missing = 装饰目标模块 `{ $module }` 未�
 trait-kit-error-version-incompatible = 模块 `{ $module }` 要求能力 `{ $dependency }` >= { $required }，但提供方声明为 { $provided }
 
 trait-kit-preset-remote-load-failed = 远程配置源加载失败: { $message }
+
+trait-kit-preset-provider-not-injected = ConfersConfigModule 构建时未注入 provider；请先调用 register_confers_config(kit, provider)
 
 # 锁中毒文案（关闭协调器的 context 片段与 source）
 

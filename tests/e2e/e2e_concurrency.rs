@@ -65,9 +65,15 @@ fn e2e_ref_borrow_storm_interleaved_reload_set() {
         // Unbuilt 态方法）；借用存活期间连续重载。
         ready.reload_config::<StormCfg>().unwrap();
         // 能力值在整个风暴期间保持稳定（capabilities 侧不受写影响）。
-        assert_eq!(**guard, 7, "第 {i} 轮：能力值应保持稳定");
+        assert_eq!(
+            **guard, 7,
+            "round {i}: the capability value should stay stable"
+        );
         let cfg = ready.config::<StormCfg>().unwrap();
-        assert_eq!(cfg.v, 1, "reload 后配置应为 C::load() 产出值");
+        assert_eq!(
+            cfg.v, 1,
+            "after a reload the config should be the C::load() value"
+        );
     }
     drop(guard);
     ready.reload_config::<StormCfg>().unwrap();
@@ -136,8 +142,8 @@ mod async_merge_config_race_e2e {
                 });
             }
         });
-        t1.join().expect("线程一不应 panic");
-        t2.join().expect("线程二不应 panic");
+        t1.join().expect("thread one should not panic");
+        t2.join().expect("thread two should not panic");
 
         // 文档化语义一：每次 merge_config 各记一条记录（共 50 条），
         // 记录序为锁到达序（此处不断言具体顺序，只断言两路各 25 条）。
@@ -146,31 +152,34 @@ mod async_merge_config_race_e2e {
         assert_eq!(
             drained_now.len(),
             50,
-            "每次 merge_config 调用应各记一条 override 记录"
+            "each merge_config call should record one override entry"
         );
         assert!(
             drained_now.iter().all(|r| r.config.ends_with("RaceCfg")),
-            "记录应指向被 merge 的配置类型"
+            "the record should point at the merged config type"
         );
 
         // 文档化语义二：最终值是读-改-写竞争后的合法收敛——alpha 侧
         // 与 beta 侧各自最后落地的覆盖（不承诺双方都赢，但每字段必为
         // 某一方写入的值，绝不出现撕裂/中间态）。
-        let cfg: RaceCfg = kit.config().expect("config 应可读");
+        let cfg: RaceCfg = kit.config().expect("the config should be readable");
         assert!(
             cfg.alpha == "base-alpha" || cfg.alpha.starts_with("a-"),
-            "alpha 终值应为基值或某次 a-* 覆盖：got {:?}",
+            "the final alpha value should be the base value or one of the a-* overrides: got {:?}",
             cfg.alpha
         );
         assert!(
             cfg.beta == "base-beta" || cfg.beta.starts_with("b-"),
-            "beta 终值应为基值或某次 b-* 覆盖：got {:?}",
+            "the final beta value should be the base value or one of the b-* overrides: got {:?}",
             cfg.beta
         );
 
         // 记录不无限累积的使用契约：排空后再次排空为空。
         let drained_again = kit.take_config_overrides();
-        assert!(drained_again.is_empty(), "排空后历史应归零");
+        assert!(
+            drained_again.is_empty(),
+            "history should be empty after draining"
+        );
     }
 }
 
@@ -219,13 +228,14 @@ fn e2e_event_bus_concurrent_publish_and_reentrant_subscribe() {
         }));
     }
     for h in handles {
-        h.join().expect("并发 publish 线程不应 panic");
+        h.join()
+            .expect("the concurrent publish thread should not panic");
     }
 
     // 主事件（4×100）+ 每个首次重入的 publish（并发下 ≥1，至多重入层）。
     let total = received.load(std::sync::atomic::Ordering::SeqCst);
     assert!(
         total >= 400,
-        "主 publish 的 400 个事件应全部送达（实际 {total}，重入事件另计）"
+        "all 400 events from the main publish should arrive (actual {total}, re-entrant events counted separately)"
     );
 }

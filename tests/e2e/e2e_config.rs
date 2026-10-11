@@ -44,16 +44,22 @@ fn e2e_reload_subscriber_panic_stores_new_value_skips_rest() {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         kit.reload_config::<PanicCfg>().unwrap()
     }));
-    assert!(result.is_err(), "订阅者 panic 应穿透 reload_config");
+    assert!(
+        result.is_err(),
+        "a subscriber panic should propagate through reload_config"
+    );
 
     // 文档化语义一：新值已在回调前存储。
     assert_eq!(
         kit.config::<PanicCfg>().unwrap().v,
         2,
-        "panic 前 C::load() 的新值应已写入配置表"
+        "the new value from C::load() should already be in the config table before the panic"
     );
     // 文档化语义二：剩余订阅者被跳过。
-    assert!(!second_notified.get(), "panic 之后的订阅者不应收到本次通知");
+    assert!(
+        !second_notified.get(),
+        "the subscriber after the panicking one should not receive this notification"
+    );
 
     // panic 后 Kit 状态一致：另一配置类型的订阅与重载正常工作
     // （不重触仍处订阅表中的 panic 回调）。
@@ -61,7 +67,10 @@ fn e2e_reload_subscriber_panic_stores_new_value_skips_rest() {
     let a = Rc::clone(&after);
     kit.subscribe::<FreshCfg>(move || a.set(true));
     kit.reload_config::<FreshCfg>().unwrap();
-    assert!(after.get(), "panic 后其他配置类型重载应正常通知订阅者");
+    assert!(
+        after.get(),
+        "other config types should still notify subscribers after a panic"
+    );
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -110,11 +119,14 @@ fn e2e_require_ref_borrow_survives_reload_and_set_config() {
     assert_eq!(
         ready.config::<FreshCfg>().unwrap().v,
         9,
-        "借用存活期间 reload_config 应正常更新配置"
+        "reload_config should update the config normally while the borrow is alive"
     );
 
     // capabilities 侧借用不受 configs 写影响，读到原能力值。
-    assert_eq!(**guard, 42, "require_ref 借用应读到完整能力值");
+    assert_eq!(
+        **guard, 42,
+        "the require_ref borrow should read the full capability value"
+    );
     drop(guard);
 
     // 释放借用后再次重载，Kit 状态一致。
@@ -167,7 +179,7 @@ mod build_report_json_roundtrip_e2e {
         type Capability = Arc<u32>;
         type Error = TraitKitError;
         fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
-            panic!("override 注入后 build_fn 不应被调用")
+            panic!("build_fn should not be called after an override injection")
         }
     }
 
@@ -208,55 +220,65 @@ mod build_report_json_roundtrip_e2e {
             host: Some("rpt-host".into()),
         });
 
-        let ready = kit.build().expect("build 应成功");
+        let ready = kit.build().expect("build should succeed");
         // 触发 lazy 首建，使报告后读到的状态完整（报告为 Unbuilt→Ready
         // 构建面快照，lazy 首建不改变其 modules 记录）。
         let _ = ready.require::<RptJsonLazy>().unwrap();
 
-        let json = ready.build_report().to_json().expect("序列化应成功");
-        let value = BuildReport::from_json_str(&json).expect("往返解析应成功");
+        let json = ready
+            .build_report()
+            .to_json()
+            .expect("serialization should succeed");
+        let value = BuildReport::from_json_str(&json).expect("the round-trip parse should succeed");
 
         assert_eq!(value["schema_version"], 1);
         // topo_order：依赖先于消费者。
-        let topo = value["topo_order"].as_array().expect("topo 数组");
+        let topo = value["topo_order"].as_array().expect("the topo array");
         let topo_names: Vec<&str> = topo.iter().filter_map(|v| v.as_str()).collect();
         assert!(topo_names.contains(&"rpt-json-dep"));
         assert!(topo_names.contains(&"rpt-json-top"));
         let dep_pos = topo.iter().position(|v| v == "rpt-json-dep").unwrap();
         let top_pos = topo.iter().position(|v| v == "rpt-json-top").unwrap();
-        assert!(dep_pos < top_pos, "topo 序应满足依赖先于消费者：{topo:?}");
+        assert!(
+            dep_pos < top_pos,
+            "the topo order should place dependencies before consumers: {topo:?}"
+        );
 
         // modules：eager 带 elapsed、lazy/overridden 各一条。
-        let modules = value["modules"].as_array().expect("modules 数组");
+        let modules = value["modules"].as_array().expect("the modules array");
         assert!(
             modules.len() >= 3,
-            "报告应含 eager+lazy+override 模块：{modules:?}"
+            "the report should contain eager+lazy+override modules: {modules:?}"
         );
         let eager = modules
             .iter()
             .find(|m| m["name"] == "rpt-json-top")
-            .expect("eager 条目");
+            .expect("the eager entry");
         assert_eq!(eager["state"], "built");
         assert!(eager["elapsed_us"].as_u64().is_some());
         let lazy = modules
             .iter()
             .find(|m| m["name"] == "rpt-json-lazy")
-            .expect("lazy 条目");
+            .expect("the lazy entry");
         assert_eq!(lazy["state"], "lazy");
 
         // overrides：module-level override 记录来源；未注册目标无图内名字，
         // 记 "(unregistered)" 占位（来源字段仍可回读）。
-        let overrides = value["overrides"].as_array().expect("overrides 数组");
+        let overrides = value["overrides"].as_array().expect("the overrides array");
         assert!(
             overrides
                 .iter()
                 .any(|o| o["module"] == "(unregistered)" && o["source"] == "override_module"),
-            "未注册 override 应以 (unregistered) 出现在报告中：{overrides:?}"
+            "unregistered overrides should appear as (unregistered) in the report: {overrides:?}"
         );
 
         // config_overrides：merge_config 记录 applied==true。
-        let cfg_overrides = value["config_overrides"].as_array().expect("cfg 数组");
-        assert_eq!(cfg_overrides.len(), 1, "应恰有一条 merge_config 记录");
+        let cfg_overrides = value["config_overrides"].as_array().expect("the cfg array");
+        assert_eq!(
+            cfg_overrides.len(),
+            1,
+            "there should be exactly one merge_config record"
+        );
         assert_eq!(cfg_overrides[0]["applied"], true);
 
         // total_elapsed_us 往返可读。
@@ -273,20 +295,28 @@ mod build_report_json_roundtrip_e2e {
         kit.register::<RptEagerDep>().unwrap();
         kit.override_module::<RptJsonOverridden>(Arc::new(42));
 
-        let ready = kit.build().expect("build 应成功");
+        let ready = kit.build().expect("build should succeed");
         assert_eq!(
             *ready
                 .require::<RptJsonOverridden>()
-                .expect("未注册 override 仍可 require"),
+                .expect("an unregistered override can still be required"),
             42,
-            "注入值应生效（build_fn 的 panic 不应触发）"
+            "the injected value should take effect (build_fn's panic should not fire)"
         );
-        assert_eq!(ready.module_count(), 1, "override 不进依赖图");
+        assert_eq!(
+            ready.module_count(),
+            1,
+            "the override does not enter the dependency graph"
+        );
         let manifest = ready.contract_manifest();
-        assert_eq!(manifest.modules.len(), 1, "override 不进契约清单");
+        assert_eq!(
+            manifest.modules.len(),
+            1,
+            "the override does not enter the contract manifest"
+        );
         assert!(
             manifest.modules.iter().all(|m| m.module == "rpt-json-dep"),
-            "清单仅含 register* 记录：{:?}",
+            "the manifest contains register* records only: {:?}",
             manifest.modules
         );
         let report = ready.build_report();
@@ -294,7 +324,7 @@ mod build_report_json_roundtrip_e2e {
             .overrides
             .iter()
             .find(|r| r.module == "(unregistered)")
-            .expect("未注册 override 的占位记录");
+            .expect("the placeholder record of an unregistered override");
         assert_eq!(record.source, "override_module");
     }
 
@@ -308,28 +338,32 @@ mod build_report_json_roundtrip_e2e {
         kit.register_lazy::<RptJsonLazy>().unwrap();
         kit.override_module::<RptJsonLazy>(Arc::new(77));
 
-        let ready = kit.build().expect("build 应成功");
+        let ready = kit.build().expect("build should succeed");
         // lazy builder 返回 3，override 返回 77：拿到 77 说明 builder 未执行。
         assert_eq!(*ready.require::<RptJsonLazy>().expect("require"), 77);
-        assert_eq!(ready.module_count(), 1, "register_lazy 已进图");
+        assert_eq!(
+            ready.module_count(),
+            1,
+            "register_lazy has entered the graph"
+        );
         assert!(
             ready
                 .contract_manifest()
                 .modules
                 .iter()
                 .any(|m| m.module == "rpt-json-lazy"),
-            "register_lazy 模块应在契约清单中"
+            "the register_lazy module should be in the contract manifest"
         );
         let report = ready.build_report();
         let entry = report
             .modules
             .iter()
             .find(|m| m.name == "rpt-json-lazy")
-            .expect("lazy 模块报告条目");
+            .expect("the lazy module's report entry");
         assert_eq!(
             entry.state,
             trait_kit::kit::report::ModuleBuildState::Overridden,
-            "能力来源应记为 overridden"
+            "the capability source should be recorded as overridden"
         );
         assert_eq!(report.overrides.len(), 1);
         assert_eq!(report.overrides[0].module, "rpt-json-lazy");
@@ -368,19 +402,24 @@ fn e2e_load_config_with_double_dollar_escape_forms() {
 
     let kit = Kit::new();
     kit.load_config_with::<EscapeCfg, _>(&vars)
-        .expect("加载应成功");
-    let cfg = kit.config::<EscapeCfg>().expect("配置应已存入");
+        .expect("the load should succeed");
+    let cfg = kit
+        .config::<EscapeCfg>()
+        .expect("the config should already be stored");
     assert_eq!(
         cfg.escaped_var, "${HOST}",
-        "$$转义应产出字面占位文本，不插值"
+        "$$ escaping should produce literal placeholder text, not interpolation"
     );
-    assert_eq!(cfg.literal_dollar, "cost: $5", "$$ 应折叠为字面 $");
+    assert_eq!(
+        cfg.literal_dollar, "cost: $5",
+        "$$ should collapse to a literal $"
+    );
     assert_eq!(
         cfg.mixed, "${HOST} and db.internal",
-        "转义与插值混用应各归各"
+        "mixed escaping and interpolation should each stay separate"
     );
     assert_eq!(
         cfg.still_interpolates, "after $ then db.internal",
-        "转义后的后续占位符仍应插值"
+        "placeholders after an escape should still interpolate"
     );
 }

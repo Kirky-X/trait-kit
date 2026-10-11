@@ -127,7 +127,7 @@ fn prs02_feature_table_lists_all_features() {
     for f in expected {
         assert!(
             features.contains_key(f),
-            "Cargo.toml [features] 缺少 feature '{f}'：got {names:?}"
+            "Cargo.toml [features] is missing feature '{f}': got {names:?}"
         );
     }
     // 除 22 个 feature 外仅允许空集 default（PRS-01 的可编译前提；数量
@@ -135,12 +135,12 @@ fn prs02_feature_table_lists_all_features() {
     assert_eq!(
         features.get("default").map(Vec::is_empty),
         Some(true),
-        "default 特性应为空集"
+        "the default feature should be an empty set"
     );
     assert_eq!(
         names.len(),
         expected.len() + 1,
-        "[features] 段应恰含 22 个 feature + default：got {names:?}"
+        "[features] should contain exactly 22 features plus default: got {names:?}"
     );
 }
 
@@ -148,14 +148,16 @@ fn prs02_feature_table_lists_all_features() {
 #[test]
 fn prs04_reload_chain_expansion() {
     let features = parse_features();
-    let reload = features.get("reload").expect("reload feature 应存在");
+    let reload = features
+        .get("reload")
+        .expect("the reload feature should exist");
     assert!(
         reload.contains(&"confers".to_string()),
-        "reload 应展开为 confers：got {reload:?}"
+        "reload should expand to confers: got {reload:?}"
     );
     assert!(
         !reload.contains(&"confers/watch".to_string()),
-        "reload 不应再含 confers/watch（已剪除死链）：got {reload:?}"
+        "reload should no longer contain confers/watch (dead links pruned): got {reload:?}"
     );
 }
 
@@ -167,10 +169,10 @@ fn prs05_encryption_chain_expansion() {
     let features = parse_features();
     let enc = features
         .get("encryption")
-        .expect("encryption feature 应存在");
+        .expect("the encryption feature should exist");
     assert!(
         enc.contains(&"confers".to_string()) && enc.contains(&"confers/encryption".to_string()),
-        "encryption 应展开为 confers + confers/encryption：got {enc:?}"
+        "encryption should expand to confers + confers/encryption: got {enc:?}"
     );
 }
 
@@ -204,7 +206,7 @@ fn prs03_all_features_gate_reached() {
     // 能编译并执行到此处 = 22 项 feature 全部激活（cfg 列表覆盖全部非
     // 别名 feature，数量与下一行断言的「22 feature + default」一致）。
     let features = parse_features();
-    assert_eq!(features.len(), 23, "22 feature + default 空集");
+    assert_eq!(features.len(), 23, "22 features plus the empty default set");
 }
 
 /// examples crate 20 个示例全部显式 `[[example]]` 注册，且
@@ -256,7 +258,7 @@ fn prs06_examples_manifest_required_features_structure() {
     assert_eq!(
         examples.len(),
         20,
-        "examples crate 应恰有 20 个 [[example]]"
+        "the examples crate should have exactly 20 [[example]] entries"
     );
     // 解析 examples crate 自身 [features] 名单。
     let ex_manifest = include_str!("../../examples/Cargo.toml");
@@ -277,16 +279,16 @@ fn prs06_examples_manifest_required_features_structure() {
     }
 
     for (name, required) in &examples {
-        assert!(!name.is_empty(), "示例名不得为空");
+        assert!(!name.is_empty(), "an example name must not be empty");
         if let Some(feats) = required {
             assert!(
                 !feats.is_empty(),
-                "示例 {name} 声明了 required-features 却为空"
+                "example {name} declares required-features but it is empty"
             );
             for f in feats {
                 assert!(
                     ex_features.contains(f),
-                    "示例 {name} 的 required-features 引用未知 feature '{f}'"
+                    "the required-features of example {name} reference unknown feature '{f}'"
                 );
             }
         }
@@ -304,20 +306,20 @@ fn tgl09_toggle_module_is_implemented() {
     // Must contain the core trait and types
     assert!(
         toggle_src.contains("pub trait ToggleBackend"),
-        "toggle.rs 应包含 ToggleBackend trait"
+        "toggle.rs should contain the ToggleBackend trait"
     );
     assert!(
         toggle_src.contains("pub enum ToggleValue"),
-        "toggle.rs 应包含 ToggleValue 枚举"
+        "toggle.rs should contain the ToggleValue enum"
     );
     assert!(
         toggle_src.contains("pub struct MemoryToggle"),
-        "toggle.rs 应包含 MemoryToggle 实现"
+        "toggle.rs should contain the MemoryToggle implementation"
     );
     // ConfersToggle present when confers feature is enabled
     assert!(
         toggle_src.contains("pub struct ConfersToggle"),
-        "toggle.rs 应包含 ConfersToggle（confers 后端）"
+        "toggle.rs should contain ConfersToggle (the confers backend)"
     );
 }
 
@@ -329,12 +331,12 @@ fn pre03_derive_macros_not_reexported_via_prelude() {
     let prelude = include_str!("../../src/prelude.rs");
     assert!(
         !prelude.contains("pub use trait_kit_macros::"),
-        "prelude 不得导出 trait-kit-macros 派生宏（宏包保持 opt-in，不强制 syn 依赖）"
+        "the prelude must not export trait-kit-macros derive macros (the macro crate stays opt-in, no forced syn dependency)"
     );
     let manifest = include_str!("../../Cargo.toml");
     assert!(
         manifest.contains("trait-kit-macros"),
-        "宏包应保持 workspace 成员（derive 宏的唯一提供方）"
+        "the macro crate should stay a workspace member (the sole provider of the derive macro)"
     );
 }
 
@@ -388,31 +390,36 @@ fn e2e_presets_provider_not_injected_and_duplicate_registration() {
     // 分支一：未注入 provider 直接 register。
     let mut kit = Kit::new();
     kit.register::<ConfersConfigModule>()
-        .expect("register 本身应成功");
-    let err = kit.build().expect_err("无 provider 构建必须失败");
+        .expect("register itself should succeed");
+    let err = kit
+        .build()
+        .expect_err("a build without a provider must fail");
     match &err {
         TraitKitError::BuildFailed { context, source } => {
-            assert_eq!(context, "confers-config", "context 应为模块 NAME");
+            assert_eq!(
+                context, "confers-config",
+                "the context should be the module NAME"
+            );
             let preset_err = source
                 .downcast_ref::<PresetError>()
-                .expect("source 应为 PresetError::ProviderNotInjected");
+                .expect("the source should be PresetError::ProviderNotInjected");
             assert!(matches!(preset_err, PresetError::ProviderNotInjected));
         }
         other => panic!("expected BuildFailed, got: {other:?}"),
     }
     assert!(
         err.to_string().contains("register_confers_config"),
-        "Display 应含注入指引文本：got '{err}'"
+        "the Display should contain injection guidance: got '{err}'"
     );
 
     // 分支二：成功注入后再注册同模块 → AlreadyRegistered。
     let provider = PresetMapProvider::from_pairs([("k", confers::ConfigValue::String("v".into()))]);
     let mut kit = Kit::new();
-    register_confers_config(&mut kit, provider).expect("首次注册应成功");
+    register_confers_config(&mut kit, provider).expect("the first registration should succeed");
     let provider2 =
         PresetMapProvider::from_pairs([("k", confers::ConfigValue::String("v".into()))]);
     let err = register_confers_config(&mut kit, provider2)
-        .expect_err("二次注册必须返回 AlreadyRegistered");
+        .expect_err("a second registration must return AlreadyRegistered");
     assert!(matches!(err, TraitKitError::AlreadyRegistered { .. }));
 }
 
@@ -464,17 +471,18 @@ mod presets_remote_error_e2e {
     #[test]
     fn e2e_presets_remote_source_failure_fails_build() {
         let mut kit = AsyncKit::new();
-        register_confers_remote_config(&mut kit, Arc::new(FailingSource)).expect("注册助手应成功");
-        let err = block_on(kit.build()).expect_err("远端源失败必须使 build 失败");
+        register_confers_remote_config(&mut kit, Arc::new(FailingSource))
+            .expect("the registration helper should succeed");
+        let err = block_on(kit.build()).expect_err("a failing remote source must fail the build");
         assert!(
             err.to_string().contains("e2e-remote-mock"),
-            "错误文本应携带源错误信息：got '{err}'"
+            "the error text should carry the source error: got '{err}'"
         );
         if let TraitKitError::BuildFailed { source, .. } = &err {
             let preset_err = source.downcast_ref::<PresetError>();
             assert!(
                 matches!(preset_err, Some(PresetError::RemoteLoad { .. })),
-                "source 应为 PresetError::RemoteLoad：got {preset_err:?}"
+                "the source should be PresetError::RemoteLoad: got {preset_err:?}"
             );
         } else {
             panic!("expected BuildFailed, got: {err:?}");
@@ -486,13 +494,13 @@ mod presets_remote_error_e2e {
     fn e2e_presets_remote_without_slot_reports_provider_not_injected() {
         let mut kit = AsyncKit::new();
         kit.register::<ConfersRemoteConfigModule>()
-            .expect("register 应成功");
-        let err = block_on(kit.build()).expect_err("无 slot 构建必须失败");
+            .expect("register should succeed");
+        let err = block_on(kit.build()).expect_err("a build without a slot must fail");
         match &err {
             TraitKitError::BuildFailed { source, .. } => {
                 let preset_err = source
                     .downcast_ref::<PresetError>()
-                    .expect("source 应为 PresetError");
+                    .expect("the source should be PresetError");
                 assert!(matches!(preset_err, PresetError::ProviderNotInjected));
             }
             other => panic!("expected BuildFailed, got: {other:?}"),
@@ -519,17 +527,17 @@ fn e2e_presets_handle_typed_accessors_return_none_on_mismatch() {
     assert_eq!(
         handle.get_string("int.key"),
         None,
-        "get_string 于 int 值应返回 None"
+        "get_string on an int value should return None"
     );
     assert_eq!(
         handle.get_int("str.key"),
         None,
-        "get_int 于 string 值应返回 None"
+        "get_int on a string value should return None"
     );
     assert_eq!(
         handle.get_string("absent.key"),
         None,
-        "未知 key 应返回 None"
+        "an unknown key should return None"
     );
     assert_eq!(handle.get_int("int.key"), Some(42));
     assert_eq!(handle.get_string("str.key").as_deref(), Some("text"));

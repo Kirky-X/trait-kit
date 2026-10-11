@@ -42,7 +42,7 @@ fn e2e_decorator_onion_order_registration_sequence() {
     assert_eq!(
         *ready.require::<OnionMod>().unwrap(),
         1100,
-        "装饰器应按注册顺序洋葱式叠加：f1 先应用、f2 后包裹"
+        "decorators should stack onion-style in registration order: f1 is applied first, f2 wraps it"
     );
 }
 
@@ -143,8 +143,8 @@ fn e2e_decorator_applies_on_multi_binding_path() {
     kit.decorate::<MultiDecoA>(|cap: Arc<u64>| Arc::new(*cap + 100));
     let ready = kit.build().unwrap();
     let all = ready.require_all::<MultiDecoA>().unwrap();
-    assert_eq!(*all[0], 101, "multi 绑定 A 应携带装饰");
-    assert_eq!(*all[1], 102, "multi 绑定 B 应携带装饰");
+    assert_eq!(*all[0], 101, "multi binding A should carry the decoration");
+    assert_eq!(*all[1], 102, "multi binding B should carry the decoration");
 }
 
 /// interface 路径：register_as 构建产物在 into_interface 前被装饰。
@@ -154,13 +154,15 @@ fn e2e_decorator_applies_on_interface_path() {
     let mut kit = Kit::new();
     kit.register_as::<GateModule>().unwrap();
     kit.decorate::<GateModule>(|mut cap: Arc<GateCap>| {
-        Arc::get_mut(&mut cap).expect("刚构建的能力应唯一持有").open = true;
+        Arc::get_mut(&mut cap)
+            .expect("a just-built capability should be uniquely owned")
+            .open = true;
         cap
     });
     let ready = kit.build().unwrap();
     assert!(
         ready.resolve::<dyn Gate>().unwrap().open(),
-        "register_as 路径产出的接口对象应携带装饰"
+        "interface objects from the register_as path should carry the decoration"
     );
 }
 
@@ -177,7 +179,7 @@ fn e2e_decorator_closure_panic_propagates_from_build() {
         });
         kit.build().unwrap()
     }));
-    let err = result.expect_err("装饰器闭包 panic 应穿透 build()");
+    let err = result.expect_err("a decorator closure panic should propagate through build()");
     let msg = err
         .downcast_ref::<&str>()
         .map(|s| (*s).to_string())
@@ -185,7 +187,7 @@ fn e2e_decorator_closure_panic_propagates_from_build() {
         .unwrap_or_default();
     assert!(
         msg.contains("decorator exploded"),
-        "panic 载荷应保留装饰器闭包的原始消息：got '{msg}'"
+        "the panic payload should keep the decorator closure's original message: got '{msg}'"
     );
 }
 
@@ -223,7 +225,7 @@ fn e2e_decorator_downcast_mismatch_panics_with_documented_message() {
         // 装饰器以 ImpostorCap（= VictimMod TypeId）为键注册。
         kit_with_impostor_decorator().build().unwrap()
     }));
-    let err = result.expect_err("downcast 失败应触发文档化 panic");
+    let err = result.expect_err("a downcast failure should trigger the documented panic");
     let msg = err
         .downcast_ref::<&str>()
         .map(|s| (*s).to_string())
@@ -231,7 +233,7 @@ fn e2e_decorator_downcast_mismatch_panics_with_documented_message() {
         .unwrap_or_default();
     assert!(
         msg.contains("decorator type mismatch"),
-        "应命中 expect(\"decorator type mismatch\") 文档化 panic：got '{msg}'"
+        "should hit the documented expect(\"decorator type mismatch\") panic: got '{msg}'"
     );
 }
 
@@ -309,13 +311,15 @@ mod ready_discard_on_ready_failure_e2e {
         kit.register_lifecycle::<HealthyShutdownMod>();
         kit.register_lifecycle::<FailingReadyMod>();
 
-        let err = kit.build().expect_err("on_ready 失败应使 build 整体失败");
+        let err = kit
+            .build()
+            .expect_err("a failed on_ready should fail the whole build");
         assert!(matches!(err, TraitKitError::LifecycleFailed { .. }));
 
         assert_eq!(
             SYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst),
             before,
-            "on_ready 失败后任何 on_shutdown 都不得执行"
+            "no on_shutdown should run after a failed on_ready"
         );
     }
 }
@@ -328,7 +332,7 @@ impl AutoBuilder for NeverRegisteredMod {
     type Capability = Arc<u32>;
     type Error = TraitKitError;
     fn build(_kit: &Kit) -> Result<Self::Capability, TraitKitError> {
-        unreachable!("该模块从不注册，不应被构建")
+        unreachable!("this module is never registered and should never be built")
     }
 }
 
@@ -343,11 +347,11 @@ fn e2e_decorate_unregistered_target_panics_on_build() {
         let mut kit = Kit::new();
         kit.register::<OnionMod>().unwrap();
         kit.decorate::<NeverRegisteredMod>(|_cap: Arc<u32>| -> Arc<u32> {
-            unreachable!("未注册模块的装饰器闭包不应被应用")
+            unreachable!("the decorator closure of an unregistered module should not be applied")
         });
         kit.build().unwrap()
     }));
-    let err = result.expect_err("未注册装饰目标应在 build() 期 panic");
+    let err = result.expect_err("an unregistered decoration target should panic at build() time");
     let msg = err
         .downcast_ref::<&str>()
         .map(|s| (*s).to_string())
@@ -355,10 +359,10 @@ fn e2e_decorate_unregistered_target_panics_on_build() {
         .unwrap_or_default();
     assert!(
         msg.contains("decorator target not registered"),
-        "应命中文档化的 build 期 panic：got '{msg}'"
+        "should hit the documented build-time panic: got '{msg}'"
     );
     assert!(
         msg.contains("never-registered-mod"),
-        "panic 消息应携带未注册目标的模块名：got '{msg}'"
+        "the panic message should carry the unregistered target's module name: got '{msg}'"
     );
 }
