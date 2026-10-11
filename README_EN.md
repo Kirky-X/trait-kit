@@ -583,9 +583,8 @@ See [CHANGELOG.md](docs/CHANGELOG.md). Recent highlights:
 
 ## 📄 License
 
-This project is licensed under **MIT + Commons Clause**: the MIT license with the additional Commons Clause v1.0 condition, which excludes selling the Software without separate written authorization from the Licensor; it is a source-available license, and commercial use requires separate authorization. See [LICENSE](LICENSE).
+This project is licensed under the [MIT](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE) license.
 
-Package metadata (`Cargo.toml` `license` / `license-file` fields) currently declares the `license` as `MIT`; crates.io reports `MIT` for the version field and license badge. The LICENSE text is authoritative for the actual terms.
 
 Copyright (c) 2026 Kirky.X🌠
 

@@ -5,7 +5,6 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
-license-file = "../LICENSE"
 license = "MIT"
 description = "Proc-macro crate for trait-kit: #[derive(Module)] generates ModuleMeta declarations."
 keywords = ["trait-kit", "derive", "module", "di"]
