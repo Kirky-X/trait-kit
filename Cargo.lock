@@ -301,9 +301,9 @@ dependencies = [
 
 [[package]]
 name = "confers"
-version = "0.6.0-rc.6"
+version = "0.6.0-rc.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "605fd2366d56427e177309c0a4bcc02c1a1a296429ac495eb2951bb5ddcbf0b2"
+checksum = "9b99293f8913dd9c93a0fc574510f8b2266e47c7e8e8304605eac41251032778"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -335,9 +335,9 @@ dependencies = [
 
 [[package]]
 name = "confers-macros"
-version = "0.6.0-rc.7"
+version = "0.6.0-rc.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b927fbe5fb3a58465ec616f6e68d8d16e7dd7ae7cfc5f2037cc15164024a4a5"
+checksum = "7271a14b5846294f06b2f3ee59bde2fe249c1a17633ffc9ed7b515c5cb5f650d"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -2258,7 +2258,7 @@ dependencies = [
 
 [[package]]
 name = "trait-kit"
-version = "0.5.0-rc.7"
+version = "0.5.0-rc.9"
 dependencies = [
  "async-trait",
  "confers",
@@ -2286,7 +2286,7 @@ dependencies = [
 
 [[package]]
 name = "trait-kit-examples"
-version = "0.5.0-rc.7"
+version = "0.5.0-rc.9"
 dependencies = [
  "confers",
  "serde",
@@ -2297,7 +2297,7 @@ dependencies = [
 
 [[package]]
 name = "trait-kit-macros"
-version = "0.5.0-rc.7"
+version = "0.5.0-rc.9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2736,20 +2736,6 @@ name = "zeroize"
 version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13084392c5e4bc371903e2935a5eaeed24905a7511356b883835e18a78f6879"
-dependencies = [
- "zeroize_derive",
-]
-
-[[package]]
-name = "zeroize_derive"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
 
 [[package]]
 name = "zerotrie"

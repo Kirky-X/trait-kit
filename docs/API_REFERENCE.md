@@ -1,6 +1,6 @@
 # 📘 Trait-Kit API 参考
 
-trait-kit 的 API 参考。覆盖核心与常用公开项——非穷尽全量，完整清单以 rustdoc / docs.rs 为准；按模块组织，标注各 API 所需的 feature flag（当前版本 **0.5.0-rc.7**）。
+trait-kit 的 API 参考。覆盖核心与常用公开项——非穷尽全量，完整清单以 rustdoc / docs.rs 为准；按模块组织，标注各 API 所需的 feature flag（当前版本 **0.5.0-rc.9**）。
 
 ## 📋 目录
 

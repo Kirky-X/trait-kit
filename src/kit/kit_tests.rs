@@ -2664,7 +2664,7 @@ mod config_inheritance_tests {
 
 /// 版本协商四注册路径奇偶性测试（fix-audit-defects-r1 批次 A）。
 ///
-/// 缺陷现状（Red）：`record_module_versions` 仅在 `register()` 调用，
+/// 缺陷现状：`record_module_versions` 仅在 `register()` 调用，
 /// lazy/multi/as 三条路径的 `VERSION`/`required_versions` 不进入协商记录，
 /// `validate_version_requirements` 对未登记 provider 静默跳过（fail-open）。
 /// 修复后 4 条负路径全部返回 `VersionIncompatible`。
@@ -3001,7 +3001,7 @@ mod negotiation_parity_tests {
 
 /// lazy 能力检索口径统一测试（fix-audit-defects-r1 批次 B）。
 ///
-/// 缺陷现状（Red）：`contains`/`optional`/`require_ref` 只查 `capabilities`，
+/// 缺陷现状：`contains`/`optional`/`require_ref` 只查 `capabilities`，
 /// 对 `register_lazy` 模块 `require()` 构建后的 `OnceLock` 缓存失明（`get_arc`
 /// 已正确回退 lazy 缓存），五条检索 API 口径互相矛盾。
 mod lazy_retrieval_semantics_tests {
@@ -3082,7 +3082,7 @@ mod lazy_retrieval_semantics_tests {
 
 /// lazy builder panic 恢复（审计缺陷修复批次 C）。
 ///
-/// 缺陷现状（Red）：`require()` 首建路径 take 出 builder 后只在返回 `Err`
+/// 缺陷现状：`require()` 首建路径 take 出 builder 后只在返回 `Err`
 /// 的分支放回；builder panic（或 decorator `.expect` panic）会 unwind 跳过
 /// 恢复逻辑，槽位 builder 永久丢失，后续 `require` 降级为 `MissingCapability`。
 mod lazy_builder_panic_tests {
