@@ -238,8 +238,9 @@ struct MyModule;
 #### `I18nManager`
 
 ```rust
-let mgr = I18nManager::init();                      // 自动检测系统 locale
+let mgr = I18nManager::init();                      // 默认英文（严格，不随宿主系统语言漂移）
 let mgr = I18nManager::init_with_locale("zh-CN");   // 指定 locale（无效 locale 回退英文目录）
+let mgr = I18nManager::init_with_system_locale();   // 按系统语言协商（opt-in，需 i18n feature）
 ```
 
 #### `tr()` — 消息翻译

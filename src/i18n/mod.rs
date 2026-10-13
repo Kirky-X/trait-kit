@@ -4,13 +4,14 @@
 //!
 //! 提供两大能力：
 //!
-//! 1. **消息翻译**（[`I18nManager`] + [`tr`]）：基于 Fluent FTL 消息文件，
-//!    支持中英文切换，系统语言环境自动检测。
+//! 1. **消息翻译**（[`I18nManager`] + [`tr`]）：基于 Fluent FTL 语言包
+//!    （`locales/{en,zh}/`，按域拆分），默认英文，显式协商可切中文。
 //! 2. **本地化格式化**（[`I18nFormatter`]）：ICU4X 驱动的数字/日期/复数/排序格式化。
 //!
 //! # 启动初始化
 //!
-//! 在应用启动时调用 [`I18nManager::init`] 自动检测系统语言环境：
+//! [`I18nManager::init`] 的默认显示语言严格为英文，不随宿主系统语言漂移
+//! （库输出因此保持确定性）：
 //!
 //! ```rust
 //! use trait_kit::i18n::I18nManager;
@@ -18,13 +19,16 @@
 //! let mgr = I18nManager::init();
 //! ```
 //!
-//! 或使用指定 locale：
+//! 语言协商保留：显式指定 locale 即可切换目录（如中文）：
 //!
 //! ```rust
 //! use trait_kit::i18n::I18nManager;
 //!
 //! let mgr = I18nManager::init_with_locale("zh-CN");
 //! ```
+//!
+//! 需要跟随宿主系统语言时，调用 [`I18nManager::init_with_system_locale`]
+//! （仅 `i18n` feature 下可用），它检测到 `zh*` 才启用中文目录。
 
 #[cfg(feature = "i18n")]
 mod i18n_impl;
@@ -137,27 +141,30 @@ pub struct I18nFormatter {
 
 // ─── Fluent 消息目录（fluent-bundle concurrent 双束） ────────────────────────
 
-/// 全局英文（回退）束：进程级共享，首次访问时从内嵌 `EN_FTL` 构建。
+/// 全局英文（回退）束：进程级共享，首次访问时从内嵌 `locales/en/*.ftl` 构建。
 static EN_BUNDLE: OnceLock<FluentBundle<FluentResource>> = OnceLock::new();
 
-/// 全局中文束：进程级共享，首次访问时从内嵌 `ZH_FTL` 构建。
+/// 全局中文束：进程级共享，首次访问时从内嵌 `locales/zh/*.ftl` 构建。
 static ZH_BUNDLE: OnceLock<FluentBundle<FluentResource>> = OnceLock::new();
 
-/// 从 FTL 源构建并发（`Send + Sync`）Fluent 束。
+/// 从 FTL 片段构建并发（`Send + Sync`）Fluent 束。
 ///
-/// 解析失败不 panic：`try_new` 返回的部分资源照常入束（损坏消息由
-/// Fluent 在查询时按语义降级），与统一 i18n 参考基线一致。
-fn build_bundle(lang: &str, ftl: &str) -> FluentBundle<FluentResource> {
-    let resource = FluentResource::try_new(ftl.to_string()).unwrap_or_else(|e| e.0);
+/// 每个域文件是一个片段，按数组顺序依次入束。解析失败不 panic：
+/// `try_new` 返回的部分资源照常入束（损坏消息由 Fluent 在查询时按语义
+/// 降级），与统一 i18n 参考基线一致。
+fn build_bundle(lang: &str, ftls: &[&str]) -> FluentBundle<FluentResource> {
     let langid: LanguageIdentifier = lang
         .parse()
         .unwrap_or_else(|_| "en".parse().expect("'en' is a valid language identifier"));
     let mut bundle = FluentBundle::new_concurrent(vec![langid]);
     // 关闭 Unicode 隔离符，避免插值文本两侧被 \u{2068}/\u{2069} 包裹。
     bundle.set_use_isolating(false);
-    bundle
-        .add_resource(resource)
-        .expect("single FTL resource should add without conflict");
+    for ftl in ftls {
+        let resource = FluentResource::try_new((*ftl).to_string()).unwrap_or_else(|e| e.0);
+        bundle
+            .add_resource(resource)
+            .expect("domain FTL fragments must not declare conflicting message ids");
+    }
     bundle
 }
 
@@ -186,8 +193,8 @@ fn format_from_custom_bundle(
 /// 未知语言（非 `zh`）一律归 en 束——回退终结于 en。
 fn format_from_bundle(lang: &str, message_id: &str, args: &[(&str, &str)]) -> Option<String> {
     let bundle = match lang {
-        "zh" => ZH_BUNDLE.get_or_init(|| build_bundle("zh", messages::ZH_FTL)),
-        _ => EN_BUNDLE.get_or_init(|| build_bundle("en", messages::EN_FTL)),
+        "zh" => ZH_BUNDLE.get_or_init(|| build_bundle("zh", messages::ZH_FTLS)),
+        _ => EN_BUNDLE.get_or_init(|| build_bundle("en", messages::EN_FTLS)),
     };
     format_from_custom_bundle(bundle, message_id, args)
 }
@@ -294,7 +301,8 @@ static GLOBAL_I18N: OnceLock<I18nManager> = OnceLock::new();
 /// Fluent 消息翻译管理器。
 ///
 /// 持有 FTL 消息目录和当前 locale 信息。
-/// 通过 [`I18nManager::init`] 自动检测系统语言环境并初始化。
+/// 通过 [`I18nManager::init`] 初始化为英文；语言协商走
+/// [`I18nManager::init_with_locale`] / [`I18nManager::init_with_system_locale`]。
 #[derive(Debug)]
 pub struct I18nManager {
     catalog: MessageCatalog,
@@ -302,18 +310,16 @@ pub struct I18nManager {
 }
 
 impl I18nManager {
-    /// 检测系统语言环境并初始化全局管理器。
+    /// 初始化全局管理器，默认显示语言严格为英文。
     ///
-    /// 首次调用时根据系统 locale 加载对应的 FTL 消息文件。
-    /// 后续调用直接返回已初始化的实例。
+    /// 不检测系统语言环境（宿主为中文系统时也输出英文），保证库的输出
+    /// 确定性；需要系统语言协商时用
+    /// [`init_with_system_locale`](Self::init_with_system_locale)，需要指定
+    /// 语言时用 [`init_with_locale`](Self::init_with_locale)。
+    ///
+    /// 首次调用时加载语言包。后续调用直接返回已初始化的实例。
     pub fn init() -> &'static Self {
-        GLOBAL_I18N.get_or_init(|| {
-            #[cfg(feature = "i18n")]
-            let locale_str = detect_system_locale();
-            #[cfg(not(feature = "i18n"))]
-            let locale_str = String::from("en-US");
-            Self::build(&locale_str)
-        })
+        GLOBAL_I18N.get_or_init(|| Self::build("en"))
     }
 
     /// 使用指定 BCP-47 locale 标签初始化全局管理器。
@@ -340,10 +346,21 @@ impl I18nManager {
         GLOBAL_I18N.get().unwrap()
     }
 
+    /// 按宿主系统语言环境初始化全局管理器（语言协商 opt-in 入口）。
+    ///
+    /// 检测到 `zh*` 启用中文目录，其余（含检测失败）一律回退英文。与
+    /// [`init_with_locale`](Self::init_with_locale) 一样幂等：全局实例已存在
+    /// 时直接返回现有实例。
+    #[cfg(feature = "i18n")]
+    #[must_use]
+    pub fn init_with_system_locale() -> &'static Self {
+        Self::init_with_locale(&detect_system_locale())
+    }
+
     /// 获取全局 [`I18nManager`] 实例。
     ///
-    /// 如果 [`init`](Self::init) 或 [`init_with_locale`](Self::init_with_locale)
-    /// 尚未调用，返回 `None`。
+    /// 如果 [`init`](Self::init)、[`init_with_locale`](Self::init_with_locale)
+    /// 或 `init_with_system_locale` 尚未调用，返回 `None`。
     #[must_use]
     pub fn global() -> Option<&'static I18nManager> {
         GLOBAL_I18N.get()
@@ -422,8 +439,9 @@ mod tests {
 
     /// FTL 键集合提取：逐行取 `key = ` 前缀（守卫用宽松匹配，键字符集
     /// 限定 `[a-z0-9-]`，跳过续行/文本行）。
-    fn ftl_keys(ftl: &'static str) -> std::collections::BTreeSet<&'static str> {
-        ftl.lines()
+    fn ftl_keys(ftls: &[&'static str]) -> std::collections::BTreeSet<&'static str> {
+        ftls.iter()
+            .flat_map(|ftl| ftl.lines())
             .filter_map(|line| line.split_once('='))
             .map(|(key, _)| key.trim())
             .filter(|key| {
@@ -435,11 +453,11 @@ mod tests {
             .collect()
     }
 
-    /// 守卫：EN/ZH FTL 键集合必须一致（键齐性）。
+    /// 守卫：EN/ZH 语言包（含全部域文件）键集合必须一致（键齐性）。
     #[test]
     fn ftl_key_parity_en_zh() {
-        let en = ftl_keys(messages::EN_FTL);
-        let zh = ftl_keys(messages::ZH_FTL);
+        let en = ftl_keys(messages::EN_FTLS);
+        let zh = ftl_keys(messages::ZH_FTLS);
         assert!(!en.is_empty(), "EN FTL must yield keys");
         let missing_in_zh: Vec<_> = en.difference(&zh).collect();
         let missing_in_en: Vec<_> = zh.difference(&en).collect();
@@ -448,6 +466,49 @@ mod tests {
             "EN/ZH key sets diverge: missing_in_zh={missing_in_zh:?} \
              missing_in_en={missing_in_en:?}"
         );
+    }
+
+    /// 守卫：`locales/` 磁盘目录与内嵌清单一致（新增域文件漏挂即失败）。
+    #[test]
+    fn locales_dir_matches_embedded_list() {
+        let locales_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let mut disk_files: Vec<String> = Vec::new();
+        for lang in ["en", "zh"] {
+            let entries =
+                std::fs::read_dir(locales_dir.join(lang)).expect("locales/{lang} must exist");
+            for entry in entries.filter_map(Result::ok) {
+                if entry.path().extension().and_then(|e| e.to_str()) == Some("ftl") {
+                    disk_files.push(format!(
+                        "locales/{lang}/{}",
+                        entry.file_name().to_string_lossy()
+                    ));
+                }
+            }
+        }
+        disk_files.sort();
+
+        let embedded: std::collections::BTreeSet<&str> = messages::EMBEDDED_LOCALES
+            .iter()
+            .map(|(path, _)| *path)
+            .collect();
+        let disk: std::collections::BTreeSet<&str> =
+            disk_files.iter().map(String::as_str).collect();
+        assert_eq!(
+            embedded, disk,
+            "EMBEDDED_LOCALES and the locales/ directory must list exactly the same files"
+        );
+
+        for (path, content) in messages::EMBEDDED_LOCALES {
+            let rel = path
+                .strip_prefix("locales/")
+                .expect("paths are locales/-relative");
+            let on_disk = std::fs::read_to_string(locales_dir.join(rel))
+                .unwrap_or_else(|e| panic!("read {path}: {e}"));
+            assert_eq!(
+                content, &on_disk,
+                "embedded {path} has drifted from the file on disk"
+            );
+        }
     }
 
     /// 守卫：自硬编码接入的键在 EN/ZH 束中按预期渲染（FTL 行语法错误会
@@ -689,6 +750,38 @@ mod tests {
             !mgr.locale_tag().is_empty(),
             "locale tag should be non-empty"
         );
+    }
+
+    /// 守卫：默认初始化严格输出英文（不随宿主系统语言漂移）。
+    ///
+    /// 冻结 r2 契约：`init()` 不检测系统 locale；语言协商必须显式调用
+    /// `init_with_locale` / `init_with_system_locale`。
+    #[test]
+    #[serial(i18n_global)]
+    fn manager_init_defaults_to_english() {
+        let mgr = I18nManager::init();
+        assert_eq!(mgr.locale_tag(), "en");
+        assert_eq!(
+            mgr.translate("trait-kit-error-already-registered", &[("module", "m")]),
+            "module `m` is already registered"
+        );
+    }
+
+    /// 守卫：系统语言协商入口复用既有全局实例（幂等、不重建）。
+    ///
+    /// 先显式锚定 en，断言与宿主 locale 无关：无论检测结果为何，
+    /// `init_with_system_locale()` 都必须返回同一个全局实例。
+    #[cfg(feature = "i18n")]
+    #[test]
+    #[serial(i18n_global)]
+    fn manager_init_with_system_locale_reuses_global_instance() {
+        let pinned = I18nManager::init_with_locale("en");
+        let negotiated = I18nManager::init_with_system_locale();
+        assert!(
+            std::ptr::eq(pinned, negotiated),
+            "system-locale entry must reuse the existing global instance"
+        );
+        assert_eq!(negotiated.locale_tag(), "en");
     }
 
     #[test]

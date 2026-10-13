@@ -3,7 +3,8 @@
 //! i18n — Fluent 消息翻译 + ICU4X 本地化格式化。
 //!
 //! 演示：
-//! - `I18nManager::init()` — 自动检测系统语言环境并初始化
+//! - `I18nManager::init()` — 默认英文（严格，不随宿主系统语言漂移）
+//! - `I18nManager::init_with_system_locale()` — 按系统语言协商（opt-in）
 //! - `I18nManager::init_with_locale()` — 使用指定 locale 初始化
 //! - `tr()` — 便捷翻译函数
 //! - `I18nFormatter::new()` — ICU4X locale 感知格式化
@@ -16,8 +17,8 @@ use trait_kit::i18n::{I18nFormatter, I18nManager, tr};
 
 fn main() {
     // ─── 全局 I18nManager 初始化 ─────────────────────────────────────────
-    // 自动检测系统语言环境（如 zh-CN、en-US）
-    let mgr = I18nManager::init();
+    // 按系统语言环境协商（如 zh-CN、en-US）；默认 init() 为严格英文。
+    let mgr = I18nManager::init_with_system_locale();
     println!(
         "{}",
         tr(

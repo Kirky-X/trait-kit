@@ -398,7 +398,7 @@
 | ERR-06 | `LifecycleFailed` Display 含 context+source，`source()` 返回内层（lifecycle 门控） | 正常 | lifecycle | 无 | `src/error.rs::lifecycle_failed_display_contains_context_and_source`、`error_source_returns_inner_for_lifecycle_failed` | tests/e2e/e2e_features.rs |
 | ERR-07 | `ShutdownTimedOut` Display 含全部超时阶段名（shutdown 门控）→ 无内联断言 | 异常 | shutdown | 无 | 无→需新增 | tests/e2e/e2e_runtime.rs |
 | ERR-08 | 无 source 变体（`MissingConfig` 等）`source()` 返回 `None`；Debug 输出含变体名 | 边界 | — | 无 | `src/error.rs::error_source_returns_none_for_simple_variants`、`error_debug_format` | tests/e2e/e2e_core.rs |
-| ERR-09 | 错误 Display 双语目录绑定：en（默认回退）与 zh 两份 FTL 均覆盖全部 9 个错误消息 id（含 config-validation-failed） | 边界 | i18n | 无 | `src/i18n/messages/en.ftl`、`zh.ftl`（9 条消息 id 核对）+ `src/i18n/mod.rs::catalog_translate_with_variables` → 双 locale Display 断言需新增 | tests/e2e/e2e_i18n.rs |
+| ERR-09 | 错误 Display 双语目录绑定：en（默认回退）与 zh 两份 FTL 均覆盖全部 9 个错误消息 id（含 config-validation-failed） | 边界 | i18n | 无 | `locales/en/errors.ftl`、`locales/zh/errors.ftl`（9 条消息 id 核对）+ `src/i18n/mod.rs::catalog_translate_with_variables` → 双 locale Display 断言需新增 | tests/e2e/e2e_i18n.rs |
 
 ### 2.19 prelude 导出面（PRE，3 条）
 

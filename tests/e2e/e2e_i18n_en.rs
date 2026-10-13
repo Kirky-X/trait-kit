@@ -3,10 +3,10 @@
 //
 // ERR-09 en 侧断言（独立测试进程锚定 en 目录）。
 //
-// 全局 I18nManager 为进程级 OnceLock 单例，且 `tr()` 内部的
-// `I18nManager::init()` 会检测系统 locale（检测失败才回退 en-US），
-// 因此 en 断言必须显式锚定：本测试二进制内所有测试首行调用
-// `ensure_en()`，与 tests/e2e_i18n.rs（zh-CN 锚定进程）互为平行进程。
+// 全局 I18nManager 为进程级 OnceLock 单例，且 `I18nManager::init()` 的默认
+// 显示语言严格为英文（不检测系统 locale），本测试二进制仍显式锚定 en：
+// 所有测试首行调用 `ensure_en()`，与 tests/e2e_i18n.rs（zh-CN 锚定进程）
+// 互为平行进程。
 //
 // 覆盖场景 ID（docs/TEST_SCENARIOS.md §2.18）：
 // - ERR-09 错误 Display 双语目录绑定：en 目录覆盖全部错误消息 id，

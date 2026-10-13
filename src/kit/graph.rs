@@ -719,8 +719,8 @@ mod tests {
 
         // 可作为 `dyn std::error::Error` 使用（错误处理生态兼容）
         let dyn_err: &dyn std::error::Error = &err;
-        // Display 经 i18n `tr()` 渲染（跟随系统 locale），故断言插值参数
-        // 而非消息文本（与 tests/basic.rs 的错误 Display 断言同规）。
+        // Display 经 i18n `tr()` 渲染（跟随活动 locale，默认英文），故断言插值
+        // 参数而非消息文本（与 tests/basic.rs 的错误 Display 断言同规）。
         let dyn_msg = dyn_err.to_string();
         assert!(
             dyn_msg.contains('a') && dyn_msg.contains('b'),
