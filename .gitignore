@@ -30,6 +30,13 @@ docs/design.md
 docs/tests.md
 specmark/
 
+# ── Design Documents (not for version control) ──────
+**/PRD*
+**/ADD*
+**/TRD*
+**/DDD*
+**/HUB_PROTOCOL*
+
 # ── Temp ─────────────────────────────────────────────
 temp/
 logs/
