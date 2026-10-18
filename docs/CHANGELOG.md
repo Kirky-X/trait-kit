@@ -39,6 +39,7 @@
 - **依赖**：三方依赖全量核对 crates.io 最新稳定版——`cargo update` 抬 `serde_json` 1.0.151 → 1.0.152（本轮唯一落后项；其余直接依赖均已在其最新稳定版，未引入预发布）；自研依赖声明 req 不变（`confers` 0.6.0-rc.6，版本定值归发布链）
 - **依赖**：特性裁剪四项——`log` 关闭 `std`（`default-features = false` 且不再声明任何特性：本 crate 只用 `log!` 宏与 `set_logger`/`set_max_level`，两者均为 core API，`set_boxed_logger` 不在使用面内）；`zeroize` 关闭 `alloc`（只命名 `Zeroizing<[u8; 32]>`，`Zeroizing` 与 `[u8; 32]: Zeroize` 都在 core，`alloc` 才提供的 `Vec`/`String`/`Box` 实现未使用）；`icu_decimal` 关闭 `alloc`（只留 `compiled_data`：`format_number` 的 `write_to_string` 由 writeable 的 alloc 门控默认方法提供，icu_decimal 的 `alloc` 只额外带来 Display 与委托重载，均未使用；`Cargo.lock` 随之去掉 icu_decimal → serde 边）；`trait-kit-macros` 的 `syn` 关闭 `clone-impls`（宏对 AST 只读不拷贝，展开代码里的 `.clone()` 作用于用户字段类型）。注：本次修改后工作区特性集与已发布 `0.5.0-rc.7` 分叉，rc.7 节记的 `log`（含 `std`）/`zeroize`（含 `alloc`）/`icu_decimal`（含 `alloc`）为该 tag 时点事实
 - **构建**：`trait-kit-macros`（主 crate dev-dep 与 `examples/`）、`macros/` 的 dev-dep `trait-kit` 三处 path 依赖补显式 `default-features = false`，与其余依赖的声明风格统一（两者 default 特性均为空集，行为无变化）
+- **依赖**：`rustls` 0.23.45 → 0.23.46——修 RUSTSEC-2026-0346/0347/0348/0349（`Debug` 泄露 TLS 会话密钥、ECH 拒绝后缓冲的应用数据外发、Brotli 证书解压 1 GiB 分配、未认证 ServerHello 降级为经典密钥交换）；经 `presets-remote` → `confers/remote` → `reqwest` → `hyper-rustls` 链传递，非默认特性面
 
 ## [`0.5.0-rc.8`] - 2026-10-08
 
