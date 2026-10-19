@@ -567,7 +567,7 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 | 19 | `toggle_basic` | toggle | 退出码 0；`register_if_toggle` 开/关双分支输出 |
 | 20 | `config_inheritance` | confers | 退出码 0；ConfigInherit/SharedConfig 继承链演示 |
 
-批跑脚本（建议固化为 `scripts/run_examples.sh`）：
+批跑命令：
 `for e in default_basic confers_loader confers_macros hot_reload encryption async_basic lifecycle health_check observability scope_basic conditional factory decorator interface i18n shutdown validation snapshot_restore toggle_basic config_inheritance; do …按 5.2 表传 feature…; done`
 
 ### 5.3 场景 ID → E2E 文件映射汇总
