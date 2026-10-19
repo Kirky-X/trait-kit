@@ -3,7 +3,7 @@
 本项目所有显著变更将记录在此文件中。
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
-并遵循 [语义化版本](https://semver.org/lang/zh-CN/v2.0.0.html)。
+并遵循 [语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
 
 ## 📋 目录
 
