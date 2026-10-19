@@ -2,7 +2,7 @@
 
 <img src="docs/assets/trait-kit.png" alt="trait-kit logo" width="240">
 
-[![CI Status](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml) [![Version](https://img.shields.io/crates/v/trait-kit.svg)](https://crates.io/crates/trait-kit) [![Docs.rs](https://docs.rs/trait-kit/badge.svg)](https://docs.rs/trait-kit) [![Downloads](https://img.shields.io/crates/d/trait-kit.svg)](https://crates.io/crates/trait-kit) [![License](https://img.shields.io/crates/l/trait-kit.svg)](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE) [![Rust](https://img.shields.io/badge/rust-1.97.1%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust 2024](https://img.shields.io/badge/Rust-2024-edded?logo=rust&style=for-the-badge)](https://www.rust-lang.org/) [![Rustc 1.97.1+](https://img.shields.io/badge/Rustc-1.97.1+-orange.svg?style=for-the-badge)](https://www.rust-lang.org/) [![crates.io](https://img.shields.io/crates/v/trait-kit?style=for-the-badge)](https://crates.io/crates/trait-kit) [![docs.rs](https://img.shields.io/docsrs/trait-kit?style=for-the-badge)](https://docs.rs/trait-kit) [![downloads](https://img.shields.io/crates/d/trait-kit?style=for-the-badge)](https://crates.io/crates/trait-kit) [![CI](https://img.shields.io/github/actions/workflow/status/Kirky-X/trait-kit/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml) [![coverage](https://img.shields.io/codecov/c/github/Kirky-X/trait-kit?style=for-the-badge)](https://codecov.io/gh/Kirky-X/trait-kit) [![license](https://img.shields.io/crates/l/trait-kit?style=for-the-badge)](LICENSE)
 
 **中文** | [English](README_EN.md)
 
@@ -115,15 +115,23 @@ trait-kit 提供 DI 框架的**标准化**，同时保持手动装配的**显式
 
 最低支持 Rust 版本（MSRV）：**1.97.1**（edition 2024）。
 
+<details>
+<summary>📄 代码 · sh</summary>
+
 ```sh
 cargo add trait-kit
 ```
+
+</details>
 
 默认特性（`default = []`）只含核心 `ModuleMeta` + `AutoBuilder` + `Kit`；crate 固定携带 Fluent 翻译（`fluent-bundle` / `unic-langid`）与 `log` 门面 3 个必选依赖，其余依赖（`confers`、`serde`、`serde_json`、`icu_*` 等 ICU4X 组件）全部经 feature 门控可选。
 
 ### 💡 最小示例
 
 定义一个 logger 模块，注册、构建 Kit，然后检索能力（出处：[examples/src/core/default_basic.rs](examples/src/core/default_basic.rs)，有精简）：
+
+<details>
+<summary>📄 代码 · rust</summary>
 
 ```rust
 use std::sync::Arc;
@@ -166,6 +174,8 @@ fn main() {
 }
 ```
 
+</details>
+
 ### 🧭 核心概念
 
 - **模块**：实现 `ModuleMeta`（名称 + 依赖声明）与 `AutoBuilder`（构建能力）的类型，可用 `impl_module_meta!` 宏省去手写 impl。
@@ -176,6 +186,9 @@ fn main() {
 ### ⚙️ 带配置的模块
 
 配置是存储在 Kit 的 `TypeMap` 中的类型化值，模块在构建时通过 `kit.config::<C>()` 检索：
+
+<details>
+<summary>📄 代码 · rust</summary>
 
 ```rust
 use std::sync::Arc;
@@ -222,9 +235,14 @@ fn main() {
 }
 ```
 
+</details>
+
 ### 🔗 带依赖的模块
 
 模块通过 `ModuleMeta::dependencies()` 声明依赖（`impl_module_meta!` 宏支持 `deps = [...]` 语法）。Kit 在 `build()` 时验证依赖图，并按拓扑顺序构造模块：
+
+<details>
+<summary>📄 代码 · rust</summary>
 
 ```rust
 use std::sync::Arc;
@@ -280,6 +298,8 @@ fn main() {
 }
 ```
 
+</details>
+
 完整的 `Kit<Unbuilt>` / `Kit<Ready>` 方法列表（含各 feature 门控）见 [📘 API 参考](docs/API_REFERENCE.md) 与 [docs.rs](https://docs.rs/trait-kit)。
 
 ---
@@ -289,6 +309,9 @@ fn main() {
 `default = []`：默认不启用任何可选 feature。高级 feature 自动继承低级 feature（`encryption` → `reload` → `confers`）。
 
 <div align="center">
+
+<details>
+<summary>📋 表格</summary>
 
 <table>
 <tr><th>Feature</th><th>启用</th><th>说明</th><th>默认</th></tr>
@@ -313,20 +336,30 @@ fn main() {
 <tr><td><code>version-negotiation</code></td><td>—</td><td>能力版本协商：<code>ModuleMeta::VERSION</code> 与 <code>required_versions</code> 在 <code>build()</code> 时做 semver 兼容校验。</td><td>—</td></tr>
 </table>
 
+</details>
+
 </div>
 
 向后兼容别名：旧 feature 名 `interface` / `scope` / `negotiate` 仍可启用，分别转发到 `di` / `request-scope` / `version-negotiation`（已标记 deprecated，新代码请使用新名）。
 
 在 `Cargo.toml` 中启用所需级别：
 
+<details>
+<summary>📄 代码 · toml</summary>
+
 ```toml
 [dependencies]
 trait-kit = { version = "0.5.0-rc.10", features = ["encryption"] }
 ```
 
+</details>
+
 ---
 
 ## 📚 文档
+
+<details>
+<summary>📋 表格</summary>
 
 | 文档 | 说明 |
 |------|------|
@@ -340,15 +373,25 @@ trait-kit = { version = "0.5.0-rc.10", features = ["encryption"] }
 | [🤝 贡献指南](docs/CONTRIBUTING.md) | 环境准备、TDD 工作流与提交规范 |
 | [📦 crates.io](https://crates.io/crates/trait-kit) / [docs.rs](https://docs.rs/trait-kit) | 发布版本与在线 API 文档 |
 
+</details>
+
 ---
 
 ## 💻 示例
 
 `examples/` 是一个独立的 workspace 成员 `trait-kit-examples`（`publish = false`），共 20 个可独立运行的示例，覆盖 13 个 feature 门控的核心用法（`probe` / `report` / `compose` / `presets` / `presets-remote` / `version-negotiation` 暂无专属示例，用法见 [📘 API 参考](docs/API_REFERENCE.md)）。运行方式：
 
+<details>
+<summary>📄 代码 · sh</summary>
+
 ```sh
 cargo run -p trait-kit-examples --example <名称> --features <特性>
 ```
+
+</details>
+
+<details>
+<summary>📋 表格</summary>
 
 | 示例 | Feature | 说明 |
 |------|---------|------|
@@ -372,6 +415,8 @@ cargo run -p trait-kit-examples --example <名称> --features <特性>
 | `decorator` | `decorator` | `Kit::decorate::<M>(fn)` 构建后能力包装 |
 | `shutdown` | `shutdown` | `ShutdownCoordinator` 分阶段优雅关闭（`StopRequests` → `DrainQueue` → `CloseConnections`）+ 超时控制 |
 | `i18n` | `i18n` | `I18nFormatter` 本地化数字/日期/复数/排序 |
+
+</details>
 
 示例详情见 [examples/README.md](examples/README.md)。
 
@@ -418,6 +463,9 @@ trait-kit 通过 `confers` → `reload` → `encryption` 三级 feature 继承�
 
 配置加载与配置继承的典型用法（完整可运行版本见 `confers_loader` 与 `config_inheritance` 示例）：
 
+<details>
+<summary>📄 代码 · rust</summary>
+
 ```rust,ignore
 use trait_kit::prelude::*;
 use trait_kit_macros::{ConfigInherit, SharedConfig};
@@ -445,6 +493,8 @@ kit.extract_shared::<TraitKitConfig>();      // 提取共享字段
 kit.inject_shared::<DbConfig>();             // 注入到 DbConfig
 ```
 
+</details>
+
 - `trait-kit-macros` 提供 `#[derive(Module)]`（生成 `ModuleMeta` 实现，等价于 `impl_module_meta!`）、`#[derive(ConfigInherit)]` 与 `#[derive(SharedConfig)]` 宏，共享字段以 `serde_json::Value` 保留类型信息。
 - `AsyncKit` 提供完全对称的 `Send + Sync` 配置 API。
 
@@ -453,6 +503,9 @@ kit.inject_shared::<DbConfig>();             // 注入到 DbConfig
 ## 🧪 测试
 
 ### 测试策略
+
+<details>
+<summary>📋 表格</summary>
 
 | 类型 | 位置 | 说明 |
 |------|------|------|
@@ -464,9 +517,14 @@ kit.inject_shared::<DbConfig>();             // 注入到 DbConfig
 | 示例验证 | `examples/`（20 个） | 每个示例独立运行，断言失败即 panic |
 | 基准测试 | `benches/kit_bench.rs` | criterion 基准（需 `toggle` feature） |
 
+</details>
+
 测试规模：主 crate `src/` 与 `tests/` 共 **932** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `macros/tests/` 6 个。
 
 ### 常用命令（与 CI 一致）
+
+<details>
+<summary>📄 代码 · sh</summary>
 
 ```sh
 # 全量测试（workspace + 全部 feature，与 CI test job 一致）
@@ -488,6 +546,8 @@ cargo deny check
 # 覆盖率门禁（CI coverage job：行覆盖 ≥ 95%）
 cargo llvm-cov --workspace --all-features --fail-under-lines 95
 ```
+
+</details>
 
 ---
 
@@ -518,6 +578,9 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 <div align="center">
 
+<details>
+<summary>📋 表格</summary>
+
 <table>
 <tr><th>状态</th><th>条目</th><th>说明</th></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.10</b>（2026-10-19）</td><td>当前版本：i18n 默认语言严格英文与 <code>locales/{en,zh}/</code> 按域拆分、<code>rustls</code> 0.23.46 安全升级、统一纯 MIT 许可、发布切 crates.io trusted publishing（OIDC）与发布幂等三元组（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
@@ -527,6 +590,8 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 <tr><td>📋</td><td><b>0.5.0 正式发布</b></td><td>次版本位 +1 后，按工作区发布计划同步下游仓库（oxcache、dbnexus、inklog、limiteron、sdforge）的 <code>path + version</code> 依赖要求。</td></tr>
 <tr><td>✅</td><td><b>cfg 门控完整性</b></td><td><code>--no-default-features --features async</code> 与 <code>async,observer</code> 组合 check、<code>clippy --features async --all-targets</code> 零告警，async doc 测试全通过——门控缺口已消除（2026-09-27 复测确认）。</td></tr>
 </table>
+
+</details>
 
 </div>
 

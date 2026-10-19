@@ -2,9 +2,9 @@
 
 <img src="docs/assets/trait-kit.png" alt="trait-kit logo" width="240">
 
-[![CI Status](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml) [![Version](https://img.shields.io/crates/v/trait-kit.svg)](https://crates.io/crates/trait-kit) [![Docs.rs](https://docs.rs/trait-kit/badge.svg)](https://docs.rs/trait-kit) [![Downloads](https://img.shields.io/crates/d/trait-kit.svg)](https://crates.io/crates/trait-kit) [![License](https://img.shields.io/crates/l/trait-kit.svg)](LICENSE) [![Rust](https://img.shields.io/badge/rust-1.97.1%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust 2024](https://img.shields.io/badge/Rust-2024-edded?logo=rust&style=for-the-badge)](https://www.rust-lang.org/) [![Rustc 1.97.1+](https://img.shields.io/badge/Rustc-1.97.1+-orange.svg?style=for-the-badge)](https://www.rust-lang.org/) [![crates.io](https://img.shields.io/crates/v/trait-kit?style=for-the-badge)](https://crates.io/crates/trait-kit) [![docs.rs](https://img.shields.io/docsrs/trait-kit?style=for-the-badge)](https://docs.rs/trait-kit) [![downloads](https://img.shields.io/crates/d/trait-kit?style=for-the-badge)](https://crates.io/crates/trait-kit) [![CI](https://img.shields.io/github/actions/workflow/status/Kirky-X/trait-kit/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml) [![coverage](https://img.shields.io/codecov/c/github/Kirky-X/trait-kit?style=for-the-badge)](https://codecov.io/gh/Kirky-X/trait-kit) [![license](https://img.shields.io/crates/l/trait-kit?style=for-the-badge)](LICENSE)
 
-[Chinese](README.md) | **English**
+[中文](README.md) | **English**
 
 **Standardized module interfaces + a `Kit` capability center**
 
@@ -121,15 +121,23 @@ trait-kit gives you the **standardization** of a DI framework with the **explici
 
 Minimum Supported Rust Version (MSRV): **1.97.1** (edition 2024).
 
+<details>
+<summary>📄 Code · sh</summary>
+
 ```sh
 cargo add trait-kit
 ```
+
+</details>
 
 The default features (`default = []`) only include the core `ModuleMeta` + `AutoBuilder` + `Kit`. The crate always ships 3 mandatory dependencies — Fluent translation (`fluent-bundle` / `unic-langid`) and the `log` facade — while all remaining dependencies (`confers`, `serde`, `serde_json`, `icu_*` (ICU4X components), etc.) are optional and feature-gated.
 
 ### 💡 Minimal Example
 
 Define a logger module, register it, build the Kit, then retrieve the capability (source: [examples/src/core/default_basic.rs](examples/src/core/default_basic.rs), trimmed):
+
+<details>
+<summary>📄 Code · rust</summary>
 
 ```rust
 use std::sync::Arc;
@@ -173,6 +181,8 @@ fn main() {
 }
 ```
 
+</details>
+
 ### 🧭 Core Concepts
 
 - **Module**: a type implementing `ModuleMeta` (name + dependency declaration) and `AutoBuilder` (capability construction); the `impl_module_meta!` macro removes the hand-written impl.
@@ -183,6 +193,9 @@ fn main() {
 ### ⚙️ Module with Configuration
 
 Configs are typed values stored in the Kit's `TypeMap`; modules retrieve them via `kit.config::<C>()` during build:
+
+<details>
+<summary>📄 Code · rust</summary>
 
 ```rust
 use std::sync::Arc;
@@ -229,9 +242,14 @@ fn main() {
 }
 ```
 
+</details>
+
 ### 🔗 Module with Dependencies
 
 Modules declare dependencies via `ModuleMeta::dependencies()` (the `impl_module_meta!` macro supports a `deps = [...]` syntax). The Kit validates the dependency graph at `build()` and constructs modules in topological order:
+
+<details>
+<summary>📄 Code · rust</summary>
 
 ```rust
 use std::sync::Arc;
@@ -288,6 +306,8 @@ fn main() {
 }
 ```
 
+</details>
+
 For the complete `Kit<Unbuilt>` / `Kit<Ready>` method list (including feature gates), see the [📘 API Reference](docs/API_REFERENCE.md) and [docs.rs](https://docs.rs/trait-kit).
 
 ---
@@ -297,6 +317,9 @@ For the complete `Kit<Unbuilt>` / `Kit<Ready>` method list (including feature ga
 `default = []`: no optional feature is enabled by default. Higher-level features automatically inherit lower ones (`encryption` → `reload` → `confers`).
 
 <div align="center">
+
+<details>
+<summary>📋 Table</summary>
 
 <table>
 <tr><th>Feature</th><th>Enables</th><th>Description</th><th>Default</th></tr>
@@ -321,18 +344,28 @@ For the complete `Kit<Unbuilt>` / `Kit<Ready>` method list (including feature ga
 <tr><td><code>version-negotiation</code></td><td>—</td><td>Capability version negotiation: <code>ModuleMeta::VERSION</code> vs <code>required_versions</code> semver-compat validation at <code>build()</code> time.</td><td>—</td></tr>
 </table>
 
+</details>
+
 </div>
 
 Enable the desired level in `Cargo.toml`:
+
+<details>
+<summary>📄 Code · toml</summary>
 
 ```toml
 [dependencies]
 trait-kit = { version = "0.5.0-rc.10", features = ["encryption"] }
 ```
 
+</details>
+
 ---
 
 ## 📚 Documentation
+
+<details>
+<summary>📋 Table</summary>
 
 | Document | Description |
 |----------|-------------|
@@ -346,15 +379,25 @@ trait-kit = { version = "0.5.0-rc.10", features = ["encryption"] }
 | [🤝 Contributing](docs/CONTRIBUTING.md) | Environment setup, TDD workflow, and commit conventions |
 | [📦 crates.io](https://crates.io/crates/trait-kit) / [docs.rs](https://docs.rs/trait-kit) | Released versions and the online API docs |
 
+</details>
+
 ---
 
 ## 💻 Examples
 
 `examples/` is a standalone workspace member `trait-kit-examples` (`publish = false`) with 20 standalone runnable examples covering the core usage of 13 feature gates (`probe` / `report` / `compose` / `presets` / `presets-remote` / `version-negotiation` have no dedicated example yet; see the [📘 API Reference](docs/API_REFERENCE.md)). Run with:
 
+<details>
+<summary>📄 Code · sh</summary>
+
 ```sh
 cargo run -p trait-kit-examples --example <name> --features <feature>
 ```
+
+</details>
+
+<details>
+<summary>📋 Table</summary>
 
 | Example | Feature | Demonstrates |
 |---------|---------|--------------|
@@ -378,6 +421,8 @@ cargo run -p trait-kit-examples --example <name> --features <feature>
 | `decorator` | `decorator` | `Kit::decorate::<M>(fn)` post-build capability wrapping |
 | `shutdown` | `shutdown` | `ShutdownCoordinator` phased graceful shutdown (`StopRequests` → `DrainQueue` → `CloseConnections`) + timeout control |
 | `i18n` | `i18n` | `I18nFormatter` locale-aware number/date/plural/collation formatting |
+
+</details>
 
 See [examples/README.md](examples/README.md) for details.
 
@@ -424,6 +469,9 @@ trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.6 thro
 
 Typical usage of config loading and config inheritance (fully runnable versions live in the `confers_loader` and `config_inheritance` examples):
 
+<details>
+<summary>📄 Code · rust</summary>
+
 ```rust,ignore
 use trait_kit::prelude::*;
 use trait_kit_macros::{ConfigInherit, SharedConfig};
@@ -451,6 +499,8 @@ kit.extract_shared::<TraitKitConfig>();      // extract shared fields
 kit.inject_shared::<DbConfig>();             // inject into DbConfig
 ```
 
+</details>
+
 - `trait-kit-macros` provides the `#[derive(Module)]` (generates a `ModuleMeta` impl, equivalent to `impl_module_meta!`), `#[derive(ConfigInherit)]`, and `#[derive(SharedConfig)]` macros; shared fields use `serde_json::Value` to preserve type information.
 - `AsyncKit` offers a fully symmetric `Send + Sync` config API.
 
@@ -459,6 +509,9 @@ kit.inject_shared::<DbConfig>();             // inject into DbConfig
 ## 🧪 Testing
 
 ### Test Strategy
+
+<details>
+<summary>📋 Table</summary>
 
 | Type | Location | Description |
 |------|----------|-------------|
@@ -470,9 +523,14 @@ kit.inject_shared::<DbConfig>();             // inject into DbConfig
 | Example validation | `examples/` (20) | Each example runs standalone; failed assertions panic |
 | Benchmarks | `benches/kit_bench.rs` | criterion benchmarks (requires the `toggle` feature) |
 
+</details>
+
 Test scale: the main crate's `src/` and `tests/` contain **932** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `macros/tests/`.
 
 ### Common Commands (same as CI)
+
+<details>
+<summary>📄 Code · sh</summary>
 
 ```sh
 # Full test run (workspace + all features, same as the CI test job)
@@ -494,6 +552,8 @@ cargo deny check
 # Coverage gate (CI coverage job: ≥ 95% line coverage)
 cargo llvm-cov --workspace --all-features --fail-under-lines 95
 ```
+
+</details>
 
 ---
 
@@ -524,6 +584,9 @@ Entries carry over the existing plan; status is aligned with the current reposit
 
 <div align="center">
 
+<details>
+<summary>📋 Table</summary>
+
 <table>
 <tr><th>Status</th><th>Item</th><th>Description</th></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.10</b> (2026-10-19)</td><td>Current release: strict-English default locale with domain-split <code>locales/{en,zh}/</code>, <code>rustls</code> 0.23.46 security upgrade, unified pure-MIT license, release switched to crates.io trusted publishing (OIDC) with the idempotency triple (see the <a href="docs/CHANGELOG.md">CHANGELOG</a>).</td></tr>
@@ -533,6 +596,8 @@ Entries carry over the existing plan; status is aligned with the current reposit
 <tr><td>📋</td><td><b>0.5.0 stable release</b></td><td>After the minor version bump, sync the <code>path + version</code> dependency requirements of downstream crates (oxcache, dbnexus, inklog, limiteron, sdforge) per the workspace release plan.</td></tr>
 <tr><td>✅</td><td><b>cfg gate completeness</b></td><td><code>--no-default-features --features async</code> and <code>async,observer</code> check combos, <code>clippy --features async --all-targets</code> are warning-free, and async doc tests all pass — the gate gap is resolved (re-verified 2026-09-27).</td></tr>
 </table>
+
+</details>
 
 </div>
 
