@@ -35,7 +35,13 @@
 - **首选渠道**：GitHub 的私密漏洞报告通道 [Security Advisories](https://github.com/Kirky-X/trait-kit/security/policy)（仓库页面 **Security → Report a vulnerability**）。
 - **备选渠道**：首选通道不可用时，发送邮件至 **Kirky-X@outlook.com**。
 - 报告时请尽量包含：影响版本、复现步骤或概念验证代码、影响评估。
-- 维护者承诺 **48 小时内确认**收到报告、**7 天内给出初步评估**；确认后会评估严重性、开发修复并在补丁发布时致谢报告者（除非您希望匿名）。
+
+### ⏱️ 响应承诺
+
+- **48 小时内**确认收到
+- **7 天内**给出初步评估（接受/拒绝/需补充信息）
+- 修复发布前，报告者将获得补丁的预览验证机会
+- 修复发布后，在 CHANGELOG 与 advisory 中致谢报告者（可匿名）
 
 **安全加固渠道**：除漏洞报告外，仓库 CI 持续运行依赖与静态分析门禁（cargo-audit + cargo-deny、CodeQL，pre-commit 的 detect-secrets / detect-private-key 密钥扫描，见下文「CI 安全门禁」），历史上保持零未处置 Critical/High 的记录。
 

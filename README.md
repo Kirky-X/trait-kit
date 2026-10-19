@@ -646,8 +646,6 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 本项目基于 [MIT](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE) 许可证发布。
 
-发布包元数据（`Cargo.toml` 的 `license` / `license-file` 字段）当前将 `license` 声明为 `MIT`，crates.io 的版本字段与许可证徽章据此显示 `MIT`；许可条款以 LICENSE 全文为准。
-
 Copyright (c) 2026 Kirky.X🌠
 
 ---

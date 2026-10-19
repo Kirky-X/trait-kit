@@ -650,8 +650,7 @@ See [CHANGELOG.md](docs/CHANGELOG.md). Recent highlights:
 
 ## 📄 License
 
-This project is licensed under the [MIT](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE) license.
-
+This project is licensed under the [MIT](LICENSE) License.
 
 Copyright (c) 2026 Kirky.X🌠
 

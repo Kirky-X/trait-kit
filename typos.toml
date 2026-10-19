@@ -1,4 +1,5 @@
-# typos 配置 — 排除清单 + 词表白名单（修复 pre-commit 门禁摩擦）
+# typos 白名单 —— 仅登记「确为真词 / 真实标识符 / 刻意测试数据」的命中，
+# 不放宽任何门禁：真正的拼写错误仍会由 typos 报告并阻断提交。
 #
 # 背景：pre-commit 的 typos 钩子（crate-ci/typos v1.28）默认带 `--write-changes`，
 # 命中即原地改写文件。本仓的生成资产与 trybuild 反向夹具属于「机器生成 / 故意写错」的内容，
