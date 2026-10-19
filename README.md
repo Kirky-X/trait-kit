@@ -321,7 +321,7 @@ fn main() {
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.5.0-rc.9", features = ["encryption"] }
+trait-kit = { version = "0.5.0-rc.10", features = ["encryption"] }
 ```
 
 ---
@@ -520,7 +520,8 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 <table>
 <tr><th>状态</th><th>条目</th><th>说明</th></tr>
-<tr><td>✅</td><td><b>0.5.0-rc.9</b>（2026-10-03）</td><td>当前版本：服务探针注册面（新 <code>probe</code> feature）、async 健康聚合（<code>health_aggregate</code> / <code>health_json</code>）、构建报告 <code>config_overrides</code> 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一、关闭协调器 hook panic 隔离等（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.10</b>（2026-10-19）</td><td>当前版本：i18n 默认语言严格英文与 <code>locales/{en,zh}/</code> 按域拆分、<code>rustls</code> 0.23.46 安全升级、统一纯 MIT 许可、发布切 crates.io trusted publishing（OIDC）与发布幂等三元组（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.9</b>（2026-10-03）</td><td>服务探针注册面（新 <code>probe</code> feature）、async 健康聚合（<code>health_aggregate</code> / <code>health_json</code>）、构建报告 <code>config_overrides</code> 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一、关闭协调器 hook panic 隔离等（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.6</b>（2026-09-21）</td><td>rc.4–rc.6 已发布：观测端口与事件总线、Toggle 完整落地、<code>trait-kit-derive</code> 并入 <code>trait-kit-macros</code>、<code>confers</code> 依赖改走 crates.io（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
 <tr><td>✅</td><td><b>性能基准</b></td><td>criterion 基准 <code>benches/kit_bench.rs</code> 与 <code>docs/PERFORMANCE.md</code> 基线报告已建立（现行基线 2026-09-29）。</td></tr>
 <tr><td>📋</td><td><b>0.5.0 正式发布</b></td><td>次版本位 +1 后，按工作区发布计划同步下游仓库（oxcache、dbnexus、inklog、limiteron、sdforge）的 <code>path + version</code> 依赖要求。</td></tr>
@@ -567,6 +568,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 详见 [CHANGELOG.md](docs/CHANGELOG.md)。近期版本要点：
 
+- **0.5.0-rc.10**（2026-10-19）：i18n 默认语言严格英文与 `locales/{en,zh}/` 按域拆分；`rustls` 0.23.46 安全升级；统一纯 MIT 许可；发布切 crates.io trusted publishing（OIDC）与发布幂等三元组。
 - **0.5.0-rc.9**（2026-10-03）：服务探针注册面（新 `probe` feature）、async 健康聚合、构建报告 `config_overrides` 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一等。
 - **0.5.0-rc.6**（2026-09-21）：`confers` 依赖改走 crates.io；依赖升级（syn 3.0、criterion 0.8、rustls 0.23.45）；发布流程加固（先发 `trait-kit-macros` 再发主 crate）。
 - **0.5.0-rc.5**（2026-09-14）：`trait-kit-derive` 并入 `trait-kit-macros`（`ConfigInherit` / `SharedConfig` 迁移，derive 子包退役）。

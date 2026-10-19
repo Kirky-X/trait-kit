@@ -2258,7 +2258,7 @@ dependencies = [
 
 [[package]]
 name = "trait-kit"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "async-trait",
  "confers",
@@ -2286,7 +2286,7 @@ dependencies = [
 
 [[package]]
 name = "trait-kit-examples"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "confers",
  "serde",
@@ -2297,7 +2297,7 @@ dependencies = [
 
 [[package]]
 name = "trait-kit-macros"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "proc-macro2",
  "quote",

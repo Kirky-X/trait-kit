@@ -10,6 +10,7 @@
 <details open>
 <summary>📑 目录</summary>
 
+- [`0.5.0-rc.10`](#050-rc10---2026-10-19)
 - [`0.5.0-rc.9`](#050-rc9---2026-10-10)
 - [`0.5.0-rc.8`](#050-rc8---2026-10-08)
 - [`0.5.0-rc.7`](#050-rc7---2026-10-03)
@@ -31,6 +32,21 @@
 
 ---
 
+
+## [0.5.0-rc.10] - 2026-10-19
+
+### Changed
+
+- **i18n**：默认语言严格英文；语言包按域拆分为 `locales/{en,zh}/`，未匹配 locale 回退 EN
+- **依赖**：`rustls` 升 0.23.46，修复 4 项 RUSTSEC 告警（经 `presets-remote` 链传递）
+- **依赖**：`confers` 声明 req 更新至 0.6.0-rc.10
+- **License**：统一为纯 MIT，LICENSE 删除 Commons Clause 段，manifest `license = "MIT"`
+
+### Internal
+
+- **CI 发布**：publish 凭证切换 crates.io trusted publishing（OIDC auth-action）；新增 rc prerelease 派生与发布幂等三元组（tag 级并发组 + 发布后 release 唯一性断言）
+
+---
 
 ## [0.5.0-rc.9] - 2026-10-10
 
