@@ -142,7 +142,7 @@ jobs:
   bench:
     name: Bench gate (order-of-magnitude)
     # 显式开关：仓库变量 BENCH_GATE_DISABLED=true 整体停用（默认启用）。
-    # 门禁定位与阈值推导见 docs/bench-baseline.md：共享 runner 噪音大，
+    # 门禁定位与阈值推导见 docs/PERFORMANCE.md「CI 阈值」：共享 runner 噪音大，
     # 阈值为本地基线 ×100 的数量级护栏，仅拦截灾难性回归。
     needs: [check, test]
     if: ${{ vars.BENCH_GATE_DISABLED != 'true' }}

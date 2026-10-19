@@ -20,9 +20,9 @@
 //! `config/write_merge_config` benchmark (it is skipped silently under
 //! `--features toggle` alone, and under `--all-features` it is compiled out:
 //! the `report`-gated record accumulation would grow unboundedly per
-//! iteration and invalidate the measurement). Baseline numbers live in
-//! `docs/PERFORMANCE.md`; the gate-derivation ledger and thresholds live in
-//! `docs/bench-baseline.md` / `scripts/bench_gate.py`.
+//! iteration and invalidate the measurement). Baseline numbers, the
+//! gate-derivation ledger and thresholds all live in `docs/PERFORMANCE.md` /
+//! `scripts/bench_gate.py`.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -241,7 +241,7 @@ fn bench_toggle(c: &mut Criterion) {
 // Keep the default run under ~2 minutes on a laptop while still collecting
 // stable medians (20 samples × ~1s measurement each). CI runs these same
 // benchmarks behind an order-of-magnitude gate (see .github/workflows/ci.yml
-// and docs/bench-baseline.md); fine-grained regression detection stays a
+// and docs/PERFORMANCE.md); fine-grained regression detection stays a
 // local, same-machine discipline — see docs/PERFORMANCE.md.
 fn bench_config_short() -> Criterion {
     Criterion::default()

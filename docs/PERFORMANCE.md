@@ -1,12 +1,10 @@
 # ⚡ Trait-Kit 性能基准
 
 > 兑现 README "运行时零开销" 主张：以 criterion 基准建立可复现的性能基线。
-> 本文件记录基线数字与测量方法。**CI 门禁口径**：ci.yml 的 bench job 以"本地基线
+> 本文件是性能基线数字、门禁阈值与刷新规则的**单一事实源**。**CI 门禁口径**：ci.yml 的 bench job 以"本地基线
 > ×100 后向上取整到整千"的数量级阈值做灾难性回归护栏（仓库变量
-> `BENCH_GATE_DISABLED=true` 可整体停用）——共享 runner 噪音大，该门禁**不是**严格
-> 回归检测，±20% 级的精细回归判断只能在同一台机器的本地基线流程做；阈值推导、
-> 基线台账与刷新规则（三处一致变更：台账/LIMITS_NS/本文件基线段）见
-> [docs/bench-baseline.md](./bench-baseline.md)（单一事实源）。
+> `BENCH_GATE_DISABLED=true` 可整体停用）——共享 runner 噪音大，该门禁**不是**严 格
+> 回归检测，±20% 级的精细回归判断只能在同一台机器的本地基线流程做。
 
 ## 🏃 运行方式
 
@@ -42,6 +40,10 @@ cargo bench --features toggle -- build/three_module_chain
 - 工具链：rustc 1.97.1，`bench` profile（继承 `release`：`opt-level=3`、`lto=fat`、`codegen-units=1`）
 - criterion 配置：`sample_size=20`，`warm_up_time=500ms`，`measurement_time=1s`
 - 报告口径：median（点估计），单位 ns/iter；feature 集 `toggle,confers`
+- 取数位置：`target/criterion/<bench>/new/estimates.json` 的 `median.point_estimate`
+- 测量模式：20 samples × 1s 测量、500ms 预热的短模式（`benches/kit_bench.rs::bench_config_short`）；数字为单次运行的实测值，非多次取平均
+- HEAD：`c04d9ab`（feature 集 toggle,confers，无 report——`config/write_merge_config`
+  在 report 组合下被编译剔除，见文末测量说明）
 
 | 基准 | median |
 | --- | --- |
@@ -53,7 +55,13 @@ cargo bench --features toggle -- build/three_module_chain
 | `toggle/set` | ~61 ns |
 | `toggle/get` | ~1728 ns |
 
-CI 阈值推导以本表为准（×100 后向上取整到整千，见 docs/bench-baseline.md）。
+CI 阈值推导以本表为准（×100 后向上取整到整千，见下方「CI 阈值」）。本表为门禁推导源：刷新时同步修改 `scripts/bench_gate.py` 的 `LIMITS_NS`（两处一致变更）。
+
+### 测量可复现性备注
+
+- `toggle/get` 在本机两次独立全量运行（高负载时段 1778 ns、负载 1.12 复测 1728 ns）稳定在 ~1.7 µs 量级；审查轮曾观察到一次 454 ns 的单点值，在本机不可复现，不作为基线。若未来出现稳定的更低值，按下方刷新规则重测并同步两处。
+- 历史（2026-09-10）快照中 toggle/set ≈21 ns、toggle/get ≈12 ns 与当前 HEAD 的实测不可对齐，根因未查明（其测量条件无法复现），仅作历史记录保留在下节，不参与门禁推导。
+- `report` 特性的记录/排空路径（`merge_config` 的 `push_config_override` 记录成本与 `take_config_overrides` 的 `mem::take` 轮转换出）**无基准覆盖，属显式非目标**：`config/write_merge_config` 在 report 组合下被编译剔除（迭代式基准下记录 `Vec` 无上限增长，见 `benches/kit_bench.rs`），CI bench 亦只跑 `toggle,confers`。该路径为诊断用途、量级远低于热路径，不要因本表无此轴而误以为已测。
 
 ## 🗄 历史快照（2026-09-10，不参与门禁推导）
 
@@ -84,5 +92,15 @@ CI 阈值推导以本表为准（×100 后向上取整到整千，见 docs/bench
 
 - ci.yml bench job 断言 7 个基准中位数不超过本地基线 ×100 后向上取整到整千
   （`scripts/bench_gate.py`），仓库变量 `BENCH_GATE_DISABLED=true` 可整体停用。
+- **为什么是 ×100**：GitHub 共享 runner（ubuntu-latest）与本地的差距由三层叠加——
+  单核性能差（约 3–10×）、虚拟化/邻居噪音（约 3–10×）、保守余量。合计上限取两个
+  数量级。门禁定位是灾难性回归护栏（算法复杂度劣化、锁竞争爆炸、意外分配风暴等
+  ≥100× 的悬崖），不是严格回归检测；共享 runner 上任何更紧的阈值都会被噪音击穿而
+  失去门禁意义。
+- **覆盖告警**：每次运行把 `target/criterion` 下实际产出 `new/estimates.json` 的基准
+  目录集与 `LIMITS_NS` 键集求差，未纳管的基准打 WARN 到 stderr（不失败——criterion
+  会保留已删除/改名基准的陈旧目录，fail 会产生误报）；新增基准应同步补录阈值并重测基线。
+- **基线刷新**：升级 rustc / criterion / 机器 / feature 集后，重跑本地 bench 并
+  **两处一致变更**：本文件基线表 + `scripts/bench_gate.py` 的 `LIMITS_NS`（提交注明触发原因）。
 - ±20% 级的精细回归判断仍走本地 `--save-baseline`/`--baseline` 流程；多机方差
-  数据稳定后可再收紧 CI 阈值（届时按刷新规则三处一致变更）。
+  数据稳定后可再收紧 CI 阈值（届时按刷新规则两处一致变更）。

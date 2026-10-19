@@ -10,6 +10,7 @@ trait-kit 的架构设计围绕一个核心目标：**在应用启动时，以�
 - [🗺️ 整体架构](#️-整体架构)
 - [🧩 核心设计模式](#-核心设计模式)
 - [📦 模块系统](#-模块系统)
+- [🔗 自研库缺口登记](#自研库confers缺口登记)
 - [🔄 数据流](#-数据流)
 - [📁 目录结构](#-目录结构)
 - [🧵 线程安全模型](#-线程安全模型)
@@ -169,6 +170,19 @@ graph TB
 ```
 
 **数据流**：`TraitKitConfig` → `extract_shared` → `shared_fields overlay` → `inject_shared` → `DbConfig`
+
+### 自研库（confers）缺口登记
+
+trait-kit 的部分设施仍自管，迁移到 confers 需要对方先补齐以下缺口。完整证据链（confers 侧源码位置、被阻塞的迁移面、解锁收益）见 specmark 归档 `selfdev-lib-adoption-r1`（2026-10-10 快照）。
+
+| # | 缺口 | confers 侧现状 | 被阻塞的迁移面 | 优先级 | 当前处置 |
+|---|---|---|---|---|---|
+| 1 | `LocalDynamicField`（非 Send/Sync 变体） | `DynamicField<T>` 强制 `T: Clone + Send + Sync + 'static`，回调为 `Fn(&T) + Send + Sync` | 同步 `Kit` 订阅簿记（`Rc<dyn Fn()>`） | 中 | 继续自管 `SubscriberMap` |
+| 2 | `dynamic` 无 tokio 轻量特性 | `dynamic` 连带引入 `arc-swap`/`dashmap`/`tokio` | `reload` 特性的依赖体积 | 中 | 已接受该体积（AsyncKit 本就是 Send+Sync 场景） |
+| 3 | TypeId 异质注册表 | confers 无 TypeId keyed 的异质字段注册设施 | AsyncKit/Kit 每配置类型一槽的注册簿记 | 低 | 继续由使用侧自管 |
+| 4 | `SecretBytes: From<Vec<u8>>` | 仅 `new(Vec<u8>)`，孤儿规则下 trait-kit 无法代为实现 | `KeyBytes::from(vec)` 构造点 | 低 | 已迁移为 `KeyBytes::new(vec)` |
+
+> 本表是缺口登记的**唯一索引**；具体行号与代码引证随版本漂移，以 specmark 归档快照为准，不在本文件重复。
 
 ## 🔄 数据流
 

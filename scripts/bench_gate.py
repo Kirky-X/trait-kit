@@ -5,7 +5,7 @@
 
 Thresholds are the local baseline medians ×100, rounded up to the next whole
 thousand (derivation and the baseline ledger live in
-docs/bench-baseline.md). The gate is a disaster guard for shared-runner
+docs/PERFORMANCE.md). The gate is a disaster guard for shared-runner
 noise, not a fine-grained regression detector. Run locally after
 `cargo bench --features toggle,confers` with no arguments.
 """
@@ -53,7 +53,7 @@ def main() -> int:
         if median > limit:
             failures.append(
                 f"{name}: median {median:.0f} ns exceeds limit {limit} ns — "
-                "order-of-magnitude regression; check docs/bench-baseline.md"
+                "order-of-magnitude regression; check docs/PERFORMANCE.md"
             )
     if failures:
         print("\n".join(failures), file=sys.stderr)
@@ -71,7 +71,7 @@ def main() -> int:
     if unmanaged:
         print(
             "WARN unmanaged benchmarks have no gate threshold (add them to "
-            f"LIMITS_NS and docs/bench-baseline.md): {sorted(unmanaged)}",
+            f"LIMITS_NS and docs/PERFORMANCE.md): {sorted(unmanaged)}",
             file=sys.stderr,
         )
     print("bench gate passed: all medians within order-of-magnitude limits")
