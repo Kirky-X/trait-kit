@@ -501,7 +501,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 ## 🔒 安全
 
-- **漏洞报告**：请勿通过公开 Issue 报告，使用 GitHub 私密通道 [Security Advisories](https://github.com/Kirky-X/trait-kit/security/advisories/new)（"Report a vulnerability"）。维护者承诺 48 小时内确认、7 天内给出初步评估（见 [SECURITY.md](docs/SECURITY.md)）。
+- **漏洞报告**：请勿通过公开 Issue 报告，使用 GitHub 私密通道 [Security Advisories](https://github.com/Kirky-X/trait-kit/security/policy)（"Report a vulnerability"）。维护者承诺 48 小时内确认、7 天内给出初步评估（见 [SECURITY.md](docs/SECURITY.md)）。
 - **默认禁用 unsafe**：`#![deny(unsafe_code)]` 全 crate 强制；生产代码仅 6 处经 SAFETY 论证与 review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：`RefCell` / `RwLock` 各 1），另有 1 处测试模块豁免（`src/kit/config.rs` 的 zeroize spare-capacity 断言）。
 - **编译期排除误用**：typestate 将 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建误用前置为编译错误（trybuild UI 测试断言）；依赖图在 `build()` 时做缺失依赖与环检测。
 - **明确的线程安全边界**：同步 `Kit` 为 `!Sync`（编译器强制，见 `static_assertions` 断言），多线程用 `AsyncKit`（`Send + Sync`）。

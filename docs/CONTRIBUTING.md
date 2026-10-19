@@ -139,7 +139,7 @@ cargo test --features i18n
 4. 推送分支并创建 PR，描述中包含：变更说明、测试结果、影响的 feature。
 5. CI（fmt / clippy / test / 跨平台构建 / cargo deny / doc）全部通过后等待 review。
 
-发布由维护者执行：tag 推送触发 `release.yml`（构建验证 → GitHub Release → crates.io 发布），贡献者无需操作。
+发布由 Kirky.X 执行：tag 推送触发 `release.yml`（构建验证 → GitHub Release → crates.io 发布），贡献者无需操作。
 
 ## 📜 行为准则
 
