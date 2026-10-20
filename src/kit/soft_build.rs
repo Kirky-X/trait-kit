@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 //! Soft (degradable) capability build helper.
 //!
-//! `Kit::build()` / `AsyncKit::build()` abort the whole build on the first
+//! `Kit::build` / `AsyncKit::build` abort the whole build on the first
 //! module error — failure propagation is the default contract. Some
 //! capabilities are best-effort instead: the host must still come up when
 //! they fail, with the capability replaced by a fallback (in-memory store,
@@ -26,7 +26,7 @@ use std::future::Future;
 ///
 /// This is a free function on purpose: degradation decisions belong to the
 /// composition site, not to the Kit. It never interacts with
-/// `AsyncKit::build()`'s failure propagation, which stays untouched.
+/// `AsyncKit::build`'s failure propagation, which stays untouched.
 ///
 /// # Example
 ///
@@ -34,17 +34,17 @@ use std::future::Future;
 /// use trait_kit::kit::soft_build;
 ///
 /// # struct PromptStore;
-/// # impl PromptStore { fn in_memory() -> Self { Self } }
+/// # impl PromptStore { fn in_memory -> Self { Self } }
 /// # struct LoadError;
-/// # async fn load_remote_prompts() -> Result<PromptStore, LoadError> { unimplemented!() }
+/// # async fn load_remote_prompts -> Result<PromptStore, LoadError> { unimplemented! }
 ///
 /// // Prompt store is best-effort: if the remote load fails, the host still
 /// // comes up serving from the in-memory fallback (the failure is logged).
 /// let prompts: PromptStore = soft_build(
 ///     "prompt-store",
-///     load_remote_prompts(),
-///     PromptStore::in_memory(),
-/// )
+///     load_remote_prompts,
+///     PromptStore::in_memory,
+///)
 /// .await;
 /// ```
 pub async fn soft_build<C, E, F>(module: &'static str, build: F, fallback: C) -> C

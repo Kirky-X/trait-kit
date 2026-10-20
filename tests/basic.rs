@@ -202,7 +202,7 @@ fn kit_error_display_and_source_behavior() {
     let cycle = TraitKitError::CycleDetected {
         cycle: vec!["a", "b", "a"],
     };
-    // Error messages are localized via i18n `tr()` (system locale). Assert the
+    // Error messages are localized via i18n `tr` (system locale). Assert the
     // interpolated arguments are present regardless of locale text.
     let cycle_msg = cycle.to_string();
     assert!(
@@ -273,10 +273,10 @@ fn kit_error_display_and_source_behavior() {
         "source message propagated: {build_msg}"
     );
 
-    // Error::source() for BuildFailed returns Some
+    // Error::source for BuildFailed returns Some
     assert!(build.source().is_some());
 
-    // Error::source() for other variants returns None
+    // Error::source for other variants returns None
     assert!(cycle.source().is_none());
     assert!(dep.source().is_none());
 }
@@ -286,7 +286,7 @@ mod confers_loader {
     use std::error::Error;
     use trait_kit::prelude::*;
 
-    /// Real configuration type used by these integration tests. `load()`
+    /// Real configuration type used by these integration tests. `load`
     /// serves the value from an in-memory configuration source: it is a
     /// concrete `Configurable` implementation whose load result *is* its own
     /// data — not a substitute for an external loader's behavior.
@@ -313,7 +313,7 @@ mod confers_loader {
         assert_eq!(stored.value, 42);
     }
 
-    /// Loader that genuinely fails during construction: `load()` opens a
+    /// Loader that genuinely fails during construction: `load` opens a
     /// configuration file that does not exist, so the failure is a real
     /// filesystem I/O error (`ErrorKind::NotFound`) — not a fabricated
     /// error message.
@@ -429,9 +429,9 @@ mod module_config_trait {
     use trait_kit::prelude::*;
 
     /// Real module configuration: a concrete `#[derive(Config)]` type bound
-    /// to its module via `ModuleConfig::PATH` and `default_value()`. All
+    /// to its module via `ModuleConfig::PATH` and `default_value`. All
     /// trait behavior is genuine — loading falls back to the field default,
-    /// and `default_value()` returns a real fallback configuration.
+    /// and `default_value` returns a real fallback configuration.
     #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, Config)]
     struct DatabaseConfig {
         #[config(default = "postgres://localhost".to_string())]
@@ -694,7 +694,7 @@ mod encryption {
         // The pub(crate) fields can't be constructed directly from
         // integration tests; verify getters indirectly by confirming
         // set_encrypted + get_encrypted round-trips (which exercises
-        // nonce()/ciphertext() inside Kit::get_encrypted).
+        // nonce/ciphertext inside Kit::get_encrypted).
         let kit = Kit::new();
         kit.set_encrypted(
             &SecretConfig {
@@ -752,7 +752,7 @@ mod graph_coverage {
     ///
     /// `type_id` is an explicit parameter on purpose: every entry added to the
     /// same `DependencyGraph` MUST be given a distinct `TypeId` (e.g.
-    /// `TypeId::of::<A>()` for a dedicated placeholder type). Reusing a single
+    /// `TypeId::of::<A>` for a dedicated placeholder type). Reusing a single
     /// `TypeId` across entries would make registration collide.
     fn entry(
         name: &'static str,
@@ -983,7 +983,7 @@ mod kit_build_coverage {
 
     #[test]
     fn kit_ready_debug_shows_counts() {
-        // Use a non-cyclic module so build() succeeds.
+        // Use a non-cyclic module so build succeeds.
         struct Solo;
         impl_module_meta!(Solo, "solo");
         impl AutoBuilder for Solo {

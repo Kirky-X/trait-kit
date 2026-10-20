@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-// Kit<Unbuilt> cannot call optional() — typestate enforces Ready-only.
+// Kit<Unbuilt> cannot call optional — typestate enforces Ready-only.
 //
 // The fixture must produce exactly one error (the E0599 below). Explicit
 // `ModuleMeta` impl instead of `impl_module_meta!`: the macro is not
@@ -25,6 +25,6 @@ impl AutoBuilder for MyModule {
 
 fn main() {
     let kit = Kit::new();
-    // ERROR: optional() is only available on Kit<Ready>
+    // ERROR: optional is only available on Kit<Ready>
     let _val: Option<Arc<u32>> = kit.optional::<MyModule>();
 }

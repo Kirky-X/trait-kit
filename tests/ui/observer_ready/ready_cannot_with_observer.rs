@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-// Kit<Ready> cannot call with_observer() — typestate enforces Unbuilt-only.
+// Kit<Ready> cannot call with_observer — typestate enforces Unbuilt-only.
 //
 // Runs only when the `observer` feature is enabled (driver gate in
 // tests/compile_fail.rs): `BuildObserver` does not exist otherwise and the
@@ -36,6 +36,6 @@ fn main() {
     kit.register::<MyModule>().unwrap();
     let mut ready = kit.build().unwrap();
     let _ = &mut ready;
-    // ERROR: with_observer() is only available on Kit<Unbuilt>
+    // ERROR: with_observer is only available on Kit<Unbuilt>
     ready.with_observer(Arc::new(MyObserver));
 }

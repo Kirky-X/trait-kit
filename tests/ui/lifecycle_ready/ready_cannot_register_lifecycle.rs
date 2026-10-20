@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-// Kit<Ready> cannot call register_lifecycle() — typestate enforces
+// Kit<Ready> cannot call register_lifecycle — typestate enforces
 // Unbuilt-only.
 //
 // Runs only when the `lifecycle` feature is enabled (driver gate in
@@ -32,6 +32,6 @@ fn main() {
     kit.register::<MyModule>().unwrap();
     let mut ready = kit.build().unwrap();
     let _ = &mut ready;
-    // ERROR: register_lifecycle() is only available on Kit<Unbuilt>
+    // ERROR: register_lifecycle is only available on Kit<Unbuilt>
     ready.register_lifecycle::<MyModule>();
 }

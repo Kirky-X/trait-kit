@@ -25,7 +25,7 @@
 /// impl_module_meta!(MyModule, "my-module");
 ///
 /// assert_eq!(MyModule::NAME, "my-module");
-/// assert!(MyModule::dependencies().is_empty());
+/// assert!(MyModule::dependencies.is_empty);
 /// ```
 #[macro_export]
 macro_rules! impl_module_meta {
@@ -83,7 +83,7 @@ macro_rules! impl_module_meta {
 ///     Arc<Cap>,
 ///     MockErr,
 ///     |_kit| Ok(Arc::new(Cap { v: 42 }))
-/// );
+///);
 /// ```
 #[macro_export]
 macro_rules! impl_auto_builder {
@@ -139,7 +139,7 @@ macro_rules! impl_auto_builder {
 ///         let _ = kit;
 ///         Ok(Arc::new(Cap { v: 42 }))
 ///     })
-/// );
+///);
 /// ```
 #[cfg(feature = "async")]
 #[macro_export]
@@ -170,7 +170,7 @@ macro_rules! impl_async_auto_builder {
 mod tests {
     use crate::core::ModuleMeta;
 
-    // === Fixtures ===
+    // Fixtures
 
     struct MacroModuleNoDeps;
     impl_module_meta!(MacroModuleNoDeps, "macro-no-deps");
@@ -207,7 +207,7 @@ mod tests {
         }
     }
 
-    // === Tests ===
+    // Tests
 
     #[test]
     fn macro_generates_correct_name_no_deps() {
@@ -271,7 +271,7 @@ mod async_macro_tests {
     use std::sync::Arc;
     use thiserror::Error;
 
-    // === Fixtures ===
+    // Fixtures
 
     #[derive(Debug, Error)]
     enum MockErr {
@@ -324,7 +324,7 @@ mod async_macro_tests {
         }
     ));
 
-    // === Tests ===
+    // Tests
 
     #[test]
     fn macro_async_generates_correct_name() {
@@ -392,7 +392,7 @@ mod sync_auto_builder_tests {
     use std::sync::Arc;
     use thiserror::Error;
 
-    // === Fixtures ===
+    // Fixtures
 
     #[derive(Debug, Error)]
     enum MockErr {
@@ -435,7 +435,7 @@ mod sync_auto_builder_tests {
         MockErr::Failed("intentional".to_string())
     ));
 
-    // === Tests ===
+    // Tests
 
     #[test]
     fn macro_sync_generates_correct_name() {

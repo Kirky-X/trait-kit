@@ -87,7 +87,7 @@ pub struct HealthModuleEntry {
     pub status: &'static str,
     /// Detail message for degraded / unhealthy states, if any.
     ///
-    /// Carried verbatim into the readiness payload (`to_json()`), so
+    /// Carried verbatim into the readiness payload (`to_json`), so
     /// checkers must never embed credentials, connection strings or
     /// internal topology in the detail.
     pub detail: Option<String>,
@@ -129,8 +129,8 @@ impl HealthAggregate {
 
 /// One ring-buffer sample of a module's health.
 ///
-/// Produced by `Kit<Ready>::record_health_history()`; queried via
-/// `health_history()`. Requires the `health` feature.
+/// Produced by `Kit<Ready>::record_health_history`; queried via
+/// `health_history`. Requires the `health` feature.
 #[cfg(feature = "health")]
 #[derive(Debug, Clone)]
 pub struct HealthSample {
@@ -165,11 +165,11 @@ pub trait HealthCheck: crate::core::AutoBuilder {
 /// operation. This trait exists to give modules built in the
 /// [`AsyncAutoBuilder`](crate::core::AsyncAutoBuilder) context (i.e. modules
 /// whose `build` is async) a health-check attachment point for
-/// `AsyncKit::register_health_check()` / `AsyncKit::health_check()`; it does
+/// `AsyncKit::register_health_check` / `AsyncKit::health_check`; it does
 /// **not** provide asynchronous checking.
 ///
 /// Keep `check` free of network I/O: it runs on the synchronous reporting
-/// path (`AsyncKit::health_check()` / the `/healthz` export), so a network
+/// path (`AsyncKit::health_check` / the `/healthz` export), so a network
 /// probe placed there would block the reporting caller for the probe's full
 /// timeout. Probe the network **once** in
 /// [`AsyncLifecycle::on_ready`](crate::core::AsyncLifecycle::on_ready) and
@@ -194,13 +194,13 @@ pub trait HealthCheck: crate::core::AutoBuilder {
 /// //
 /// // impl AsyncLifecycle for DbPoolModule {
 /// //     fn on_ready<'a>(kit: &'a AsyncKit<Ready>)
-/// //         -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>>
+/// //         -> Pin<Box<dyn Future<Output = Result<, Self::Error>> + Send + 'a>>
 /// //     {
 /// //         Box::pin(async move {
-/// //             let pool: Arc<PoolHandle> = kit.require::<DbPoolModule>()?;
-/// //             let ok = select_1_probe(&pool).await.is_ok();
+/// //             let pool: Arc<PoolHandle> = kit.require::<DbPoolModule>?;
+/// //             let ok = select_1_probe(&pool).await.is_ok;
 /// //             pool.probe_reachable.store(ok, Ordering::Relaxed);
-/// //             Ok(())
+/// //             Ok()
 /// //         })
 /// //     }
 /// // }
@@ -288,7 +288,7 @@ mod tests {
     }
 
     /// Second module whose build produces a zero value, so the end-to-end
-    /// `build()` → `health_check()` path can be exercised for `Unhealthy`.
+    /// `build` → `health_check` path can be exercised for `Unhealthy`.
     struct ZeroTestModule;
 
     impl ModuleMeta for ZeroTestModule {
@@ -400,7 +400,7 @@ mod tests {
     #[test]
     fn health_zero_test_module_build_and_check_unhealthy() {
         // End-to-end unhealthy path: build produces value: 0, and the kit's
-        // health_check() must report Unhealthy for it.
+        // health_check must report Unhealthy for it.
         let mut kit = Kit::new();
         kit.register::<ZeroTestModule>().unwrap();
         kit.register_health_check::<ZeroTestModule>();

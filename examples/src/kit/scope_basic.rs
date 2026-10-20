@@ -3,9 +3,9 @@
 //! Scope feature — per-request instance isolation.
 //!
 //! Demonstrates:
-//! - `Scope::new()` / `register::<M>()` / `require::<M>()` / `contains::<M>()`
+//! - `Scope::new` / `register::<M>` / `require::<M>` / `contains::<M>`
 //! - Each scope creates independent instances (not shared with main Kit)
-//! - Lazy construction: first `require()` triggers build, result is cached
+//! - Lazy construction: first `require` triggers build, result is cached
 //!
 //! Run: `cargo run -p trait-kit-example --example scope_basic --features scope`
 

@@ -21,7 +21,7 @@ fn api_reference_md() -> String {
         .unwrap_or_else(|e| panic!("API_REFERENCE.md missing at {path:?}: {e}"))
 }
 
-// ─── 编译期存在性断言：引用关键 pub 项 ─────────────────────────────────────
+// 编译期存在性断言：引用关键 pub 项
 
 fn _assert_core_api() {
     // 核心类型与 trait（docs: 核心 API / 错误类型）
@@ -60,7 +60,7 @@ fn _assert_core_api() {
     trait_kit::impl_auto_builder!(GateMacroModule, GateCap, GateError, |_kit| Ok(GateCap));
     let _ = <GateMacroModule as trait_kit::core::ModuleMeta>::NAME;
 
-    // i18n（docs: i18n API）——`tr()` 与 `I18nManager` 始终可用。
+    // i18n（docs: i18n API）——`tr` 与 `I18nManager` 始终可用。
     fn tr_ref(message_id: &str) -> String {
         trait_kit::i18n::tr(message_id, &[])
     }
@@ -361,7 +361,7 @@ fn _assert_confers_api() {
     let _ = validatable::<ValidatedConfig>;
 }
 
-// ─── 关键项清单（编译 + 文档 双向门禁） ────────────────────────────────────
+// 关键项清单（编译 + 文档 双向门禁）
 
 /// 始终可用的关键项：`identifier => (编译断言函数名)`。
 const ALWAYS_REQUIRED_DOC_ENTRIES: &[&str] = &[

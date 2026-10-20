@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-// Kit<Ready> cannot call decorate() — typestate enforces Unbuilt-only.
+// Kit<Ready> cannot call decorate — typestate enforces Unbuilt-only.
 //
 // Runs only when the `decorator` feature is enabled (driver gate in
 // tests/compile_fail.rs).
@@ -31,6 +31,6 @@ fn main() {
     kit.register::<MyModule>().unwrap();
     let mut ready = kit.build().unwrap();
     let _ = &mut ready;
-    // ERROR: decorate() is only available on Kit<Unbuilt>
+    // ERROR: decorate is only available on Kit<Unbuilt>
     ready.decorate::<MyModule>(|cap| cap);
 }

@@ -21,7 +21,7 @@
 //!   struct identifier verbatim.
 //! - `deps(TypeA, TypeB)` (or `deps = [TypeA, TypeB]`) — declare dependencies
 //!   as a list of module types implementing `ModuleMeta`. Each dependency
-//!   contributes `(Dep::NAME, TypeId::of::<Dep>())`, byte-for-byte identical
+//!   contributes `(Dep::NAME, TypeId::of::<Dep>)`, byte-for-byte identical
 //!   to the hand-written form.
 //!
 //! # Example
@@ -36,8 +36,8 @@
 //! // Equivalent to the hand-written impl:
 //! // impl ModuleMeta for DbModule {
 //! //     const NAME: &'static str = "db";
-//! //     fn dependencies() -> &'static [(&'static str, TypeId)] {
-//! //         &[(LoggerModule::NAME, TypeId::of::<LoggerModule>())]
+//! //     fn dependencies -> &'static [(&'static str, TypeId)] {
+//! //         &[(LoggerModule::NAME, TypeId::of::<LoggerModule>)]
 //! //     }
 //! // }
 //! ```
@@ -345,7 +345,7 @@ pub fn derive_module(input: TokenStream) -> TokenStream {
 }
 
 fn expand_module(input: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
-    // Module types must be concrete: `TypeId::of::<M>()` requires `M: 'static`
+    // Module types must be concrete: `TypeId::of::<M>` requires `M: 'static`
     // without generic parameters. Reject generics up front with a clear error.
     if !input.generics.params.is_empty() {
         return Err(syn::Error::new(

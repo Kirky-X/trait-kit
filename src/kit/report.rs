@@ -4,7 +4,7 @@
 //!
 //! Collects per-module build facts while `Kit::build` executes and exposes
 //! them as a machine-readable [`BuildReport`] (JSON via `to_json`), alongside
-//! the human-oriented `graph_dot()` / `graph_mermaid()` exports.
+//! the human-oriented `graph_dot` / `graph_mermaid` exports.
 //!
 //! Requires the `report` feature (pulls `serde` + `serde_json`). Without the
 //! feature no timing/stat collection code exists in the build path — the
@@ -28,16 +28,16 @@ pub(crate) struct ReportFields {
     /// Per-module build records in build-completion order.
     modules: RefCell<Vec<ModuleReportEntry>>,
     /// Override records captured at `override_module(_strict)` call time,
-    /// paired with the target module `TypeId`. `build()` rewrites the name to
+    /// paired with the target module `TypeId`. `build` rewrites the name to
     /// [`UNREGISTERED_OVERRIDE`] for records whose type never entered the
     /// graph — the pairing keeps that rewrite unambiguous when two module
     /// types share a `NAME`.
     overrides: RefCell<Vec<(TypeId, OverrideRecord)>>,
     /// Config override records captured at `merge_config` call time.
     config_overrides: RefCell<Vec<ConfigOverrideRecord>>,
-    /// Topological order (module names) captured after `graph.validate()`.
+    /// Topological order (module names) captured after `graph.validate`.
     topo_order: RefCell<Vec<&'static str>>,
-    /// Total wall time of `build()` (set when build finishes).
+    /// Total wall time of `build` (set when build finishes).
     total_elapsed_us: RefCell<Option<u64>>,
     /// Contract entries captured at registration time.
     contract: RefCell<Vec<ContractEntry>>,
@@ -64,7 +64,7 @@ impl ReportFields {
         });
     }
 
-    /// Record a lazy module (construction deferred to first `require()`).
+    /// Record a lazy module (construction deferred to first `require`).
     pub(crate) fn push_lazy(&self, name: &'static str, deps: Vec<&'static str>) {
         self.modules.borrow_mut().push(ModuleReportEntry {
             name,
@@ -81,7 +81,7 @@ impl ReportFields {
     }
 
     /// Mark every record targeting `type_id` as a never-registered module.
-    /// `build()` calls this for overrides left over after the topological
+    /// `build` calls this for overrides left over after the topological
     /// loop: their type is absent from the graph, so the report records
     /// [`UNREGISTERED_OVERRIDE`] instead of a module name.
     pub(crate) fn mark_override_unregistered(&self, type_id: TypeId) {
@@ -116,7 +116,7 @@ impl ReportFields {
         *self.topo_order.borrow_mut() = names;
     }
 
-    /// Record the total `build()` wall time in microseconds.
+    /// Record the total `build` wall time in microseconds.
     pub(crate) fn set_total_elapsed_us(&self, us: u64) {
         *self.total_elapsed_us.borrow_mut() = Some(us);
     }
@@ -159,7 +159,7 @@ impl ReportFields {
 /// short critical section per module), while `config_overrides` is touched
 /// on every `merge_config` call — a user API runnable at any time on any
 /// thread, outside the build path. `AsyncKit<Ready>` reads the snapshot once
-/// via `build_report()`.
+/// via `build_report`.
 #[cfg(feature = "async")]
 #[derive(Default)]
 pub(crate) struct AsyncReportFields {
@@ -167,9 +167,9 @@ pub(crate) struct AsyncReportFields {
     modules: Mutex<Vec<ModuleReportEntry>>,
     /// Config override records captured at `merge_config` call time.
     config_overrides: Mutex<Vec<ConfigOverrideRecord>>,
-    /// Topological order (module names) captured after `graph.validate()`.
+    /// Topological order (module names) captured after `graph.validate`.
     topo_order: Mutex<Vec<&'static str>>,
-    /// Total wall time of `build()` (set when build finishes).
+    /// Total wall time of `build` (set when build finishes).
     total_elapsed_us: Mutex<Option<u64>>,
     /// Contract entries captured at registration time.
     contract: Mutex<Vec<ContractEntry>>,
@@ -227,7 +227,7 @@ impl AsyncReportFields {
             .expect("AsyncKit report topo_order lock poisoned") = names;
     }
 
-    /// Record the total `build()` wall time in microseconds.
+    /// Record the total `build` wall time in microseconds.
     pub(crate) fn set_total_elapsed_us(&self, us: u64) {
         *self
             .total_elapsed_us
@@ -330,7 +330,7 @@ impl ContractManifest {
 pub enum ModuleBuildState {
     /// Built by invoking its `build_fn` during `Kit::build`.
     Built,
-    /// Deferred: `build_fn` runs on first `require()`.
+    /// Deferred: `build_fn` runs on first `require`.
     Lazy,
     /// Satisfied by a pre-built override (`override_module` family).
     Overridden,
@@ -424,12 +424,12 @@ pub struct BuildReport {
     /// 40 bytes each, on both `Kit` and the shared `Send + Sync` `AsyncKit`
     /// where `merge_config` is a runtime API callable at any time from any
     /// thread. A kit merging on every reload callback accumulates
-    /// megabytes over a long process lifetime, and every `build_report()`
+    /// megabytes over a long process lifetime, and every `build_report`
     /// snapshot clones the whole history. Drain periodically with
-    /// `take_config_overrides()` (kit-level, `report` feature) at a
+    /// `take_config_overrides` (kit-level, `report` feature) at a
     /// natural rotation point instead of letting the history grow.
     pub config_overrides: Vec<ConfigOverrideRecord>,
-    /// Total `build()` wall time in microseconds.
+    /// Total `build` wall time in microseconds.
     pub total_elapsed_us: Option<u64>,
 }
 
@@ -610,7 +610,7 @@ mod tests {
         assert_eq!(report.overrides[0].source, "override_module");
         assert_eq!(report.overrides[1].module, UNREGISTERED_OVERRIDE);
         assert_eq!(report.overrides[1].source, "override_module");
-        // The override still serves require(), it is only nameless in the report.
+        // The override still serves require, it is only nameless in the report.
         assert_eq!(
             ready.require::<RptLazy>().expect("unregistered override").0,
             9

@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
-//! Observability feature — BuildObserver callbacks during build().
+//! Observability feature — BuildObserver callbacks during build.
 //!
 //! Demonstrates:
 //! - `BuildObserver` trait with `on_module_start` / `on_module_built` / `on_build_error`
-//! - `Kit::with_observer()` to register an observer
-//! - Observer receives callbacks for every module built during `build()`
+//! - `Kit::with_observer` to register an observer
+//! - Observer receives callbacks for every module built during `build`
 //!
 //! Run: `cargo run -p trait-kit-example --example observability --features observer`
 
@@ -15,7 +15,7 @@ use std::time::Duration;
 use trait_kit::core::BuildObserver;
 use trait_kit::prelude::*;
 
-// ─── Observer implementation ───────────────────────────────────────────────
+// Observer implementation
 
 struct LoggingObserver {
     start_count: AtomicUsize,
@@ -41,7 +41,7 @@ impl BuildObserver for LoggingObserver {
     }
 }
 
-// ─── Module definition ─────────────────────────────────────────────────────
+// Module definition
 
 #[derive(Debug, Clone)]
 struct LoggerCap;
@@ -73,7 +73,7 @@ fn main() {
     });
 
     let mut kit = Kit::new();
-    // Method-call `.clone()` (not the `Arc::clone` free function) so the
+    // Method-call `.clone` (not the `Arc::clone` free function) so the
     // unsized coercion to `Arc<dyn BuildObserver>` applies at the argument.
     kit.with_observer(observer.clone());
     kit.register::<LoggerModule>()

@@ -62,7 +62,7 @@ pub(crate) mod test_helpers {
 
     /// Minimal single-threaded `Future` executor for tests (no extra deps).
     ///
-    /// Uses `Waker::noop()` (stable since 1.85) because the `async` feature
+    /// Uses `Waker::noop` (stable since 1.85) because the `async` feature
     /// deliberately stays dep-free (no `tokio` / `futures` test runtime).
     ///
     /// # Panics

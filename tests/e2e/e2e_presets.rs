@@ -11,11 +11,11 @@
 // 覆盖场景 ID（docs/TEST_SCENARIOS.md §2.22 / §2.14 / §2.19）：
 // - PRS-01 `--no-default-features`（default=[]）core API 门禁测试化
 // - 04/05 13 个 feature 名单与依赖链展开断言（运行时解析
-//   Cargo.toml [features] 固化，组合矩阵的实际逐组合执行见
-//   reviews/acceptance-report.md 台账）
+// Cargo.toml [features] 固化，组合矩阵的实际逐组合执行见
+// reviews/acceptance-report.md 台账）
 // - PRS-03 `--all-features` 门禁测试化（cfg 全 13 项正向断言段）
 // - PRS-06 examples crate 20 个示例 required-features 门控结构核对
-//   （逐示例编译执行见台账）
+// （逐示例编译执行见台账）
 // - TGL-09 `src/kit/toggle.rs` doc-only 结构核对（无独立运行时）
 // - PRE-03 派生宏不随 prelude 导出的文档契约核对
 //
@@ -340,7 +340,7 @@ fn pre03_derive_macros_not_reexported_via_prelude() {
     );
 }
 
-// ─── presets 注册面异常（ProviderNotInjected / 二次注册） ──────────────
+// presets 注册面异常（ProviderNotInjected / 二次注册）
 
 // 本段全部消费者均挂 presets 门；import 同门，其余组合下编译期闲置。
 #[cfg(feature = "presets")]
@@ -466,7 +466,7 @@ mod presets_remote_error_e2e {
         }
     }
 
-    /// AsyncSource::load 失败 → build().await 失败，错误文本含源错误，
+    /// AsyncSource::load 失败 → build.await 失败，错误文本含源错误，
     /// source 链下探到 PresetError::RemoteLoad。
     #[test]
     fn e2e_presets_remote_source_failure_fails_build() {

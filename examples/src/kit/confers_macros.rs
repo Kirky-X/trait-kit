@@ -3,8 +3,8 @@
 //! `confers` feature — ModuleConfig + Config derive re-export.
 //!
 //! Demonstrates binding a config type to its module via `ModuleConfig::PATH` and
-//! `default_value()`, then having a module's `build()` retrieve that config via
-//! `kit.config::<C>()`.
+//! `default_value`, then having a module's `build` retrieve that config via
+//! `kit.config::<C>`.
 //!
 //! Run: `cargo run -p trait-kit-example --example confers_macros --features confers`
 

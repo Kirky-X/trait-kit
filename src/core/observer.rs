@@ -6,8 +6,8 @@ use std::time::Duration;
 
 /// Observer for build pipeline events.
 ///
-/// Implement this trait and register via `Kit::with_observer()` or
-/// `AsyncKit::with_observer()` to receive callbacks during `build()`.
+/// Implement this trait and register via `Kit::with_observer` or
+/// `AsyncKit::with_observer` to receive callbacks during `build`.
 ///
 /// Requires the `observer` feature.
 #[cfg(feature = "observer")]

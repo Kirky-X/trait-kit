@@ -4,7 +4,7 @@
 //!
 //! Demonstrates:
 //! - `Validatable` trait — 为配置类型定义验证规则
-//! - `Kit::load_and_validate::<C>()` — 加载后验证，失败不存入
+//! - `Kit::load_and_validate::<C>` — 加载后验证，失败不存入
 //!
 //! Run: `cargo run -p trait-kit-example --example validation --features confers`
 

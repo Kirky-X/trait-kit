@@ -9,7 +9,7 @@ use trait_kit::core::{AutoBuilder, ModuleMeta};
 use trait_kit::kit::Kit;
 use trait_kit_macros::Module;
 
-// ─── Fixtures ───────────────────────────────────────────────────────────────
+// Fixtures
 
 #[derive(Debug)]
 struct DerivedError;
@@ -66,7 +66,7 @@ impl AutoBuilder for DerivedTop {
 #[module(deps = [ManualLeaf])]
 struct DerivedTopBracketForm;
 
-// ─── Equivalence: derived vs hand-written ───────────────────────────────────
+// Equivalence: derived vs hand-written
 
 #[test]
 fn derived_name_defaults_to_struct_ident() {
@@ -81,7 +81,7 @@ fn derived_name_override_matches_hand_written_convention() {
 #[test]
 fn derived_dependencies_match_hand_written_type_ids() {
     // Hand-written side: ManualLeaf declares no deps. A hand-written top
-    // module would declare `[(ManualLeaf::NAME, TypeId::of::<ManualLeaf>())]`.
+    // module would declare `[(ManualLeaf::NAME, TypeId::of::<ManualLeaf>)]`.
     let expected: &[(&'static str, TypeId)] =
         &[(<ManualLeaf as ModuleMeta>::NAME, TypeId::of::<ManualLeaf>())];
     assert_eq!(

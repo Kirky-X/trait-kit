@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-// AsyncKit<Ready> cannot call register() — typestate enforces Unbuilt-only.
+// AsyncKit<Ready> cannot call register — typestate enforces Unbuilt-only.
 //
 // The fixture must produce exactly one error (the E0599 below). Explicit
 // `ModuleMeta`/`AsyncAutoBuilder` impls instead of macros: the macros are
@@ -34,6 +34,6 @@ fn ready_stub() -> AsyncKit<AsyncReady> {
 
 fn main() {
     let ready = ready_stub();
-    // ERROR: register() is only available on AsyncKit<Unbuilt>
+    // ERROR: register is only available on AsyncKit<Unbuilt>
     ready.register::<MyModule>().unwrap();
 }

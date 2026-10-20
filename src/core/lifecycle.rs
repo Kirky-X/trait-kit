@@ -10,7 +10,7 @@ use std::pin::Pin;
 /// Synchronous lifecycle hooks for modules.
 ///
 /// Provides `on_ready` (called after all modules are built) and `on_shutdown`
-/// (called in reverse topological order during `Kit::shutdown()`).
+/// (called in reverse topological order during `Kit::shutdown`).
 ///
 /// Both methods have default no-op implementations, so existing modules
 /// that don't need lifecycle management are unaffected.
@@ -21,19 +21,19 @@ pub trait Lifecycle: crate::core::AutoBuilder {
     /// Called after all modules have been built (positive topological order).
     ///
     /// The `kit` parameter provides access to all built capabilities via
-    /// `kit.require::<M>()`. Use this for cross-module initialization
+    /// `kit.require::<M>`. Use this for cross-module initialization
     /// that depends on multiple capabilities being available.
     ///
     /// # Errors
     ///
     /// Returns `Self::Error` if initialization fails. The error is wrapped
-    /// in `TraitKitError::LifecycleFailed` and propagated from `build()`.
+    /// in `TraitKitError::LifecycleFailed` and propagated from `build`.
     #[must_use = "on_ready returns Result<(), Error>; ignoring it may hide initialization failures"]
     fn on_ready(_kit: &crate::kit::Kit<crate::kit::Ready>) -> Result<(), Self::Error> {
         Ok(())
     }
 
-    /// Called during `Kit::shutdown()` in reverse topological order.
+    /// Called during `Kit::shutdown` in reverse topological order.
     ///
     /// Receives a reference to the module's built capability for cleanup.
     /// Use this for resource release (close connections, flush buffers, etc.).
@@ -67,8 +67,8 @@ pub trait AsyncLifecycle: crate::core::AsyncAutoBuilder {
         Box::pin(async { Ok(()) })
     }
 
-    /// Async version of `on_shutdown`. Called during `AsyncKit::shutdown_async()`.
-    /// The synchronous `AsyncKit::shutdown()` does **not** invoke async
+    /// Async version of `on_shutdown`. Called during `AsyncKit::shutdown_async`.
+    /// The synchronous `AsyncKit::shutdown` does **not** invoke async
     /// `on_shutdown` hooks.
     #[allow(
         clippy::type_complexity,
@@ -84,7 +84,7 @@ pub trait AsyncLifecycle: crate::core::AsyncAutoBuilder {
 /// Stable-sort `(module TypeId, callback)` pairs by their position in the
 /// validated topological order `sorted`; modules absent from the graph keep
 /// registration order at the tail (`usize::MAX`). Shared by the sync/async
-/// `build()` hand-off (shutdown hooks + `on_ready` ordering) so reverse
+/// `build` hand-off (shutdown hooks + `on_ready` ordering) so reverse
 /// iteration really runs in reverse topological order.
 pub(crate) fn sort_by_topo_order<C>(
     callbacks: &mut [(std::any::TypeId, C)],
@@ -152,7 +152,6 @@ mod tests {
 
     #[test]
     fn lifecycle_trait_has_default_on_ready() {
-        // Default on_ready returns Ok(())
         struct DefaultModule;
 
         impl ModuleMeta for DefaultModule {
@@ -178,7 +177,7 @@ mod tests {
         kit.register::<DefaultModule>().unwrap();
         kit.register_lifecycle::<DefaultModule>();
         let built = kit.build().unwrap();
-        // build() succeeding already proves the default on_ready returned Ok
+        // build succeeding already proves the default on_ready returned Ok
         // (a failure would surface as TraitKitError::LifecycleFailed). Assert
         // the default impl's return value directly as well.
         let result = DefaultModule::on_ready(&built);
@@ -393,8 +392,8 @@ mod async_tests {
             ready_before + 1,
             "async on_ready should be called exactly once during build()"
         );
-        // `AsyncKit` 没有 sync `shutdown()`：async `on_shutdown` 必须显式
-        // await（经由 `shutdown_async()` 或直接调用钩子）。此处手动 await
+        // `AsyncKit` 没有 sync `shutdown`：async `on_shutdown` 必须显式
+        // await（经由 `shutdown_async` 或直接调用钩子）。此处手动 await
         // 以验证钩子路径恰好执行一次。`built` 保持存活以模拟真实用法
         // （能力随 Kit 生命周期存续）。
         let cap = Arc::new(AsyncTestCap);

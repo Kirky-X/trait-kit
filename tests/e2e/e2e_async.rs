@@ -31,7 +31,7 @@ fn block_on<F: Future>(future: F) -> F::Output {
     }
 }
 
-// ─── 异步构建取消安全 ──────────────────────────────────────────
+// 异步构建取消安全
 
 static ASK13_STARTED: AtomicU32 = AtomicU32::new(0);
 static ASK13_COMPLETED: AtomicU32 = AtomicU32::new(0);
@@ -115,7 +115,7 @@ fn e2e_async_build_future_drop_is_cancel_safe() {
     assert_eq!(ASK13_COMPLETED.load(Ordering::SeqCst), 1);
 }
 
-// ─── AsyncKit::decorate 与 sync 行为一致 ───────────────────────
+// AsyncKit::decorate 与 sync 行为一致
 
 // 仅 decorator 特性下的用例消费该模块，定义随用例同门控避免 dead_code 告警
 #[cfg(feature = "decorator")]
@@ -149,7 +149,7 @@ fn e2e_async_kit_decorate_matches_sync_semantics() {
     );
 }
 
-// ─── async 面健康检查与 sync 同构 ──────────────────────
+// async 面健康检查与 sync 同构
 
 #[cfg(feature = "health")]
 mod async_health_isomorphism_e2e {
@@ -263,7 +263,7 @@ mod async_health_isomorphism_e2e {
     }
 }
 
-// ─── LCY-ASYNC：shutdown_async 真正执行 async on_shutdown ──────────────
+// LCY-ASYNC：shutdown_async 真正执行 async on_shutdown
 
 #[cfg(feature = "lifecycle")]
 mod async_shutdown_e2e {
@@ -298,9 +298,9 @@ mod async_shutdown_e2e {
         }
     }
 
-    /// 端到端契约：`shutdown_async()` 恰好执行一次 async `on_shutdown`
+    /// 端到端契约：`shutdown_async` 恰好执行一次 async `on_shutdown`
     /// （计数 +1），且为 one-shot——二次调用 no-op。`AsyncKit` 无 sync
-    /// `shutdown()`，async 清理必须 await `shutdown_async()`。
+    /// `shutdown`，async 清理必须 await `shutdown_async`。
     #[test]
     fn e2e_async_shutdown_async_runs_on_shutdown_hook() {
         let before = E2E_ASYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst);
@@ -325,7 +325,7 @@ mod async_shutdown_e2e {
     }
 }
 
-// ─── SHUTDOWN-BRIDGE：Kit 组件清理桥接进协调器（停机顺序锁定） ──────────
+// SHUTDOWN-BRIDGE：Kit 组件清理桥接进协调器（停机顺序锁定）
 
 #[cfg(all(feature = "lifecycle", feature = "shutdown"))]
 mod shutdown_bridge_e2e {
@@ -480,7 +480,7 @@ mod shutdown_bridge_e2e {
     }
 }
 
-// ─── 异步构建回调内 require 依赖 + 读 config（DI 注入路径 async 面） ────
+// 异步构建回调内 require 依赖 + 读 config（DI 注入路径 async 面）
 
 /// 10 层异步依赖链：每层 build 内 require 前一层（被依赖者先构建）。
 macro_rules! async_chain_link {
@@ -601,7 +601,7 @@ fn e2e_async_build_requires_dependency_and_reads_config() {
     );
 }
 
-// ─── AsyncKit::register_if 真/假双分支 + 已注册冲突 ─────────────────
+// AsyncKit::register_if 真/假双分支 + 已注册冲突
 
 struct RegisterIfOn;
 impl_module_meta!(RegisterIfOn, "register-if-on");
@@ -667,7 +667,7 @@ fn e2e_async_register_if_true_false_and_conflict() {
     assert!(matches!(err, TraitKitError::AlreadyRegistered { .. }));
 }
 
-// ─── AsyncKit::factory：非单例 + 失败传播 ──────────────────────────
+// AsyncKit::factory：非单例 + 失败传播
 
 struct FactoryFreshMod;
 impl_module_meta!(FactoryFreshMod, "factory-fresh-mod");
@@ -738,7 +738,7 @@ fn e2e_async_factory_fresh_instances_and_error_propagation() {
     }
 }
 
-// ─── 异步构建体 panic 直接穿透 build().await（无 catch_unwind 隔离） ───
+// 异步构建体 panic 直接穿透 build.await（无 catch_unwind 隔离）
 
 struct AsyncPanicMod;
 impl_module_meta!(AsyncPanicMod, "async-panic-mod");
@@ -755,7 +755,7 @@ impl AsyncAutoBuilder for AsyncPanicMod {
 }
 
 /// 与 sync lazy 面（catch_unwind 隔离为 BuildFailed）显式对照：async
-/// 构建体 panic 沿 build().await 穿透到调用方，不转 BuildFailed。
+/// 构建体 panic 沿 build.await 穿透到调用方，不转 BuildFailed。
 #[test]
 #[should_panic(expected = "async build panic blast")]
 fn e2e_async_build_body_panic_propagates_to_caller() {
@@ -764,7 +764,7 @@ fn e2e_async_build_body_panic_propagates_to_caller() {
     let _ = block_on(kit.build());
 }
 
-// ─── with_max_concurrency(0) 钳位为 1：限流下界峰值验证 ─────────────
+// with_max_concurrency(0) 钳位为 1：限流下界峰值验证
 
 static E2E_IN_FLIGHT: AtomicU32 = AtomicU32::new(0);
 static E2E_PEAK: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -868,7 +868,7 @@ fn e2e_async_max_concurrency_zero_clamps_to_one() {
     );
 }
 
-// ─── AsyncKit::graph_dot / graph_mermaid 导出（async 面图导出） ──────
+// AsyncKit::graph_dot / graph_mermaid 导出（async 面图导出）
 
 struct GraphExportDep;
 impl_module_meta!(GraphExportDep, "graph-export-dep");
@@ -935,7 +935,7 @@ fn e2e_async_graph_export_dot_and_mermaid() {
     assert!(empty.graph_mermaid().contains("graph TD"));
 }
 
-// ─── AsyncKit::emit_event 自定义事件直达总线 ────────────────────────
+// AsyncKit::emit_event 自定义事件直达总线
 
 /// with_event_bus 后 emit_event(自定义 KitEvent) 订阅者收到；Unbuilt/Ready
 /// 两态 emit 均可用；未注入时 NoOp 不 panic。
@@ -993,7 +993,7 @@ fn e2e_async_emit_event_reaches_injected_bus_in_both_states() {
     });
 }
 
-// ─── on_ready 失败 → 无任何 on_shutdown 执行（async 对位） ───────────
+// on_ready 失败 → 无任何 on_shutdown 执行（async 对位）
 
 #[cfg(feature = "lifecycle")]
 mod async_ready_discard_on_ready_failure_e2e {

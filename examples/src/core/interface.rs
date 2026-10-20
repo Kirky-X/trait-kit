@@ -4,8 +4,8 @@
 //!
 //! Demonstrates:
 //! - `InterfaceBuilder` trait for type-erased module registration
-//! - `Kit::register_as::<M>()` — register behind a `dyn Trait` interface
-//! - `Kit::resolve::<I>()` — retrieve by interface type (`Arc<dyn Trait>`)
+//! - `Kit::register_as::<M>` — register behind a `dyn Trait` interface
+//! - `Kit::resolve::<I>` — retrieve by interface type (`Arc<dyn Trait>`)
 //!
 //! Run: `cargo run -p trait-kit-example --example interface --features interface`
 
@@ -14,13 +14,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use trait_kit::core::InterfaceBuilder;
 use trait_kit::prelude::*;
 
-// ─── Interface (trait object) ──────────────────────────────────────────────
+// Interface (trait object)
 
 trait Logger: 'static + Send + Sync {
     fn log(&self, msg: &str);
 }
 
-// ─── Concrete implementation ───────────────────────────────────────────────
+// Concrete implementation
 
 struct ConsoleLogger {
     counter: AtomicUsize,
@@ -33,7 +33,7 @@ impl Logger for ConsoleLogger {
     }
 }
 
-// ─── Module that provides ConsoleLogger behind dyn Logger ──────────────────
+// Module that provides ConsoleLogger behind dyn Logger
 
 struct ConsoleLoggerModule;
 

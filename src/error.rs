@@ -240,7 +240,7 @@ impl std::error::Error for TraitKitError {
 
 /// Coarse failure classification for precise downstream matching.
 ///
-/// `TraitKitError::kind()` maps every variant onto one of these kinds so
+/// `TraitKitError::kind` maps every variant onto one of these kinds so
 /// callers can match on *why* an operation failed without tying themselves to
 /// individual variants:
 ///
@@ -560,7 +560,7 @@ mod tests {
     }
 }
 
-// ─── Display branches for rarely-hit variants ──────────────────────────
+// Display branches for rarely-hit variants
 
 #[cfg(test)]
 mod display_branch_tests {

@@ -27,7 +27,7 @@ pub trait ModuleMeta: 'static {
     ///
     /// Returns `(locale, ftl_source)` pairs. `Kit` collects fragments from
     /// every registered module and merges the ones matching the active
-    /// locale into a kit-local translation overlay at `build()` time, so
+    /// locale into a kit-local translation overlay at `build` time, so
     /// modules can carry their own messages instead of editing the global
     /// catalogs. Defaults to empty — modules without translations need no
     /// override.
@@ -40,14 +40,14 @@ pub trait ModuleMeta: 'static {
     }
 
     /// This module's capability version, used for dependency
-    /// negotiation at `build()` time. Defaults to `"0.0.0"`, which signals
+    /// negotiation at `build` time. Defaults to `"0.0.0"`, which signals
     /// "version not declared" — a consumer requiring a minimum version of an
     /// undeclared provider fails the build.
     const VERSION: &'static str = "0.0.0";
 
     /// Minimum capability versions this module requires from its
     /// dependencies: `(module_name, min_version)` pairs. Checked at
-    /// `build()` with semver compatibility (same major, provider >= minimum).
+    /// `build` with semver compatibility (same major, provider >= minimum).
     /// Defaults to empty.
     #[must_use]
     fn required_versions() -> &'static [(&'static str, &'static str)] {
@@ -208,7 +208,7 @@ pub trait AutoBuilder: ModuleMeta {
 ///
 /// Automatically implemented for all `'static` types (including `?Sized`
 /// trait objects like `dyn MyTrait`). Used by the `di` feature to
-/// enable `register_as<M, I>()` and `resolve<I>()` for type-erased
+/// enable `register_as<M, I>` and `resolve<I>` for type-erased
 /// dependency injection behind a `dyn Trait` interface.
 #[cfg(feature = "di")]
 pub trait Interface: 'static {}
@@ -224,7 +224,7 @@ impl<T: ?Sized + 'static> Interface for T {}
 /// type erasure, converting the concrete capability into
 /// `Arc<Self::Interface>`.
 ///
-/// Used by `register_as<M>()` and `resolve<I>()` behind the `di`
+/// Used by `register_as<M>` and `resolve<I>` behind the `di`
 /// feature. This trait does **not** modify [`AutoBuilder`], so existing
 /// module impls are unaffected.
 #[cfg(feature = "di")]

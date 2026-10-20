@@ -26,7 +26,7 @@ use super::kit::{Kit, LazyBuildFn, LazySlot, Ready};
 /// [`Kit::create_scope_from`](crate::kit::Kit::create_scope_from)). The handle
 /// is a `Weak` reference: a scope never keeps its parent alive, which is the
 /// cycle guard — a parent that owns scopes cannot be retained by them past
-/// its own lifetime. `scope.parent::<M>()` resolves capabilities from the
+/// its own lifetime. `scope.parent::<M>` resolves capabilities from the
 /// parent without cloning them into the scope; it returns `None` once the
 /// parent is gone (or when the module is absent there).
 ///
@@ -86,7 +86,7 @@ impl Scope {
 
     /// Register a module factory in this scope.
     ///
-    /// The module's `build_fn` is stored but not invoked until `require()`
+    /// The module's `build_fn` is stored but not invoked until `require`
     /// is called (lazy construction within the scope).
     ///
     /// # Errors
@@ -160,7 +160,7 @@ impl Scope {
             // `LazyBuildFn` is an `Fn` closure: the call only borrows it, so
             // the same builder remains available for the failure paths below.
             // Panic isolation: a panicking builder must not unwind out of
-            // `require()` — the builder is put back so the slot stays
+            // `require` — the builder is put back so the slot stays
             // retryable, mirroring the `Err` path.
             let build_result =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| builder(&temp_kit)));
@@ -168,7 +168,7 @@ impl Scope {
                 Ok(Ok(boxed)) => boxed,
                 Ok(Err(e)) => {
                     // Restore the builder so the slot stays retryable: a
-                    // failed build must not degrade later require() calls
+                    // failed build must not degrade later require calls
                     // into a permanent MissingCapability.
                     if let Some(slot) = self.lazy_slots.borrow_mut().get_mut(&type_id) {
                         slot.builder = Some(builder);
@@ -228,10 +228,10 @@ impl Default for Scope {
 }
 
 // NOTE: `Scope` needs no `Drop` impl — `lazy_slots` is a plain
-// `RefCell<HashMap>` that frees itself on drop; an explicit `clear()` would
+// `RefCell<HashMap>` that frees itself on drop; an explicit `clear` would
 // be redundant.
 
-// ─── AsyncScope ─────────────────────────────────────────────────────────────
+// AsyncScope
 
 #[cfg(all(feature = "request-scope", feature = "async"))]
 mod async_scope {
@@ -249,12 +249,12 @@ mod async_scope {
     /// # Design differences from `Scope`
     ///
     /// Unlike the synchronous `Scope` (which lazily builds modules on first
-    /// `require()`), `AsyncScope` does **not** store async build functions or
+    /// `require`), `AsyncScope` does **not** store async build functions or
     /// perform lazy construction. This is because `AsyncAutoBuilder::build`
     /// returns a `Future` whose lifetime is bound to the `AsyncKit` reference,
-    /// making it impossible to store in the scope. `insert()` is therefore the
-    /// single entry point: it stores a pre-built capability, `contains()`
-    /// reports exactly what was inserted, and `require()` retrieves it.
+    /// making it impossible to store in the scope. `insert` is therefore the
+    /// single entry point: it stores a pre-built capability, `contains`
+    /// reports exactly what was inserted, and `require` retrieves it.
     pub struct AsyncScope {
         capabilities: AsyncTypeMap,
     }
@@ -272,7 +272,7 @@ mod async_scope {
         ///
         /// This is the only way to populate the scope: capabilities are built
         /// externally (e.g. from an `AsyncKit` or a manual async build) and
-        /// stored here. The `require()` method retrieves these values.
+        /// stored here. The `require` method retrieves these values.
         /// Inserting the same module type again replaces the stored value.
         ///
         /// # Example
@@ -280,7 +280,7 @@ mod async_scope {
         /// ```ignore
         /// let cap = MyModule::build(&kit).await?;
         /// scope.insert::<MyModule>(cap);
-        /// let retrieved = scope.require::<MyModule>()?;
+        /// let retrieved = scope.require::<MyModule>?;
         /// ```
         pub fn insert<M: AsyncAutoBuilder>(&self, capability: M::Capability)
         where
@@ -292,7 +292,7 @@ mod async_scope {
 
         /// Retrieve a module's capability from this scope.
         ///
-        /// The capability must have been previously inserted via `insert()`.
+        /// The capability must have been previously inserted via `insert`.
         /// Async modules cannot be lazily built inside a scope because
         /// `AsyncAutoBuilder::build` requires an `AsyncKit` reference and
         /// returns a future whose lifetime is bound to that reference.
@@ -316,8 +316,8 @@ mod async_scope {
         /// Check if a capability for this module type was inserted into this
         /// scope.
         ///
-        /// `contains` reflects exactly the `insert()` history: `true` if and
-        /// only if `insert::<M>()` has been called (and `require::<M>()` will
+        /// `contains` reflects exactly the `insert` history: `true` if and
+        /// only if `insert::<M>` has been called (and `require::<M>` will
         /// then succeed).
         #[must_use]
         pub fn contains<M: AsyncAutoBuilder>(&self) -> bool {
@@ -483,8 +483,8 @@ mod tests {
         );
     }
 
-    /// 循环依赖的可观测行为：M 的构建内调 `kit.require::<N>()`，N 的
-    /// 构建内调 `kit.require::<M>()`。Scope 的构建回调拿到的是临时空
+    /// 循环依赖的可观测行为：M 的构建内调 `kit.require::<N>`，N 的
+    /// 构建内调 `kit.require::<M>`。Scope 的构建回调拿到的是临时空
     /// Kit，内层 require 得到 MissingCapability，向上包装为外层
     /// `require` 的 `BuildFailed` —— 外层返回 Err 而非 panic / 死循环。
     /// 注意：这是当前循环依赖的可观测行为；更精确的循环依赖诊断

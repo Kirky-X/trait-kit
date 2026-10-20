@@ -3,10 +3,10 @@
 //! Snapshot & Restore — 配置快照与回滚。
 //!
 //! Demonstrates:
-//! - `Kit::snapshot_config::<C>()` — 快照当前配置
-//! - `Kit::set_config()` — 覆盖配置
-//! - `Kit::restore_config::<C>()` — 回滚到快照
-//! - `Kit::has_snapshot::<C>()` — 检查快照是否存在
+//! - `Kit::snapshot_config::<C>` — 快照当前配置
+//! - `Kit::set_config` — 覆盖配置
+//! - `Kit::restore_config::<C>` — 回滚到快照
+//! - `Kit::has_snapshot::<C>` — 检查快照是否存在
 //!
 //! Run: `cargo run -p trait-kit-example --example snapshot_restore --features confers`
 

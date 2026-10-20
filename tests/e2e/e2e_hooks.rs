@@ -5,21 +5,21 @@
 //
 // 覆盖场景 ID（docs/TEST_SCENARIOS.md §2.9 / §2.10 / §2.11）：
 // - LCY-05 某模块 `on_shutdown` 失败（panic）不阻断其余模块关闭
-//   （kit.rs 文档契约 "A failed shutdown does not prevent other modules
-//   from shutting down"——内部 catch_unwind 隔离，行为级断言）
+// （kit.rs 文档契约 "A failed shutdown does not prevent other modules
+// from shutting down"——内部 catch_unwind 隔离，行为级断言）
 // - LCY-07 多模块 on_ready 按拓扑序执行（依赖者的 ready 晚于被依赖者，
-//   显式顺序断言）
+// 显式顺序断言）
 // - HLT-07 checker 闭包找不到 capability 时返回
-//   `Unhealthy("capability not found")`（防御分支：register_health_check
-//   的类型系统不强制模块已注册）
+// `Unhealthy("capability not found")`（防御分支：register_health_check
+// 的类型系统不强制模块已注册）
 // - OBS-05 多个 observer 注册时全部收到同一事件（遍历序 == 注册序）
 //
 // 其余 LCY/HLT/OBS 域场景既有覆盖充分，此处仅声明引用、不重复固化：
 // - LCY-01..04 → src/kit/kit.rs、src/core/lifecycle.rs 内联测试、
-//   tests/e2e_feature_combinations.rs（lifecycle_e2e 组）
+// tests/e2e_feature_combinations.rs（lifecycle_e2e 组）
 // - LCY-06（AsyncLifecycle）→ src/kit/async_kit.rs 内联测试
 // - HLT-01..06 → src/kit/kit.rs、src/core/health.rs、
-//   tests/e2e_feature_combinations.rs（health_e2e 组）
+// tests/e2e_feature_combinations.rs（health_e2e 组）
 // - OBS-01..04 → src/core/observer.rs、src/kit/kit.rs 内联测试、
 //   tests/e2e_feature_combinations.rs::e2e_observer_notified_on_build
 // - OBS-06（observer+decorator）→ e2e_feature_combinations.rs
@@ -27,7 +27,7 @@
 
 #![cfg(any(feature = "lifecycle", feature = "health", feature = "observer"))]
 
-// ─── 生命周期 ─────────────────────────────────────────
+// 生命周期
 
 #[cfg(feature = "lifecycle")]
 mod lifecycle_hooks_e2e {
@@ -198,7 +198,7 @@ mod lifecycle_hooks_e2e {
     }
 }
 
-// ─── checker 找不到 capability 的防御分支 ──────────────────────
+// checker 找不到 capability 的防御分支
 
 #[cfg(feature = "health")]
 mod health_defensive_e2e {
@@ -210,7 +210,7 @@ mod health_defensive_e2e {
     struct GhostCap;
 
     /// 实现 HealthCheck（HealthCheck: AutoBuilder）但从不
-    /// `register::<GhostMod>()` 的幽灵模块。
+    /// `register::<GhostMod>` 的幽灵模块。
     struct GhostMod;
     impl_module_meta!(GhostMod, "ghost-mod");
     impl AutoBuilder for GhostMod {
@@ -284,7 +284,7 @@ mod health_defensive_e2e {
     }
 }
 
-// ─── 多 observer 注册序 ────────────────────────────────────────
+// 多 observer 注册序
 
 #[cfg(feature = "observer")]
 mod observer_registration_order_e2e {

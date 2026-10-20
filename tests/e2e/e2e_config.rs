@@ -5,9 +5,9 @@
 //
 // 覆盖场景 ID（docs/TEST_SCENARIOS.md §2.6）：
 // - RLD-06 订阅者 panic 语义固化：新值已存储、剩余订阅者被跳过
-//   （panic 穿透 reload_config，文档化行为）
+// （panic 穿透 reload_config，文档化行为）
 // - RLD-07 require_ref 借用存活期间 reload_config/set_config 的真实行为
-//   （见文件尾部：场景描述按实现修正后固化）
+// （见文件尾部：场景描述按实现修正后固化）
 
 #![cfg(feature = "reload")]
 
@@ -83,7 +83,7 @@ impl Configurable for FreshCfg {
     }
 }
 
-// ─── require_ref 借用与配置写入的真实行为 ───────────────────────
+// require_ref 借用与配置写入的真实行为
 
 struct RefCapMod;
 impl_module_meta!(RefCapMod, "ref-cap-mod");
@@ -134,7 +134,7 @@ fn e2e_require_ref_borrow_survives_reload_and_set_config() {
     assert_eq!(ready.config::<FreshCfg>().unwrap().v, 9);
 }
 
-// ─── BuildReport::to_json / from_json_str 往返序列化（report 落点） ────
+// BuildReport::to_json / from_json_str 往返序列化（report 落点）
 
 #[cfg(feature = "report")]
 mod build_report_json_roundtrip_e2e {
@@ -370,7 +370,7 @@ mod build_report_json_roundtrip_e2e {
     }
 }
 
-// ─── load_config_with ${VAR} 插值的 $$ 转义形态（CFG-08 矩阵补全） ────
+// load_config_with ${VAR} 插值的 $$ 转义形态（CFG-08 矩阵补全）
 
 /// e2e 层固化 `$$` 转义矩阵：`$${VAR}` → 字面 `${VAR}` 不插值、相邻
 /// 转义与插值混用（实现契约 src/kit/config.rs interpolate_string；

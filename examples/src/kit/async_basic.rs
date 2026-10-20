@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::task::{self, Poll};
 use trait_kit::prelude::*;
 
-// ─── Minimal block_on executor (mirrors trait-kit's internal test helper) ───
+// Minimal block_on executor (mirrors trait-kit's internal test helper)
 
 /// Minimal single-threaded `Future` executor (no extra deps).
 ///

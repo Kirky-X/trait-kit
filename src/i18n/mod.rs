@@ -16,7 +16,7 @@
 //! ```rust
 //! use trait_kit::i18n::I18nManager;
 //!
-//! let mgr = I18nManager::init();
+//! let mgr = I18nManager::init;
 //! ```
 //!
 //! 语言协商保留：显式指定 locale 即可切换目录（如中文）：
@@ -52,7 +52,7 @@ use icu_decimal::DecimalFormatter;
 #[cfg(feature = "i18n")]
 use icu_plurals::PluralRules;
 
-// ─── I18nError ──────────────────────────────────────────────────────────────
+// I18nError
 
 /// 国际化操作返回的错误类型。
 #[derive(Debug, Clone)]
@@ -79,7 +79,7 @@ pub enum I18nError {
 
 impl fmt::Display for I18nError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // tr() 通过 OnceLock 惰性初始化，build() 不调用 Display，
+        // tr 通过 OnceLock 惰性初始化，build 不调用 Display，
         // 因此不存在递归风险。
         match self {
             Self::InvalidLocale { input, reason } => {
@@ -114,7 +114,7 @@ impl fmt::Display for I18nError {
 
 impl std::error::Error for I18nError {}
 
-// ─── I18nFormatter（ICU4X 格式化） ──────────────────────────────────────────
+// I18nFormatter（ICU4X 格式化）
 
 /// 基于 ICU4X 编译数据的 locale 感知格式化器。
 ///
@@ -139,7 +139,7 @@ pub struct I18nFormatter {
     pub(crate) date_formatter: DateTimeFormatter<YMD>,
 }
 
-// ─── Fluent 消息目录（fluent-bundle concurrent 双束） ────────────────────────
+// Fluent 消息目录（fluent-bundle concurrent 双束）
 
 /// 全局英文（回退）束：进程级共享，首次访问时从内嵌 `locales/en/*.ftl` 构建。
 static EN_BUNDLE: OnceLock<FluentBundle<FluentResource>> = OnceLock::new();
@@ -293,7 +293,7 @@ impl fmt::Debug for MessageCatalog {
     }
 }
 
-// ─── I18nManager（全局状态 + 消息翻译） ─────────────────────────────────────
+// I18nManager（全局状态 + 消息翻译）
 
 /// 全局 [`I18nManager`] 实例。
 static GLOBAL_I18N: OnceLock<I18nManager> = OnceLock::new();
@@ -419,7 +419,7 @@ fn detect_system_locale() -> String {
     sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string())
 }
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
+// Tests
 
 #[cfg(test)]
 mod tests {
@@ -432,7 +432,7 @@ mod tests {
 
     use serial_test::serial;
 
-    // ─── Fluent 目录守卫测试 ────────────────────────────────────────────────
+    // Fluent 目录守卫测试
     //
     // 断言经 format_from_bundle / 局部 MessageCatalog 直接指定语言，
     // 不触碰全局 GLOBAL_I18N 单例，并行执行安全。

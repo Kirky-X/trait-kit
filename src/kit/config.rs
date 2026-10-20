@@ -3,7 +3,7 @@
 //! Configuration loader trait for the "loader pattern" integration with confers.
 //!
 //! trait-kit defines the `Configurable` trait as a backend-agnostic interface;
-//! users bridge to `confers::Config` derive macro's `load_sync()` (or any other
+//! users bridge to `confers::Config` derive macro's `load_sync` (or any other
 //! source) by implementing this trait. The Kit then loads and stores the value
 //! through its `TypeMap` backend, keeping `set_config`/`config` synchronous and
 //! type-safe.
@@ -32,7 +32,7 @@
 
 /// Trait for types that can load themselves from a configuration source.
 ///
-/// Implementors typically delegate to `confers::Config`'s derived `load_sync()`
+/// Implementors typically delegate to `confers::Config`'s derived `load_sync`
 /// method, but any loader (file parse, env scan, network fetch) is allowed.
 ///
 /// # Errors
@@ -52,7 +52,7 @@ pub trait Configurable: Clone + 'static {
 /// Re-export of the `confers::Config` derive macro.
 ///
 /// Allows `use trait_kit::kit::Config;` to derive the configuration loader
-/// implementation backed by confers' `load_sync()` / `load_file()` codegen.
+/// implementation backed by confers' `load_sync` / `load_file` codegen.
 #[cfg(feature = "confers")]
 pub use confers::Config;
 
@@ -64,7 +64,7 @@ pub use confers::Config;
 /// capabilities. `ModuleConfig` does not require `Configurable` — a module
 /// may provide a default without a loader, or vice versa.
 ///
-/// `default_value()` is not invoked automatically by `Kit` internally;
+/// `default_value` is not invoked automatically by `Kit` internally;
 /// callers must opt-in via [`Kit::load_config_or_default`](super::kit::Kit::load_config_or_default)
 /// when they want load-with-fallback semantics.
 #[cfg(feature = "confers")]
@@ -89,7 +89,7 @@ pub trait ModuleConfig: Clone + 'static {
 pub trait Validatable: Clone + 'static {
     /// Validate the configuration value.
     ///
-    /// Returns `Ok(())` if valid, or `Err` with all failure reasons.
+    /// Returns `Ok()` if valid, or `Err` with all failure reasons.
     ///
     /// # Errors
     ///
@@ -166,7 +166,7 @@ impl std::error::Error for ValidationError {}
 /// impl ConfigInherit for DbConfig {
 ///     type Override = DbConfigOverride;
 ///     fn apply_override(&mut self, ovr: &Self::Override) {
-///         if let Some(ref h) = ovr.host { self.host = h.clone(); }
+///         if let Some(ref h) = ovr.host { self.host = h.clone; }
 ///         if let Some(ref p) = ovr.port { self.port = *p; }
 ///     }
 /// }
@@ -753,7 +753,7 @@ mod key_provider_tests {
     }
 
     /// 零化覆盖整个分配（含 spare capacity）：容量大于长度的缓冲经显式
-    /// `zeroize()` 后全部字节为零（confer 的 `SecretBytes::drop` 即经
+    /// `zeroize` 后全部字节为零（confer 的 `SecretBytes::drop` 即经
     /// `Zeroize for SecretBytes` 走同一路径）。
     ///
     /// 自研 `KeyBytes` 结构体只清 `len` 范围且无 `zeroize` 入口，本测试

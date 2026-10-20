@@ -19,16 +19,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use trait_kit::impl_module_meta;
 use trait_kit::prelude::*;
 
-// =============================================================================
 // Core scenarios (no feature gate)
-// =============================================================================
 
 mod core_scenarios {
     use super::*;
     use serial_test::serial;
     use std::any::TypeId;
 
-    // === Fixtures (shared across multiple tests) ===
+    // Fixtures (shared across multiple tests)
 
     /// Standalone module with no dependencies, builds an `Arc<u32>`.
     struct AlphaModule;
@@ -140,7 +138,7 @@ mod core_scenarios {
         }
     }
 
-    // === B01: empty Kit build ===
+    // B01: empty Kit build
     #[test]
     fn b01_empty_kit_build_succeeds() {
         let kit = Kit::new();
@@ -149,7 +147,7 @@ mod core_scenarios {
         assert!(!built.contains::<AlphaModule>());
     }
 
-    // === B03: multiple independent modules build ===
+    // B03: multiple independent modules build
     #[test]
     fn b03_multiple_independent_modules_build() {
         let mut kit = Kit::new();
@@ -163,7 +161,7 @@ mod core_scenarios {
         assert_eq!(*b, 2);
     }
 
-    // === B04: chain dependency A→B→C (topological order) ===
+    // B04: chain dependency A→B→C (topological order)
     #[test]
     fn b04_chain_dependency_topological_build() {
         let mut kit = Kit::new();
@@ -177,7 +175,7 @@ mod core_scenarios {
         assert_eq!(*c, 12);
     }
 
-    // === B06: config override (set_config twice → last wins) ===
+    // B06: config override (set_config twice → last wins)
     #[test]
     fn b06_config_override_last_write_wins() {
         let kit = Kit::new();
@@ -188,7 +186,7 @@ mod core_scenarios {
         assert_eq!(v, 2, "second set_config should override first");
     }
 
-    // === B07: build callback reads config ===
+    // B07: build callback reads config
     #[test]
     fn b07_build_callback_reads_config() {
         let mut kit = Kit::new();
@@ -199,7 +197,7 @@ mod core_scenarios {
         assert_eq!(*cap, 99);
     }
 
-    // === B09: optional returns Some for built module ===
+    // B09: optional returns Some for built module
     #[test]
     fn b09_optional_returns_some_for_built_module() {
         let mut kit = Kit::new();
@@ -213,7 +211,7 @@ mod core_scenarios {
         assert_eq!(*opt.unwrap(), 1);
     }
 
-    // === B11: contains returns true/false correctly ===
+    // B11: contains returns true/false correctly
     #[test]
     fn b11_contains_reflects_built_state() {
         let mut kit = Kit::new();
@@ -226,7 +224,7 @@ mod core_scenarios {
         );
     }
 
-    // === B12: contains_config reflects set state ===
+    // B12: contains_config reflects set state
     #[test]
     fn b12_contains_config_reflects_set_state() {
         let kit = Kit::new();
@@ -242,7 +240,7 @@ mod core_scenarios {
         );
     }
 
-    // === B13: require_ref returns zero-copy reference ===
+    // B13: require_ref returns zero-copy reference
     #[test]
     fn b13_require_ref_returns_zero_copy_reference() {
         let mut kit = Kit::new();
@@ -254,7 +252,7 @@ mod core_scenarios {
         drop(r);
     }
 
-    // === A01: register_lazy + first require triggers construction ===
+    // A01: register_lazy + first require triggers construction
     #[test]
     #[serial]
     fn a01_register_lazy_first_require_triggers_build() {
@@ -271,7 +269,7 @@ mod core_scenarios {
         assert_eq!(*cap, 0);
     }
 
-    // === A02: lazy module not rebuilt on second require ===
+    // A02: lazy module not rebuilt on second require
     #[test]
     #[serial]
     fn a02_lazy_module_not_rebuilt_on_second_require() {
@@ -290,7 +288,7 @@ mod core_scenarios {
         );
     }
 
-    // === A03: lazy module depends on eager module ===
+    // A03: lazy module depends on eager module
     /// Eager dep that returns 42 via its capability.
     struct EagerDep;
     impl_module_meta!(EagerDep, "eager-dep");
@@ -319,7 +317,7 @@ mod core_scenarios {
         kit.register::<EagerDep>().expect("register eager dep");
         kit.register_lazy::<LazyDependent>().expect("register lazy");
         let built = kit.build().expect("build");
-        // Eager dep should be built during build().
+        // Eager dep should be built during build.
         assert!(built.contains::<EagerDep>());
         // Lazy not yet built.
         assert!(!built.contains::<LazyDependent>());
@@ -328,7 +326,7 @@ mod core_scenarios {
         assert_eq!(*cap, 142, "42 + 100");
     }
 
-    // === A04: register_multi + require_all (registration order preserved) ===
+    // A04: register_multi + require_all (registration order preserved)
     struct MultiA;
     impl_module_meta!(MultiA, "multi-a");
     impl AutoBuilder for MultiA {
@@ -373,7 +371,7 @@ mod core_scenarios {
         assert_eq!(*caps[2], 30, "third cap = MultiC (30)");
     }
 
-    // === A05: multi-binding coexists with single binding ===
+    // A05: multi-binding coexists with single binding
     struct SingleBinding;
     impl_module_meta!(SingleBinding, "single-binding");
     impl AutoBuilder for SingleBinding {
@@ -401,7 +399,7 @@ mod core_scenarios {
         assert_eq!(*multi[1], 20);
     }
 
-    // === A06: override_module skips build_fn ===
+    // A06: override_module skips build_fn
     #[test]
     #[serial]
     fn a06_override_module_skips_build_fn() {
@@ -420,7 +418,7 @@ mod core_scenarios {
         );
     }
 
-    // === A07: override_module on unregistered module ===
+    // A07: override_module on unregistered module
     #[test]
     fn a07_override_module_on_unregistered_module() {
         let kit = Kit::new();
@@ -431,7 +429,7 @@ mod core_scenarios {
         assert_eq!(*cap, 555);
     }
 
-    // === A27: override_module wins over register_lazy (lazy builder never runs) ===
+    // A27: override_module wins over register_lazy (lazy builder never runs)
     #[test]
     #[serial]
     fn a27_override_module_takes_priority_over_register_lazy() {
@@ -441,7 +439,7 @@ mod core_scenarios {
         kit.override_module::<CountedModule>(Arc::new(999u32));
         let built = kit.build().expect("build");
         // The injected value wins; the lazy builder is never triggered —
-        // neither at build() nor at the first require().
+        // neither at build nor at the first require.
         assert_eq!(*built.require::<CountedModule>().expect("require"), 999);
         assert_eq!(
             COUNTED_BUILDS.load(Ordering::SeqCst),
@@ -450,7 +448,7 @@ mod core_scenarios {
         );
     }
 
-    // === A08: override_module_strict succeeds when deps registered ===
+    // A08: override_module_strict succeeds when deps registered
     struct StrictTarget;
     impl_module_meta!(StrictTarget, "strict-target", deps = [AlphaModule]);
     impl AutoBuilder for StrictTarget {
@@ -472,7 +470,7 @@ mod core_scenarios {
         assert_eq!(*cap, 888);
     }
 
-    // === A25: impl_module_meta! macro (3 forms) ===
+    // A25: impl_module_meta! macro (3 forms)
     struct MetaNoDeps;
     impl_module_meta!(MetaNoDeps, "meta-no-deps");
 
@@ -507,7 +505,7 @@ mod core_scenarios {
         assert!(MetaEmptyDeps::dependencies().is_empty());
     }
 
-    // === E03: 3+ node cycle (A→B→C→A) ===
+    // E03: 3+ node cycle (A→B→C→A)
     struct CycleA;
     impl_module_meta!(CycleA, "cycle-a", deps = [CycleC]);
     impl AutoBuilder for CycleA {
@@ -564,7 +562,7 @@ mod core_scenarios {
         }
     }
 
-    // === E05: cross-method duplicate (register then register_lazy) ===
+    // E05: cross-method duplicate (register then register_lazy)
     #[test]
     fn e05_cross_method_duplicate_registration() {
         let mut kit = Kit::new();
@@ -578,7 +576,7 @@ mod core_scenarios {
         }
     }
 
-    // === E06: register_multi duplicate ===
+    // E06: register_multi duplicate
     #[test]
     fn e06_register_multi_duplicate_returns_already_registered() {
         let mut kit = Kit::new();
@@ -592,7 +590,7 @@ mod core_scenarios {
         }
     }
 
-    // === E08: build_fn returns Err ===
+    // E08: build_fn returns Err
     #[test]
     fn e08_build_fn_returns_err_propagates_build_failed() {
         let mut kit = Kit::new();
@@ -609,7 +607,7 @@ mod core_scenarios {
         }
     }
 
-    // === E11: lazy build_fn fails on first require ===
+    // E11: lazy build_fn fails on first require
     #[test]
     fn e11_lazy_build_fails_on_first_require() {
         let mut kit = Kit::new();
@@ -630,7 +628,7 @@ mod core_scenarios {
         }
     }
 
-    // === E19: override_module_strict with missing dep ===
+    // E19: override_module_strict with missing dep
     #[test]
     fn e19_override_module_strict_missing_dep_returns_dependency_missing() {
         let mut kit = Kit::new();
@@ -645,7 +643,7 @@ mod core_scenarios {
         }
     }
 
-    // === E26: require_all on unregistered capability → MissingCapability ===
+    // E26: require_all on unregistered capability → MissingCapability
     #[test]
     fn e26_require_all_unregistered_returns_missing_capability() {
         let kit = Kit::new();
@@ -658,7 +656,7 @@ mod core_scenarios {
         }
     }
 
-    // === C01: empty dependency graph build ===
+    // C01: empty dependency graph build
     #[test]
     fn c01_empty_dependency_graph_build_succeeds() {
         let kit = Kit::new();
@@ -668,7 +666,7 @@ mod core_scenarios {
         assert!(debug.contains("modules: 0"));
     }
 
-    // === C02: self-dependency (A→A) ===
+    // C02: self-dependency (A→A)
     struct SelfCycle;
     impl_module_meta!(SelfCycle, "self-cycle", deps = [SelfCycle]);
     impl AutoBuilder for SelfCycle {
@@ -694,7 +692,7 @@ mod core_scenarios {
         }
     }
 
-    // === C03: deep dependency chain (10+ layers) ===
+    // C03: deep dependency chain (10+ layers)
     // Use a macro to generate 11 distinct types: Deep0 → Deep1 → ... → Deep10.
     macro_rules! define_deep_chain {
         ($($name:ident),+ $(,)?) => {
@@ -837,7 +835,7 @@ mod core_scenarios {
         assert_eq!(*cap, 10);
     }
 
-    // === C04: diamond dependency ===
+    // C04: diamond dependency
     //   DiamondTop
     //   ↓     ↓
     // DiamondL   DiamondR
@@ -904,7 +902,7 @@ mod core_scenarios {
         assert_eq!(*cap, 32);
     }
 
-    // === C06: large number of modules (100) ===
+    // C06: large number of modules (100)
     // Generate 100 distinct module types via macro.
     // NOTE: Cannot use `impl_module_meta!($name, stringify!($name))` because
     // the macro requires `$name:literal`. Implement ModuleMeta directly.
@@ -974,7 +972,7 @@ mod core_scenarios {
         assert_eq!(*last, 0);
     }
 
-    // === C07: many config types (20) ===
+    // C07: many config types (20)
     // Use 20 distinct tuple-struct wrappers around u32.
     macro_rules! define_config_types {
         ($($name:ident),+ $(,)?) => {
@@ -1015,7 +1013,7 @@ mod core_scenarios {
         assert!(built.contains_config::<Cfg19>());
     }
 
-    // === C08: config type conflict (two modules set same config type → last wins) ===
+    // C08: config type conflict (two modules set same config type → last wins)
     #[test]
     fn c08_config_type_conflict_last_write_wins() {
         let kit = Kit::new();
@@ -1027,7 +1025,7 @@ mod core_scenarios {
         assert_eq!(v, 3, "last set_config should win");
     }
 
-    // === C10: same NAME but different TypeId both register OK ===
+    // C10: same NAME but different TypeId both register OK
     struct SameNameA;
     impl ModuleMeta for SameNameA {
         const NAME: &'static str = "same-name";
@@ -1073,7 +1071,7 @@ mod core_scenarios {
         assert_eq!(*b, 2);
     }
 
-    // === C11: build then require lazy twice → cached ===
+    // C11: build then require lazy twice → cached
     /// Dedicated counting lazy module (separate from CountedModule to avoid
     /// state bleed across tests).
     static C11_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -1101,7 +1099,7 @@ mod core_scenarios {
         assert_eq!(C11_COUNT.load(Ordering::SeqCst), 1, "build_fn invoked once");
     }
 
-    // === C13: multi-binding registration order (C, A, B → require_all returns [C, A, B]) ===
+    // C13: multi-binding registration order (C, A, B → require_all returns [C, A, B])
     struct OrderC;
     impl_module_meta!(OrderC, "order-c");
     impl AutoBuilder for OrderC {
@@ -1147,7 +1145,7 @@ mod core_scenarios {
         assert_eq!(*caps[2], 2, "third cap = OrderB (2)");
     }
 
-    // === C22: single self-sufficient module ===
+    // C22: single self-sufficient module
     struct SelfSufficient;
     impl_module_meta!(SelfSufficient, "self-sufficient");
     impl AutoBuilder for SelfSufficient {
@@ -1168,7 +1166,7 @@ mod core_scenarios {
         assert_eq!(*cap, 42);
     }
 
-    // === C23: all registration methods mixed (where feature-gated ones are excluded) ===
+    // C23: all registration methods mixed (where feature-gated ones are excluded)
     #[test]
     fn c23_all_core_registration_methods_mixed() {
         let mut kit = Kit::new();
@@ -1204,9 +1202,7 @@ mod core_scenarios {
     }
 }
 
-// =============================================================================
 // Async feature scenarios
-// =============================================================================
 
 #[cfg(feature = "async")]
 mod async_scenarios {
@@ -1233,7 +1229,7 @@ mod async_scenarios {
         }
     }
 
-    // === Shared async fixtures ===
+    // Shared async fixtures
 
     #[derive(Debug, thiserror::Error)]
     #[error("async test error: {0}")]
@@ -1474,7 +1470,7 @@ mod async_scenarios {
         }
     }
 
-    // === A09: AsyncKit basic flow ===
+    // A09: AsyncKit basic flow
     #[test]
     fn a09_async_kit_basic_flow() {
         let mut kit = AsyncKit::new();
@@ -1484,7 +1480,7 @@ mod async_scenarios {
         assert_eq!(cap.value, 42);
     }
 
-    // === A10: async cross-module DI ===
+    // A10: async cross-module DI
     #[test]
     fn a10_async_cross_module_di() {
         let mut kit = AsyncKit::new();
@@ -1496,7 +1492,7 @@ mod async_scenarios {
         assert_eq!(cap.value, 142);
     }
 
-    // === A11: async transitive chain DI (A←B←C) ===
+    // A11: async transitive chain DI (A←B←C)
     #[test]
     fn a11_async_transitive_chain_di() {
         let mut kit = AsyncKit::new();
@@ -1512,7 +1508,7 @@ mod async_scenarios {
         assert_eq!(cap.value, 1142);
     }
 
-    // === A12: async config read in build ===
+    // A12: async config read in build
     #[test]
     fn a12_async_config_read_in_build() {
         let mut kit = AsyncKit::new();
@@ -1523,7 +1519,7 @@ mod async_scenarios {
         assert_eq!(*cap, 777);
     }
 
-    // === A26: impl_async_auto_builder! macro ===
+    // A26: impl_async_auto_builder! macro
     struct MacroAsyncModule;
     impl_module_meta!(MacroAsyncModule, "macro-async");
     impl_async_auto_builder!(MacroAsyncModule, Arc<AsyncCap>, AsyncErr, |kit| Box::pin(
@@ -1544,7 +1540,7 @@ mod async_scenarios {
         assert!(MacroAsyncModule::dependencies().is_empty());
     }
 
-    // === E23: async build fails ===
+    // E23: async build fails
     #[test]
     fn e23_async_build_fails_returns_build_failed() {
         let mut kit = AsyncKit::new();
@@ -1561,7 +1557,7 @@ mod async_scenarios {
         }
     }
 
-    // === E24: async dependency missing ===
+    // E24: async dependency missing
     #[test]
     fn e24_async_dependency_missing_returns_dependency_missing() {
         let mut kit = AsyncKit::new();
@@ -1575,7 +1571,7 @@ mod async_scenarios {
         }
     }
 
-    // === E25: async cycle detected ===
+    // E25: async cycle detected
     #[test]
     fn e25_async_cycle_detected() {
         let mut kit = AsyncKit::new();
@@ -1590,12 +1586,12 @@ mod async_scenarios {
         }
     }
 
-    // === C19: async build calls require on unregistered module ===
+    // C19: async build calls require on unregistered module
     #[test]
     fn c19_async_build_require_unregistered_returns_build_failed() {
         let mut kit = AsyncKit::new();
         kit.register::<AsyncRequireUnbuilt>().expect("register");
-        // The module's build calls require::<AsyncUnregistered>() which is
+        // The module's build calls require::<AsyncUnregistered> which is
         // never registered → MissingCapability, mapped to AsyncErr, then
         // wrapped as BuildFailed by AsyncKit::build.
         match block_on(kit.build()) {
@@ -1611,9 +1607,7 @@ mod async_scenarios {
     }
 }
 
-// =============================================================================
 // Interface feature scenarios
-// =============================================================================
 
 #[cfg(feature = "di")]
 mod interface_scenarios {
@@ -1622,7 +1616,7 @@ mod interface_scenarios {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use trait_kit::core::{InterfaceBuilder, ModuleMeta};
 
-    // === Interface fixtures ===
+    // Interface fixtures
 
     /// Test interface trait.
     trait Logger: 'static {
@@ -1711,7 +1705,7 @@ mod interface_scenarios {
         }
     }
 
-    // === A19: register_as + resolve ===
+    // A19: register_as + resolve
     #[test]
     fn a19_register_as_then_resolve() {
         let mut kit = Kit::new();
@@ -1722,7 +1716,7 @@ mod interface_scenarios {
         assert_eq!(logger.log("hello"), "[console] hello");
     }
 
-    // === A20: interface coexists with regular register ===
+    // A20: interface coexists with regular register
     #[test]
     fn a20_interface_coexists_with_regular_register() {
         let mut kit = Kit::new();
@@ -1736,7 +1730,7 @@ mod interface_scenarios {
         assert_eq!(logger.log("coexist"), "[console] coexist");
     }
 
-    // === E07: duplicate interface registration ===
+    // E07: duplicate interface registration
     #[test]
     fn e07_duplicate_interface_registration_returns_already_registered() {
         let mut kit = Kit::new();
@@ -1744,7 +1738,7 @@ mod interface_scenarios {
             .expect("first register_as");
         match kit.register_as::<FileLoggerModule>() {
             Err(TraitKitError::AlreadyRegistered { module }) => {
-                // graph.add() 报告冲突方：返回**已注册**的名字（console），
+                // graph.add 报告冲突方：返回**已注册**的名字（console），
                 // 而非被拒绝的新条目名（file）。
                 assert_eq!(module, "iface-console-logger");
             }
@@ -1753,7 +1747,7 @@ mod interface_scenarios {
         }
     }
 
-    // === E27: resolve unregistered interface ===
+    // E27: resolve unregistered interface
     #[test]
     fn e27_resolve_unregistered_interface_returns_missing_capability() {
         let kit = Kit::new();
@@ -1768,9 +1762,7 @@ mod interface_scenarios {
     }
 }
 
-// =============================================================================
 // i18n feature scenarios
-// =============================================================================
 
 #[cfg(feature = "i18n")]
 mod i18n_scenarios {
@@ -1778,7 +1770,7 @@ mod i18n_scenarios {
     use std::cmp::Ordering;
     use trait_kit::i18n::{I18nError, I18nFormatter};
 
-    // === I01: valid locale creation ===
+    // I01: valid locale creation
     #[test]
     fn i01_valid_locale_creation() {
         for tag in &["en-US", "zh-CN", "ja-JP"] {
@@ -1787,7 +1779,7 @@ mod i18n_scenarios {
         }
     }
 
-    // === I02: invalid locale creation ===
+    // I02: invalid locale creation
     #[test]
     fn i02_invalid_locale_creation_returns_error() {
         let result = I18nFormatter::new("not-a-valid-locale!!!");
@@ -1800,7 +1792,7 @@ mod i18n_scenarios {
         }
     }
 
-    // === I03: integer formatting (en-US: "1,234,567") ===
+    // I03: integer formatting (en-US: "1,234,567")
     #[test]
     fn i03_integer_formatting_en_us() {
         let fmt = I18nFormatter::new("en-US").expect("en-US");
@@ -1819,7 +1811,7 @@ mod i18n_scenarios {
         );
     }
 
-    // === I04: float formatting (en-US: "1,234,567.89") ===
+    // I04: float formatting (en-US: "1,234,567.89")
     #[test]
     fn i04_float_formatting_en_us() {
         let fmt = I18nFormatter::new("en-US").expect("en-US");
@@ -1838,7 +1830,7 @@ mod i18n_scenarios {
         );
     }
 
-    // === I05: NaN formatting fails ===
+    // I05: NaN formatting fails
     #[test]
     fn i05_nan_formatting_returns_invalid_number() {
         let fmt = I18nFormatter::new("en-US").expect("en-US");
@@ -1848,7 +1840,7 @@ mod i18n_scenarios {
         }
     }
 
-    // === I06: Infinity formatting fails ===
+    // I06: Infinity formatting fails
     #[test]
     fn i06_infinity_formatting_returns_invalid_number() {
         let fmt = I18nFormatter::new("en-US").expect("en-US");
@@ -1863,7 +1855,7 @@ mod i18n_scenarios {
         }
     }
 
-    // === I07: negative number formatting ===
+    // I07: negative number formatting
     #[test]
     fn i07_negative_number_formatting_en_us() {
         let fmt = I18nFormatter::new("en-US").expect("en-US");
@@ -1878,7 +1870,7 @@ mod i18n_scenarios {
         );
     }
 
-    // === I08: zero formatting ===
+    // I08: zero formatting
     #[test]
     fn i08_zero_formatting_en_us() {
         let fmt = I18nFormatter::new("en-US").expect("en-US");
@@ -1893,7 +1885,7 @@ mod i18n_scenarios {
         );
     }
 
-    // === I09: valid date formatting ===
+    // I09: valid date formatting
     #[test]
     fn i09_valid_date_formatting() {
         let fmt = I18nFormatter::new("en-US").expect("en-US");
@@ -1905,7 +1897,7 @@ mod i18n_scenarios {
         assert!(!result.is_empty());
     }
 
-    // === I10: invalid month (13) ===
+    // I10: invalid month (13)
     #[test]
     fn i10_invalid_month_returns_date_error() {
         let fmt = I18nFormatter::new("en-US").expect("en-US");
@@ -1920,7 +1912,7 @@ mod i18n_scenarios {
         }
     }
 
-    // === I11: invalid day (Feb 30) ===
+    // I11: invalid day (Feb 30)
     #[test]
     fn i11_invalid_day_returns_date_error() {
         let fmt = I18nFormatter::new("en-US").expect("en-US");
@@ -1941,7 +1933,7 @@ mod i18n_scenarios {
         }
     }
 
-    // === I12: leap year date (2024-02-29 valid) ===
+    // I12: leap year date (2024-02-29 valid)
     #[test]
     fn i12_leap_year_date_succeeds() {
         let fmt = I18nFormatter::new("en-US").expect("en-US");
@@ -1960,7 +1952,7 @@ mod i18n_scenarios {
         }
     }
 
-    // === I13: plural One ===
+    // I13: plural One
     #[test]
     fn i13_plural_category_one() {
         let fmt = I18nFormatter::new("en").expect("en");
@@ -1971,7 +1963,7 @@ mod i18n_scenarios {
         );
     }
 
-    // === I14: plural Other ===
+    // I14: plural Other
     #[test]
     fn i14_plural_category_other() {
         let fmt = I18nFormatter::new("en").expect("en");
@@ -1984,7 +1976,7 @@ mod i18n_scenarios {
         }
     }
 
-    // === I15: compare Less ===
+    // I15: compare Less
     #[test]
     fn i15_compare_less() {
         let fmt = I18nFormatter::new("en").expect("en");
@@ -1995,7 +1987,7 @@ mod i18n_scenarios {
         );
     }
 
-    // === I16: compare Greater ===
+    // I16: compare Greater
     #[test]
     fn i16_compare_greater() {
         let fmt = I18nFormatter::new("en").expect("en");
@@ -2006,7 +1998,7 @@ mod i18n_scenarios {
         );
     }
 
-    // === I17: compare Equal ===
+    // I17: compare Equal
     #[test]
     fn i17_compare_equal() {
         let fmt = I18nFormatter::new("en").expect("en");
@@ -2017,7 +2009,7 @@ mod i18n_scenarios {
         );
     }
 
-    // === I18: empty string compare ===
+    // I18: empty string compare
     #[test]
     fn i18_empty_string_compare_equal() {
         let fmt = I18nFormatter::new("en").expect("en");
@@ -2039,7 +2031,7 @@ mod i18n_scenarios {
         );
     }
 
-    // === I19: Unicode collation ===
+    // I19: Unicode collation
     #[test]
     fn i19_unicode_collation() {
         let fmt = I18nFormatter::new("en").expect("en");
@@ -2059,7 +2051,7 @@ mod i18n_scenarios {
         );
     }
 
-    // === E20: invalid locale error ===
+    // E20: invalid locale error
     #[test]
     fn e20_invalid_locale_error_message() {
         let result = I18nFormatter::new("!!!");
@@ -2073,7 +2065,7 @@ mod i18n_scenarios {
         }
     }
 
-    // === E21: non-finite number error ===
+    // E21: non-finite number error
     #[test]
     fn e21_non_finite_number_returns_invalid_number() {
         let fmt = I18nFormatter::new("en-US").expect("en-US");
@@ -2091,7 +2083,7 @@ mod i18n_scenarios {
         }
     }
 
-    // === E22: invalid date error ===
+    // E22: invalid date error
     #[test]
     fn e22_invalid_date_returns_date_error() {
         let fmt = I18nFormatter::new("en-US").expect("en-US");
@@ -2109,7 +2101,7 @@ mod i18n_scenarios {
         }
     }
 
-    // === C20: empty string sorting ===
+    // C20: empty string sorting
     #[test]
     fn c20_empty_string_sorting() {
         let fmt = I18nFormatter::new("en").expect("en");
@@ -2126,7 +2118,7 @@ mod i18n_scenarios {
         assert_eq!(words, vec!["", "", "apple", "banana"]);
     }
 
-    // === C21: Unicode sorting ===
+    // C21: Unicode sorting
     #[test]
     fn c21_unicode_sorting() {
         let fmt = I18nFormatter::new("en").expect("en");
@@ -2152,9 +2144,7 @@ mod i18n_scenarios {
     }
 }
 
-// =============================================================================
 // Encryption boundary scenarios
-// =============================================================================
 
 #[cfg(feature = "encryption")]
 mod encryption_boundary {
@@ -2179,7 +2169,7 @@ mod encryption_boundary {
     /// 32-byte master key for normal encryption tests.
     const MASTER_KEY: [u8; 32] = *b"0123456789abcdef0123456789abcdef";
 
-    // === C14: empty master_key encryption (verify behavior) ===
+    // C14: empty master_key encryption (verify behavior)
     #[test]
     fn c14_empty_master_key_encryption_behavior() {
         let kit = Kit::new();
@@ -2208,7 +2198,7 @@ mod encryption_boundary {
         }
     }
 
-    // === C15: large config value encryption (1MB) ===
+    // C15: large config value encryption (1MB)
     #[test]
     fn c15_large_config_value_encryption_1mb() {
         let kit = Kit::new();
@@ -2227,7 +2217,7 @@ mod encryption_boundary {
         assert_eq!(decrypted, original);
     }
 
-    // === E15: HKDF failure (try to trigger via empty/abnormal key) ===
+    // E15: HKDF failure (try to trigger via empty/abnormal key)
     #[test]
     fn e15_hkdf_failure_path_documented() {
         // `confers::derive_field_key` uses `Hkdf::<Sha256>::new(None, master_key)`
@@ -2262,7 +2252,7 @@ mod encryption_boundary {
         // document that HKDF does not fail on these inputs.
     }
 
-    // === E17: tampered ciphertext (best-effort analog) ===
+    // E17: tampered ciphertext (best-effort analog)
     #[test]
     fn e17_tampered_ciphertext_analog_via_wrong_key() {
         // The `encrypted_configs` map is private (`RefCell<HashMap<...>>` inside
@@ -2295,9 +2285,7 @@ mod encryption_boundary {
     }
 }
 
-// =============================================================================
 // Shutdown scenarios (feature = "shutdown")
-// =============================================================================
 
 #[cfg(feature = "shutdown")]
 mod shutdown_scenarios {
@@ -2417,7 +2405,7 @@ mod shutdown_scenarios {
 
     #[test]
     fn s05_shutdown_result_into_result() {
-        // ShutdownResult::into_result() 正确转换
+        // ShutdownResult::into_result 正确转换
         let ok_result = ShutdownResult {
             phases: vec![
                 ShutdownPhaseResult {

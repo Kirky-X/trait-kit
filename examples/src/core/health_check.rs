@@ -3,10 +3,10 @@
 //! Health feature — HealthCheck + HealthStatus + health_report.
 //!
 //! Demonstrates:
-//! - `HealthCheck` trait with `check()` returning `HealthStatus`
-//! - `Kit::register_health_check::<M>()` to register a checker
-//! - `Kit<Ready>::health_check::<M>()` for per-module query
-//! - `Kit<Ready>::health_report()` for aggregate report
+//! - `HealthCheck` trait with `check` returning `HealthStatus`
+//! - `Kit::register_health_check::<M>` to register a checker
+//! - `Kit<Ready>::health_check::<M>` for per-module query
+//! - `Kit<Ready>::health_report` for aggregate report
 //! - Config-driven thresholds: the healthy threshold and the cache's initial
 //!   hit count are read from the Kit's typed config, so both the `Healthy`
 //!   and `Degraded` branches are exercised.

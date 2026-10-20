@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 //! `reload` feature — subscribe + reload_config.
 //!
-//! Registers a callback that fires when `reload_config::<C>()` re-loads the
+//! Registers a callback that fires when `reload_config::<C>` re-loads the
 //! value. Uses `Rc<Cell<u32>>` to count invocations across the `Kit<Unbuilt>`
-//! → `Kit<Ready>` boundary (callbacks survive `build()`).
+//! → `Kit<Ready>` boundary (callbacks survive `build`).
 //! Run: `cargo run -p trait-kit-example --example hot_reload --features reload`
 
 use std::cell::Cell;

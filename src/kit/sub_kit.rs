@@ -5,14 +5,14 @@
 //!
 //! This gives large applications an explicit vertical-slice boundary: a child
 //! Kit owns its own modules and dependency graph (validated independently at
-//! `build()`), and the parent only sees the [`SubKitHandle`] capability —
+//! `build`), and the parent only sees the [`SubKitHandle`] capability —
 //! capabilities stay namespaced inside the child instead of polluting the
 //! parent's flat `TypeMap`.
 //!
 //! Usage:
 //!
 //! 1. Implement [`SubKitSpec`] describing how to compose the child Kit;
-//! 2. `parent.register::<SubKitModule<MySpec>>()`.
+//! 2. `parent.register::<SubKitModule<MySpec>>`.
 //!
 //! Requires the `compose` feature.
 
@@ -35,7 +35,7 @@ pub trait SubKitSpec: 'static {
 
     /// Optional parent-level dependencies: declared like `ModuleMeta::
     /// dependencies` so the parent's graph validates the cross-Kit edges
-    /// (`DependencyMissing` is reported at parent `build()`).
+    /// (`DependencyMissing` is reported at parent `build`).
     #[must_use]
     fn dependencies() -> &'static [(&'static str, TypeId)] {
         &[]
@@ -83,7 +83,7 @@ impl std::fmt::Debug for SubKitHandle {
 
 /// The parent-side module wrapping a child Kit.
 ///
-/// `build()` composes and builds the child Kit (validating the child's own
+/// `build` composes and builds the child Kit (validating the child's own
 /// dependency graph), then hands out the [`SubKitHandle`]. A child build
 /// failure surfaces as `TraitKitError::BuildFailed` on the parent build,
 /// context-tagged with the child's name.
@@ -320,7 +320,7 @@ mod tests {
         parent.build().expect("build ok with dep present");
     }
 
-    /// 子 Kit 内 lazy 模块 `require()` 后，`SubKitHandle::contains` 必须可见
+    /// 子 Kit 内 lazy 模块 `require` 后，`SubKitHandle::contains` 必须可见
     /// （委托 `Kit::contains` 的 lazy 回退；修复前失明返回 false）。
     #[test]
     fn sub_kit_lazy_capability_visible_after_require() {

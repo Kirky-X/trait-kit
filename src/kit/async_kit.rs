@@ -21,16 +21,16 @@
 //!    `register_lifecycle`）。
 //! 3. lazy require：n/a（async 侧没有 lazy 槽位，构建失败即返回
 //!    `BuildFailed`；"builder 放回槽位可重试"仅存在于 sync 侧 `Kit`）。
-//! 4. `shutdown_async()`：async `on_shutdown` 钩子 drain（one-shot，二次调用
+//! 4. `shutdown_async`：async `on_shutdown` 钩子 drain（one-shot，二次调用
 //!    no-op）且按逆拓扑序执行（依赖者先于被依赖者）；`AsyncKit` 无 sync
-//!    `shutdown()`——async 清理必须 await `shutdown_async()`。宿主已有
+//!    `shutdown`——async 清理必须 await `shutdown_async`。宿主已有
 //!    `AsyncShutdownCoordinator` 骨架时，组件清理可经
 //!    `register_shutdown_into` 转移进协调器指定阶段（桥接后本方法
 //!    no-op，清理 exactly-once；四条停机入口的选型见 shutdown 模块文档）。
 //! 5. decorator：按 `decorator_module_to_cap` 映射应用（async 侧全部在
-//!    `build()` 时应用，无 lazy 路径）。
+//!    `build` 时应用，无 lazy 路径）。
 //! 6. factory：typestate cast + 编译期 size/align 布局断言。
-//! 7. negotiate：register 时登记声明版本/最低版本要求，`build()` 在依赖图
+//! 7. negotiate：register 时登记声明版本/最低版本要求，`build` 在依赖图
 //!    校验后、构建开始前校验（sync 侧语义一致；async 侧无 override 路径，
 //!    登记点仅 `register`）。
 
@@ -69,13 +69,13 @@ type AsyncObserverRef = Arc<dyn crate::core::observer::BuildObserver>;
 type AsyncDecoratorFn =
     Box<dyn Fn(Box<dyn Any + Send + Sync>) -> Box<dyn Any + Send + Sync> + Send + Sync>;
 
-// ─── Feature-gated field groups ────────────────────────────────────────────
+// Feature-gated field groups
 //
 // 按 feature 聚合的字段子结构：新增 feature 时扩展对应子结构即可，不要在
-// `AsyncKit` 上平铺新字段（否则字段声明、`new()`、`build()` 搬移等多个位点
+// `AsyncKit` 上平铺新字段（否则字段声明、`new`、`build` 搬移等多个位点
 // 都要逐字段散弹式修改）。各子结构内部字段类型与聚合前完全一致，外部行为
 // 零变化；`Arc<RwLock<T: Default>>` 的空态由 `derive(Default)` 提供，
-// `AsyncKit::new()` 直接以 `XxxFields::default()` 构造。
+// `AsyncKit::new` 直接以 `XxxFields::default` 构造。
 
 /// Fields gated behind the `lifecycle` feature.
 #[cfg(feature = "lifecycle")]
@@ -122,7 +122,7 @@ struct ConfersFields {
 ///
 /// Per-config-type reload notification registry backed by confers
 /// [`DynamicField`](confers::DynamicField): each `C` owns one epoch field
-/// (`update(get() + 1)` fans out to that type's subscribers only) and keeps
+/// (`update(get + 1)` fans out to that type's subscribers only) and keeps
 /// its `CallbackGuard`s alive for the kit's lifetime, mirroring the
 /// "subscriptions never deregister" contract of the former hand-rolled map.
 #[cfg(feature = "reload")]
@@ -170,7 +170,7 @@ struct AsyncNegotiateFields {
 
 /// Named service probe registry: `(name, probe)` in registration
 /// (= execution) order. The `Arc` wrapper follows the sibling `*Fields`
-/// convention (whole-field transfer on `build()`); the registry itself is
+/// convention (whole-field transfer on `build`); the registry itself is
 /// never shared beyond the owning kit.
 #[cfg(feature = "probe")]
 type ProbeRegistry = Arc<RwLock<Vec<(&'static str, Arc<dyn crate::core::probe::ServiceProbe>)>>>;
@@ -229,7 +229,7 @@ pub struct Ready;
 
 /// Type-erased async build function.
 ///
-/// Stored in the dependency graph and called during `AsyncKit::build()` to
+/// Stored in the dependency graph and called during `AsyncKit::build` to
 /// produce a boxed capability. The returned future borrows the kit for
 /// lifetime `'a` (higher-rank), allowing build callbacks to read configs /
 /// require dependencies from the kit during async construction without forcing
@@ -242,7 +242,7 @@ pub struct Ready;
 ///
 /// The error variant is `Box<dyn Error + Send + 'static>` to match
 /// `TraitKitError::BuildFailed::source` (which is `Send` so that `TraitKitError: Send`
-/// and `tokio::spawn(async move { kit.build().await })` compiles on a
+/// and `tokio::spawn(async move { kit.build.await })` compiles on a
 /// multi-threaded runtime). The future is `Send` because both
 /// `Box<dyn Any + Send + Sync>` and `Box<dyn Error + Send + 'static>` are
 /// `Send`.
@@ -386,7 +386,7 @@ fn topo_layers(graph: &DependencyGraph, sorted: &[TypeId]) -> Vec<Vec<TypeId>> {
 ///
 /// Multi-threaded (`Send + Sync`) counterpart to [`super::kit::Kit`]. Uses
 /// `Arc<RwLock<...>>` for interior mutability (safe to share across threads,
-/// poisoning-aware). Async module construction happens in `build()`.
+/// poisoning-aware). Async module construction happens in `build`.
 pub struct AsyncKit<S = Unbuilt> {
     builders: Arc<RwLock<HashMap<TypeId, AsyncBuildFn>>>,
     graph: DependencyGraph,
@@ -422,7 +422,7 @@ impl AsyncKit {
     /// Create a new empty `AsyncKit<Unbuilt>`.
     ///
     /// All containers (`builders`, `graph`, `configs`, `capabilities`) start
-    /// empty; register modules and configs before calling `build()`.
+    /// empty; register modules and configs before calling `build`.
     #[must_use]
     pub fn new() -> Self {
         AsyncKit {
@@ -459,8 +459,8 @@ impl AsyncKit {
     /// Register a module for async construction.
     ///
     /// The module's [`AsyncAutoBuilder::build`] is stored as a type-erased
-    /// `AsyncBuildFn` and invoked during `build()`. Registration order does
-    /// not matter — `build()` resolves the construction order via the
+    /// `AsyncBuildFn` and invoked during `build`. Registration order does
+    /// not matter — `build` resolves the construction order via the
     /// dependency graph's topological sort.
     ///
     /// # Errors
@@ -574,7 +574,7 @@ impl AsyncKit {
     /// Set a configuration value.
     ///
     /// Overwrites any prior value of the same type. Configs are read during
-    /// `build()` via [`AsyncKit::config`] inside module `build` callbacks.
+    /// `build` via [`AsyncKit::config`] inside module `build` callbacks.
     ///
     /// # Panics
     ///
@@ -600,7 +600,7 @@ impl AsyncKit {
     /// Store a configuration value behind an `Arc` for zero-clone reads.
     ///
     /// Stored under `TypeId::of::<Arc<C>>` — a distinct slot from plain
-    /// `set_config`. Read back with `config_arc::<C>()`.
+    /// `set_config`. Read back with `config_arc::<C>`.
     ///
     /// Publishes the same `KitEvent::ConfigChanged` audit event as
     /// `set_config`, so event subscribers see Arc-slot updates too.
@@ -652,15 +652,15 @@ impl AsyncKit {
     /// Because modules are constructed in topological order and each
     /// capability is inserted into the shared [`AsyncTypeMap`] immediately
     /// after its `build` future resolves, a module's `build` callback may
-    /// call `kit.require::<DepModule>()?` to pull in the capability of any
+    /// call `kit.require::<DepModule>?` to pull in the capability of any
     /// already-built dependency. This is the canonical DI pattern and works
     /// transitively (A→B→C chains). The `require` method lives in
     /// `impl<S> AsyncKit<S>` so it is available on `&AsyncKit<Unbuilt>`
-    /// during `build()` as well as on `&AsyncKit<Ready>` afterwards.
+    /// during `build` as well as on `&AsyncKit<Ready>` afterwards.
     ///
     /// ```text
     /// // Inside an AsyncAutoBuilder::build callback:
-    /// let dep_cap = kit.require::<DepModule>()?;  // dep was built earlier
+    /// let dep_cap = kit.require::<DepModule>?;  // dep was built earlier
     /// ```
     ///
     /// The kit's `capabilities` map is backed by `Arc<RwLock<...>>`, so a
@@ -714,8 +714,8 @@ impl AsyncKit {
         let report_build_start = std::time::Instant::now();
 
         // 1.5 版本协商（version-negotiation feature）：依赖图就绪后、构建开始前，
-        //     校验每条最低版本要求是否被提供方声明版本满足。语义与
-        //     sync Kit 的 `validate_version_requirements` 对齐。
+        // 校验每条最低版本要求是否被提供方声明版本满足。语义与
+        // sync Kit 的 `validate_version_requirements` 对齐。
         #[cfg(feature = "version-negotiation")]
         self.validate_version_requirements()?;
 
@@ -899,7 +899,7 @@ impl AsyncKit {
         Ok(kit)
     }
 
-    // ─── Lifecycle ─────────────────────────────────────────────────────
+    // Lifecycle
 
     /// Register lifecycle hooks for an async module.
     ///
@@ -909,15 +909,15 @@ impl AsyncKit {
     /// The module must first be registered via [`AsyncKit::register`]: hooks of
     /// a module that never entered the dependency graph are not ordered by
     /// dependencies — they run last (stable registration order among
-    /// themselves), after every graph module. Always call `register::<M>()`
-    /// before `register_lifecycle::<M>()`.
+    /// themselves), after every graph module. Always call `register::<M>`
+    /// before `register_lifecycle::<M>`.
     ///
     /// Both `AsyncLifecycle::on_ready` and `AsyncLifecycle::on_shutdown` are
-    /// supported: `on_ready` runs during `build()` in topological order;
+    /// supported: `on_ready` runs during `build` in topological order;
     /// `on_shutdown` is registered as an async hook and executed by
     /// [`AsyncKit::shutdown_async`] in reverse topological order (dependents
     /// shut down before their dependencies) — async cleanup must await
-    /// `shutdown_async()`. If `on_ready` fails during `build()`, the built kit
+    /// `shutdown_async`. If `on_ready` fails during `build`, the built kit
     /// is dropped and no `on_shutdown` hook runs; see [`AsyncKit::build`]'s
     /// `# Errors` section for the failure semantics.
     ///
@@ -977,7 +977,7 @@ impl AsyncKit {
             .push((TypeId::of::<M>(), ready_cb));
     }
 
-    // ─── Health Check ──────────────────────────────────────────────────
+    // Health Check
 
     /// Register a health checker for an async module.
     ///
@@ -1008,7 +1008,7 @@ impl AsyncKit {
             .insert(TypeId::of::<M>(), (M::NAME, checker));
     }
 
-    // ─── Conditional Registration ───────────────────────────────────────
+    // Conditional Registration
 
     /// Conditionally register an async module based on a runtime predicate.
     ///
@@ -1028,7 +1028,7 @@ impl AsyncKit {
         }
     }
 
-    // ─── Observability ─────────────────────────────────────────────────
+    // Observability
 
     /// Register a build observer for the async build pipeline.
     ///
@@ -1044,7 +1044,7 @@ impl AsyncKit {
             .push(observer);
     }
 
-    // ─── Observation Ports ─────────────────────────────────────────────
+    // Observation Ports
 
     /// Inject a [`MetricsPort`](crate::kit::ports::MetricsPort) for recording counters/gauges/histograms.
     ///
@@ -1078,7 +1078,7 @@ impl AsyncKit {
 
     /// Configure the per-layer build concurrency limit.
     ///
-    /// `AsyncKit::build()` groups modules into topological layers and drives
+    /// `AsyncKit::build` groups modules into topological layers and drives
     /// the futures of each layer concurrently, with at most `limit` module
     /// builds in flight. Default: unlimited. Values are clamped to >= 1.
     ///
@@ -1099,7 +1099,7 @@ impl AsyncKit {
         self.ports.event_bus.read().expect("lock poisoned").clone()
     }
 
-    // ─── Decorator ─────────────────────────────────────────────────────
+    // Decorator
 
     /// Register a decorator for an async module's capability.
     ///
@@ -1132,7 +1132,7 @@ impl AsyncKit {
             .or_default()
             .push(wrapper);
         // Record module TypeId → capability TypeId mapping so
-        // `build()` can look up decorators by module TypeId.
+        // `build` can look up decorators by module TypeId.
         self.decorator
             .decorator_module_to_cap
             .write()
@@ -1142,7 +1142,7 @@ impl AsyncKit {
 }
 
 impl<S> AsyncKit<S> {
-    /// Drain the pending `on_ready` callbacks (the `build()` hand-off to the
+    /// Drain the pending `on_ready` callbacks (the `build` hand-off to the
     /// ready kit; the ready kit's own registry starts empty).
     #[cfg(feature = "lifecycle")]
     fn take_ready_callbacks(&self) -> Vec<(TypeId, AsyncReadyCallback)> {
@@ -1154,8 +1154,8 @@ impl<S> AsyncKit<S> {
             .collect()
     }
 
-    /// Drain the registered async shutdown hooks (`shutdown_async()` /
-    /// `register_shutdown_into()`); both consumers need each hook to run
+    /// Drain the registered async shutdown hooks (`shutdown_async` /
+    /// `register_shutdown_into`); both consumers need each hook to run
     /// exactly once.
     #[cfg(feature = "lifecycle")]
     fn take_shutdown_hooks(&self) -> Vec<(TypeId, AsyncShutdownHookFn)> {
@@ -1187,7 +1187,7 @@ impl<S> AsyncKit<S> {
     ///
     /// Re-registering an existing name drops the old entry and appends the
     /// new one at the tail — registration order is execution order for
-    /// `run_probes()` / `probe_aggregate()`.
+    /// `run_probes` / `probe_aggregate`.
     ///
     /// Requires the `probe` feature (and the `async` feature, since this
     /// surface lives on `AsyncKit`).
@@ -1256,7 +1256,7 @@ impl<S> AsyncKit<S> {
     /// Remove all registered probes and mark the registry stopped.
     /// Internal helper for the shutdown paths (`shutdown_async` /
     /// `register_shutdown_into`): a shut-down kit has no services left to
-    /// probe, and the stopped mark keeps `run_probes()` from reporting the
+    /// probe, and the stopped mark keeps `run_probes` from reporting the
     /// cleared registry as healthy-by-convention. Both callers are
     /// lifecycle-gated, so the helper only exists under the same
     /// conjunction.
@@ -1280,7 +1280,7 @@ impl<S> AsyncKit<S> {
             .clear();
     }
 
-    // Build-step paired stubs for `build()` (observer / report / decorator).
+    // Build-step paired stubs for `build` (observer / report / decorator).
     // Both cfg arms share identical signatures so the build loop carries no
     // cfg attributes; the `not(...)` arms are zero-sized no-ops the optimizer
     // erases (same discipline as the sync `Kit`'s `notify_*` helpers).
@@ -1360,7 +1360,7 @@ impl<S> AsyncKit<S> {
     }
 
     /// Apply registered decorators for one build result (keyed by the
-    /// capability `TypeId` recorded by `decorate()`, falling back to the
+    /// capability `TypeId` recorded by `decorate`, falling back to the
     /// module's own `TypeId`); identity without the `decorator` feature.
     #[cfg(feature = "decorator")]
     fn wrap_decorated(
@@ -1410,7 +1410,7 @@ impl<S> AsyncKit<S> {
     /// Get a configuration value.
     ///
     /// Available on both `AsyncKit<Unbuilt>` (inside `AsyncAutoBuilder::build`
-    /// callbacks) and `AsyncKit<Ready>` (after `build()` completes).
+    /// callbacks) and `AsyncKit<Ready>` (after `build` completes).
     ///
     /// # Errors
     ///
@@ -1431,8 +1431,8 @@ impl<S> AsyncKit<S> {
     /// Retrieve a capability by its module type.
     ///
     /// Available on both `AsyncKit<Unbuilt>` (inside `AsyncAutoBuilder::build`
-    /// callbacks, for cross-module dependency injection during `build()`) and
-    /// `AsyncKit<Ready>` (after `build()` completes).
+    /// callbacks, for cross-module dependency injection during `build`) and
+    /// `AsyncKit<Ready>` (after `build` completes).
     ///
     /// # Errors
     ///
@@ -1491,7 +1491,7 @@ impl AsyncKit<Ready> {
         self.configs.contains::<C>()
     }
 
-    // ─── Lifecycle: shutdown ───────────────────────────────────────────
+    // Lifecycle: shutdown
 
     /// Run all registered service probes once, sequentially in registration
     /// order (no concurrent join — mirroring the shutdown-hook philosophy),
@@ -1503,7 +1503,7 @@ impl AsyncKit<Ready> {
     /// the designated home for network I/O: unlike
     /// [`AsyncHealthCheck::check`](crate::core::health::AsyncHealthCheck::check)
     /// (intentionally synchronous, cache-reading only), a `ServiceProbe` is
-    /// expected to perform its network call inside `probe()` — the trait
+    /// expected to perform its network call inside `probe` — the trait
     /// contract requires a timeout inside the implementation, and this
     /// method trusts it. Sequential execution means the pass latency is the
     /// **sum** of the per-probe latencies; when implementor compliance
@@ -1519,7 +1519,7 @@ impl AsyncKit<Ready> {
     /// not proof of health.
     ///
     /// Per-probe latencies are measured by the framework around each
-    /// `probe().await`; the probe's self-reported
+    /// `probe.await`; the probe's self-reported
     /// [`ProbeOutcome::latency`](crate::core::probe::ProbeOutcome::latency)
     /// is diagnostic and never recorded.
     ///
@@ -1634,7 +1634,7 @@ impl AsyncKit<Ready> {
     ///
     /// Every probe runs — there is no short-circuit on the first unhealthy
     /// verdict — so side-effecting probes observe the same call count as a
-    /// `run_probes()` pass. The `Degraded`/`Unhealthy` detail carries the
+    /// `run_probes` pass. The `Degraded`/`Unhealthy` detail carries the
     /// winning probe's own detail.
     ///
     /// An empty probe registry yields
@@ -1743,7 +1743,7 @@ impl AsyncKit<Ready> {
     /// With the `probe` feature, all registered service probes are
     /// unregistered as part of shutdown and the registry is marked
     /// stopped — a shut-down kit has no services left to probe, and
-    /// post-shutdown `run_probes()` reports the explicit not-serviceable
+    /// post-shutdown `run_probes` reports the explicit not-serviceable
     /// verdict (`overall == "unhealthy"`, `stopped == true`) instead of
     /// the healthy-by-convention empty set, so a readiness consumer cannot
     /// mistake a shut-down kit for a healthy one.
@@ -1755,13 +1755,13 @@ impl AsyncKit<Ready> {
     pub async fn shutdown_async(&self) {
         let async_hooks: Vec<(TypeId, AsyncShutdownHookFn)> = self.take_shutdown_hooks();
         // Reverse order = reverse topological order (hooks were stable-sorted
-        // by topological index in `build()`): dependents complete before the
+        // by topological index in `build`): dependents complete before the
         // modules they depend on. Each hook is awaited before the next starts.
         for (_type_id, hook) in async_hooks.iter().rev() {
             hook(&self.capabilities).await;
         }
         // A shut-down kit has no services left to probe: clear the registry
-        // and mark it stopped, so post-shutdown `run_probes()` reports the
+        // and mark it stopped, so post-shutdown `run_probes` reports the
         // explicit not-serviceable verdict instead of the
         // healthy-by-convention empty set — a readiness consumer must not
         // keep routing to a dead instance.
@@ -1777,13 +1777,13 @@ impl AsyncKit<Ready> {
     /// （`!Send`）形式重新注册进协调器的 `phase`（`on_shutdown` future 借用
     /// `std::sync::RwLock` 读卫，天然 `!Send`，故走 local 槽位而非 Send
     /// 槽位）。转移后：
-    /// - 组件清理的唯一执行者是协调器（`shutdown_local()`），`shutdown_async()`
+    /// - 组件清理的唯一执行者是协调器（`shutdown_local`），`shutdown_async`
     ///   因注册表已空变为 no-op——两条路径合起来保证清理 exactly-once；
     /// - 执行顺序保持逆拓扑：注册表按拓扑序存放，桥接以逆序写入 local
     ///   槽位（local 槽位按注册序执行），依赖者仍先于被依赖者关闭。
     /// - `probe` 特性下服务探针注册表随桥接一并清空并标记 stopped：关闭
     ///   编排启动后服务面即下线，残留探针只会探到死组件；此后的
-    ///   `run_probes()` 返回显性不可服务结论（`stopped == true`），不会
+    ///   `run_probes` 返回显性不可服务结论（`stopped == true`），不会
     ///   以空注册表惯例误报 healthy。
     ///
     /// 返回转移的钩子数量（0 表示无生命周期模块，桥接为 no-op）。
@@ -1799,7 +1799,7 @@ impl AsyncKit<Ready> {
     /// 返回的 `BuildFailed` 是对协调器**任意**错误变体的通用包装：
     /// context 经 `trait-kit-error-shutdown-bridge-stranded` 报告桥接
     /// 操作/阶段与 stranded 计数，被拒绝的原始错误整体降为 source——
-    /// 沿 `source()` 链下探可追溯根因（如锁中毒的 `io::Error`）。
+    /// 沿 `source` 链下探可追溯根因（如锁中毒的 `io::Error`）。
     ///
     /// # Panics
     ///
@@ -1817,7 +1817,7 @@ impl AsyncKit<Ready> {
         let count = hooks.len();
         // 桥接后组件清理的唯一执行者是协调器，Kit 的探针注册表随之清空并
         // 标记 stopped：关闭编排启动后服务面即下线，残留探针只会探到死
-        // 组件，此后的 run_probes() 显性不可服务而非误报 healthy。
+        // 组件，此后的 run_probes 显性不可服务而非误报 healthy。
         #[cfg(feature = "probe")]
         self.clear_probes();
         // 逆序写入：local 槽位按注册序执行，逆序写入使执行序等于注册表的
@@ -1860,7 +1860,7 @@ impl AsyncKit<Ready> {
         Ok(count)
     }
 
-    // ─── Health Check ──────────────────────────────────────────────────
+    // Health Check
 
     /// Check the health of a specific async module.
     ///
@@ -2025,7 +2025,7 @@ impl AsyncKit<Ready> {
         self.report.contract_snapshot()
     }
 
-    // ─── Factory Pattern ───────────────────────────────────────────────
+    // Factory Pattern
 
     /// Create a factory closure that produces new async instances on each call.
     ///
@@ -2070,7 +2070,7 @@ impl AsyncKit<Ready> {
         }
     }
 
-    // ─── Scope ─────────────────────────────────────────────────────────
+    // Scope
 
     /// Create a new empty async scope.
     ///
@@ -2081,7 +2081,7 @@ impl AsyncKit<Ready> {
         super::scope::AsyncScope::new()
     }
 
-    // ─── Graph Visualization ───────────────────────────────────────────
+    // Graph Visualization
 
     /// Export the dependency graph as a Graphviz DOT string.
     #[must_use]
@@ -2096,10 +2096,10 @@ impl AsyncKit<Ready> {
     }
 }
 
-// ─── Config inheritance (confers feature, async) ────────────────────────
+// Config inheritance (confers feature, async)
 
 impl AsyncKit {
-    /// Populate the config `TypeMap` with `C::default_value()` if no value of
+    /// Populate the config `TypeMap` with `C::default_value` if no value of
     /// type `C` is present.
     ///
     /// Returns `true` if the default was populated, `false` if a value already
@@ -2127,7 +2127,7 @@ impl AsyncKit {
     /// no-op (does not panic).
     ///
     /// With the `report` feature, every call is recorded in
-    /// `build_report().config_overrides` — including no-ops (`applied ==
+    /// `build_report.config_overrides` — including no-ops (`applied ==
     /// false`), so a dropped override is visible instead of silently
     /// swallowed. The method is `&self` on a shared `Send + Sync` type:
     /// apply and record run under two independent locks, so under
@@ -2172,7 +2172,7 @@ impl AsyncKit {
 
     /// Drain the recorded config-override history: returns all
     /// [`ConfigOverrideRecord`](crate::kit::report::ConfigOverrideRecord)s in record order and leaves
-    /// `build_report().config_overrides` empty.
+    /// `build_report.config_overrides` empty.
     ///
     /// Like `merge_config` (same `impl AsyncKit` block, i.e. the
     /// pre-build configuration phase), this is an **Unbuilt-state** API:
@@ -2189,7 +2189,7 @@ impl AsyncKit {
 
     /// Extract shared fields from config `C` into the `AsyncKit`'s shared overlay.
     ///
-    /// Calls `C::extract_shared()` and merges the result into
+    /// Calls `C::extract_shared` and merges the result into
     /// `self.confers.shared_fields`. New values override same-named keys from
     /// previous extractions. If no config of type `C` exists, this is a
     /// no-op.
@@ -2213,7 +2213,7 @@ impl AsyncKit {
 
     /// Inject shared fields from the `AsyncKit`'s overlay into config `C`.
     ///
-    /// Reads the current shared overlay and calls `C::inject_shared()`.
+    /// Reads the current shared overlay and calls `C::inject_shared`.
     /// The updated config is written back to the `TypeMap`. If no config of
     /// type `C` exists, this is a no-op.
     ///
@@ -2399,7 +2399,7 @@ impl AsyncKit {
     /// Load a configuration via `Configurable::load`, falling back to
     /// `ModuleConfig::default_value` if loading fails.
     ///
-    /// Requires the `confers` feature. Returns `true` if `C::load()` succeeded.
+    /// Requires the `confers` feature. Returns `true` if `C::load` succeeded.
     ///
     /// # Errors
     ///
@@ -2425,8 +2425,8 @@ impl AsyncKit {
     /// Subscribe a callback to be invoked when config of type `C` is reloaded.
     ///
     /// Requires the `reload` feature. Async counterpart of `Kit::subscribe`.
-    /// Callbacks are zero-argument (`impl Fn() + Send + Sync`); pull the new
-    /// value inside the callback via `config::<C>()`. Dispatch runs over
+    /// Callbacks are zero-argument (`impl Fn + Send + Sync`); pull the new
+    /// value inside the callback via `config::<C>`. Dispatch runs over
     /// confers `DynamicField`: a panicking subscriber is isolated (counted,
     /// later subscribers still notified) — see [`Self::reload_config`].
     ///
@@ -2637,7 +2637,7 @@ impl AsyncKit {
         })
     }
 
-    // ─── Observation Port Accessors ────────────────────────────────────
+    // Observation Port Accessors
 
     /// Retrieve the injected [`MetricsPort`](crate::kit::ports::MetricsPort), if any.
     ///
@@ -2727,7 +2727,7 @@ mod tests {
         }
     }
 
-    // --- mock modules for build() tests ---
+    // mock modules for build tests
 
     /// Build callback returns `Err`, exercising `TraitKitError::BuildFailed`.
     struct MockErrModule;
@@ -2787,7 +2787,7 @@ mod tests {
     struct MissingDep;
 
     /// Declares a dependency on `MissingDep` (unregistered) to trigger
-    /// `TraitKitError::DependencyMissing` during `graph.validate()`.
+    /// `TraitKitError::DependencyMissing` during `graph.validate`.
     struct MockMissingDepModule;
 
     impl ModuleMeta for MockMissingDepModule {
@@ -2963,19 +2963,19 @@ mod tests {
         assert_send_sync::<AsyncKit>();
     }
 
-    // --- Send-ness assertions for TraitKitError and build() result ---
+    // Send-ness assertions for TraitKitError and build result
 
     /// Verifies `TraitKitError` is `Send` (so it can cross
     /// `tokio::spawn` boundaries). Before `TraitKitError::BuildFailed::source`
     /// was `Box<dyn Error>` (without `+ Send`), which made the entire enum
-    /// `!Send` and blocked `tokio::spawn(async move { kit.build().await })`.
+    /// `!Send` and blocked `tokio::spawn(async move { kit.build.await })`.
     #[test]
     fn kit_error_is_send() {
         fn assert_send<T: Send>() {}
         assert_send::<TraitKitError>();
     }
 
-    /// Verifies `AsyncKit::build()`'s return type is `Send`, so the
+    /// Verifies `AsyncKit::build`'s return type is `Send`, so the
     /// spawned future's output satisfies `tokio::spawn`'s `Send` requirement
     /// on a multi-threaded runtime.
     #[test]
@@ -2984,7 +2984,7 @@ mod tests {
         assert_send::<Result<AsyncKit<Ready>, TraitKitError>>();
     }
 
-    // --- tests for AsyncKit::build() ---
+    // tests for AsyncKit::build
 
     #[test]
     fn async_kit_build_returns_ready_state() {
@@ -3089,7 +3089,7 @@ mod tests {
         }
     }
 
-    // --- tests for AsyncKit<Ready> retrieval API (require/optional/contains/contains_config) ---
+    // tests for AsyncKit<Ready> retrieval API (require/optional/contains/contains_config)
 
     #[test]
     fn async_kit_ready_require_returns_capability() {
@@ -3186,8 +3186,8 @@ mod tests {
 
     //
     // MockBModule: no deps, cap = Arc<Bcap{n:42}>.
-    // MockAModule: declares dep on MockBModule; build() calls
-    //   `kit.require::<MockBModule>()?` and embeds B's n into A's cap.
+    // MockAModule: declares dep on MockBModule; build calls
+    //   `kit.require::<MockBModule>?` and embeds B's n into A's cap.
     //   This is the canonical DI pattern from design.md Decision 3.
     // MockCModule / MockChainBModule / MockChainAModule: transitive
     //   A→B→C chain; each build callback calls require on its direct dep.
@@ -3195,7 +3195,7 @@ mod tests {
     //
     // `From<TraitKitError> for MockError` lets `?` convert require errors
     // (matches the production pattern in design.md where DbNexusModule
-    // uses `kit.require::<OxcacheModule>()?` with `OxcacheError: From<TraitKitError>`).
+    // uses `kit.require::<OxcacheModule>?` with `OxcacheError: From<TraitKitError>`).
 
     impl From<TraitKitError> for MockError {
         fn from(e: TraitKitError) -> Self {
@@ -3370,7 +3370,7 @@ mod tests {
     }
 
     // 3-node cycle: MockCycleA3 → MockCycleB3 → MockCycleC3 → MockCycleA3.
-    // Build callbacks are trivial because graph.validate() rejects the cycle
+    // Build callbacks are trivial because graph.validate rejects the cycle
     // before any build_fn is invoked.
     struct MockCycleA3;
 
@@ -3441,7 +3441,7 @@ mod tests {
         }
     }
 
-    // --- tests: cross-module dependency injection (R-004) ---
+    // tests: cross-module dependency injection (R-004)
 
     /// R-004 #1: A declares dep on B; B is built before A (topo order).
     /// A's cap embeds B's n=42, proving B was ready when A's build ran.
@@ -3460,7 +3460,7 @@ mod tests {
         );
     }
 
-    /// R-004 #2: A's build callback calls `kit.require::<MockBModule>()`
+    /// R-004 #2: A's build callback calls `kit.require::<MockBModule>`
     /// and receives B's capability. Both caps are retrievable post-build.
     #[test]
     fn async_kit_di_require_returns_dependency_capability() {
@@ -3479,7 +3479,7 @@ mod tests {
 
     /// R-004 #3: Missing dependency → `TraitKitError::DependencyMissing`.
     /// Register only `MockAModule` (declares dep on `MockBModule`); `MockBModule`
-    /// is intentionally unregistered. `graph.validate()` must reject before
+    /// is intentionally unregistered. `graph.validate` must reject before
     /// any `build_fn` runs.
     #[test]
     fn async_kit_di_missing_dependency_returns_error() {
@@ -3517,8 +3517,8 @@ mod tests {
     }
 
     /// R-004 #5: Transitive chain A→B→C. C built first (order=1), B second
-    /// (order=2), A third (order=3). A's `require::<MockChainBModule>()`
-    /// succeeds, B's `require::<MockCModule>()` succeeds. A's cap contains
+    /// (order=2), A third (order=3). A's `require::<MockChainBModule>`
+    /// succeeds, B's `require::<MockCModule>` succeeds. A's cap contains
     /// C's v=100 transitively — proves DI propagates through the chain.
     #[test]
     fn async_kit_di_transitive_dependency_chain() {
@@ -3633,7 +3633,7 @@ mod tests {
     }
 }
 
-// ─── Feature-gated async integration tests ────────────────────────────────
+// Feature-gated async integration tests
 
 #[cfg(all(test, feature = "lifecycle"))]
 mod async_lifecycle_tests {
@@ -3686,7 +3686,7 @@ mod async_lifecycle_tests {
         );
     }
 
-    /// `on_ready` 返回 Err 时 `build()` 透传 `LifecycleFailed`（含模块名）。
+    /// `on_ready` 返回 Err 时 `build` 透传 `LifecycleFailed`（含模块名）。
     struct AsyncReadyErrModule;
     impl ModuleMeta for AsyncReadyErrModule {
         const NAME: &'static str = "async-ready-err";
@@ -3771,7 +3771,7 @@ mod async_lifecycle_tests {
         );
     }
 
-    // --- async shutdown: `shutdown_async` runs `AsyncLifecycle::on_shutdown` ---
+    // async shutdown: `shutdown_async` runs `AsyncLifecycle::on_shutdown`
 
     static ASYNC_LC_SHUTDOWN: AtomicUsize = AtomicUsize::new(0);
 
@@ -3801,7 +3801,7 @@ mod async_lifecycle_tests {
 
     /// FIX 回归钉子：此前注册的 shutdown 回调是同步闭包，`on_shutdown`
     /// 返回的 Future 从未被执行（async 清理被静默跳过），且全库无 async
-    /// shutdown API。现在 `shutdown_async()` 逐个 await 异步钩子（计数恰好
+    /// shutdown API。现在 `shutdown_async` 逐个 await 异步钩子（计数恰好
     /// +1）。
     #[test]
     fn async_shutdown_async_runs_on_shutdown_hook() {
@@ -3822,10 +3822,10 @@ mod async_lifecycle_tests {
     // ── 逆拓扑关闭顺序的回归钉子见文件后部 `async_shutdown_async_runs_in_
     //    reverse_topological_order`。──
 
-    /// `shutdown_async()` 是 one-shot：async hook registry 被 drain，二次调用
+    /// `shutdown_async` 是 one-shot：async hook registry 被 drain，二次调用
     /// 为 no-op，`on_shutdown` 恰好执行一次。（原测试直插私有字段
-    /// `shutdown_callbacks` 钉 sync `shutdown()` 的 one-shot 行为；sync 入口
-    /// 已随 删除 ——async 清理唯一入口是 `shutdown_async()`。）
+    /// `shutdown_callbacks` 钉 sync `shutdown` 的 one-shot 行为；sync 入口
+    /// 已随 删除 ——async 清理唯一入口是 `shutdown_async`。）
     #[test]
     fn async_shutdown_async_is_one_shot_second_call_is_noop() {
         // 测试内专用计数器：避免共享 static 计数器受其他测试干扰，
@@ -3870,8 +3870,8 @@ mod async_lifecycle_tests {
         );
     }
 
-    /// 回归钉子：钩子在 `build()` 时按依赖图拓扑索引稳定排序，
-    /// `shutdown_async()` 逆序 drain 后依赖者（dependent）先于被依赖者
+    /// 回归钉子：钩子在 `build` 时按依赖图拓扑索引稳定排序，
+    /// `shutdown_async` 逆序 drain 后依赖者（dependent）先于被依赖者
     /// （dep）关闭——文档承诺的 "reverse topological order" 由此为真。
     #[test]
     fn async_shutdown_async_runs_in_reverse_topological_order() {
@@ -4479,7 +4479,7 @@ mod async_decorator_tests {
     }
 }
 
-// ─── AsyncKit<Ready> surface tests ─────────────────────────────────────
+// AsyncKit<Ready> surface tests
 
 #[cfg(all(test, feature = "async"))]
 mod async_ready_tests {
@@ -4592,7 +4592,7 @@ mod async_ready_tests {
     }
 }
 
-// ─── Config inheritance tests (async) ───────────────────────────────────
+// Config inheritance tests (async)
 
 #[cfg(all(test, feature = "confers"))]
 mod async_config_inheritance_tests {
@@ -5066,7 +5066,7 @@ mod concurrency_tests {
         );
     }
 
-    // ─── negotiate（版本协商，async 侧）────────────────────────────────────
+    // negotiate（版本协商，async 侧）
 
     #[derive(Debug, Clone)]
     struct VerCap;
@@ -5141,7 +5141,7 @@ mod concurrency_tests {
     }
 
     // 这两个用例的断言依赖 `validate_version_requirements` 真正运行，
-    // 只能在 `version-negotiation` 特性下编译；否则 `build()` 不协商，
+    // 只能在 `version-negotiation` 特性下编译；否则 `build` 不协商，
     // "satisfied" 空转、"unsatisfied" 必假失败（任意特性组合纪律）。
     #[cfg(feature = "version-negotiation")]
     #[test]
@@ -5184,7 +5184,7 @@ mod concurrency_tests {
     }
 }
 
-// ─── AsyncKit build-report (`report` feature) tests ────────────────────
+// AsyncKit build-report (`report` feature) tests
 
 #[cfg(all(test, feature = "report"))]
 mod async_report_tests {
@@ -5483,7 +5483,7 @@ mod async_report_tests {
     }
 }
 
-// ─── AsyncKit probe registry (`probe` feature) tests ───────────────────
+// AsyncKit probe registry (`probe` feature) tests
 
 #[cfg(all(test, feature = "probe"))]
 mod async_probe_tests {
@@ -5683,7 +5683,7 @@ mod async_probe_tests {
         );
     }
 
-    /// 报告中的延迟由框架在 `probe().await` 外侧实测，不采信实现自报值。
+    /// 报告中的延迟由框架在 `probe.await` 外侧实测，不采信实现自报值。
     #[test]
     fn run_probes_measures_wall_latency_not_the_self_reported_value() {
         let mut kit = AsyncKit::new();
@@ -5891,7 +5891,7 @@ mod async_probe_bridge_tests {
     }
 }
 
-// ─── Config surface tests (confers) ────────────────────────────────────
+// Config surface tests (confers)
 
 #[cfg(all(test, feature = "async", feature = "confers"))]
 mod async_config_api_tests {
@@ -5941,7 +5941,7 @@ mod async_config_api_tests {
         }
     }
 
-    /// `load()` always fails — exercises every load-error path.
+    /// `load` always fails — exercises every load-error path.
     #[derive(Debug, Clone, PartialEq)]
     struct FailingCfg;
 
@@ -6085,7 +6085,7 @@ mod async_config_api_tests {
     }
 }
 
-// ─── Reload surface tests ──────────────────────────────────────────────
+// Reload surface tests
 
 #[cfg(all(test, feature = "async", feature = "reload"))]
 mod async_reload_tests {
@@ -6168,7 +6168,7 @@ mod async_reload_tests {
         );
     }
 
-    /// 零参回调契约：回调内经 `config::<C>()` 读到 `C::load()` 产生的新值。
+    /// 零参回调契约：回调内经 `config::<C>` 读到 `C::load` 产生的新值。
     #[test]
     fn reload_config_callback_reads_new_value_via_config() {
         let kit = Arc::new(AsyncKit::new());
@@ -6203,7 +6203,7 @@ mod async_reload_tests {
     }
 }
 
-// ─── Encryption surface tests ──────────────────────────────────────────
+// Encryption surface tests
 
 #[cfg(all(test, feature = "async", feature = "encryption"))]
 mod async_encryption_tests {
@@ -6292,7 +6292,7 @@ mod async_encryption_tests {
     }
 }
 
-// ─── set_config / set_config_arc events + observation ports ────────────
+// set_config / set_config_arc events + observation ports
 
 #[cfg(all(test, feature = "async"))]
 mod async_config_events_tests {

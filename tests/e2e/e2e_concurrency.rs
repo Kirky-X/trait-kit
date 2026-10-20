@@ -5,17 +5,17 @@
 //
 // 覆盖场景 ID（docs/TEST_SCENARIOS.md §2.21）：
 // - CCY-06 require_ref 借用存活期间连续 reload/set_config 交错压力档
-//   （真实行为修正版，见下方说明；单次语义版见 tests/e2e_config.rs
-//   RLD-07 测试）
+// （真实行为修正版，见下方说明；单次语义版见 tests/e2e_config.rs
+// RLD-07 测试）
 //
 // 其余 CCY 域场景既有覆盖充分，此处仅声明引用、不重复固化：
 // - 02 → src/kit/async_typemap.rs（cross_thread_access_does_not_panic、
 //   arc_clone_shares_state）、src/kit/async_kit.rs（async_kit_concurrent_registration）
 // - CCY-03（sync Kit !Sync 设计边界）→ tests/basic.rs 顶部的
 //   `assert_not_impl_any!(Kit<Unbuilt>: Sync)` / `Kit<Ready>: Sync`
-//   编译期静态断言固化（等效落点，比 trybuild 更快且稳定）
+// 编译期静态断言固化（等效落点，比 trybuild 更快且稳定）
 // - 05/07 → tests/e2e_advanced.rs（c06 100 模块 / c07 20 配置类型 /
-//   c15 1MB 加密大值）
+// c15 1MB 加密大值）
 #![cfg(feature = "reload")]
 
 use std::error::Error;
@@ -80,7 +80,7 @@ fn e2e_ref_borrow_storm_interleaved_reload_set() {
     assert!(ready.contains::<StormMod>());
 }
 
-// ─── AsyncKit 并发 merge_config：记录序为锁到达序、覆盖可能互相丢失 ────
+// AsyncKit 并发 merge_config：记录序为锁到达序、覆盖可能互相丢失
 
 /// 文档化语义固化（src/kit/report.rs ConfigOverrideRecord、
 /// API_REFERENCE.md 并发节）：读-改-写非原子——两线程并发对同一
@@ -183,7 +183,7 @@ mod async_merge_config_race_e2e {
     }
 }
 
-// ─── 事件总线并发 publish：回调锁外扇出，重入不死锁 ───────────────────
+// 事件总线并发 publish：回调锁外扇出，重入不死锁
 
 /// 多线程同时 publish + 订阅者回调内再 subscribe/publish（重入）：
 /// 无死锁、无 panic（publish 在锁外扇出的契约，src/kit/events.rs）。

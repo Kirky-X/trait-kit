@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-// Kit<Ready> cannot call override_module() — typestate enforces Unbuilt-only.
+// Kit<Ready> cannot call override_module — typestate enforces Unbuilt-only.
 //
 // The fixture must produce exactly one error (the E0599 below). Explicit
 // `ModuleMeta` impl instead of `impl_module_meta!`: the macro is not
@@ -28,6 +28,6 @@ fn main() {
     kit.register::<MyModule>().unwrap();
     let mut ready = kit.build().unwrap();
     let _ = &mut ready;
-    // ERROR: override_module() is only available on Kit<Unbuilt>
+    // ERROR: override_module is only available on Kit<Unbuilt>
     ready.override_module::<MyModule>(Arc::new(2));
 }

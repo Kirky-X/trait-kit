@@ -5,13 +5,13 @@
 //
 // 覆盖场景 ID（docs/TEST_SCENARIOS.md §2.7）：
 // - ENC-11 字段密钥 HKDF 绑定 `C::PATH` + 版本标签 `v1`：不同 PATH 派生
-//   不同密钥（隔离性）、同参数派生稳定（确定性）
+// 不同密钥（隔离性）、同参数派生稳定（确定性）
 // - ENC-12 confers `XChaCha20Crypto` / `derive_field_key` 再导出可用：
-//   经 trait-kit 公开路径直接调用加解密原语完成 roundtrip
+// 经 trait-kit 公开路径直接调用加解密原语完成 roundtrip
 //
 // 其余 ENC 域场景既有覆盖充分，此处仅声明引用、不重复固化：
 // - ENC-01..09 → tests/basic.rs、tests/e2e_feature_combinations.rs
-//   （short key 拒收）、tests/e2e_advanced.rs（e15/e17/c14/c15）
+// （short key 拒收）、tests/e2e_advanced.rs（e15/e17/c14/c15）
 // - ENC-10 → src/kit/config.rs 内联测试（EncryptedBlob getters/Debug 脱敏）
 // - ENC-13（明文 load_config 与密文 set_encrypted 共存）→
 //   tests/e2e_feature_combinations.rs::e2e_confers_plus_encryption
@@ -99,7 +99,7 @@ fn e2e_reexported_crypto_roundtrip_via_trait_kit_path() {
     );
 }
 
-// ─── ConfersKeyProvider 桥接 confers SecretKeyProvider（e2e 层） ──────
+// ConfersKeyProvider 桥接 confers SecretKeyProvider（e2e 层）
 
 /// confers 生态桥接：ConfersKeyProvider 包裹任意 confers
 /// SecretKeyProvider → roundtrip 成功、provider_type 透传、get_key 失败

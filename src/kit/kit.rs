@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 //! Kit — the capability and configuration management center.
 //!
-//! Uses typestate pattern: `Kit` (unbuilt) → `Kit<Ready>` (after `build()`).
+//! Uses typestate pattern: `Kit` (unbuilt) → `Kit<Ready>` (after `build`).
 //!
 //! # Sync/Async 行为对照清单
 //!
@@ -12,10 +12,10 @@
 //! 3. lazy require：构建失败后 builder 放回槽位，可重试且错误信息稳定
 //!    （lazy 为 sync-only surface，async 侧无对应路径）。
 //! 4. `shutdown`：回调 drain（one-shot），二次调用为 no-op；async 清理走
-//!    `shutdown_async()`。
+//!    `shutdown_async`。
 //! 5. decorator：按 `decorator_module_to_cap` 映射应用（eager 与 lazy 一致；
 //!    eager 未映射时回退模块 `TypeId`，该差异由 e2e DEC-07 冻结）；未注册
-//!    目标在 `build()` 期 panic（`try_decorate` 为注册时报错的对照面）。
+//!    目标在 `build` 期 panic（`try_decorate` 为注册时报错的对照面）。
 //! 6. `factory`：typestate cast + 编译期 size/align 布局断言。
 
 use std::any::{Any, TypeId};
@@ -47,7 +47,7 @@ type HealthCheckerFn = Box<dyn Fn(&TypeMap) -> crate::core::health::HealthStatus
 #[cfg(feature = "observer")]
 type ObserverRef = std::sync::Arc<dyn crate::core::observer::BuildObserver>;
 /// Per-module snapshot of the registered build observers, consumed by the
-/// `notify_*` helpers in `build_eager_modules()`. Both cfg arms keep the
+/// `notify_*` helpers in `build_eager_modules`. Both cfg arms keep the
 /// same (function) signature so the eager-build loop body can be written
 /// exactly once: under `observer` it is a cloned `Vec` (cheap `Arc` clones,
 /// one clone per built module); without the feature it is a zero-sized
@@ -112,7 +112,7 @@ pub(crate) fn derive_kit_field_key(
 ///
 /// 注意：`ptr::write_volatile` 本身是 `unsafe` 函数（与任务描述相反），
 /// 因此这里显式 `#[allow(unsafe_code)]` 并给出 SAFETY 论证，模式与
-/// `require()` / `factory()` 中的 typestate cast 一致。
+/// `require` / `factory` 中的 typestate cast 一致。
 #[cfg(feature = "encryption")]
 // 禁止内联：内联后编译器可能推断缓冲区在调用点已死而整体删除
 // volatile 写循环；独立成函数保证每个调用点的擦除真实发生。
@@ -190,12 +190,12 @@ pub(crate) struct LazySlot {
     pub(crate) cell: OnceLock<Box<dyn Any>>,
 }
 
-// ─── Feature-gated field groups ────────────────────────────────────────────
+// Feature-gated field groups
 //
 // 按 feature 聚合的字段子结构：新增 feature 时扩展对应子结构即可，不要在
-// `Kit` 上平铺新字段（否则字段声明、`new()`、`build()` 搬移等多个位点都要
+// `Kit` 上平铺新字段（否则字段声明、`new`、`build` 搬移等多个位点都要
 // 逐字段散弹式修改）。各子结构内部字段类型与聚合前完全一致，外部行为零
-// 变化；空态构造集中在 `Kit::new()`，直接复用各子结构的 `derive(Default)`
+// 变化；空态构造集中在 `Kit::new`，直接复用各子结构的 `derive(Default)`
 // （`RefCell<T: Default>` 等均可派生）。
 
 /// Fields gated behind the `di` feature.
@@ -285,10 +285,10 @@ struct PortsFields {
 struct DecoratorFields {
     decorators: RefCell<HashMap<TypeId, Vec<DecoratorFn>>>,
     /// Maps module `TypeId` → capability `TypeId` for decorator lookup in
-    /// `build_eager_modules()` (where only module `TypeId`s from the
+    /// `build_eager_modules` (where only module `TypeId`s from the
     /// dependency graph are available).
     decorator_module_to_cap: RefCell<HashMap<TypeId, TypeId>>,
-    /// Module `TypeId` → `ModuleMeta::NAME`, recorded by `decorate()` so the
+    /// Module `TypeId` → `ModuleMeta::NAME`, recorded by `decorate` so the
     /// build-time target check (`validate_decorator_targets`) can name the
     /// unregistered target in its panic message.
     decorator_target_names: RefCell<HashMap<TypeId, &'static str>>,
@@ -310,7 +310,7 @@ struct NegotiateFields {
 struct I18nFields {
     /// Module-owned FTL fragments collected at registration: `(locale, source)`.
     module_ftl: RefCell<Vec<(&'static str, &'static str)>>,
-    /// Kit-local overlay catalog merged at `build()` from the fragments that
+    /// Kit-local overlay catalog merged at `build` from the fragments that
     /// match the active locale (`None` before build or with no fragments).
     module_catalog: RefCell<Option<crate::i18n::MessageCatalog>>,
 }
@@ -328,29 +328,29 @@ struct I18nFields {
 pub struct Kit<S = Unbuilt> {
     builders: RefCell<HashMap<TypeId, BuildFn>>,
     /// Override map for test injection: `TypeId` of module → pre-built capability.
-    /// Populated by `override_module` / `override_module_strict`; consumed by `build()`.
+    /// Populated by `override_module` / `override_module_strict`; consumed by `build`.
     overrides: RefCell<HashMap<TypeId, Box<dyn Any>>>,
     /// Lazy builders (Unbuilt state): modules registered via `register_lazy`.
-    /// Transferred to `lazy_slots` during `build()`. Stored as re-invocable
+    /// Transferred to `lazy_slots` during `build`. Stored as re-invocable
     /// `Fn` closures (`LazyBuildFn`) so a failed lazy build can be retried.
     lazy_builders: RefCell<HashMap<TypeId, LazyBuildFn>>,
     /// Lazy slots (Ready state): `build_fn` + `OnceLock` cache. Populated by
-    /// `build()` from `lazy_builders`. Consumed by `require()` on first access.
+    /// `build` from `lazy_builders`. Consumed by `require` on first access.
     lazy_slots: RefCell<HashMap<TypeId, LazySlot>>,
     /// Multi-binding builders (Unbuilt state): modules registered via
-    /// `register_multi`. Keyed by `TypeId::of::<M::Capability>()` (not the
+    /// `register_multi`. Keyed by `TypeId::of::<M::Capability>` (not the
     /// module type) so multiple module types with the same capability type
     /// aggregate into one Vec. Built into `multi_capabilities` during
-    /// `build()`.
+    /// `build`.
     multi_builders: RefCell<HashMap<TypeId, Vec<BuildFn>>>,
     /// Multi-binding capabilities (Ready state): built results from
-    /// `multi_builders`. Keyed by `TypeId::of::<M::Capability>()`.
-    /// Populated by `build()`; consumed by `require_all()`.
+    /// `multi_builders`. Keyed by `TypeId::of::<M::Capability>`.
+    /// Populated by `build`; consumed by `require_all`.
     multi_capabilities: RefCell<HashMap<TypeId, Vec<Box<dyn Any>>>>,
     /// Interface builders (Unbuilt state): modules registered via
-    /// `register_as`. Keyed by `TypeId::of::<M::Interface>()` (not the
-    /// module type) so `resolve::<I>()` retrieves by interface type.
-    /// Built into `capabilities` during `build()`. Values carry the
+    /// `register_as`. Keyed by `TypeId::of::<M::Interface>` (not the
+    /// module type) so `resolve::<I>` retrieves by interface type.
+    /// Built into `capabilities` during `build`. Values carry the
     /// owning module's name so duplicate-interface errors can name the
     /// module that already occupies the interface.
     #[cfg(feature = "di")]
@@ -463,9 +463,9 @@ impl Kit {
     /// Register a module for lazy construction.
     ///
     /// The module is added to the dependency graph (for validation) but its
-    /// `build_fn` is **not** invoked during `build()`. Instead, the `build_fn`
+    /// `build_fn` is **not** invoked during `build`. Instead, the `build_fn`
     /// is stored in `lazy_builders` and transferred to `Kit<Ready>.lazy_slots`
-    /// during `build()`. The capability is constructed on first `require()`
+    /// during `build`. The capability is constructed on first `require`
     /// call and cached via `OnceLock` for subsequent accesses.
     ///
     /// This is useful for modules that are expensive to build or may never
@@ -509,7 +509,7 @@ impl Kit {
     ///
     /// Multiple module types that share the same `M::Capability` type can be
     /// registered via `register_multi`; their `build_fns` are appended to a
-    /// `Vec` keyed by `TypeId::of::<M::Capability>()` (the capability type,
+    /// `Vec` keyed by `TypeId::of::<M::Capability>` (the capability type,
     /// not the module type). The Vec preserves registration order.
     ///
     /// The module is also added to the dependency graph for validation, so
@@ -517,7 +517,7 @@ impl Kit {
     /// `register`, `register_lazy`, or `register_multi`). Two registrations
     /// of the same module type `M` will return `AlreadyRegistered`.
     ///
-    /// During `build()`, all multi-binding builders are invoked and the
+    /// During `build`, all multi-binding builders are invoked and the
     /// results are stored in `multi_capabilities`. Use `require_all`
     /// to retrieve the ordered Vec of capabilities.
     ///
@@ -525,7 +525,7 @@ impl Kit {
     ///
     /// Returns `TraitKitError::AlreadyRegistered` if `M` was already registered
     /// (via any `register*` method). Dependency validation is deferred to
-    /// `build()` (via `graph.validate()`).
+    /// `build` (via `graph.validate`).
     pub fn register_multi<M: AutoBuilder>(&mut self) -> Result<(), TraitKitError>
     where
         M::Capability: Clone + 'static,
@@ -546,7 +546,7 @@ impl Kit {
             Ok(Box::new(capability) as Box<dyn Any>)
         });
 
-        // Aggregate by capability type so require_all::<M>() returns all
+        // Aggregate by capability type so require_all::<M> returns all
         // implementations of the same capability type.
         let cap_id = TypeId::of::<M::Capability>();
         self.multi_builders
@@ -563,10 +563,10 @@ impl Kit {
     /// Register a module for interface-based construction.
     ///
     /// Unlike `register`, this method stores the `build_fn` keyed by
-    /// `TypeId::of::<M::Interface>()` (the interface type, not the module
+    /// `TypeId::of::<M::Interface>` (the interface type, not the module
     /// type). The module's `into_interface` method converts the concrete
-    /// capability into `Arc<M::Interface>` during `build()`, enabling
-    /// type-erased retrieval via `resolve::<I>()`.
+    /// capability into `Arc<M::Interface>` during `build`, enabling
+    /// type-erased retrieval via `resolve::<I>`.
     ///
     /// Only one implementation per interface type is allowed. For multiple
     /// implementations of the same capability type, use `register_multi`
@@ -582,7 +582,7 @@ impl Kit {
     ///
     /// With the `decorator` feature, panics at build time if a registered
     /// decorator's internal `downcast` fails due to a type mismatch (should
-    /// never happen when `decorate::<M>()` is used with the same module).
+    /// never happen when `decorate::<M>` is used with the same module).
     #[cfg(feature = "di")]
     pub fn register_as<M>(&mut self) -> Result<(), TraitKitError>
     where
@@ -616,7 +616,7 @@ impl Kit {
                 .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?;
             // Apply decorators (keyed by capability TypeId) before the
             // interface conversion, mirroring the eager / lazy / multi paths
-            // so `decorate::<M>()` covers all four build paths.
+            // so `decorate::<M>` covers all four build paths.
             #[cfg(feature = "decorator")]
             let cap = {
                 let boxed = kit.apply_decorators(
@@ -652,9 +652,9 @@ impl Kit {
     /// Used for test injection: inject a mock capability without running the
     /// module's build function. Completely skips dependency checking (pure
     /// unit testing). The module does **not** need to be registered via
-    /// `register()` first — the override is keyed by `TypeId::of::<M>()`.
+    /// `register` first — the override is keyed by `TypeId::of::<M>`.
     ///
-    /// If `build()` is called later, the override is consumed and the
+    /// If `build` is called later, the override is consumed and the
     /// original `build_fn` (if any) is never invoked for this module.
     pub fn override_module<M: AutoBuilder>(&self, capability: M::Capability)
     where
@@ -678,15 +678,15 @@ impl Kit {
     /// dependency graph.
     ///
     /// Unlike `override_module`, this method requires `&mut self` (exclusive
-    /// access) and checks `M::dependencies()` against the graph. If any
+    /// access) and checks `M::dependencies` against the graph. If any
     /// dependency is not registered, returns `TraitKitError::DependencyMissing`.
     ///
-    /// The module does **not** need to be registered via `register()` first.
+    /// The module does **not** need to be registered via `register` first.
     /// Only the dependencies must be present.
     ///
     /// # Errors
     ///
-    /// Returns `TraitKitError::DependencyMissing` if any of `M::dependencies()`
+    /// Returns `TraitKitError::DependencyMissing` if any of `M::dependencies`
     /// is not registered in the graph.
     pub fn override_module_strict<M: AutoBuilder>(
         &mut self,
@@ -737,8 +737,8 @@ impl Kit {
     /// Store a configuration value behind an `Arc` for zero-clone reads.
     ///
     /// The value is stored under `TypeId::of::<Arc<C>>` — a distinct slot from
-    /// the plain `set_config` storage — so `config_arc::<C>()` returns an
-    /// `Arc` clone (refcount bump only) while `config::<C>()` keeps its
+    /// the plain `set_config` storage — so `config_arc::<C>` returns an
+    /// `Arc` clone (refcount bump only) while `config::<C>` keeps its
     /// existing semantics for `set_config` values.
     pub fn set_config_arc<C: Clone + 'static>(&self, config: C) {
         let replaced = self.configs.contains::<std::sync::Arc<C>>();
@@ -756,7 +756,7 @@ impl Kit {
     /// Load a configuration via its `Configurable` implementation and store it.
     ///
     /// Requires the `confers` feature. The type must implement `Configurable`,
-    /// typically by delegating to `confers::Config`'s derived `load_sync()`.
+    /// typically by delegating to `confers::Config`'s derived `load_sync`.
     /// The loaded value overrides any prior `set_config` of the same type.
     ///
     /// # Errors
@@ -774,8 +774,8 @@ impl Kit {
 
     /// Load a configuration and validate it before storing.
     ///
-    /// Requires the `confers` feature. Calls `C::load()`, then
-    /// `C::validate()`. The configuration is only stored if validation passes.
+    /// Requires the `confers` feature. Calls `C::load`, then
+    /// `C::validate`. The configuration is only stored if validation passes.
     ///
     /// # Errors
     ///
@@ -869,7 +869,7 @@ impl Kit {
 
     /// Load a configuration with variable interpolation.
     ///
-    /// Requires the `confers` feature. Calls `C::load()`, serializes to JSON,
+    /// Requires the `confers` feature. Calls `C::load`, serializes to JSON,
     /// replaces `${VAR}` and `${VAR:-default}` patterns in string values using
     /// the provided `vars` map, then deserializes back and stores the result.
     ///
@@ -909,7 +909,7 @@ impl Kit {
 
     /// Validate the dependency graph and build all modules in topological order.
     ///
-    /// After this call, all capabilities are available via `require()`.
+    /// After this call, all capabilities are available via `require`.
     ///
     /// # Errors
     ///
@@ -967,7 +967,7 @@ impl Kit {
         // Extract ready_callbacks before moving self
         #[cfg(feature = "lifecycle")]
         let ready_callbacks: Vec<(TypeId, ReadyCallback)> = self.take_ready_callbacks();
-        // Stable topological sort so `shutdown()`'s reverse iteration really
+        // Stable topological sort so `shutdown`'s reverse iteration really
         // runs in reverse topological order: dependents (consumers) shut down
         // before the modules they depend on. Callbacks whose module is absent
         // from the graph sort last (relative order preserved via stable sort).
@@ -1066,7 +1066,7 @@ impl Kit {
     ///
     /// For each module in the sorted list:
     /// 1. Check overrides first (skip `build_fn` if override exists)
-    /// 2. Skip lazy-registered modules (deferred to first `require()`)
+    /// 2. Skip lazy-registered modules (deferred to first `require`)
     /// 3. Invoke the `build_fn` for regular modules
     /// 4. Insert remaining unregistered overrides after the loop
     fn build_eager_modules(&self, sorted: &[TypeId]) -> Result<(), TraitKitError> {
@@ -1083,7 +1083,7 @@ impl Kit {
                 continue;
             }
 
-            // [Lazy] Skip lazy-registered modules — deferred to first require().
+            // [Lazy] Skip lazy-registered modules — deferred to first require.
             if self.lazy_builders.borrow().contains_key(type_id) {
                 self.record_lazy(module_name, report_deps);
                 continue;
@@ -1226,9 +1226,9 @@ impl Kit {
     }
 
     /// Apply registered decorators for one eager build result (keyed by the
-    /// capability `TypeId` recorded by `decorate()`, falling back to the
+    /// capability `TypeId` recorded by `decorate`, falling back to the
     /// module's own `TypeId`); identity without the `decorator` feature.
-    /// The lazy `require()` path deliberately skips the fallback — its
+    /// The lazy `require` path deliberately skips the fallback — its
     /// decorators apply only to explicitly decorated modules (frozen by
     /// e2e DEC-07) — so it does not route through this helper.
     #[cfg(feature = "decorator")]
@@ -1380,13 +1380,13 @@ impl Kit {
         self.graph.name_of(type_id).unwrap_or("<unknown>")
     }
 
-    // ─── Lifecycle ─────────────────────────────────────────────────────
+    // Lifecycle
 
     /// Register lifecycle hooks for a previously registered module.
     ///
-    /// The module must have been registered via `register::<M>()` first.
+    /// The module must have been registered via `register::<M>` first.
     /// This stores `on_ready` and `on_shutdown` callbacks that are invoked
-    /// during `build()` and `shutdown()` respectively. Idempotent:
+    /// during `build` and `shutdown` respectively. Idempotent:
     /// registering the same module twice is a no-op.
     ///
     /// Requires the `lifecycle` feature.
@@ -1397,7 +1397,7 @@ impl Kit {
         M::Capability: 'static,
     {
         // Idempotent: re-registering the same module must not duplicate its
-        // on_shutdown callbacks (`shutdown()` walks the Vec — duplicates
+        // on_shutdown callbacks (`shutdown` walks the Vec — duplicates
         // would run twice).
         let module_type_id = TypeId::of::<M>();
         if self
@@ -1433,12 +1433,12 @@ impl Kit {
             .push((TypeId::of::<M>(), ready_cb));
     }
 
-    // ─── Health Check ──────────────────────────────────────────────────
+    // Health Check
 
     /// Register a health checker for a previously registered module.
     ///
-    /// The module must have been registered via `register::<M>()` first.
-    /// Use `health_check::<M>()` or `health_report()` on `Kit<Ready>` to query.
+    /// The module must have been registered via `register::<M>` first.
+    /// Use `health_check::<M>` or `health_report` on `Kit<Ready>` to query.
     ///
     /// Requires the `health` feature.
     #[cfg(feature = "health")]
@@ -1462,7 +1462,7 @@ impl Kit {
             .insert(TypeId::of::<M>(), (M::NAME, checker));
     }
 
-    // ─── Conditional Registration ───────────────────────────────────────
+    // Conditional Registration
 
     /// Conditionally register a module based on a runtime predicate.
     ///
@@ -1485,7 +1485,7 @@ impl Kit {
         }
     }
 
-    // ─── Feature Toggle ────────────────────────────────────────────────
+    // Feature Toggle
 
     /// Enable or disable a boolean feature toggle.
     ///
@@ -1558,7 +1558,7 @@ impl Kit {
         Ok(enabled)
     }
 
-    // ─── Observability ─────────────────────────────────────────────────
+    // Observability
 
     /// Collect `M`'s FTL fragments into the kit-local i18n store.
     /// Zero code without the `i18n` feature (call sites are cfg-gated too).
@@ -1640,7 +1640,7 @@ impl Kit {
         Ok(())
     }
 
-    /// Register a build observer that receives callbacks during `build()`.
+    /// Register a build observer that receives callbacks during `build`.
     ///
     /// Requires the `observer` feature.
     #[cfg(feature = "observer")]
@@ -1651,7 +1651,7 @@ impl Kit {
         self.observer.observers.borrow_mut().push(observer);
     }
 
-    // ─── Observation Ports ─────────────────────────────────────────────
+    // Observation Ports
 
     /// Inject a [`MetricsPort`](crate::kit::ports::MetricsPort) for recording counters/gauges/histograms.
     ///
@@ -1669,7 +1669,7 @@ impl Kit {
         *self.ports.log_port.borrow_mut() = port.into();
     }
 
-    // ─── Decorator ─────────────────────────────────────────────────────
+    // Decorator
 
     /// Register a decorator for a module's capability.
     ///
@@ -1682,7 +1682,7 @@ impl Kit {
     ///
     /// # Panics
     ///
-    /// - At [`build()`](Kit::build) time if `M` was never registered.
+    /// - At [`build`](Kit::build) time if `M` was never registered.
     ///   This method performs no immediate target validation (the target
     ///   may legitimately be registered after the decorator); the missing
     ///   target surfaces when the kit is built. Use
@@ -1711,7 +1711,7 @@ impl Kit {
             .or_default()
             .push(wrapper);
         // Record module TypeId → capability TypeId mapping so
-        // `build_eager_modules()` can look up decorators by module TypeId.
+        // `build_eager_modules` can look up decorators by module TypeId.
         self.decorator
             .decorator_module_to_cap
             .borrow_mut()
@@ -1770,8 +1770,8 @@ impl<S> Kit<S> {
         current
     }
 
-    /// Enforce the documented `decorate()` contract at build time: every
-    /// decorated target must be registered by then. `decorate()` performs no
+    /// Enforce the documented `decorate` contract at build time: every
+    /// decorated target must be registered by then. `decorate` performs no
     /// immediate validation (registering the target after the decorator is
     /// legitimate), so a target still missing at build time is a programmer
     /// error reported by panic — [`try_decorate`](Kit::try_decorate) reports

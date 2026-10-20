@@ -62,7 +62,6 @@ impl DependencyGraph {
     /// Returns `GraphError::DependencyMissing` if a module depends on an unregistered module.
     /// Returns `GraphError::CycleDetected` if a dependency cycle is found.
     pub fn validate(&self) -> Result<Vec<TypeId>, GraphError> {
-        // Check for missing dependencies
         for entry in &self.entries {
             for (dep_name, dep_id) in &entry.dependencies {
                 if !self.index.contains_key(dep_id) {
@@ -269,7 +268,7 @@ impl DependencyGraph {
             for (dep_name, dep_id) in &entry.dependencies {
                 // O(1) index lookup instead of a linear scan by name.
                 // When the dependency is not registered, skip the edge:
-                // missing dependencies are `validate()`'s job
+                // missing dependencies are `validate`'s job
                 // (`DependencyMissing`), so we must not emit a misleading
                 // self-loop here.
                 let Some(dep_idx) = self.index.get(dep_id).copied() else {
@@ -613,7 +612,7 @@ mod tests {
         ))
         .unwrap();
         let mermaid = g.to_mermaid();
-        // 缺失依赖由 validate() 负责（DependencyMissing），导出不得伪造自环；
+        // 缺失依赖由 validate 负责（DependencyMissing），导出不得伪造自环；
         // 唯一的边被跳过后 "a" 不再出现在导出中（图本身非法，属可接受行为）。
         assert!(
             !mermaid.contains("-->"),
@@ -719,7 +718,7 @@ mod tests {
 
         // 可作为 `dyn std::error::Error` 使用（错误处理生态兼容）
         let dyn_err: &dyn std::error::Error = &err;
-        // Display 经 i18n `tr()` 渲染（跟随活动 locale，默认英文），故断言插值
+        // Display 经 i18n `tr` 渲染（跟随活动 locale，默认英文），故断言插值
         // 参数而非消息文本（与 tests/basic.rs 的错误 Display 断言同规）。
         let dyn_msg = dyn_err.to_string();
         assert!(

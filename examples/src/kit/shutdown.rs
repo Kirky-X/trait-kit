@@ -4,9 +4,9 @@
 //!
 //! 演示：
 //! - `ShutdownCoordinator` 分阶段关闭（StopRequests → DrainQueue → CloseConnections）
-//! - `register_hook()` 注册各阶段关闭钩子
-//! - `set_phase_timeout()` / `set_global_timeout()` 超时控制
-//! - `shutdown()` 执行并检查结果
+//! - `register_hook` 注册各阶段关闭钩子
+//! - `set_phase_timeout` / `set_global_timeout` 超时控制
+//! - `shutdown` 执行并检查结果
 //!
 //! Run: `cargo run -p trait-kit-example --example shutdown --features shutdown`
 
@@ -22,7 +22,7 @@ fn main() {
 
     let coord = ShutdownCoordinator::new();
 
-    // ─── 阶段 1：停止接收新请求 ─────────────────────────────
+    // 阶段 1：停止接收新请求
     coord.register_hook(ShutdownPhase::StopRequests, || {
         HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
         println!(
@@ -38,13 +38,13 @@ fn main() {
         );
     });
 
-    // ─── 阶段 2：排空队列 ──────────────────────────────────
+    // 阶段 2：排空队列
     coord.register_hook(ShutdownPhase::DrainQueue, || {
         HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
         println!("  {}", tr("trait-kit-example-shutdown-drain-queue", &[]));
     });
 
-    // ─── 阶段 3：关闭连接池 ─────────────────────────────────
+    // 阶段 3：关闭连接池
     coord.register_hook(ShutdownPhase::CloseConnections, || {
         HOOK_COUNTER.fetch_add(1, Ordering::Relaxed);
         println!("  {}", tr("trait-kit-example-shutdown-close-db-pool", &[]));
@@ -54,11 +54,11 @@ fn main() {
         println!("  {}", tr("trait-kit-example-shutdown-close-redis", &[]));
     });
 
-    // ─── 设置超时 ──────────────────────────────────────────
+    // 设置超时
     coord.set_phase_timeout(ShutdownPhase::DrainQueue, Duration::from_secs(5));
     coord.set_global_timeout(Duration::from_secs(30));
 
-    // ─── 执行关闭流程 ──────────────────────────────────────
+    // 执行关闭流程
     println!("{}\n", tr("trait-kit-example-shutdown-running", &[]));
     let results = coord.shutdown();
 
@@ -85,7 +85,7 @@ fn main() {
         );
     }
 
-    // ─── 验证 ──────────────────────────────────────────────
+    // 验证
     let total_hooks = HOOK_COUNTER.load(Ordering::Relaxed);
     assert_eq!(total_hooks, 5, "all 5 hooks should have run");
     assert!(results.is_ok(), "all phases should complete normally");

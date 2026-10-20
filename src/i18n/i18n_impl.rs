@@ -89,7 +89,7 @@ impl I18nFormatter {
             Date::try_new_iso(year, month, day).map_err(|e| I18nError::DateError(e.to_string()))?;
 
         // YMD 为 date-only fieldset，可直接格式化 Date，无需包装午夜 Time。
-        // formatter 在 `new()` 中 eagerly 创建（与文档承诺一致）。
+        // formatter 在 `new` 中 eagerly 创建（与文档承诺一致）。
         let formatted = self.date_formatter.format(&date);
         Ok(formatted.write_to_string().into_owned())
     }

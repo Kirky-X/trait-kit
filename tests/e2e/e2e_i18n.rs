@@ -6,8 +6,8 @@
 // 初始化竞争）。
 //
 // 覆盖场景 ID（docs/TEST_SCENARIOS.md）：
-// - CMP-14 i18n+shutdown：`ShutdownTimedOut` 错误消息走 `tr()` 翻译链，
-//   zh locale 下错误文本本地化（本文件）
+// - CMP-14 i18n+shutdown：`ShutdownTimedOut` 错误消息走 `tr` 翻译链，
+// zh locale 下错误文本本地化（本文件）
 // - ERR-09 en（默认回退）侧断言落点见 tests/e2e_i18n_en.rs
 
 #![cfg(feature = "i18n")]
@@ -27,12 +27,12 @@ mod i18n_shutdown_e2e {
         I18nManager::init_with_locale("zh-CN");
     }
 
-    /// `ShutdownTimedOut` 的 Display 经 `tr()` 查询 zh 目录，
-    /// 超时阶段名以 `as_str()` 原文嵌入本地化模板。
+    /// `ShutdownTimedOut` 的 Display 经 `tr` 查询 zh 目录，
+    /// 超时阶段名以 `as_str` 原文嵌入本地化模板。
     #[test]
     fn e2e_i18n_shutdown_timed_out_display_localized_zh() {
         ensure_zh();
-        // locale_tag 存储小写化后的标签（build() 统一 normalize）。
+        // locale_tag 存储小写化后的标签（build 统一 normalize）。
         assert_eq!(I18nManager::global().unwrap().locale_tag(), "zh-cn");
 
         // 真实路径：阶段超时 → ShutdownPhaseResult(timed_out) →
@@ -79,7 +79,7 @@ mod i18n_shutdown_e2e {
     }
 
     /// CMP-14 补充：直接构造变体的 Display 与协调器产出路径一致
-    /// （同一 tr() 消息 id：trait-kit-error-shutdown-timed-out）。
+    /// （同一 tr 消息 id：trait-kit-error-shutdown-timed-out）。
     #[test]
     fn e2e_i18n_shutdown_timed_out_variant_display_zh() {
         ensure_zh();

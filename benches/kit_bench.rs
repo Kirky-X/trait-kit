@@ -33,7 +33,7 @@ use trait_kit::TraitKitError;
 use trait_kit::core::{AutoBuilder, ModuleMeta};
 use trait_kit::kit::{Kit, Ready};
 
-// ─── Fixtures ───────────────────────────────────────────────────────────────
+// Fixtures
 
 /// Typed configuration payload used by the config benchmarks.
 #[derive(Debug, Clone)]
@@ -175,7 +175,7 @@ fn build_ready_kit() -> Result<Kit<Ready>, TraitKitError> {
     registered_kit().build()
 }
 
-// ─── Benchmarks ─────────────────────────────────────────────────────────────
+// Benchmarks
 
 fn bench_build(c: &mut Criterion) {
     c.bench_function("build/three_module_chain", |b| {

@@ -12,9 +12,9 @@
 //!   as `HealthCheck`, intentionally synchronous; see its docs for the
 //!   two-stage probe/report split.
 //! - [`ServiceProbe`] — a real async network probe (the framework measures
-//!   wall latency around each `probe().await`),
+//!   wall latency around each `probe.await`),
 //!   executed only when the caller explicitly awaits
-//!   `AsyncKit<Ready>::run_probes()` / `probe_aggregate()`. This is where
+//!   `AsyncKit<Ready>::run_probes` / `probe_aggregate`. This is where
 //!   network I/O belongs. Bounded execution entries —
 //!   `run_probes_with_timeout` / `probe_aggregate_with_timeout` — give each
 //!   probe a hard individual limit (a hung probe is recorded unhealthy and
@@ -35,7 +35,7 @@ pub struct ProbeOutcome {
     pub status: HealthStatus,
     /// Probe-internal duration as reported by the implementation
     /// (diagnostic only). The framework does not trust this value:
-    /// `run_probes()` measures wall latency around the `probe().await`
+    /// `run_probes` measures wall latency around the `probe.await`
     /// itself and records **that** measurement in
     /// [`ProbeEntry::latency_ms`], so a faulty or inflated self-report
     /// never reaches the readiness payload.
@@ -45,14 +45,14 @@ pub struct ProbeOutcome {
 /// Object-safe async service probe.
 ///
 /// Register instances via `AsyncKit::register_probe` (dynamically, any
-/// state); execute via `AsyncKit<Ready>::run_probes()` (per-probe records)
-/// or `AsyncKit<Ready>::probe_aggregate()` (worst-of verdict). The hand
+/// state); execute via `AsyncKit<Ready>::run_probes` (per-probe records)
+/// or `AsyncKit<Ready>::probe_aggregate` (worst-of verdict). The hand
 /// written `Pin<Box<dyn Future>>` dispatch mirrors
 /// [`AsyncLifecycle`](super::lifecycle::AsyncLifecycle) — no `async-trait`
 /// dependency.
 ///
 /// Probes run sequentially in registration order when
-/// `run_probes()`/`probe_aggregate()` awaits them one at a time (no
+/// `run_probes`/`probe_aggregate` awaits them one at a time (no
 /// concurrent join, mirroring the shutdown-hook philosophy); callers needing
 /// fan-out can spawn their own tasks around [`ServiceProbe::probe`].
 #[cfg(feature = "probe")]
@@ -65,7 +65,7 @@ pub trait ServiceProbe: Send + Sync {
     /// a timeout inside the call so a hung dependency cannot stall the
     /// reporting caller indefinitely. Treat this as a contract, not a
     /// suggestion: a probe that never resolves blocks a plain
-    /// `run_probes()` pass forever. When implementor compliance cannot be
+    /// `run_probes` pass forever. When implementor compliance cannot be
     /// assumed (third-party probes), enforce the bound at the framework
     /// level with `AsyncKit<Ready>::run_probes_with_timeout(timeout)` /
     /// `probe_aggregate_with_timeout(timeout)` — each probe is then
@@ -93,17 +93,17 @@ pub struct ProbeEntry {
     /// Detail message for degraded / unhealthy states, if any.
     ///
     /// This string is carried verbatim into the readiness payload
-    /// (`to_json()`), so probe implementations must never embed
+    /// (`to_json`), so probe implementations must never embed
     /// credentials, connection strings or internal topology in the detail.
     pub detail: Option<String>,
     /// Wall latency in milliseconds, measured by the framework around the
-    /// `probe().await` call — not the probe's self-reported
+    /// `probe.await` call — not the probe's self-reported
     /// [`ProbeOutcome::latency`]. On a timed-out probe (bounded variants)
     /// this is the elapsed time at cancellation, i.e. close to the timeout.
     pub latency_ms: u64,
 }
 
-/// Report of one `AsyncKit<Ready>::run_probes()` pass, ready for a
+/// Report of one `AsyncKit<Ready>::run_probes` pass, ready for a
 /// `/health/ready`-style endpoint.
 ///
 /// The overall status is the worst-of across all registered probes

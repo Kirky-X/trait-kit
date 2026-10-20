@@ -6,11 +6,11 @@
 // 覆盖场景 ID（docs/TEST_SCENARIOS.md §2.12）：
 // - DEC-03 多装饰器按注册顺序洋葱式叠加（f1 先 f2 后 → f2 包 f1）
 // - DEC-04 装饰器覆盖全部四条构建路径：eager / lazy / multi / interface
-//   （eager 已有 tests/e2e_feature_combinations.rs::e2e_decorator_wraps_capability，
-//     此处固化 lazy、multi、interface 三条路径）
+// （eager 已有 tests/e2e_feature_combinations.rs::e2e_decorator_wraps_capability，
+// 此处固化 lazy、multi、interface 三条路径）
 // - DEC-07 装饰器闭包 panic / 内部 downcast 失败的文档化 panic 语义
-// - decorate 未注册目标：build() 期文档化 panic（decorate 为发射后不管
-//   式注册，与 try_decorate 的注册时立即报错互为对照）
+// - decorate 未注册目标：build 期文档化 panic（decorate 为发射后不管
+// 式注册，与 try_decorate 的注册时立即报错互为对照）
 
 #![cfg(feature = "decorator")]
 
@@ -18,7 +18,7 @@ use std::sync::Arc;
 use trait_kit::impl_module_meta;
 use trait_kit::prelude::*;
 
-// ─── 多装饰器洋葱式叠加 ────────────────────────────────────────
+// 多装饰器洋葱式叠加
 
 struct OnionMod;
 impl_module_meta!(OnionMod, "onion-mod");
@@ -46,7 +46,7 @@ fn e2e_decorator_onion_order_registration_sequence() {
     );
 }
 
-// ─── lazy / multi / interface 构建路径装饰 ─────────────────────
+// lazy / multi / interface 构建路径装饰
 
 struct LazyDeco;
 impl_module_meta!(LazyDeco, "lazy-deco");
@@ -166,9 +166,9 @@ fn e2e_decorator_applies_on_interface_path() {
     );
 }
 
-// ─── 装饰器 panic 语义固化 ─────────────────────────────────────
+// 装饰器 panic 语义固化
 
-/// 装饰器闭包自身 panic：panic 穿透 build() 传播给调用方。
+/// 装饰器闭包自身 panic：panic 穿透 build 传播给调用方。
 #[test]
 fn e2e_decorator_closure_panic_propagates_from_build() {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -252,7 +252,7 @@ fn kit_with_impostor_decorator() -> Kit {
     kit
 }
 
-// ─── on_ready 失败 → Kit<Ready> 整体丢弃，任何 on_shutdown 都不执行 ────
+// on_ready 失败 → Kit<Ready> 整体丢弃，任何 on_shutdown 都不执行
 
 #[cfg(feature = "lifecycle")]
 mod ready_discard_on_ready_failure_e2e {
@@ -299,7 +299,7 @@ mod ready_discard_on_ready_failure_e2e {
         }
     }
 
-    /// on_ready 返回 Err → build() 返回 LifecycleFailed，已成功构建的
+    /// on_ready 返回 Err → build 返回 LifecycleFailed，已成功构建的
     /// 其余模块（含 on_ready 失败模块自身）的 on_shutdown 一律不执行
     /// （Kit<Ready> 未产出，shutdown 回调表随 Kit 一起丢弃）。
     #[test]
@@ -324,7 +324,7 @@ mod ready_discard_on_ready_failure_e2e {
     }
 }
 
-// ─── decorate 未注册目标：实测行为固化 ─────────────────────────────
+// decorate 未注册目标：实测行为固化
 
 struct NeverRegisteredMod;
 impl_module_meta!(NeverRegisteredMod, "never-registered-mod");
@@ -336,8 +336,8 @@ impl AutoBuilder for NeverRegisteredMod {
     }
 }
 
-/// decorate::<M> 于 M 未注册：`decorate()` 是"发射后不管"式注册（目标
-/// 允许在装饰之后才注册），不做注册时校验；缺失目标延迟到 build() 期以
+/// decorate::<M> 于 M 未注册：`decorate` 是"发射后不管"式注册（目标
+/// 允许在装饰之后才注册），不做注册时校验；缺失目标延迟到 build 期以
 /// 文档化 panic 暴露（与 try_decorate 的注册时立即报错契约互为对照，
 /// 后者由 kit_tests::try_decorate_rejects_unregistered_target_immediately
 /// 固化）。

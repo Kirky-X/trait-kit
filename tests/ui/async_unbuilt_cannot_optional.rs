@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-// AsyncKit<Unbuilt> cannot call optional() — typestate enforces Ready-only.
+// AsyncKit<Unbuilt> cannot call optional — typestate enforces Ready-only.
 // (`require` intentionally IS available on Unbuilt: async build callbacks
 // pull dependencies through it; `optional` is a Ready-state read API.)
 //
@@ -29,6 +29,6 @@ impl AsyncAutoBuilder for MyModule {
 
 fn main() {
     let kit = AsyncKit::new();
-    // ERROR: optional() is only available on AsyncKit<Ready>
+    // ERROR: optional is only available on AsyncKit<Ready>
     assert!(kit.optional::<MyModule>().is_none());
 }

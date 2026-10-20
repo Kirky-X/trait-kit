@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-// Kit<Ready> cannot call with_metrics_port() — typestate enforces
+// Kit<Ready> cannot call with_metrics_port — typestate enforces
 // Unbuilt-only.
 //
 // The fixture must produce exactly one error (the E0599 below). Explicit
@@ -30,6 +30,6 @@ fn main() {
     kit.register::<MyModule>().unwrap();
     let mut ready = kit.build().unwrap();
     let _ = &mut ready;
-    // ERROR: with_metrics_port() is only available on Kit<Unbuilt>
+    // ERROR: with_metrics_port is only available on Kit<Unbuilt>
     ready.with_metrics_port(None::<Arc<dyn MetricsPort>>);
 }

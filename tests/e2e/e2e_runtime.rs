@@ -4,9 +4,9 @@
 // 优雅关闭运行时 E2E 测试。
 //
 // 覆盖场景 ID（docs/TEST_SCENARIOS.md §2.15 / §2.18）：
-// - SHD-06 `into_result()` 超时态 → `Err(ShutdownTimedOut{phases})`
+// - SHD-06 `into_result` 超时态 → `Err(ShutdownTimedOut{phases})`
 // - ERR-07 `ShutdownTimedOut` Display 含全部超时阶段名
-//   （阶段名以 `ShutdownPhase::as_str()` 原文嵌入，与 locale 无关）
+// （阶段名以 `ShutdownPhase::as_str` 原文嵌入，与 locale 无关）
 
 #![cfg(feature = "shutdown")]
 
@@ -82,7 +82,7 @@ fn e2e_shutdown_global_timeout_display_contains_all_phases() {
     }
 }
 
-// ─── 健康历史环形容量边界（health 落点，HLX-03 同文件） ────────────────
+// 健康历史环形容量边界（health 落点，HLX-03 同文件）
 
 /// capacity=0 禁用采样（record 为 no-op、history 恒空）；先采 n 条再
 /// 收缩容量至 k<n → 既有历史立即截断到最近 k 条。

@@ -4,8 +4,8 @@
 //!
 //! Demonstrates:
 //! - `Lifecycle` trait with `on_ready` (post-build) and `on_shutdown` (cleanup)
-//! - `Kit::register_lifecycle::<M>()` to register hooks
-//! - `Kit<Ready>::shutdown()` to invoke shutdown in reverse order
+//! - `Kit::register_lifecycle::<M>` to register hooks
+//! - `Kit<Ready>::shutdown` to invoke shutdown in reverse order
 //!
 //! Run: `cargo run -p trait-kit-example --example lifecycle --features lifecycle`
 
@@ -59,7 +59,7 @@ fn main() {
     kit.register_lifecycle::<DatabaseModule>();
 
     let kit = kit.build().expect("build should succeed");
-    // on_ready has been called during build()
+    // on_ready has been called during build
 
     let db = kit
         .require::<DatabaseModule>()

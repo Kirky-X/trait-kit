@@ -15,7 +15,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    // === Test fixtures ===
+    // Test fixtures
 
     struct MockCapability;
     impl ModuleMeta for MockCapability {
@@ -121,7 +121,7 @@ mod tests {
         kit.register::<CountingModule>().unwrap();
         kit.override_module::<CountingModule>(Arc::new(AtomicUsize::new(42)));
         let built = kit.build().unwrap();
-        // require() should return the override value (42), not the build_fn value (0)
+        // require should return the override value (42), not the build_fn value (0)
         let cap = built.require::<CountingModule>().unwrap();
         assert_eq!(cap.load(Ordering::SeqCst), 42);
     }
@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn build_inserts_unregistered_override_after_topo_loop() {
         // override_module allows injecting a module that was NOT registered.
-        // build() should still make it available via require().
+        // build should still make it available via require.
         let kit = Kit::new();
         kit.override_module::<MockCapability>(Arc::new(AtomicUsize::new(77)));
         let built = kit.build().unwrap();
@@ -219,7 +219,7 @@ mod tests {
     fn register_lazy_does_not_build_during_build() {
         let mut kit = Kit::new();
         kit.register_lazy::<CountingModule>().unwrap();
-        // build() should succeed without triggering CountingModule's build_fn
+        // build should succeed without triggering CountingModule's build_fn
         let built = kit.build().unwrap();
         // The capability should NOT be available (lazy not yet triggered)
         assert!(!built.contains::<CountingModule>());
@@ -231,7 +231,7 @@ mod tests {
         kit.register::<MockCapability>().unwrap();
         // Register lazy module that depends on MockCapability
         kit.register_lazy::<DependentModule>().unwrap();
-        // build() should succeed (graph validation passes)
+        // build should succeed (graph validation passes)
         let built = kit.build().unwrap();
         // MockCapability should be built (eager), DependentModule should NOT (lazy)
         assert!(built.contains::<MockCapability>());
@@ -264,7 +264,7 @@ mod tests {
 
         let built = kit.build().unwrap();
 
-        // After build(): lazy_builders drained, lazy_slots populated
+        // After build: lazy_builders drained, lazy_slots populated
         assert_eq!(built.lazy_builders.borrow().len(), 0);
         assert_eq!(built.lazy_slots.borrow().len(), 1);
         assert!(
@@ -282,7 +282,7 @@ mod tests {
         let built = kit.build().unwrap();
 
         // The OnceLock cell should be empty (not yet constructed) — first
-        // access via require() will populate it.
+        // access via require will populate it.
         let slots = built.lazy_slots.borrow();
         let slot = slots
             .get(&TypeId::of::<CountingModule>())
@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn require_lazy_with_registered_dependency_succeeds() {
-        // A lazy module that calls kit.require() for its dependency in build()
+        // A lazy module that calls kit.require for its dependency in build
         struct LazyDependentModule;
         impl ModuleMeta for LazyDependentModule {
             const NAME: &'static str = "lazy-dependent";
@@ -409,7 +409,7 @@ mod tests {
         kit.register_lazy::<LazyDependentModule>().unwrap();
         let built = kit.build().unwrap();
 
-        // First require triggers lazy build, which calls require::<MockCapability>()
+        // First require triggers lazy build, which calls require::<MockCapability>
         let cap = built.require::<LazyDependentModule>().unwrap();
         assert_eq!(
             cap.load(Ordering::SeqCst),
@@ -479,7 +479,7 @@ mod tests {
 
         kit.register_multi::<MultiModuleA>().unwrap();
 
-        // Keyed by TypeId::of::<M::Capability>() = TypeId::of::<Arc<AtomicUsize>>()
+        // Keyed by TypeId::of::<M::Capability> = TypeId::of::<Arc<AtomicUsize>>
         let cap_id = TypeId::of::<Arc<AtomicUsize>>();
         assert_eq!(kit.multi_builders.borrow().len(), 1);
         assert!(kit.multi_builders.borrow().contains_key(&cap_id));
@@ -619,7 +619,7 @@ mod tests {
     fn require_all_returns_missing_capability_before_build() {
         let mut kit = Kit::new();
         kit.register_multi::<MultiModuleA>().unwrap();
-        // Don't call build() — multi_capabilities is empty
+        // Don't call build — multi_capabilities is empty
 
         let result = kit.require_all::<MultiModuleA>();
         assert!(matches!(
@@ -714,7 +714,7 @@ mod interface_tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    // === Test fixtures ===
+    // Test fixtures
 
     /// Test interface trait.
     trait Logger: 'static {
@@ -799,7 +799,7 @@ mod interface_tests {
         }
     }
 
-    // === Tests ===
+    // Tests
 
     #[test]
     fn register_as_then_resolve_returns_arc_dyn_trait() {
@@ -907,7 +907,7 @@ mod interface_tests {
         let mut kit = Kit::new();
         kit.register_as::<ConsoleLoggerModule>()
             .expect("first register_as succeeds");
-        // Same module type — graph.add() rejects duplicate
+        // Same module type — graph.add rejects duplicate
         let err = kit.register_as::<ConsoleLoggerModule>().unwrap_err();
         assert!(
             matches!(err, TraitKitError::AlreadyRegistered { .. }),
@@ -963,7 +963,7 @@ mod interface_tests {
     }
 }
 
-// ─── Feature-gated integration tests ─────────────────────────────────────
+// Feature-gated integration tests
 
 #[cfg(all(test, feature = "lifecycle"))]
 mod lifecycle_tests {
@@ -1037,7 +1037,7 @@ mod lifecycle_tests {
     }
 
     // ── 逆拓扑关闭顺序：依赖者（consumer）先于被依赖者（dependency）关闭，
-    //    与注册顺序无关（build 时按拓扑索引稳定排序，shutdown 逆序执行）。──
+    // 与注册顺序无关（build 时按拓扑索引稳定排序，shutdown 逆序执行）。──
 
     static TOPO_SHUTDOWN_ORDER: std::sync::Mutex<Vec<&'static str>> =
         std::sync::Mutex::new(Vec::new());

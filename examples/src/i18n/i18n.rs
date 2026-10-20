@@ -3,11 +3,11 @@
 //! i18n — Fluent 消息翻译 + ICU4X 本地化格式化。
 //!
 //! 演示：
-//! - `I18nManager::init()` — 默认英文（严格，不随宿主系统语言漂移）
-//! - `I18nManager::init_with_system_locale()` — 按系统语言协商（opt-in）
-//! - `I18nManager::init_with_locale()` — 使用指定 locale 初始化
-//! - `tr()` — 便捷翻译函数
-//! - `I18nFormatter::new()` — ICU4X locale 感知格式化
+//! - `I18nManager::init` — 默认英文（严格，不随宿主系统语言漂移）
+//! - `I18nManager::init_with_system_locale` — 按系统语言协商（opt-in）
+//! - `I18nManager::init_with_locale` — 使用指定 locale 初始化
+//! - `tr` — 便捷翻译函数
+//! - `I18nFormatter::new` — ICU4X locale 感知格式化
 //! - `TraitKitError` 的 `Display` 输出自动本地化
 //!
 //! Run: `cargo run -p trait-kit-example --example i18n`
@@ -16,8 +16,8 @@ use trait_kit::TraitKitError;
 use trait_kit::i18n::{I18nFormatter, I18nManager, tr};
 
 fn main() {
-    // ─── 全局 I18nManager 初始化 ─────────────────────────────────────────
-    // 按系统语言环境协商（如 zh-CN、en-US）；默认 init() 为严格英文。
+    // 全局 I18nManager 初始化
+    // 按系统语言环境协商（如 zh-CN、en-US）；默认 init 为严格英文。
     let mgr = I18nManager::init_with_system_locale();
     println!(
         "{}",
@@ -27,7 +27,7 @@ fn main() {
         )
     );
 
-    // ─── 消息翻译（tr 便捷函数） ─────────────────────────────────────────
+    // 消息翻译（tr 便捷函数）
     let msg = tr(
         "trait-kit-error-already-registered",
         &[("module", "my-module")],
@@ -40,7 +40,7 @@ fn main() {
         )
     );
 
-    // ─── 指定 locale 翻译 ────────────────────────────────────────────────
+    // 指定 locale 翻译
     // 注意：全局实例已初始化，init_with_locale 会直接返回现有实例；
     // 这里演示通过 I18nManager 实例直接翻译
     let en_msg = mgr.translate(
@@ -55,7 +55,7 @@ fn main() {
         )
     );
 
-    // ─── TraitKitError Display 自动本地化 ────────────────────────────────
+    // TraitKitError Display 自动本地化
     let err = TraitKitError::AlreadyRegistered {
         module: "auth-service",
     };
@@ -78,7 +78,7 @@ fn main() {
         )
     );
 
-    // ─── ICU4X 本地化格式化 ──────────────────────────────────────────────
+    // ICU4X 本地化格式化
     // 英文 (US)
     let fmt_en = I18nFormatter::new("en-US").expect("en-US locale");
     let number = fmt_en.format_number(1_234_567.89).expect("format number");
@@ -107,7 +107,7 @@ fn main() {
         )
     );
 
-    // ─── 复数规则 ────────────────────────────────────────────────────────
+    // 复数规则
     let fmt_plural = I18nFormatter::new("en").expect("en locale");
     let one = fmt_plural.plural_category(1).expect("plural(1)");
     let other = fmt_plural.plural_category(5).expect("plural(5)");
@@ -121,7 +121,7 @@ fn main() {
         )
     );
 
-    // ─── 字符串排序 ──────────────────────────────────────────────────────
+    // 字符串排序
     let fmt_collator = I18nFormatter::new("en").expect("en locale");
     let cmp = fmt_collator.compare("apple", "banana").expect("compare");
     let cmp_label = format!("{cmp:?}");
@@ -134,7 +134,7 @@ fn main() {
     );
     assert!(cmp.is_lt(), "apple should sort before banana");
 
-    // ─── 错误处理 ────────────────────────────────────────────────────────
+    // 错误处理
     let bad = I18nFormatter::new("not-a-locale!!!");
     assert!(bad.is_err(), "invalid locale should return error");
 

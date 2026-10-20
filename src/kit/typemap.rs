@@ -35,7 +35,7 @@ impl TypeMap {
     /// # Safety invariant
     ///
     /// The caller must ensure that `type_id` matches the concrete type of
-    /// the boxed value (i.e. `type_id == TypeId::of::<T>()` for the inner
+    /// the boxed value (i.e. `type_id == TypeId::of::<T>` for the inner
     /// type `T`). A mismatch will silently produce `None` on retrieval.
     pub fn insert_boxed(&self, type_id: TypeId, value: Box<dyn Any>) {
         self.inner.borrow_mut().insert(type_id, value);

@@ -3,9 +3,9 @@
 //! Factory feature — per-call instance creation (non-singleton).
 //!
 //! Demonstrates:
-//! - `Kit<Ready>::factory::<M>()` — returns a closure that invokes `M::build()`
+//! - `Kit<Ready>::factory::<M>` — returns a closure that invokes `M::build`
 //!   on every call, producing a fresh instance each time
-//! - Unlike `require()` (singleton), factory creates new instances on demand
+//! - Unlike `require` (singleton), factory creates new instances on demand
 //!
 //! Run: `cargo run -p trait-kit-example --example factory`
 
@@ -63,7 +63,7 @@ fn main() {
     assert_ne!(conn1.id, conn2.id);
     assert_ne!(conn2.id, conn3.id);
 
-    // Meanwhile, require() returns the singleton built during build()
+    // Meanwhile, require returns the singleton built during build
     let singleton = kit.require::<ConnectionModule>().expect("require");
     println!("Singleton id: {}", singleton.id);
 

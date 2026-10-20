@@ -10,13 +10,13 @@
 // - CMP-13 encryption+reload 双链共存（encryption_reload_e2e）
 // - CMP-15 全 feature 行为级烟囱（all_features_smoke_e2e）
 // （CMP-14 i18n+shutdown 落点为 tests/e2e_i18n.rs，因 zh locale 全局单例
-//   需独立测试进程锚定，避免与默认 locale 测试互相竞争 OnceLock 初始化。）
+// 需独立测试进程锚定，避免与默认 locale 测试互相竞争 OnceLock 初始化。）
 
 use std::sync::Arc;
 use trait_kit::impl_module_meta;
 use trait_kit::prelude::*;
 
-// ─── 无特性：基础 Kit 操作 ─────────────────────────────────────────────
+// 无特性：基础 Kit 操作
 
 struct NoFeatureModule;
 impl_module_meta!(NoFeatureModule, "no-feature");
@@ -46,7 +46,7 @@ fn e2e_no_feature_graph_export() {
     assert!(ready.graph_mermaid().contains("no-feature"));
 }
 
-// ─── lifecycle：on_ready + on_shutdown ──────────────────────────────────
+// lifecycle：on_ready + on_shutdown
 
 #[cfg(feature = "lifecycle")]
 mod lifecycle_e2e {
@@ -98,7 +98,7 @@ mod lifecycle_e2e {
     }
 }
 
-// ─── health：健康检查 ───────────────────────────────────────────────────
+// health：健康检查
 
 #[cfg(feature = "health")]
 mod health_e2e {
@@ -190,7 +190,7 @@ mod health_e2e {
     }
 }
 
-// ─── observer：构建观察者 ───────────────────────────────────────────────
+// observer：构建观察者
 
 #[cfg(feature = "observer")]
 mod observer_e2e {
@@ -231,7 +231,7 @@ mod observer_e2e {
     }
 }
 
-// ─── decorator：模块装饰器 ──────────────────────────────────────────────
+// decorator：模块装饰器
 
 #[cfg(feature = "decorator")]
 mod decorator_e2e {
@@ -265,7 +265,7 @@ mod decorator_e2e {
     }
 }
 
-// ─── scope：作用域依赖 ─────────────────────────────────────────────────
+// scope：作用域依赖
 
 #[cfg(feature = "request-scope")]
 mod scope_e2e {
@@ -301,7 +301,7 @@ mod scope_e2e {
     }
 }
 
-// ─── toggle：特性开关 ──────────────────────────────────────────────────
+// toggle：特性开关
 
 #[cfg(feature = "toggle")]
 mod toggle_e2e {
@@ -353,7 +353,7 @@ mod toggle_e2e {
     }
 }
 
-// ─── shutdown：优雅关闭 ────────────────────────────────────────────────
+// shutdown：优雅关闭
 
 #[cfg(feature = "shutdown")]
 mod shutdown_e2e {
@@ -400,7 +400,7 @@ mod shutdown_e2e {
     }
 }
 
-// ─── i18n：国际化 ──────────────────────────────────────────────────────
+// i18n：国际化
 
 #[cfg(feature = "i18n")]
 mod i18n_e2e {
@@ -430,7 +430,7 @@ mod i18n_e2e {
     }
 }
 
-// ─── interface：接口/实现分离 ───────────────────────────────────────────
+// interface：接口/实现分离
 
 #[cfg(feature = "di")]
 mod interface_e2e {
@@ -474,7 +474,7 @@ mod interface_e2e {
     }
 }
 
-// ─── confers：配置系统 ─────────────────────────────────────────────────
+// confers：配置系统
 
 #[cfg(feature = "confers")]
 mod confers_e2e {
@@ -608,7 +608,7 @@ mod confers_e2e {
     }
 }
 
-// ─── reload：热重载 ────────────────────────────────────────────────────
+// reload：热重载
 
 #[cfg(feature = "reload")]
 mod reload_e2e {
@@ -643,7 +643,7 @@ mod reload_e2e {
     }
 }
 
-// ─── encryption：加密配置 ──────────────────────────────────────────────
+// encryption：加密配置
 
 #[cfg(feature = "encryption")]
 mod encryption_e2e {
@@ -694,7 +694,7 @@ mod encryption_e2e {
     }
 }
 
-// ─── async：异步 Kit ──────────────────────────────────────────────────
+// async：异步 Kit
 
 #[cfg(feature = "async")]
 mod async_e2e {
@@ -707,7 +707,7 @@ mod async_e2e {
     }
 }
 
-// ─── 多特性组合 ────────────────────────────────────────────────────────
+// 多特性组合
 
 #[cfg(all(feature = "lifecycle", feature = "health"))]
 mod lifecycle_health_e2e {
@@ -950,7 +950,7 @@ mod toggle_decorator_e2e {
     }
 }
 
-// ─── shutdown + decorator 关闭次序 ─────────────────────────────
+// shutdown + decorator 关闭次序
 //
 // 语义固化：被装饰模块关闭时，装饰层先于核心层释放（Drop 外层先于内层），
 // 且 `Lifecycle::on_shutdown` 接收到的是装饰后的最外层能力。
@@ -1088,7 +1088,7 @@ mod shutdown_decorator_e2e {
     }
 }
 
-// ─── toggle + scope 开关门控作用域 ─────────────────────────────
+// toggle + scope 开关门控作用域
 
 #[cfg(all(feature = "toggle", feature = "request-scope"))]
 mod toggle_scope_e2e {
@@ -1137,7 +1137,7 @@ mod toggle_scope_e2e {
     }
 }
 
-// ─── interface + decorator interface 构建路径装饰 ───────────────
+// interface + decorator interface 构建路径装饰
 //
 // DEC-04 契约：装饰器须覆盖全部四条构建路径（eager/lazy/multi/interface）。
 // register_as 路径的装饰按能力类型（`M::Capability`）在 `into_interface`
@@ -1203,7 +1203,7 @@ mod interface_decorator_e2e {
     }
 }
 
-// ─── encryption + reload 双链共存 ──────────────────────────────
+// encryption + reload 双链共存
 
 #[cfg(all(feature = "encryption", feature = "reload"))]
 mod encryption_reload_e2e {
@@ -1282,7 +1282,7 @@ mod encryption_reload_e2e {
     }
 }
 
-// ─── 全 feature 行为级烟囱 ─────────────────────────────────────
+// 全 feature 行为级烟囱
 
 #[cfg(all(
     feature = "async",
@@ -1413,7 +1413,7 @@ mod all_features_smoke_e2e {
     #[test]
     fn e2e_all_features_single_kit_smoke() {
         // ── 构建：toggle 门控注册 + config + observer + decorator +
-        //    lifecycle + health，一次 build 打通 ──
+        // lifecycle + health，一次 build 打通 ──
         let mut kit = Kit::new();
         kit.set_config(2u32);
         kit.enable_toggle("smoke", true);
@@ -1635,7 +1635,7 @@ mod kit_observer_e2e {
     }
 }
 
-// ─── toggle+confers：ConfersToggle confers 侧 key 的墓碑→复活语义 ──────
+// toggle+confers：ConfersToggle confers 侧 key 的墓碑→复活语义
 
 /// 仅存在于 confers registry 的 boolean key：remove_toggle → 返回旧值且
 /// get/list 两面不再出现（disable+墓碑，非真删除）；再次 set_toggle 同

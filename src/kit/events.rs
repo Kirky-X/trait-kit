@@ -14,12 +14,12 @@
 
 use std::sync::Mutex;
 
-// ─── KitEvent ───────────────────────────────────────────────────────────────
+// KitEvent
 
 /// Typed lifecycle event published by `Kit` / `AsyncKit`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum KitEvent {
-    /// A module's `build_fn` completed successfully during `build()`.
+    /// A module's `build_fn` completed successfully during `build`.
     ModuleBuilt {
         /// Module name (`ModuleMeta::NAME`).
         module: &'static str,
@@ -59,7 +59,7 @@ impl KitEvent {
     }
 }
 
-// ─── EventBus port ──────────────────────────────────────────────────────────
+// EventBus port
 
 /// Runtime event bus port.
 ///

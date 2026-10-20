@@ -22,7 +22,7 @@ use std::collections::HashMap;
 #[cfg(feature = "confers")]
 use std::collections::HashSet;
 
-// ─── ToggleValue ────────────────────────────────────────────────────────
+// ToggleValue
 
 /// Typed toggle value for non-boolean runtime configuration.
 #[derive(Debug, Clone, PartialEq)]
@@ -48,7 +48,7 @@ impl std::fmt::Display for ToggleValue {
     }
 }
 
-// ─── ToggleBackend trait ────────────────────────────────────────────────
+// ToggleBackend trait
 
 /// Abstraction over toggle storage backends.
 ///
@@ -67,7 +67,7 @@ pub trait ToggleBackend {
     fn contains(&self, key: &str) -> bool;
 }
 
-// ─── MemoryToggle ───────────────────────────────────────────────────────
+// MemoryToggle
 
 /// Pure in-memory toggle backend using `HashMap`.
 ///
@@ -113,7 +113,7 @@ impl ToggleBackend for MemoryToggle {
     }
 }
 
-// ─── ConfersToggle ──────────────────────────────────────────────────────
+// ConfersToggle
 
 /// Confers-backed toggle backend.
 ///
@@ -172,7 +172,6 @@ impl Default for ConfersToggle {
 #[cfg(feature = "confers")]
 impl ToggleBackend for ConfersToggle {
     fn get(&self, key: &str) -> Option<ToggleValue> {
-        // Check typed side first
         if let Some(v) = self.typed_side.get(key) {
             return Some(v.clone());
         }
@@ -213,7 +212,6 @@ impl ToggleBackend for ConfersToggle {
     }
 
     fn remove(&mut self, key: &str) -> Option<ToggleValue> {
-        // Try typed side first
         if let Some(v) = self.typed_side.remove(key) {
             return Some(v);
         }
@@ -255,7 +253,7 @@ impl ToggleBackend for ConfersToggle {
     }
 }
 
-// ─── Backend type alias ─────────────────────────────────────────────────
+// Backend type alias
 
 /// The concrete toggle backend type used by `Kit` and `AsyncKit`.
 ///
@@ -306,7 +304,7 @@ macro_rules! define_toggle_key {
 
 /// Strongly typed toggle handle bound to a [`ToggleKey`].
 ///
-/// Obtained from `Kit<Ready>::toggle_handle::<K>()`. All operations go through
+/// Obtained from `Kit<Ready>::toggle_handle::<K>`. All operations go through
 /// `K::KEY`, so a typo is a compile error (unknown type) rather than a silent
 /// runtime miss.
 pub struct ToggleHandle<'a, K: ToggleKey> {
@@ -358,7 +356,7 @@ impl crate::kit::Kit<crate::kit::Ready> {
     }
 }
 
-// ─── Tests ──────────────────────────────────────────────────────────────
+// Tests
 
 #[cfg(test)]
 mod tests {

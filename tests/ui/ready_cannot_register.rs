@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-// Kit<Ready> cannot call register() — typestate enforces Unbuilt-only.
+// Kit<Ready> cannot call register — typestate enforces Unbuilt-only.
 //
 // The fixture must produce exactly one error (the E0599 below). Explicit
 // `ModuleMeta` impl instead of `impl_module_meta!`: the macro is not
@@ -27,6 +27,6 @@ fn main() {
     let mut kit = Kit::new();
     kit.register::<MyModule>().unwrap();
     let ready = kit.build().unwrap();
-    // ERROR: register() is only available on Kit<Unbuilt>
+    // ERROR: register is only available on Kit<Unbuilt>
     ready.register::<MyModule>().unwrap();
 }

@@ -14,7 +14,7 @@
 //! # 超时语义（软限制）
 //!
 //! 阶段超时与全局超时均为**软限制**：受同步模型限制，运行中的 hook 不可被
-//! 中断（`shutdown()` 会等待当前 hook 返回），因此超时保证的粒度是
+//! 中断（`shutdown` 会等待当前 hook 返回），因此超时保证的粒度是
 //! **"hook 之间"**——全局预算在阶段边界与每个 hook 启动前检查，超预算则
 //! 跳过剩余 hooks；单个长 hook 仍可能使实际耗时超出预算。
 //!
@@ -24,18 +24,18 @@
 //! 清理谁"划分，选型只看**宿主是否已有协调器骨架**：
 //!
 //! 1. `AsyncKit<Ready>` drop——RAII 兜底，能力随能力表释放，无顺序保证；
-//! 2. `AsyncKit<Ready>::shutdown_async()`——Kit 模块级 `on_shutdown`，
+//! 2. `AsyncKit<Ready>::shutdown_async`——Kit 模块级 `on_shutdown`，
 //!    逆拓扑序；适合**没有**协调器的单 Kit 自治清理；
-//! 3. `AsyncShutdownCoordinator::shutdown()`——宿主自有 Send 钩子的
+//! 3. `AsyncShutdownCoordinator::shutdown`——宿主自有 Send 钩子的
 //!    三阶段编排（Send 快路径，不执行 local 钩子）；
-//! 4. `AsyncShutdownCoordinator::shutdown_local()`——3 的全量版：Send +
+//! 4. `AsyncShutdownCoordinator::shutdown_local`——3 的全量版：Send +
 //!    local（`!Send` future）钩子，返回 `!Send` future 须原地 await；配
 //!    `register_local_hook` 注册 `!Send` future 钩子，配
 //!    `AsyncKit<Ready>::register_shutdown_into` 把 Kit 组件清理桥接进
 //!    指定阶段（典型落位 `CloseConnections`）。
 //!
 //! 认知负担的收敛点：2 与 4 都能执行模块级清理，但**桥接即所有权转移**
-//! ——`register_shutdown_into` 后 `shutdown_async()` 变 no-op，同一组件
+//! ——`register_shutdown_into` 后 `shutdown_async` 变 no-op，同一组件
 //! 的清理 exactly-once，不会双跑。因此 2 与 4 是互斥选项而非并存选项；
 //! 有协调器骨架的宿主（daemon 三阶段停机）选 1+3+4，把组件清理汇入既有
 //! 编排，不要在协调器之外另开一条 `shutdown_async` 调用。
@@ -151,7 +151,7 @@ pub(crate) fn evaluate_timeout(
 /// use trait_kit::kit::shutdown::{ShutdownCoordinator, ShutdownPhase};
 /// use std::time::Duration;
 ///
-/// let coord = ShutdownCoordinator::new();
+/// let coord = ShutdownCoordinator::new;
 ///
 /// // 注册各阶段钩子
 /// coord.register_hook(ShutdownPhase::StopRequests, || {
@@ -168,7 +168,7 @@ pub(crate) fn evaluate_timeout(
 /// coord.set_phase_timeout(ShutdownPhase::DrainQueue, Duration::from_secs(5));
 ///
 /// // 执行关闭流程
-/// coord.shutdown();
+/// coord.shutdown;
 /// ```
 pub struct ShutdownCoordinator {
     phases: RefCell<[PhaseConfig; 3]>,
@@ -414,15 +414,15 @@ impl ShutdownResult {
 impl std::ops::Deref for ShutdownResult {
     type Target = [ShutdownPhaseResult];
 
-    /// 透明借用内部的阶段结果切片，支持 `len()` / `iter()` / 索引等切片操作
-    /// （如 `result[0].is_ok()`）；整体状态判断优先使用 `is_ok()` /
-    /// `timed_out_phases()`。
+    /// 透明借用内部的阶段结果切片，支持 `len` / `iter` / 索引等切片操作
+    /// （如 `result[0].is_ok`）；整体状态判断优先使用 `is_ok` /
+    /// `timed_out_phases`。
     fn deref(&self) -> &Self::Target {
         &self.phases
     }
 }
 
-// ─── Async 版本 ─────────────────────────────────────────────────────────────
+// Async 版本
 
 /// 异步关闭钩子。
 #[cfg(feature = "async")]
@@ -447,7 +447,7 @@ type LocalShutdownHook = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()>>> +
 struct AsyncPhaseConfig {
     hooks: Vec<AsyncShutdownHook>,
     /// `!Send` 钩子的平行存储。不能与 `hooks` 共用槽位：`AsyncShutdownHook`
-    /// 的闭包与 future 都带 `Send` bound，放宽即破坏既有 `shutdown()` 的
+    /// 的闭包与 future 都带 `Send` bound，放宽即破坏既有 `shutdown` 的
     /// `Send` 保证；执行顺序约定为同阶段内先 `hooks` 后 `local_hooks`，
     /// 各自保持注册序。
     local_hooks: Vec<LocalShutdownHook>,
@@ -543,7 +543,7 @@ fn lock_poisoned(context: String) -> TraitKitError {
 /// use trait-kit::kit::shutdown::{AsyncShutdownCoordinator, ShutdownPhase};
 /// use std::time::Duration;
 ///
-/// let coord = AsyncShutdownCoordinator::new();
+/// let coord = AsyncShutdownCoordinator::new;
 ///
 /// coord.register_hook(ShutdownPhase::StopRequests, || {
 ///     Box::pin(async {
@@ -551,7 +551,7 @@ fn lock_poisoned(context: String) -> TraitKitError {
 ///     })
 /// }).expect("register_hook failed");
 ///
-/// let result = coord.shutdown().await;
+/// let result = coord.shutdown.await;
 /// ```
 #[cfg(feature = "async")]
 pub struct AsyncShutdownCoordinator {
@@ -617,7 +617,7 @@ impl AsyncShutdownCoordinator {
 
     /// 注册一个异步关闭钩子到指定阶段。
     ///
-    /// 钩子返回 `Pin<Box<dyn Future<Output = ()> + Send>>`；调用方闭包
+    /// 钩子返回 `Pin<Box<dyn Future<Output = > + Send>>`；调用方闭包
     /// 通常写作 `|| Box::pin(async { ... })`，返回位置的 unsizing
     /// coercion 会自动完成擦除。
     ///
@@ -978,7 +978,7 @@ impl std::fmt::Debug for AsyncShutdownCoordinator {
     }
 }
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
+// Tests
 
 #[cfg(test)]
 mod tests {
@@ -1638,7 +1638,7 @@ mod async_tests {
         });
     }
 
-    // ─── local(!Send)钩子:平行槽位与 shutdown_local 执行语义 ───
+    // local(!Send)钩子:平行槽位与 shutdown_local 执行语义
 
     #[test]
     fn local_hook_future_may_hold_non_send_state_and_runs() {
@@ -1737,7 +1737,7 @@ mod async_tests {
 
             let result = coord.shutdown_local().await.unwrap();
             assert!(result.is_ok());
-            // Send 段与 local 段合并为每阶段一条结果，形状与 shutdown() 一致。
+            // Send 段与 local 段合并为每阶段一条结果，形状与 shutdown 一致。
             assert_eq!(result.phases.len(), 3);
         });
     }
@@ -1804,7 +1804,7 @@ mod async_tests {
                 .unwrap();
 
             // Send 快路径：结果照常成功，local 钩子静默遗留——
-            // 遗留必须能被 pending_local_hook_count() 探测。
+            // 遗留必须能被 pending_local_hook_count 探测。
             let send_result = coord.shutdown().await.unwrap();
             assert!(
                 send_result.is_ok(),
@@ -2035,7 +2035,7 @@ mod async_tests {
     }
 }
 
-// ─── into_result hook-failure branch ───────────────────────────────────────
+// into_result hook-failure branch
 
 #[cfg(test)]
 mod into_result_failures_tests {
@@ -2077,7 +2077,7 @@ mod into_result_failures_tests {
     }
 }
 
-// ─── async global deadline skips remaining phases at the boundary ─────────
+// async global deadline skips remaining phases at the boundary
 
 #[cfg(all(test, feature = "async"))]
 mod async_deadline_tests {
@@ -2110,7 +2110,7 @@ mod async_deadline_tests {
     }
 }
 
-// ─── shutdown_local: local hooks + exhausted global budget ──────────────
+// shutdown_local: local hooks + exhausted global budget
 
 #[cfg(all(test, feature = "async"))]
 mod async_shutdown_local_tests {
