@@ -40,16 +40,7 @@ trait-kit = { path = ".", default-features = false }
 confers = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-# ICU4X 按组件引入（不引 `icu` 门面 crate）：门面 crate 无条件依赖全部 13 个
-# 组件，其 `compiled_data` 会把 casemap/segmenter/list 等无关组件的代码与编译数据
-# 一并编进产物。这里只引 I18nFormatter 实际用到的五个组件，并逐组件声明
-# `compiled_data`（即门面 compiled_data 列表的最小集）。
-# icu_decimal 不启用门面声明的 `alloc`：`format_number` 用的 `write_to_string`
-# 由 writeable 的 `alloc` 门控默认方法提供（writeable 文档保证调用方 feature 足够
-# 即可用于未开启 alloc 的类型），icu_decimal/alloc 只额外带来 Display 与委托重载，
-# 本 crate 都不使用。
-# 各组件的其它默认项不启用（如 icu_datetime 的 `ixdtf`：本 crate 不做 IXDTF
-# 字符串解析）。版本按仓库惯例写 x.x（^2.3），ICU4X 同族版本对齐交给 Cargo.lock。
+# ICU4X 按组件引入：门面 crate 会无条件编入 13 个组件，体积不可接受
 icu_collator = { version = "2.3", default-features = false, features = [
     "compiled_data",
 ], optional = true }
@@ -67,35 +58,18 @@ icu_plurals = { version = "2.3", default-features = false, features = [
 ], optional = true }
 writeable = { version = "0.6", default-features = false, features = ["alloc"], optional = true }
 sys-locale = { version = "0.3", default-features = false, optional = true }
-# Runtime-agnostic timer for `run_probes_with_timeout` / `probe_aggregate_with_timeout`:
-# a global background thread drives the delays, so the futures stay executor-independent
-# (no tokio/async-std coupling). Native std backend needs no feature; the wasm
-# backends (`gloo-timers`/`wasm-bindgen`/`send_wrapper`) are deliberately not enabled.
+# futures-timer：全局后台线程驱动超时延迟，保持 executor 无关
 futures-timer = { version = "3.0", default-features = false, optional = true }
-# Fluent FTL message translation (concurrent bundle). Always on: `tr()` /
-# `I18nManager` work with or without the `i18n` feature (en-US fallback).
-# 两者默认特性为空集，显式关闭仅作声明（无可裁剪面）。
+# Fluent 翻译：tr/I18nManager 常开（en-US 回退），无特性可裁剪
 fluent-bundle = { version = "0.16", default-features = false }
 unic-langid = { version = "0.9", default-features = false }
-# Structured logging facade for degradation events (`soft_build` fallback
-# path, `register_shutdown_into` bridge-failure logging). Always on:
-# `soft_build` is ungated public API, so a `dep:log` feature would split the
-# API surface for a facade with zero transitive deps. Facade only: records
-# surface in whatever subscriber the consumer installs (log-native, or
-# bridged by tracing-subscriber's default `tracing-log` support).
-# 不启用 `std`：本 crate 只用 `log!` 宏与 `set_logger`/`set_max_level`（core API），
-# `set_boxed_logger` 等 std 便捷项不在使用面内；消费者可按需自行开启。
+# 降级事件日志门面（soft_build 回退、shutdown 桥接失败）
 log = { version = "0.4", default-features = false }
-# confers 0.6 起 `derive_field_key` 返回 `Zeroizing<[u8; 32]>`（密钥材料 drop
-# 自清零），trait-kit 的 `derive_kit_field_key` 透传该容器，需显式命名类型。
-# 不启用 `alloc`：`Zeroizing` 本身及 `[u8; 32]` 的 `Zeroize` 实现都在 core，
-# `alloc` 只补 Vec/String/Box 的实现，本 crate 不使用。
+# confers 0.6 的 derive_field_key 返回 Zeroizing<[u8; 32]>，需显式命名类型
 zeroize = { version = "1.9", default-features = false, optional = true }
 
 [dev-dependencies]
-# thiserror 无 std 时走 core::error::Error；serial_test 只用同步 #[serial]，
-# 砍掉 logging/async 默认特性携带的 log 与 futures-executor/futures-util
-# （env_logger 属非默认的 test_logging 特性，本就不在裁剪面内）。
+# thiserror 无 std 走 core::error::Error；serial_test 仅用同步 #[serial]
 thiserror = { version = "2.0", default-features = false }
 serial_test = { version = "4.0", default-features = false }
 static_assertions = { version = "1.1", default-features = false }
@@ -120,10 +94,7 @@ required-features = ["toggle"]
 default = []
 # AsyncKit: Send + Sync async capability management (no extra deps, Rust native async).
 async = []
-# Config integration: Store + ModuleConfig trait, plus re-export of confers'
-# `Config` derive macro. The proc-macro crate `trait-kit-macros` is NOT wired
-# through this feature — users add `trait-kit-macros` as a direct dependency
-# to use its derives (see src/kit/mod.rs).
+# Config integration: Store + ModuleConfig trait, plus re-export of confers'`Config` derive macro.
 confers = ["dep:confers", "dep:serde", "dep:serde_json", "confers/feature-toggle"]
 # Hot-reload subscription (Kit 自有 SubscriberMap，不再拉入 confers/watch 的 notify-debouncer-full；
 # AsyncKit 侧订阅簿记迁至 confers `DynamicField`，故拉入 confers/dynamic)。
@@ -139,10 +110,7 @@ interface = ["di"]
 lifecycle = []
 # Health check: per-module health status reporting.
 health = []
-# Service probe registry: object-safe async probes (`ServiceProbe`) with
-# latency capture, worst-of aggregation and auto-unregister on shutdown.
-# Builds on the health feature's `HealthStatus` vocabulary; the async
-# registration surface lives on `AsyncKit` (feature `async`).
+# probe：对象安全异步探针（延迟采集 + worst-of 聚合 + 关闭自动注销）
 probe = ["health", "dep:futures-timer"]
 # Scoped dependencies: per-request instance isolation.
 request-scope = []
@@ -156,10 +124,7 @@ observer = []
 decorator = []
 # Graceful shutdown coordinator: phased shutdown with hook registration + timeout.
 shutdown = []
-# ICU4X locale-aware formatting (number/date/plural/collation) + system
-# locale detection. Fluent message translation (`tr()` / `I18nManager`) is
-# feature-independent: without this feature it still works with the en-US
-# fallback locale.
+# ICU4X locale-aware formatting (number/date/plural/collation) + system locale detection.
 i18n = [
     "dep:icu_collator",
     "dep:icu_datetime",
@@ -178,10 +143,7 @@ presets = ["confers"]
 # Sub-Kit composition: register a child Kit as a single parent module
 # (namespaced capabilities, cross-Kit dependency validation).
 compose = []
-# Remote configuration bridge: ConfersConfigModule over confers remote
-# AsyncSource. Implies `async` because the remote module is built through
-# `AsyncKit::build()` (its previous absence made `presets-remote` alone
-# fail to compile with unresolved `AsyncKit` imports).
+# Remote configuration bridge: ConfersConfigModule over confers remote AsyncSource.
 presets-remote = ["presets", "confers/remote", "async"]
 # Capability version negotiation: ModuleMeta::VERSION vs required_versions
 # semver-compat validation at build() time.
@@ -189,10 +151,7 @@ version-negotiation = []
 # Deprecated alias of `version-negotiation`.
 negotiate = ["version-negotiation"]
 
-# E2E 测试源文件位于 tests/e2e/（Cargo 不自动发现子目录文件），显式注册：
-# 目标二进制名保持 e2e_*（`cargo test --test e2e_core` 等命令不变）；
-# i18n zh/en 双文件依赖独立进程隔离（I18nManager 为进程级单例），
-# 故不聚合为单 main.rs；文件级 #![cfg] 门控保证任意 feature 组合可编译。
+# E2E 源在 tests/e2e/，需显式注册；zh/en 分进程隔离（I18nManager 为进程级单例）
 [[test]]
 name = "e2e_advanced"
 path = "tests/e2e/e2e_advanced.rs"
