@@ -75,7 +75,7 @@
 </tr>
 <tr>
 <td width="50%" style="vertical-align:top; padding: 12px">🧱 <b>极简默认依赖</b><br><span style="color:#64748B"><code>default = []</code> 不启用任何可选 feature；仅固定携带 Fluent 翻译（<code>fluent-bundle</code> / <code>unic-langid</code>）与 <code>log</code> 门面 3 个必选依赖，<code>confers</code>、<code>serde</code>、<code>serde_json</code>、<code>icu_*</code>（ICU4X 组件）等其余依赖全部经 feature 门控可选。</span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">🚫 <b>默认禁用 unsafe</b><br><span style="color:#64748B"><code>#![deny(unsafe_code)]</code> 全 crate 强制；生产代码仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：<code>RefCell</code> / <code>RwLock</code> 各 1），另有 1 处测试模块豁免（<code>src/kit/config.rs</code> 的 zeroize spare-capacity 断言）。</span></td>
+<td width="50%" style="vertical-align:top; padding: 12px">🚫 <b>默认禁用 unsafe</b><br><span style="color:#64748B"><code>#![deny(unsafe_code)]</code> 全 crate 强制；生产代码仅 5 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×1：<code>AsyncTypeMap</code> 的 <code>RwLock</code> 读守卫；同步 <code>TypeMap</code> 改用 <code>Ref::map</code> 守卫包装，无需 unsafe），另有 1 处测试模块豁免（<code>src/kit/config.rs</code> 的 zeroize spare-capacity 断言）。</span></td>
 </tr>
 </table>
 
@@ -562,7 +562,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 ## 🔒 安全
 
 - **漏洞报告**：请勿通过公开 Issue 报告，使用 GitHub 私密通道 [Security Advisories](https://github.com/Kirky-X/trait-kit/security/policy)（"Report a vulnerability"）。维护者承诺 48 小时内确认、7 天内给出初步评估（见 [SECURITY.md](docs/SECURITY.md)）。
-- **默认禁用 unsafe**：`#![deny(unsafe_code)]` 全 crate 强制；生产代码仅 6 处经 SAFETY 论证与 review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：`RefCell` / `RwLock` 各 1），另有 1 处测试模块豁免（`src/kit/config.rs` 的 zeroize spare-capacity 断言）。
+- **默认禁用 unsafe**：`#![deny(unsafe_code)]` 全 crate 强制；生产代码仅 5 处经 SAFETY 论证与 review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×1：`AsyncTypeMap` 的 `RwLock` 读守卫；同步 `TypeMap` 改用 `Ref::map` 守卫包装，无需 unsafe），另有 1 处测试模块豁免（`src/kit/config.rs` 的 zeroize spare-capacity 断言）。
 - **编译期排除误用**：typestate 将 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建误用前置为编译错误（trybuild UI 测试断言）；依赖图在 `build()` 时做缺失依赖与环检测。
 - **明确的线程安全边界**：同步 `Kit` 为 `!Sync`（编译器强制，见 `static_assertions` 断言），多线程用 `AsyncKit`（`Send + Sync`）。
 - **加密配置存储**（`encryption`）：XChaCha20-Poly1305 AEAD，HKDF 从主密钥与 `ModuleConfig::PATH` 派生字段密钥；`EncryptedBlob` 的 `Debug` 实现不泄露加密材料。

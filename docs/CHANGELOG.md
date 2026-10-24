@@ -10,6 +10,7 @@
 <details open>
 <summary>📑 目录</summary>
 
+- [`Unreleased`](#unreleased)
 - [`0.5.0-rc.10`](#050-rc10---2026-10-19)
 - [`0.5.0-rc.9`](#050-rc9---2026-10-10)
 - [`0.5.0-rc.8`](#050-rc8---2026-10-08)
@@ -30,8 +31,45 @@
 
 </details>
 
+
 ---
 
+## [Unreleased]
+
+### Security
+
+- **`override_module` 收紧依赖图校验（破坏性签名变更）**：`Kit::override_module`
+  现校验 `M::dependencies` 已注册并返回 `Result<(), TraitKitError>`，未注册依赖的
+  覆盖值在注入期即被拒绝（此前静默落入 build 尾部）；`override_module_strict`
+  与 `override_module` 行为完全一致，已删除
+- **共享 overlay 属主维度**：跨配置类型的共享命名空间从"无主扁平表（后提取者
+  覆盖同名键）"改为**先声明者持有键**——不同配置类型提取同名键被拒绝并告警
+  （两处 `host` 未必是同一个主机），属主自身的重提取（配置重载）仍更新值，
+  跨类型流向（`extract_shared` → `inject_shared`）保持单向；契约见
+  `SharedConfig` 文档的 Ownership contract
+- **`TypeMap` 读取引用**：新增 `TypeMapRef` 守卫包装，`get_ref_by_type_id` 返回值与 `RefCell` 读借用绑定在同一结构上（经 `Deref` 取值），删除原先的裸指针重锚 unsafe——生产代码 unsafe 豁免由 6 处降为 5 处
+- **装饰器属主隔离**：装饰器注册表记录属主模块，被装饰模块只应用自己的装饰器；`register_as`（interface 路径）不再按能力 `TypeId` 兜底查找，不会把其它模块的装饰器套到本模块；multi-binding 路径同样按属主过滤——同能力类型的其它绑定不再被他人装饰器套上
+- **主密钥准入**：`set_encrypted` / `get_encrypted` / `rotate_master_key` 要求主密钥不短于 32 字节且非常量字节材料（全零、重复字节），与 provider 供给路径（`confers` 的 `WeakKey` 拒收）同一口径
+- **对外文本脱敏**：新增 `core::health::redact_detail`，健康/就绪 detail 中的 URL userinfo、`password=`/`token=` 之类键值对（分隔符两侧带空格亦覆盖）、`Bearer` / `Basic` 等认证方案之后的凭据与 PEM 块内自 `-----BEGIN` 起至 `-----END` 的私钥材料在进入 JSON 载荷与事件总线前被替换为 `[REDACTED]`，超长文本截断；`TraitKitError` 的 `Display` 同样脱敏底层错误原文（凭据与服务器绝对路径不再外泄，未脱敏原文保留在 `Error::source()`）
+- **错误文本不再带出内部调用点**：`TraitKitError::BuildFailed` / `LifecycleFailed` 的 `context` 在进入 Fluent 模板前折叠为对外类别标签（`load_config` → `configuration load`，`set_encrypted` → `encrypted configuration write` 等）；折叠只作用于登记在册的内部调用点标签（封闭集合，新增标签必须登记），不再按字符串形态猜测——模块名（`ModuleMeta::NAME`）与本地化诊断短语原样保留，主密钥供给方的 provider 类型名按族前缀折叠（`key provider (env)` → `master key provider`），关闭桥接失败的文案不再带出内部函数名 `register_shutdown_into`；原始标签仍可通过变体公开字段读取
+- **`TraitKitError` 的 `Debug`**：改为手写实现，底层错误原文经脱敏后输出——下游用 `{:?}` 或 tracing 的 `?err` 记录时不再带出服务器绝对路径与口令
+- **内部类型路径不再外泄**：配置类型名进入错误文本、配置变更事件与覆盖记录前先裁掉 crate / 模块路径（`my_crate::config::DbConfig` → `DbConfig`）；泛型实参一并裁掉但容器名保留（`core::option::Option<crate::Db>` → `Option`），对外标签指向调用方注册的 Config 类型而非实参里的值类型
+- **凭据类键名不再外泄**：`ConfersConfigHandle::keys()` 与 `RemoteConfigProvider::keys()` 过滤掉 `password` / `api_key` / `private_key` 之类的键名（键名本身会暴露部署持有哪些凭据），值仍可通过显式访问器读取
+- **深嵌套 JSON**：`merge_json_deep` 改用显式工作栈（不再按嵌套深度递归）；`load_config_with`（同步/异步）的深度守卫前移到序列化阶段——序列化走带深度守卫的写入器（嵌套超过 `MAX_CONFIG_DEPTH` 即中止，递归深度被上限钉死），`serde_json::to_value` 与 `from_value` 都不限深度，超深结构原本会直接终止进程
+
+### Fixed
+
+- **`override_module` 覆盖面**：`register_multi` / `register_as` 注册的模块现在同样消费覆盖值，`require_all` / `resolve` 不再拿到真实实现（此前报告记 `Overridden` 而实际生效的是真实能力）
+- **`merge_config` 通知**：成功应用覆盖后派发配置订阅者并发布 `ConfigChanged` 事件，与 `reload_config` 同口径；文档明确「运行期写配置不重建已构建能力」
+- **覆盖历史有界**：`config_overrides` 保留最近 `MAX_CONFIG_OVERRIDE_HISTORY` 条，更旧的丢弃并由 `config_overrides_dropped()` 计数
+- **载荷契约**：`HealthAggregate` / `ProbeReport` 补 `schema_version`（与 `BuildReport` / `ContractManifest` 对齐）；`ContractEntry.capability` 补稳定性免责说明
+
+### Internal
+
+- **测试基建**：`block_on` 辅助函数改为按真实时间推进（no-op waker 无法唤醒定时器类 future，探针超时用例此前依赖机器速度才能通过）
+- **文档**：修正 `merge_json_deep` 关于「解析器 128 层上限」的失效论证；`SharedConfig` 共享命名空间补属主缺失的告警；README/README_EN/USER_GUIDE/CONTRIBUTING/SECURITY 同步 unsafe 豁免计数与主密钥策略
+
+---
 
 ## [0.5.0-rc.10] - 2026-10-19
 

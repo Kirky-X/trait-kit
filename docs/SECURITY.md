@@ -58,7 +58,7 @@
 
 ### 默认禁用 unsafe 代码
 
-整个 crate 标注 `#![deny(unsafe_code)]`，编译期强制排除未定义行为的主要来源之一。依赖图校验、类型检索等均以安全 Rust 实现。生产代码现存 6 处经 SAFETY 论证与 code review 的局部豁免（`#[allow(unsafe_code)]`）：typestate 布局断言 cast ×3（`Kit`/`AsyncKit` 的 require/factory 路径）、volatile 密钥清零 ×1、guard 生命周期重锚 ×2（`TypeMap` 的 `RefCell` 守卫与 `AsyncTypeMap` 的 `RwLock` 读守卫各 1）；另有 1 处测试模块豁免（`src/kit/config.rs` 的 `key_bytes_zeroize_clears_spare_capacity`，以 volatile 读校验 spare capacity 已清零）——每处均附 SAFETY 注释并纳入 review 门禁。
+整个 crate 标注 `#![deny(unsafe_code)]`，编译期强制排除未定义行为的主要来源之一。依赖图校验、类型检索等均以安全 Rust 实现。生产代码现存 5 处经 SAFETY 论证与 code review 的局部豁免（`#[allow(unsafe_code)]`）：typestate 布局断言 cast ×3（`Kit`/`AsyncKit` 的 require/factory 路径）、volatile 密钥清零 ×1、guard 生命周期重锚 ×1（`AsyncTypeMap` 的 `RwLock` 读守卫；同步 `TypeMap` 的 `RefCell` 守卫改用 `Ref::map` 包装，读借用与值引用不可分离，无需 unsafe）；另有 1 处测试模块豁免（`src/kit/config.rs` 的 `key_bytes_zeroize_clears_spare_capacity`，以 volatile 读校验 spare capacity 已清零）——每处均附 SAFETY 注释并纳入 review 门禁。
 
 ### 类型安全的能力检索
 
@@ -79,10 +79,25 @@
 - 算法：XChaCha20-Poly1305 认证加密（AEAD），静态配置加密存储。
 - 密钥派生：加密密钥通过 HKDF 从主密钥与 `ModuleConfig::PATH` 派生，同一主密钥为不同模块生成不同字段密钥，限制跨模块的密钥复用。
 - 防泄露：`EncryptedBlob` 的 `Debug` 实现不输出加密材料（0.4.1 中的安全修复，见 [CHANGELOG](CHANGELOG.md)）。
+- 主密钥准入：直接传字节的入口（`set_encrypted` / `get_encrypted` / `rotate_master_key`）要求主密钥不短于 32 字节且非常量字节材料（全零、重复字节）；常量字节密钥可被任何人复算，接受即等于未加密。该口径与 provider 供给路径一致（`confers::SecretKeyProvider` 以 `WeakKey` 拒收同种材料），两条供给路径对同一材料不再给出相反结论。
 
 ### 错误信息与国际化
 
-`TraitKitError` 统一错误类型，`Display` 通过 `tr()` 本地化输出，避免异常路径上拼接敏感细节；`BuildFailed` 等变体保留结构化的 `source` 供程序化处理而非仅靠文本。
+`TraitKitError` 统一错误类型，`Display` 通过 `tr()` 本地化输出；底层错误原文在进入公开文本前统一脱敏（凭据片段与服务器绝对路径被遮蔽，文本截断），未脱敏的原文保留在结构化的 `source` 里供程序化处理，而非仅靠文本。
+
+- **内部调用点不入文本**：`BuildFailed` / `LifecycleFailed` 的 `context` 在进入 Fluent 模板前折叠为对外类别标签（`load_config` → `configuration load`，`set_encrypted` → `encrypted configuration write`）。折叠只作用于登记在册的内部调用点标签（封闭集合，新增标签必须登记，否则编译失败），不再按字符串形态猜测——模块名（`ModuleMeta::NAME`）与本地化诊断短语原样保留；主密钥供给方的 provider 类型名按族前缀折叠（`key provider (env)` → `master key provider`）。原始标签仍可通过变体的公开字段读取，程序化匹配不受影响。
+- **调试输出同样脱敏**：`TraitKitError` 的 `Debug` 为手写实现，底层错误原文经脱敏后输出——下游用 `{:?}` 或 tracing 的 `?err` 记录时不会带出服务器绝对路径与口令。
+- **内部类型路径不入文本**：配置类型名进入错误文本、配置变更事件与覆盖记录前先裁掉 crate / 模块路径（`my_crate::config::DbConfig` → `DbConfig`）；泛型实参一并裁掉但容器名保留（`core::option::Option<crate::Db>` → `Option`）。
+
+### 对外载荷的字段过滤
+
+- **健康 / 就绪 detail**：凭据片段（URL userinfo、`password=` / `token=` 键值对（分隔符两侧带空格亦覆盖）、`Bearer` / `Basic` 等认证方案之后的凭据、PEM 块内自 `-----BEGIN` 起至 `-----END` 的私钥材料）在进入 JSON 载荷与事件总线前替换为 `[REDACTED]`，超长文本截断。
+- **配置键名**：`ConfersConfigHandle::keys()` 与 `RemoteConfigProvider::keys()` 过滤掉 `password` / `api_key` / `private_key` 之类的凭据类键名——键名本身会暴露部署持有哪些凭据；值仍可通过显式访问器按名读取。
+- **共享命名空间**：`extract_shared` / `inject_shared` 过滤掉凭据类字段名：共享表是无属主的扁平表，凭据明文进入后既会随注入流向其它配置类型，也留下无处零化的副本。
+
+### 不可信配置的结构约束
+
+`load_config_with` 的深度守卫覆盖序列化与反序列化两侧：`serde_json` 的 `to_value` / `from_value` 都不限深度，超深结构会在其中耗尽调用栈并直接终止进程（栈溢出不可 `catch_unwind` 捕获）。序列化改走带深度守卫的写入器（嵌套超过上限即中止，递归深度被上限钉死），反序列化前另有深度预检——超深配置以可捕获的错误返回，不再终止进程。
 
 ### CI 安全门禁
 

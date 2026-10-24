@@ -77,7 +77,7 @@ Modules declare a contract via `ModuleMeta` + `AutoBuilder`; the Kit centralizes
 </tr>
 <tr>
 <td width="50%">🧱 <b>Minimal Default Dependencies</b><br><sub><code>default = []</code>: no optional feature enabled; only 3 mandatory deps ship by default (Fluent translation <code>fluent-bundle</code> / <code>unic-langid</code> and the <code>log</code> facade), while <code>confers</code>, <code>serde</code>, <code>serde_json</code>, <code>icu_*</code> (ICU4X components), etc. are all optional and feature-gated.</sub></td>
-<td width="50%">🚫 <b>unsafe denied by default</b><br><sub><code>#![deny(unsafe_code)]</code> is enforced crate-wide; only 6 locally audited exemptions exist in production code (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×2 (1 <code>RefCell</code> / 1 <code>RwLock</code>), plus 1 test-only exemption (<code>src/kit/config.rs</code>, zeroize spare-capacity assertion).</sub></td>
+<td width="50%">🚫 <b>unsafe denied by default</b><br><sub><code>#![deny(unsafe_code)]</code> is enforced crate-wide; only 5 locally audited exemptions exist in production code (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×1 (<code>AsyncTypeMap</code> <code>RwLock</code> read guard; the sync <code>TypeMap</code> now uses a <code>Ref::map</code> guard wrapper and needs no unsafe), plus 1 test-only exemption (<code>src/kit/config.rs</code>, zeroize spare-capacity assertion).</sub></td>
 </tr>
 </table>
 
@@ -568,7 +568,7 @@ Baseline numbers, the measurement environment, and reproduction commands live in
 ## 🔒 Security
 
 - **Vulnerability reporting**: do not open public issues; use GitHub's private [Security Advisories](https://github.com/Kirky-X/trait-kit/security/policy) channel ("Report a vulnerability"). Kirky.X commits to acknowledging reports within 48 hours and providing an initial assessment within 7 days (see [SECURITY.md](docs/SECURITY.md)).
-- **unsafe denied by default**: `#![deny(unsafe_code)]` is enforced crate-wide; only 6 locally audited exemptions exist in production code (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×2 (1 `RefCell` / 1 `RwLock`), plus 1 test-only exemption (`src/kit/config.rs`, zeroize spare-capacity assertion).
+- **unsafe denied by default**: `#![deny(unsafe_code)]` is enforced crate-wide; only 5 locally audited exemptions exist in production code (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×1 (`AsyncTypeMap` `RwLock` read guard; the sync `TypeMap` now uses a `Ref::map` guard wrapper and needs no unsafe), plus 1 test-only exemption (`src/kit/config.rs`, zeroize spare-capacity assertion).
 - **Compile-time misuse prevention**: typestate turns `optional()` on `Kit<Unbuilt>` and register/build on `Kit<Ready>` into compile errors (trybuild UI tests); the dependency graph is checked for missing deps and cycles at `build()`.
 - **Explicit thread-safety boundary**: the sync `Kit` is `!Sync` (compiler-enforced, see the `static_assertions` assertions); use `AsyncKit` (`Send + Sync`) for multi-threading.
 - **Encrypted config storage** (`encryption`): XChaCha20-Poly1305 AEAD with field keys derived via HKDF from the master key and `ModuleConfig::PATH`; `EncryptedBlob`'s `Debug` implementation never leaks encrypted material.

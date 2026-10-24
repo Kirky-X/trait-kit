@@ -96,7 +96,7 @@
 | 21 | 并发与竞态 | CCY | async + 全库 | — |
 | 22 | feature 编译矩阵 | PRS | 全 feature 全量 | `cargo check --features …` |
 
-场景总数：**239**（正常 100 / 异常 58 / 边界 80，另含 1 条正常/异常双断言，程序化核对见 §6）。
+场景总数：**244**（正常 100 / 异常 60 / 边界 83，另含 1 条正常/异常双断言，程序化核对见 §6）。
 
 ---
 
@@ -173,7 +173,7 @@
 | DEP-09 | `to_mermaid` 生成流程图；模块名含连字符时节点 id 无碰撞 | 正常 | — | 无 | `src/kit/graph.rs::graph_to_mermaid_hyphen_names_no_collision`、`tests/e2e_feature_combinations.rs::e2e_no_feature_graph_export` | tests/e2e/e2e_core.rs |
 | DEP-10 | `GraphError` Debug/Display 可格式化（错误链可用） | 边界 | — | 无 | `src/kit/graph.rs::graph_error_debug` | tests/e2e/e2e_core.rs |
 
-### 2.5 配置中心（CFG，22 条）
+### 2.5 配置中心（CFG，24 条）
 
 | ID | 场景描述 | 类型 | 涉及 feature | 依赖服务 | 既有覆盖 | E2E 落点 |
 |----|---------|------|-------------|---------|---------|---------|
@@ -199,6 +199,8 @@
 | CFG-20 | `merge_json_deep`：嵌套递归合并、标量替换、数组替换不合并、null 覆盖语义（10 例形态矩阵） | 正常 | confers | 无 | `src/kit/config.rs::overlay_inserts_new_keys`、`nested_objects_merge_recursively`、`deeply_nested_merge`、`arrays_are_replaced_not_merged`、`null_overlay_replaces_value` 等、`tests/e2e_feature_combinations.rs::e2e_confers_merge_json_deep` | tests/e2e/e2e_config.rs |
 | CFG-21 | `interpolate_json_value` 形态矩阵：单变量/多变量/嵌套对象/默认值命中与忽略/未命中保留原文/非字符串不动/对象键不替换/数组元素替换 | 边界 | confers | 无 | `src/kit/kit.rs::basic_var_replacement`、`multiple_vars_in_one_string`、`nested_object_replacement`、`default_value_when_var_missing`、`default_value_ignored_when_var_present`、`no_match_preserved`、`non_string_values_untouched`、`object_keys_not_replaced`、`array_string_elements_replaced` | tests/e2e/e2e_config.rs |
 | CFG-22 | 派生宏端到端：`#[derive(ConfigInherit)]`（含 custom override 名/嵌套委托/pub 可见性）与 `#[derive(SharedConfig)]`，A/B 项目继承场景全链路 | 正常 | confers | 无 | `tests/config_inherit_derive.rs`（6 例）、`tests/shared_config_derive.rs`（5 例）、`tests/config_inheritance_e2e.rs::e2e_config_inheritance_a_b_project_scenario`、`e2e_merge_config_then_shared_inheritance`、`src/kit/kit.rs::config_inheritance_works_on_ready_kit` | tests/e2e/e2e_config.rs |
+| CFG-23 | 超深嵌套配置（5000 层）→ `load_config_with` 返回可捕获的 `BuildFailed`（深度守卫在序列化阶段中止，进程不终止） | 异常 | confers | 无 | `src/kit/kit_tests.rs::deep_config_tests::load_config_with_rejects_deeply_nested_config_instead_of_crashing`、`src/kit/kit.rs::load_config_with_rejects_over_deep_config` | tests/e2e/e2e_config.rs |
+| CFG-24 | 凭据类字段名（`password` / `api_key`）不进共享命名空间：提取与注入两侧均过滤，凭据明文不跨配置类型流动 | 边界 | confers | 无 | `tests/shared_config_derive.rs::kit_shared_overlay_does_not_flow_credentials_across_config_types` | tests/e2e/e2e_config.rs |
 
 ### 2.6 热重载（RLD，10 条）
 
@@ -215,7 +217,7 @@
 | RLD-09 | examples/hot_reload 运行验收：改值 → reload → 回调打印新值 | 正常 | reload | 无 | examples/hot_reload（运行验收） | tests/e2e/e2e_feature_combinations.rs（引用示例） |
 | RLD-10 | **AsyncKit 订阅者 panic 隔离**（与 RLD-06 同步穿透对照）：同类型先注册 panic 回调、后注册置位回调，`AsyncKit::reload_config` 正常返回 `Ok`、置位回调仍被通知、新值保持已存储。异步侧注册簿记经 confers `DynamicField` 派发，单个订阅者 panic 被隔离计数，不穿透调用方；同步 Kit 侧 RLD-06 panic 穿透语义不受影响 | 异常 | async,reload | 无 | `src/kit/async_kit.rs::async_reload_tests::reload_config_isolates_panicking_subscriber`、`reload_config_callback_reads_new_value_via_config` | src/kit/async_kit.rs（异步 RLD-10）+ tests/e2e/e2e_config.rs（同步 RLD-06） |
 
-### 2.7 加密存储（ENC，13 条）
+### 2.7 加密存储（ENC，14 条）
 
 | ID | 场景描述 | 类型 | 涉及 feature | 依赖服务 | 既有覆盖 | E2E 落点 |
 |----|---------|------|-------------|---------|---------|---------|
@@ -225,13 +227,14 @@
 | ENC-04 | 同类型二次 `set_encrypted` 覆盖旧密文（新值可解、旧值不可再取） | 边界 | encryption | 无 | `tests/basic.rs::set_encrypted_overwrites_prior_value` | tests/e2e/e2e_encryption.rs |
 | ENC-05 | 加密存储与明文 TypeMap 隔离：`contains_encrypted` 只反映加密侧；加密值不出现在 `config::<C>()` | 边界 | encryption | 无 | `tests/basic.rs::encrypted_storage_is_separate_from_plaintext_typemap`、`src/kit/kit.rs::contains_encrypted_false_for_missing` | tests/e2e/e2e_encryption.rs |
 | ENC-06 | 不可序列化值 → `set_encrypted` 序列化错误以 `BuildFailed` 传播 | 异常 | encryption | 无 | `tests/basic.rs::set_encrypted_propagates_serialization_error` | tests/e2e/e2e_encryption.rs |
-| ENC-07 | master_key < 16 字节 → set 侧与 get 侧均立即拒绝（InvalidInput，消息含实际长度） | 异常 | encryption | 无 | `tests/e2e_feature_combinations.rs::e2e_encryption_short_key_rejected`、`e2e_encryption_get_short_key_rejected` | tests/e2e/e2e_encryption.rs |
-| ENC-08 | 空 master_key（0 字节）行为固化（同样走 <16 拒绝分支） | 边界 | encryption | 无 | `tests/e2e_advanced.rs::c14_empty_master_key_encryption_behavior` | tests/e2e/e2e_encryption.rs |
-| ENC-09 | 1MB 大配置加密 roundtrip（XChaCha20 吞吐路径） | 边界 | encryption | 无 | `tests/e2e_advanced.rs::c15_large_config_value_encryption_1mb` | tests/e2e/e2e_encryption.rs |
+| ENC-07 | master_key < 32 字节 → set 侧与 get 侧均立即拒绝（InvalidInput，消息含实际长度） | 异常 | encryption | 无 | `tests/e2e_feature_combinations.rs::e2e_encryption_short_key_rejected`、`e2e_encryption_get_short_key_rejected` | tests/e2e/e2e_encryption.rs |
+| ENC-08 | 空 master_key（0 字节）行为固化（同样走 <32 拒绝分支） | 边界 | encryption | 无 | `tests/e2e_advanced.rs::c14_empty_master_key_encryption_behavior` | tests/e2e/e2e_encryption.rs |
+| ENC-09 | 常量字节 master_key（全零 / 重复字节）→ set 侧与 get 侧均拒收，与 provider 供给路径的 `WeakKey` 口径一致 | 异常 | encryption | 无 | `src/kit/kit.rs::weak_master_key_is_rejected_on_set_and_get`、`src/kit/async_kit.rs::weak_master_key_is_rejected` | tests/e2e/e2e_encryption.rs |
 | ENC-10 | `EncryptedBlob`：nonce/ciphertext getters 返回原始切片、空 blob、clone 相等、**Debug 脱敏**（不泄漏密文） | 正常 | encryption | 无 | `src/kit/config.rs::getters_return_raw_slices`、`getters_return_empty_for_empty_blob`、`clone_produces_equal_blob`、`debug_format_redacts_sensitive_data`、`tests/basic.rs::encrypted_blob_getters_via_roundtrip` | tests/e2e/e2e_encryption.rs |
 | ENC-11 | 字段密钥 HKDF 绑定 `C::PATH` + 版本标签 `v1`：不同 PATH 派生不同密钥；HKDF 失败路径映射 `BuildFailed`（文档化） | 正常 | encryption | 无 | `src/kit/kit.rs`（`KEY_DERIVATION_VERSION`/`derive_kit_field_key`）、`tests/e2e_advanced.rs::e15_hkdf_failure_path_documented`；不同 PATH 隔离断言→需新增断言 | tests/e2e/e2e_encryption.rs |
 | ENC-12 | confers `XChaCha20Crypto` / `derive_field_key` 再导出可用（trait-kit 面直接调用加解密原语） | 正常 | encryption | 无 | examples/encryption（运行验收）→库级直接断言需新增 | tests/e2e/e2e_encryption.rs |
 | ENC-13 | confers+encryption 组合：明文 `load_config` 与密文 `set_encrypted` 同 Kit 共存互不干扰 | 正常 | confers,encryption | 无 | `tests/e2e_feature_combinations.rs::e2e_confers_plus_encryption` | tests/e2e/e2e_feature_combinations.rs |
+| ENC-14 | 1MB 大配置加密 roundtrip（XChaCha20 吞吐路径） | 边界 | encryption | 无 | `tests/e2e_advanced.rs::c15_large_config_value_encryption_1mb` | tests/e2e/e2e_encryption.rs |
 
 ### 2.8 接口/实现分离（ITF，9 条）
 
@@ -287,7 +290,7 @@
 | OBS-06 | observer+decorator 组合：回调观察到的是装饰后能力构建（顺序：build → decorate → on_module_built） | 正常 | observer,decorator | 无 | `tests/e2e_feature_combinations.rs::e2e_observer_plus_decorator` | tests/e2e/e2e_feature_combinations.rs |
 | OBS-07 | `AsyncKit` 面 observer 回调（async 构建路径同型） | 正常 | observer,async | 无 | `src/kit/async_kit.rs::async_observer_callbacks_fired` | tests/e2e/e2e_async.rs |
 
-### 2.12 装饰器（DEC，8 条）
+### 2.12 装饰器（DEC，9 条）
 
 | ID | 场景描述 | 类型 | 涉及 feature | 依赖服务 | 既有覆盖 | E2E 落点 |
 |----|---------|------|-------------|---------|---------|---------|
@@ -295,10 +298,11 @@
 | DEC-02 | 无装饰器注册时构建 no-op，能力原样（零开销路径） | 边界 | decorator | 无 | `tests/e2e_feature_combinations.rs::e2e_decorator_no_op_when_absent` | tests/e2e/e2e_features.rs |
 | DEC-03 | 同一能力多个装饰器按注册顺序洋葱式叠加（f1 先 f2 后 → f2 包 f1）→ 顺序断言缺失 | 边界 | decorator | 无 | 无→需新增 | tests/e2e/e2e_features.rs |
 | DEC-04 | 装饰器覆盖全部四条构建路径：eager / lazy（首次 require）/ multi-binding / interface → 仅 eager 有断言 | 边界 | decorator | 无 | `src/kit/kit.rs::e2e` 面仅 eager（`e2e_decorator_wraps_capability`）→lazy/multi/interface 路径需新增 | tests/e2e/e2e_features.rs |
-| DEC-05 | `decorate` 以 Capability TypeId 为键、维护模块→能力映射（`decorator_module_to_cap`）供 build 期查找 | 正常 | decorator | 无 | `src/kit/kit.rs::decorate_registers_decorator`（注册面） | tests/e2e/e2e_features.rs |
+| DEC-05 | `decorate` 以 Capability TypeId 为键、维护模块→能力映射（`decorator_module_to_cap`）供 build 期查找；每条装饰器记录属主模块，被装饰模块只应用自己的装饰器 | 正常 | decorator | 无 | `src/kit/kit.rs::decorate_registers_decorator`（注册面）、`src/kit/kit_tests.rs::decorator_owner_isolation_tests`（属主隔离） | tests/e2e/e2e_features.rs |
 | DEC-06 | toggle+decorator 组合：开关关闭时模块不注册、装饰器不生效；开启后包装生效 | 正常 | decorator,toggle | 无 | `tests/e2e_feature_combinations.rs::e2e_toggle_plus_decorator` | tests/e2e/e2e_feature_combinations.rs |
 | DEC-07 | 装饰器闭包 panic / 内部 downcast 失败 → 文档化 panic 语义（`expect("decorator type mismatch")`）固化 | 异常 | decorator | 无 | 无→需新增 | tests/e2e/e2e_features.rs |
 | DEC-08 | `AsyncKit::decorate`（async 构建路径装饰）行为与 sync 一致 | 正常 | decorator,async | 无 | src 无 async decorate 测试→需新增（对照 examples/decorator 语义） | tests/e2e/e2e_async.rs |
+| DEC-09 | 装饰器属主隔离在 multi-binding 路径：同能力类型的其它绑定不被他人装饰器套上（与 eager / lazy / interface 同口径） | 边界 | decorator | 无 | `src/kit/kit_tests.rs::decorator_owner_isolation_tests::multi_binding_decorator_only_applies_to_its_own_binding`、`tests/e2e/e2e_features.rs::e2e_decorator_applies_on_multi_binding_path` | tests/e2e/e2e_features.rs |
 
 ### 2.13 作用域（SCP，10 条）
 
@@ -386,7 +390,7 @@
 | I18-13 | collation 排序：基础排序与相等串比较 `Ordering::Equal` | 边界 | i18n | 无 | `src/i18n/mod.rs::test_collator_basic`、`test_compare_equal_strings` | tests/e2e/e2e_i18n.rs |
 | I18-14 | `I18nError` 四变体 Display 可读（InvalidLocale/DateError/InvalidNumber/FormatError） | 边界 | i18n | 无 | `src/i18n/mod.rs::error_display_invalid_locale`、`error_display_date_error`、`error_display_invalid_number`、`error_display_format_error` | tests/e2e/e2e_i18n.rs |
 
-### 2.18 错误体系（ERR，9 条）
+### 2.18 错误体系（ERR，10 条）
 
 | ID | 场景描述 | 类型 | 涉及 feature | 依赖服务 | 既有覆盖 | E2E 落点 |
 |----|---------|------|-------------|---------|---------|---------|
@@ -399,6 +403,7 @@
 | ERR-07 | `ShutdownTimedOut` Display 含全部超时阶段名（shutdown 门控）→ 无内联断言 | 异常 | shutdown | 无 | 无→需新增 | tests/e2e/e2e_runtime.rs |
 | ERR-08 | 无 source 变体（`MissingConfig` 等）`source()` 返回 `None`；Debug 输出含变体名 | 边界 | — | 无 | `src/error.rs::error_source_returns_none_for_simple_variants`、`error_debug_format` | tests/e2e/e2e_core.rs |
 | ERR-09 | 错误 Display 双语目录绑定：en（默认回退）与 zh 两份 FTL 均覆盖全部 9 个错误消息 id（含 config-validation-failed） | 边界 | i18n | 无 | `locales/en/errors.ftl`、`locales/zh/errors.ftl`（9 条消息 id 核对）+ `src/i18n/mod.rs::catalog_translate_with_variables` → 双 locale Display 断言需新增 | tests/e2e/e2e_i18n.rs |
+| ERR-10 | 对外错误文本脱敏：`BuildFailed` / `LifecycleFailed` 的 `context` 折叠为对外类别标签（内部调用点名不入文本），底层错误原文在 `Display` 与 `Debug` 两侧都脱敏（路径与口令不外泄） | 边界 | — | 无 | `src/error.rs::build_failed_display_hides_internal_call_site_labels`、`debug_output_redacts_source_text`、`lifecycle_failed_display_contains_public_context_and_source` | tests/e2e/e2e_core.rs |
 
 ### 2.19 prelude 导出面（PRE，3 条）
 
@@ -515,7 +520,7 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 
 ## 🐳 4. Docker 服务需求汇总
 
-**无。** trait-kit 是纯内存库，全部 239 个场景的依赖服务为"无"，理由如下：
+**无。** trait-kit 是纯内存库，全部 244 个场景的依赖服务为"无"，理由如下：
 
 1. **零 docker-compose 依赖**：仓库不存在 `docker-compose*.yml`；`Cargo.toml` 直接依赖仅 `confers`（可选）、`serde`/`serde_json`（可选）、`icu_*`（ICU4X 组件子 crate）/`writeable`/`sys-locale`（i18n 可选），无任何数据库/消息队列/网络服务客户端。
 2. **confers 依赖面是纯进程内 trait**：trait-kit 仅消费 confers 的同步配置加载（`Config::load_sync` 桥接到 `Configurable::load`）、`watch`（进程内订阅回调，非文件 inotify）与 `encryption`（纯加密原语 XChaCha20/HKDF）三个能力面，**不触碰 confers 的 remote/etcd/consul/nats/redis 等需要 docker 服务的 feature**（trait-kit 的 feature 链从未开启它们）。
@@ -605,20 +610,20 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 
 | 维度 | 数量 |
 |------|------|
-| 场景总数 | **239** |
+| 场景总数 | **244** |
 | 类型=正常 | 100 |
-| 类型=异常 | 58 |
-| 类型=边界 | 80 |
+| 类型=异常 | 60 |
+| 类型=边界 | 83 |
 | 类型=正常/异常（双断言） | 1（I18-07） |
 | 需新增的 E2E 场景（既有覆盖为"无→需新增"） | 19 |
 | 需新增断言/集成的场景（已有单测或示例，但缺集成/行为级断言，"…→需新增断言"） | 13 |
-| 引用 `tests/` 既有集成测试的场景（与其他口径有重叠） | 121 |
-| 引用 src 内联测试的场景（与其他口径有重叠） | 164 |
+| 引用 `tests/` 既有集成测试的场景（与其他口径有重叠） | 123 |
+| 引用 src 内联测试的场景（与其他口径有重叠） | 167 |
 | 引用 examples 验收的场景 | 7 |
 | 引用 tests/ui（trybuild）的场景 | 2（REG-19 既有、CCY-03 新增落点） |
 | 依赖 docker 服务的场景 | **0** |
 | 依赖本地临时文件的场景 | ≤3（CFG 组 confers derive 文件加载路径） |
-| 完全无外部依赖（纯内存）的场景 | 235+ |
+| 完全无外部依赖（纯内存）的场景 | 240+ |
 
 > 既有测试资产基线（编写时 rc.2 时点 grep 实测）：src 内联 **394** 个 `#[test]`；`tests/` **185** 个测试函数（basic 45 / e2e_advanced 84 / e2e_feature_combinations 42 / config_inherit_derive 6 / shared_config_derive 5 / config_inheritance_e2e 2 / compile_fail 1 runner→当时 3 个 ui 用例；e2e_* 文件当时位于 `tests/` 顶层，落地后迁入 `tests/e2e/`，见 §重要发现-7）；examples **20** 个。
 > 落地后现状（当前仓库 grep 实测）：`tests/` 共 **275** 个测试函数——`tests/e2e/` 13 个注册目标 200 个、顶层 6 个集成文件 74 个、`compile_fail.rs` 1 runner 驱动 5 个 ui 用例（4 + probe 敏感组 1）；src 内联 **657** 个（`src` + `tests` 合计 932，与 README 测试规模口径一致）。

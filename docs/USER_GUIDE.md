@@ -26,7 +26,7 @@ trait-kit 解决的问题是：**在应用启动时，以类型安全、可验�
 - **模块**通过 `ModuleMeta` + `AutoBuilder` 两个 trait 定义统一契约，用 `impl_module_meta!` 宏一行声明。
 - **Kit** 是能力与配置的集中管理中心：`Kit<Unbuilt>` 阶段注册模块与配置，`build()` 验证依赖图后得到 `Kit<Ready>`，此后只读检索能力。
 - **能力**按模块类型存储和检索（`kit.require::<LoggerModule>()`），无需字符串键、无需 downcast。
-- 整个 crate 标注 `#![deny(unsafe_code)]`，生产代码仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：`RefCell` / `RwLock` 各 1），另有 1 处测试模块豁免（`src/kit/config.rs` 的 zeroize spare-capacity 断言），详见 [安全文档](SECURITY.md)。
+- 整个 crate 标注 `#![deny(unsafe_code)]`，生产代码仅 5 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×1：`AsyncTypeMap` 的 `RwLock` 读守卫；同步 `TypeMap` 改用 `Ref::map` 守卫包装，无需 unsafe），另有 1 处测试模块豁免（`src/kit/config.rs` 的 zeroize spare-capacity 断言），详见 [安全文档](SECURITY.md)。
 
 适合"手动装配太散、完整 DI 框架太重"的中间场景。API 全集见 [📘 API 参考](API_REFERENCE.md)，设计细节见 [🏗️ 架构文档](ARCHITECTURE.md)。
 
@@ -204,7 +204,7 @@ kit.load_config::<TraitKitConfig>()?;   // 从环境变量/默认值加载
 | API | 用途 |
 |---|---|
 | `load_and_validate::<C>()` | 加载并执行 `Validatable::validate`，失败不存入 |
-| `load_config_with::<C>(vars)` | 加载时做 `${VAR}` 变量替换 |
+| `load_config_with::<C>(vars)` | 加载时做 `${VAR}` 变量替换（嵌套深度超上限即返回错误，不终止进程） |
 | `load_config_or_default::<C>()` | 加载失败时落 `ModuleConfig::default_value()`（返回是否加载成功） |
 | `snapshot_config::<C>()` / `restore_config::<C>()` | 配置快照与回滚 |
 | `subscribe::<C>(cb)` / `reload_config::<C>()` `reload` | 热重载订阅与触发 |
@@ -231,7 +231,7 @@ impl ModuleConfig for TraitKitConfig {
 ```rust,ignore
 let mut kit = Kit::new();
 let secret = TraitKitConfig { host: "production-db".to_string() };
-let master_key = [0u8; 32]; // 32 字节主密钥（演示用，生产环境请从密钥管理服务获取）
+let master_key = *b"demo-master-key-0123456789abcdef"; // 32 字节主密钥（演示用，生产环境请从密钥管理服务获取）
 
 kit.set_encrypted(&secret, &master_key)?;
 let kit = kit.build()?;

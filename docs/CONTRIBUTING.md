@@ -100,7 +100,7 @@ cargo test --features i18n
 - 遵循现有代码库的命名与模块组织惯例（`src/core` 接口层、`src/kit` 管理中心、`src/i18n` 国际化）。
 - **简洁优先**：只写能解决问题的最少代码，不添加不必要的注释、docstring 或类型标注。
 - **依赖必须通过 feature 门控**：可选依赖（`confers`、`serde`、`serde_json` 等）禁止进入默认特性；`icu_collator` / `icu_datetime` / `icu_decimal` / `icu_locale` / `icu_plurals`（ICU4X 组件子 crate，不引 `icu` 门面 crate）/ `writeable` / `sys-locale` 仅为 `i18n` feature 的可选依赖。
-- **无新增 unsafe**：crate 全局 `#![deny(unsafe_code)]`，生产代码现存仅 6 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×2：`RefCell` / `RwLock` 各 1），另有 1 处测试模块豁免（见 [安全文档](SECURITY.md)）。任何 PR 不得引入新的 `unsafe`；确有必要时须附 SAFETY 注释并在 PR 中单独论证。
+- **无新增 unsafe**：crate 全局 `#![deny(unsafe_code)]`，生产代码现存仅 5 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×1：`AsyncTypeMap` 的 `RwLock` 读守卫；同步 `TypeMap` 改用 `Ref::map` 守卫包装，无需 unsafe），另有 1 处测试模块豁免（见 [安全文档](SECURITY.md)）。任何 PR 不得引入新的 `unsafe`；确有必要时须附 SAFETY 注释并在 PR 中单独论证。
 - **错误显性化**：新错误场景在 `TraitKitError` 中新增变体（或复用现有变体），错误消息接入 `tr()` 本地化（按域写入 `locales/en/*.ftl` 与 `locales/zh/*.ftl`，两份键集合必须齐平），严禁吞错或藏进默认值。
 - **文档示例必须可验证**：README / docs 中的代码示例与实际 API 签名一致；API 变更时同步 [docs/API_REFERENCE.md](API_REFERENCE.md) 与 [docs/USER_GUIDE.md](USER_GUIDE.md)。
 

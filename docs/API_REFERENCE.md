@@ -87,7 +87,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `register_lifecycle::<M>()` | `lifecycle` | 注册生命周期钩子 |
 | `register_health_check::<M>()` | `health` | 注册健康检查 |
 | `with_observer(obs)` | `observer` | 附加构建观察者 |
-| `decorate::<M>(f)` | `decorator` | 注册能力装饰器（目标未注册时 `build()` 期 panic） |
+| `decorate::<M>(f)` | `decorator` | 注册能力装饰器（目标未注册时 `build()` 期 panic；装饰器按属主隔离，只作用于被装饰的模块） |
 | `try_decorate::<M>(f)` | `decorator` | 装饰器注册（目标未注册时返回 `DecoratorTargetMissing`） |
 | `override_module::<M>(cap)` | — | 覆盖模块能力（测试注入） |
 | `override_module_strict::<M>(cap)` | — | 覆盖并验证依赖存在性 |
@@ -96,7 +96,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `load_config::<C>()` | `confers` | 通过 `Configurable::load()` 加载配置 |
 | `load_and_validate::<C>()` | `confers` | 加载配置并验证，失败不存入 |
 | `load_config_or_default::<C>()` | `confers` | 加载失败时落 `default_value()`（返回是否加载成功） |
-| `load_config_with::<C, S>(vars)` | `confers` | 加载配置并做 `${VAR}` 变量替换 |
+| `load_config_with::<C, S>(vars)` | `confers` | 加载配置并做 `${VAR}` 变量替换（嵌套深度超上限即返回错误，不终止进程） |
 | `snapshot_config::<C>()` | `confers` | 快照当前配置（返回是否成功） |
 | `restore_config::<C>()` | `confers` | 回滚配置到最近快照 |
 | `has_snapshot::<C>()` | `confers` | 检查指定类型快照是否存在 |
@@ -333,7 +333,7 @@ pub trait ConfigInherit: Clone + 'static {
 }
 ```
 
-- `Kit::merge_config::<C>(ovr)` — 应用字段覆盖；覆盖事实（含目标配置不存在时的 `applied=false` 丢弃记录）按记录顺序进 `build_report().config_overrides`（`report` 特性，`AsyncKit` 同；`AsyncKit` 为共享 `Send + Sync` 类型，并发调用下记录序为加锁到达序，不代表实际应用顺序，且读-改-写非原子——同类型并发 `merge_config` 可能互相丢失覆盖，需独占写语义的调用方自行串行化）。记录历史无上限（每条约 40B），高频调用场景用 `take_config_overrides()`（`report` 特性）在轮转点排空
+- `Kit::merge_config::<C>(ovr)` — 应用字段覆盖；覆盖事实（含目标配置不存在时的 `applied=false` 丢弃记录）按记录顺序进 `build_report().config_overrides`（`report` 特性，`AsyncKit` 同；`AsyncKit` 为共享 `Send + Sync` 类型，并发调用下记录序为加锁到达序，不代表实际应用顺序，且读-改-写非原子——同类型并发 `merge_config` 可能互相丢失覆盖，需独占写语义的调用方自行串行化）。记录历史有界（保留最近 `MAX_CONFIG_OVERRIDE_HISTORY` 条，更旧的丢弃并由 `config_overrides_dropped()` 计数），高频调用场景仍可用 `take_config_overrides()`（`report` 特性）在轮转点排空以便继续处理
 - `#[derive(ConfigInherit)]` — 自动生成 Override 类型（`trait-kit-macros`）
 - `#[config_inherit(nested)]` — 嵌套字段递归委托
 
@@ -349,6 +349,13 @@ pub trait SharedConfig: Clone + 'static {
 - `Kit::extract_shared::<C>()` — 从配置提取共享字段到 overlay
 - `Kit::inject_shared::<C>()` — 从 overlay 注入共享字段到配置
 - `#[derive(SharedConfig)]` + `#[shared(field1, field2)]` — 自动生成实现
+
+共享命名空间是 Kit 内唯一一张扁平表，键只有字段名，没有属主（配置类型 / 模块 / 租户）维度：
+两个配置类型声明同名字段（`host`、`port`、`token` 这类通用名很常见）时，后 `extract_shared` 的值
+覆盖先写入的值，随后 `inject_shared` 把该值写进任何声明了同名字段的配置类型。overlay 中的值以
+明文 `serde_json::Value` 存放，不走零化路径。凭据类字段名（`password`、`api_key` 等）由 Kit 在
+写入与注入两侧过滤掉，凭据明文不会跨配置类型流动；把凭据类字段标为 shared 之前请先确认同 Kit
+内没有第二个同名声明——非凭据类的通用字段名仍会跨类型流动。
 
 #### `populate_defaults`
 
@@ -384,6 +391,8 @@ pub enum TraitKitError {
 ```
 
 `Display` 实现通过 `tr()` 自动本地化输出。
+
+对外文本的脱敏口径：`BuildFailed` / `LifecycleFailed` 的 `context` 在进入消息模板前折叠为对外类别标签（`load_config` → `configuration`，`set_encrypted` → `encrypted configuration write`），模块名等非标签形态原样保留；底层错误原文（凭据片段、服务器绝对路径）在 `Display` 与 `Debug` 两侧都经脱敏；配置类型名裁掉 crate / 模块路径后出现（`my_crate::config::DbConfig` → `DbConfig`；泛型实参一并裁掉但容器名保留，`core::option::Option<crate::Db>` → `Option`）。原始 `context` 与未脱敏原文仍可通过变体公开字段与 `Error::source()` 取回。
 
 ### `TraitKitResult<T>`
 
@@ -504,6 +513,7 @@ pub trait AsyncHealthCheck: AsyncAutoBuilder {
 
 ```rust
 pub struct HealthAggregate {
+    pub schema_version: u32,              // 载荷 schema 版本（HEALTH_SCHEMA_VERSION = 1）
     pub status: &'static str,             // worst-of 整体状态名
     pub healthy: bool,                    // 便捷位：status == "healthy"
     pub modules: Vec<HealthModuleEntry>,  // 各模块明细
@@ -518,8 +528,10 @@ pub struct HealthModuleEntry {
 
 两者仅在 `health` + `report` 同时启用时存在并派生 `serde::Serialize`；`HealthAggregate::to_json()` 即 `/healthz` 载荷。
 整体状态是全部已注册 checker 的 worst-of（`unhealthy` > `degraded` > `healthy`），空集按约定为 healthy；
-`modules` 顺序跟随 checker 注册表的迭代顺序、**不承诺确定性**。`detail` 原样进入对外 JSON——
-checker 实现方不得在其中写入凭据、连接串或内网拓扑。
+`modules` 顺序跟随 checker 注册表的迭代顺序、**不承诺确定性**。`detail` 在进入对外 JSON 前由框架统一脱敏
+（`core::health::redact_detail`：URL userinfo、`password=`/`token=` 之类键值对（分隔符两侧带空格亦覆盖）、
+`Bearer` / `Basic` 等认证方案之后的凭据与 PEM 块内自 `-----BEGIN` 起至 `-----END` 的私钥材料被替换为
+`[REDACTED]`，超长文本截断），checker 实现方仍不应写入凭据、连接串或内网拓扑。
 
 ### `probe` — 服务探针注册面
 
@@ -567,7 +579,7 @@ impl AsyncKit<Ready> {
 }
 ```
 
-`ProbeReport { overall, healthy, probes: Vec<ProbeEntry { name, status, detail, latency_ms }>, stopped }` 在 `report` 特性下派生 `Serialize` 并提供 `to_json()`。`latency_ms` 为框架在 `probe().await` 外侧实测的墙钟延迟（不采信实现自报的 `ProbeOutcome::latency`——后者仅为实现方诊断字段）；`detail` 原样进入对外 JSON 载荷，**不得包含凭据/连接串/内网拓扑**。`stopped == true` 表示本报告不来自探针执行：注册表已被停机协议清空，结论为显性不可服务（`overall == "unhealthy"`、`probes == []`）——空注册表 ≠ 全部健康，就绪消费方必须区分。shutdown 协同：`shutdown_async()`（`probe`+`lifecycle`）与 `register_shutdown_into()`（`probe`+`lifecycle`+`shutdown`）完成后自动注销全部探针并标记 stopped——已停机的 Kit 无服务可探。
+`ProbeReport { schema_version, overall, healthy, probes: Vec<ProbeEntry { name, status, detail, latency_ms }>, stopped }` 在 `report` 特性下派生 `Serialize` 并提供 `to_json()`；`schema_version` 为载荷 schema 版本（`PROBE_SCHEMA_VERSION = 1`）。`latency_ms` 为框架在 `probe().await` 外侧实测的墙钟延迟（不采信实现自报的 `ProbeOutcome::latency`——后者仅为实现方诊断字段）；`detail` 在进入对外 JSON 载荷前由框架统一脱敏（`core::health::redact_detail`），实现方仍**不得**写入凭据/连接串/内网拓扑。`stopped == true` 表示本报告不来自探针执行：注册表已被停机协议清空，结论为显性不可服务（`overall == "unhealthy"`、`probes == []`）——空注册表 ≠ 全部健康，就绪消费方必须区分。shutdown 协同：`shutdown_async()`（`probe`+`lifecycle`）与 `register_shutdown_into()`（`probe`+`lifecycle`+`shutdown`）完成后自动注销全部探针并标记 stopped——已停机的 Kit 无服务可探。
 
 ### `report` — 构建报告与契约清单
 
@@ -635,12 +647,13 @@ pub struct ContractManifest {
 pub struct ContractEntry {
     pub module: &'static str,      // ModuleMeta::NAME
     pub version: &'static str,     // 声明的能力版本 ModuleMeta::VERSION
-    pub capability: &'static str,  // 能力具体类型名（std::any::type_name）
+    pub capability: &'static str,  // 能力具体类型名（std::any::type_name，仅诊断用）
     pub deps: Vec<&'static str>,   // 依赖模块名
 }
 ```
 
 `ContractManifest::to_json()` 产出机器可读契约清单（供消费方做版本/依赖门禁）；`CONTRACT_SCHEMA_VERSION` 为当前版本常量。
+`capability` 取自 `std::any::type_name`，其格式不承诺跨编译器/跨版本稳定——只作诊断用途，按后缀匹配、勿按全等比较；稳定的模块标识是 `module`（`ModuleMeta::NAME`）。
 
 ### `observer` — 构建可观测
 
