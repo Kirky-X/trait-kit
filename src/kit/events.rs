@@ -39,7 +39,8 @@ pub enum KitEvent {
 
     /// A configuration value changed (set / reload / restore).
     ConfigChanged {
-        /// Configuration key (type name for typed configs).
+        /// Configuration key: the short type label for typed configs (the
+        /// type name without its crate / module path).
         key: String,
         /// Short summary of the change (e.g. `"updated"`, `"restored snapshot"`).
         summary: String,

@@ -14,7 +14,8 @@
 //! 4. `shutdown`：回调 drain（one-shot），二次调用为 no-op；async 清理走
 //!    `shutdown_async`。
 //! 5. decorator：按 `decorator_module_to_cap` 映射应用（eager 与 lazy 一致；
-//!    eager 未映射时回退模块 `TypeId`，该差异由 e2e DEC-07 冻结）；未注册
+//!    eager 未映射时回退模块 `TypeId`，该差异由 e2e DEC-07 冻结）；被装饰的
+//!    模块只应用自己的装饰器，不越界到仅共享能力类型的其它模块；未注册
 //!    目标在 `build` 期 panic（`try_decorate` 为注册时报错的对照面）。
 //! 6. `factory`：typestate cast + 编译期 size/align 布局断言。
 
@@ -28,6 +29,11 @@ use std::sync::OnceLock;
 use crate::core::{AutoBuilder, BuildFn};
 use crate::error::TraitKitError;
 use crate::i18n::tr;
+
+// 内部调用点标签登记在 error::ContextLabel：reload / encryption 均蕴含
+// confers，故按三者门控导入。
+#[cfg(any(feature = "confers", feature = "reload", feature = "encryption"))]
+use crate::error::ContextLabel;
 
 #[cfg(feature = "encryption")]
 use super::EncryptedBlob;
@@ -97,14 +103,69 @@ const KEY_DERIVATION_VERSION: &str = "v1";
 pub(crate) fn derive_kit_field_key(
     master_key: &[u8],
     path: &'static str,
-    context: &'static str,
+    context: ContextLabel,
 ) -> Result<Zeroizing<[u8; 32]>, TraitKitError> {
     super::config::derive_field_key(master_key, path, KEY_DERIVATION_VERSION).map_err(|e| {
         TraitKitError::BuildFailed {
-            context: context.to_string(),
+            context: context.into(),
             source: Box::new(e),
         }
     })
+}
+
+/// Minimum accepted master-key length: the XChaCha20-Poly1305 key schedule
+/// is 32 bytes and the provider path (`confers::SecretKeyProvider`) demands
+/// exactly 32 bytes, so the direct byte path uses the same floor.
+#[cfg(feature = "encryption")]
+pub(crate) const MIN_MASTER_KEY_LEN: usize = 32;
+
+/// Whether key material is obviously weak: empty, or a single repeated byte
+/// (all-zero keys, all-`0xFF` fillers, repeated ASCII). Such material is
+/// publicly derivable, so accepting it silently voids the confidentiality
+/// the encrypted-config feature is meant to provide.
+#[cfg(feature = "encryption")]
+fn is_weak_key_material(key: &[u8]) -> bool {
+    if key.is_empty() {
+        return true;
+    }
+    let first = key[0];
+    key.iter().all(|&b| b == first)
+}
+
+/// Validate a master key supplied as raw bytes.
+///
+/// Both supply paths share one policy: the provider path rejects weak key
+/// material inside `confers`, and this rejects it for callers that hand
+/// bytes directly, so the same material never yields different verdicts
+/// inside one crate.
+#[cfg(feature = "encryption")]
+pub(crate) fn validate_master_key(
+    context: ContextLabel,
+    key_label: &'static str,
+    key: &[u8],
+) -> Result<(), TraitKitError> {
+    if key.len() < MIN_MASTER_KEY_LEN {
+        return Err(TraitKitError::BuildFailed {
+            context: context.into(),
+            source: Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "{key_label} must be at least {MIN_MASTER_KEY_LEN} bytes, got {}",
+                    key.len()
+                ),
+            )),
+        });
+    }
+    if is_weak_key_material(key) {
+        return Err(TraitKitError::BuildFailed {
+            context: context.into(),
+            source: Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("{key_label} must not be constant-byte key material"),
+            )),
+        });
+    }
+    Ok(())
 }
 
 /// 用易失写清零密钥材料，防止编译器把普通的 `for b in buf { *b = 0 }`
@@ -225,8 +286,8 @@ struct EncryptionFields {
 struct ConfersFields {
     config_snapshots: RefCell<HashMap<TypeId, Box<dyn Any>>>,
     /// Shared field overlay for cross-type config inheritance.
-    /// Values are `serde_json::Value` to preserve type information.
-    shared_fields: RefCell<serde_json::Map<String, serde_json::Value>>,
+    /// Owner-tracked; values are `serde_json::Value` to preserve type information.
+    shared_fields: RefCell<super::config::SharedOverlay>,
 }
 
 /// Fields gated behind the `toggle` feature.
@@ -283,7 +344,10 @@ struct PortsFields {
 #[cfg(feature = "decorator")]
 #[derive(Default)]
 struct DecoratorFields {
-    decorators: RefCell<HashMap<TypeId, Vec<DecoratorFn>>>,
+    /// Capability `TypeId` → decorators registered for it. Each entry
+    /// carries the owning module `TypeId` so a decorator never leaks onto a
+    /// module that merely shares the same capability type.
+    decorators: RefCell<HashMap<TypeId, Vec<(TypeId, DecoratorFn)>>>,
     /// Maps module `TypeId` → capability `TypeId` for decorator lookup in
     /// `build_eager_modules` (where only module `TypeId`s from the
     /// dependency graph are available).
@@ -328,7 +392,7 @@ struct I18nFields {
 pub struct Kit<S = Unbuilt> {
     builders: RefCell<HashMap<TypeId, BuildFn>>,
     /// Override map for test injection: `TypeId` of module → pre-built capability.
-    /// Populated by `override_module` / `override_module_strict`; consumed by `build`.
+    /// Populated by `override_module`; consumed by `build`.
     overrides: RefCell<HashMap<TypeId, Box<dyn Any>>>,
     /// Lazy builders (Unbuilt state): modules registered via `register_lazy`.
     /// Transferred to `lazy_slots` during `build`. Stored as re-invocable
@@ -340,9 +404,10 @@ pub struct Kit<S = Unbuilt> {
     /// Multi-binding builders (Unbuilt state): modules registered via
     /// `register_multi`. Keyed by `TypeId::of::<M::Capability>` (not the
     /// module type) so multiple module types with the same capability type
-    /// aggregate into one Vec. Built into `multi_capabilities` during
-    /// `build`.
-    multi_builders: RefCell<HashMap<TypeId, Vec<BuildFn>>>,
+    /// aggregate into one Vec. Each entry carries its owner module
+    /// `TypeId` so the build step applies only that module's own
+    /// decorators. Built into `multi_capabilities` during `build`.
+    multi_builders: RefCell<HashMap<TypeId, Vec<(TypeId, BuildFn)>>>,
     /// Multi-binding capabilities (Ready state): built results from
     /// `multi_builders`. Keyed by `TypeId::of::<M::Capability>`.
     /// Populated by `build`; consumed by `require_all`.
@@ -541,19 +606,30 @@ impl Kit {
             .map_err(|name| TraitKitError::AlreadyRegistered { module: name })?;
 
         let build_fn: BuildFn = Box::new(|kit| {
-            let capability = M::build(kit)
-                .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?;
+            // 若 `override_module` 为本模块准备了覆盖值，构建阶段已把它
+            // 放进能力表；此时必须复用覆盖值，否则真实 build_fn 会把它顶掉
+            // （require_all 会拿到真实实现，而报告却记着 Overridden）。
+            let capability = match kit
+                .capabilities
+                .get_cloned_by_type_id::<M::Capability>(TypeId::of::<M>())
+            {
+                Some(overridden) => overridden,
+                None => M::build(kit)
+                    .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?,
+            };
             Ok(Box::new(capability) as Box<dyn Any>)
         });
 
         // Aggregate by capability type so require_all::<M> returns all
-        // implementations of the same capability type.
+        // implementations of the same capability type. The owner module
+        // `TypeId` rides along so the build step can apply only this
+        // module's own decorators.
         let cap_id = TypeId::of::<M::Capability>();
         self.multi_builders
             .borrow_mut()
             .entry(cap_id)
             .or_default()
-            .push(build_fn);
+            .push((TypeId::of::<M>(), build_fn));
         self.record_module_i18n::<M>();
         self.record_module_versions::<M>();
         self.record_module_contract::<M>(std::any::type_name::<M::Capability>());
@@ -612,22 +688,39 @@ impl Kit {
             .map_err(|name| TraitKitError::AlreadyRegistered { module: name })?;
 
         let build_fn: BuildFn = Box::new(|kit| {
-            let cap = M::build(kit)
-                .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?;
-            // Apply decorators (keyed by capability TypeId) before the
-            // interface conversion, mirroring the eager / lazy / multi paths
-            // so `decorate::<M>` covers all four build paths.
+            // 若 `override_module` 为本模块准备了覆盖值，构建阶段已把它
+            // 放进能力表；此时必须复用覆盖值，否则真实 build_fn 会把它顶掉
+            // （resolve 会拿到真实实现，而报告却记着 Overridden）。
+            let cap = match kit
+                .capabilities
+                .get_cloned_by_type_id::<M::Capability>(TypeId::of::<M>())
+            {
+                Some(overridden) => overridden,
+                None => M::build(kit)
+                    .map_err(|e| -> Box<dyn std::error::Error + Send + 'static> { Box::new(e) })?,
+            };
+            // Apply decorators before the interface conversion, mirroring the
+            // eager / lazy / multi paths so `decorate::<M>` covers all four
+            // build paths. The capability TypeId is resolved strictly
+            // through the module→capability mapping: falling back to
+            // `TypeId::of::<M::Capability>()` would apply another module's
+            // decorator to this module whenever both share a capability
+            // type.
             #[cfg(feature = "decorator")]
             let cap = {
-                let boxed = kit.apply_decorators(
-                    kit.decorator
-                        .decorator_module_to_cap
-                        .borrow()
-                        .get(&TypeId::of::<M>())
-                        .copied()
-                        .unwrap_or_else(TypeId::of::<M::Capability>),
-                    Box::new(cap),
-                );
+                let module_id = TypeId::of::<M>();
+                let mapped_cap = kit
+                    .decorator
+                    .decorator_module_to_cap
+                    .borrow()
+                    .get(&module_id)
+                    .copied();
+                let boxed = match mapped_cap {
+                    Some(cap_type_id) => {
+                        kit.apply_decorators(cap_type_id, Some(module_id), Box::new(cap))
+                    }
+                    None => Box::new(cap),
+                };
                 *boxed
                     .downcast::<M::Capability>()
                     .expect("decorator type mismatch")
@@ -650,46 +743,19 @@ impl Kit {
     /// Override a module's capability with a pre-built value, skipping `build_fn`.
     ///
     /// Used for test injection: inject a mock capability without running the
-    /// module's build function. Completely skips dependency checking (pure
-    /// unit testing). The module does **not** need to be registered via
-    /// `register` first — the override is keyed by `TypeId::of::<M>`.
+    /// module's build function. The module does **not** need to be registered
+    /// via `register` first — the override is keyed by `TypeId::of::<M>` —
+    /// but its declared dependencies must be present in the dependency graph.
     ///
     /// If `build` is called later, the override is consumed and the
     /// original `build_fn` (if any) is never invoked for this module.
-    pub fn override_module<M: AutoBuilder>(&self, capability: M::Capability)
-    where
-        M::Capability: 'static,
-    {
-        self.overrides
-            .borrow_mut()
-            .insert(TypeId::of::<M>(), Box::new(capability));
-        #[cfg(feature = "report")]
-        self.report.push_override_record(
-            TypeId::of::<M>(),
-            super::report::OverrideRecord {
-                module: M::NAME,
-                source: "override_module",
-            },
-        );
-    }
-
-    /// Override a module's capability with a pre-built value, but still
-    /// verify that the module's declared dependencies are registered in the
-    /// dependency graph.
-    ///
-    /// Unlike `override_module`, this method requires `&mut self` (exclusive
-    /// access) and checks `M::dependencies` against the graph. If any
-    /// dependency is not registered, returns `TraitKitError::DependencyMissing`.
-    ///
-    /// The module does **not** need to be registered via `register` first.
-    /// Only the dependencies must be present.
     ///
     /// # Errors
     ///
     /// Returns `TraitKitError::DependencyMissing` if any of `M::dependencies`
     /// is not registered in the graph.
-    pub fn override_module_strict<M: AutoBuilder>(
-        &mut self,
+    pub fn override_module<M: AutoBuilder>(
+        &self,
         capability: M::Capability,
     ) -> Result<(), TraitKitError>
     where
@@ -711,7 +777,7 @@ impl Kit {
             TypeId::of::<M>(),
             super::report::OverrideRecord {
                 module: M::NAME,
-                source: "override_module_strict",
+                source: "override_module",
             },
         );
         Ok(())
@@ -725,7 +791,7 @@ impl Kit {
         let replaced = self.configs.contains::<C>();
         self.configs.insert(config);
         self.publish_event(super::events::KitEvent::ConfigChanged {
-            key: std::any::type_name::<C>().to_string(),
+            key: crate::redact::short_type_name::<C>(),
             summary: if replaced {
                 "set (replaced)".to_string()
             } else {
@@ -744,7 +810,7 @@ impl Kit {
         let replaced = self.configs.contains::<std::sync::Arc<C>>();
         self.configs.insert(std::sync::Arc::new(config));
         self.publish_event(super::events::KitEvent::ConfigChanged {
-            key: std::any::type_name::<C>().to_string(),
+            key: crate::redact::short_type_name::<C>(),
             summary: if replaced {
                 "set_arc (replaced)".to_string()
             } else {
@@ -765,7 +831,7 @@ impl Kit {
     #[cfg(feature = "confers")]
     pub fn load_config<C: super::Configurable>(&self) -> Result<(), TraitKitError> {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
-            context: "load_config".into(),
+            context: ContextLabel::LoadConfig.into(),
             source: e,
         })?;
         self.set_config(config);
@@ -788,7 +854,7 @@ impl Kit {
         C: super::Configurable + super::Validatable,
     {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
-            context: "load_and_validate".into(),
+            context: ContextLabel::LoadAndValidate.into(),
             source: e,
         })?;
         match config.validate() {
@@ -797,7 +863,7 @@ impl Kit {
                 Ok(())
             }
             Err(errors) => Err(TraitKitError::BuildFailed {
-                context: "load_and_validate".into(),
+                context: ContextLabel::LoadAndValidate.into(),
                 source: Box::new(super::ValidationError { errors }),
             }),
         }
@@ -838,7 +904,7 @@ impl Kit {
                 .ok_or_else(|| TraitKitError::MissingConfig {
                     key: crate::i18n::tr(
                         "trait-kit-error-no-snapshot",
-                        &[("key", std::any::type_name::<C>())],
+                        &[("key", crate::redact::short_type_name::<C>().as_str())],
                     ),
                 })?;
         let config =
@@ -846,13 +912,16 @@ impl Kit {
                 .downcast_ref::<C>()
                 .cloned()
                 .ok_or_else(|| TraitKitError::MissingConfig {
-                    key: format!("{} (snapshot downcast)", std::any::type_name::<C>()),
+                    key: format!(
+                        "{} (snapshot downcast)",
+                        crate::redact::short_type_name::<C>()
+                    ),
                 })?;
         drop(snapshots);
         self.set_config(config);
         // distinct restore audit on top of the set_config event.
         self.publish_event(super::events::KitEvent::ConfigChanged {
-            key: std::any::type_name::<C>().to_string(),
+            key: crate::redact::short_type_name::<C>(),
             summary: "restore snapshot".to_string(),
         });
         Ok(())
@@ -889,18 +958,57 @@ impl Kit {
         C: super::Configurable + serde::Serialize + serde::de::DeserializeOwned,
     {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
-            context: "load_config_with".into(),
+            context: ContextLabel::LoadConfigWith.into(),
             source: e,
         })?;
-        let mut json_value =
-            serde_json::to_value(&config).map_err(|e| TraitKitError::BuildFailed {
-                context: "load_config_with (serialize)".into(),
+        // 深度受限的序列化：嵌套超限时序列化在此中止（递归深度被上限
+        // 钉死），不会像 `serde_json::to_value` 那样按配置深度递归到爆栈。
+        let json_text =
+            match super::config::to_json_text_bounded(&config, super::config::MAX_CONFIG_DEPTH) {
+                Ok(text) => text,
+                Err(super::config::BoundedJsonError::DepthExceeded { max_depth }) => {
+                    // 超深配置的析构在 serde_json 内部是递归的（`Value` 的
+                    // `Drop` 逐层下探），在本线程析构会耗尽调用栈并终止进程：
+                    // 错误路径上泄漏这份被拒绝的配置，好过让整个进程崩掉。
+                    std::mem::forget(config);
+                    return Err(TraitKitError::BuildFailed {
+                        context: ContextLabel::LoadConfigWithSerialize.into(),
+                        source: Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("config nesting depth exceeds {max_depth} levels"),
+                        )),
+                    });
+                }
+                Err(super::config::BoundedJsonError::Serialize(e)) => {
+                    return Err(TraitKitError::BuildFailed {
+                        context: ContextLabel::LoadConfigWithSerialize.into(),
+                        source: Box::new(e),
+                    });
+                }
+            };
+        let mut json_value: serde_json::Value =
+            serde_json::from_str(&json_text).map_err(|e| TraitKitError::BuildFailed {
+                context: ContextLabel::LoadConfigWithDeserialize.into(),
                 source: Box::new(e),
             })?;
         super::config::interpolate_json_value(&mut json_value, vars);
+        // `serde_json::from_value` 不限深度（128 层上限只属文本解析器），
+        // 超深结构会在反序列化中耗尽调用栈并终止进程，故先行拦截。
+        if super::config::exceeds_json_depth(&json_value, super::config::MAX_CONFIG_DEPTH) {
+            return Err(TraitKitError::BuildFailed {
+                context: ContextLabel::LoadConfigWithDeserialize.into(),
+                source: Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "config nesting depth exceeds {} levels",
+                        super::config::MAX_CONFIG_DEPTH
+                    ),
+                )),
+            });
+        }
         let interpolated: C =
             serde_json::from_value(json_value).map_err(|e| TraitKitError::BuildFailed {
-                context: "load_config_with (deserialize)".into(),
+                context: ContextLabel::LoadConfigWithDeserialize.into(),
                 source: Box::new(e),
             })?;
         self.set_config(interpolated);
@@ -1231,16 +1339,22 @@ impl Kit {
     /// The lazy `require` path deliberately skips the fallback — its
     /// decorators apply only to explicitly decorated modules (frozen by
     /// e2e DEC-07) — so it does not route through this helper.
+    ///
+    /// A module that was explicitly decorated only receives its own
+    /// decorators; the unmapped fallback keeps the historical
+    /// capability-`TypeId` lookup (also frozen by e2e DEC-07).
     #[cfg(feature = "decorator")]
     fn wrap_decorated(&self, type_id: TypeId, boxed: Box<dyn Any>) -> Box<dyn Any> {
-        let cap_type_id = self
+        let mapped_cap = self
             .decorator
             .decorator_module_to_cap
             .borrow()
             .get(&type_id)
-            .copied()
-            .unwrap_or(type_id);
-        self.apply_decorators(cap_type_id, boxed)
+            .copied();
+        match mapped_cap {
+            Some(cap_type_id) => self.apply_decorators(cap_type_id, Some(type_id), boxed),
+            None => self.apply_decorators(type_id, None, boxed),
+        }
     }
 
     #[cfg(not(feature = "decorator"))]
@@ -1334,16 +1448,20 @@ impl Kit {
 
     /// Phase 3: Build all multi-binding modules.
     fn build_multi_bindings(&self) -> Result<(), TraitKitError> {
-        let multi: Vec<(TypeId, Vec<BuildFn>)> = self.multi_builders.borrow_mut().drain().collect();
+        let multi: Vec<(TypeId, Vec<(TypeId, BuildFn)>)> =
+            self.multi_builders.borrow_mut().drain().collect();
         for (cap_id, build_fns) in multi {
             let mut vec = Vec::with_capacity(build_fns.len());
-            for build_fn in build_fns {
+            #[cfg_attr(not(feature = "decorator"), allow(unused_variables))]
+            for (owner_id, build_fn) in build_fns {
                 let boxed = (build_fn)(self).map_err(|e| TraitKitError::BuildFailed {
                     context: tr("trait-kit-diag-multi-binding", &[]),
                     source: e,
                 })?;
+                // 装饰器按属主过滤：同一能力类型的其它绑定不共享本模块的
+                // 装饰器（与 eager / lazy / interface 三条路径同口径）。
                 #[cfg(feature = "decorator")]
-                let boxed = self.apply_decorators(cap_id, boxed);
+                let boxed = self.apply_decorators(cap_id, Some(owner_id), boxed);
                 vec.push(boxed);
             }
             self.multi_capabilities.borrow_mut().insert(cap_id, vec);
@@ -1412,8 +1530,8 @@ impl Kit {
 
         let shutdown_cb: ShutdownCallback = Box::new(|caps: &TypeMap| {
             let type_id = TypeId::of::<M>();
-            if let Some((_guard, cap_ref)) = caps.get_ref_by_type_id::<M::Capability>(type_id) {
-                M::on_shutdown(cap_ref);
+            if let Some(cap_ref) = caps.get_ref_by_type_id::<M::Capability>(type_id) {
+                M::on_shutdown(&cap_ref);
             }
         });
         self.lifecycle
@@ -1450,7 +1568,7 @@ impl Kit {
         let checker: HealthCheckerFn = Box::new(|caps: &TypeMap| {
             let type_id = TypeId::of::<M>();
             match caps.get_ref_by_type_id::<M::Capability>(type_id) {
-                Some((_guard, cap_ref)) => M::check(cap_ref),
+                Some(cap_ref) => M::check(&cap_ref),
                 None => crate::core::health::HealthStatus::Unhealthy {
                     detail: "capability not found".to_string(),
                 },
@@ -1709,7 +1827,7 @@ impl Kit {
             .borrow_mut()
             .entry(TypeId::of::<M::Capability>())
             .or_default()
-            .push(wrapper);
+            .push((TypeId::of::<M>(), wrapper));
         // Record module TypeId → capability TypeId mapping so
         // `build_eager_modules` can look up decorators by module TypeId.
         self.decorator
@@ -1757,14 +1875,31 @@ impl Kit {
 
 impl<S> Kit<S> {
     /// Apply registered decorators for a capability (keyed by capability `TypeId`).
+    ///
+    /// `owner` narrows the application to the decorators registered for one
+    /// module: a module that was never decorated must not pick up another
+    /// module's decorator just because both share a capability type. `None`
+    /// applies every decorator registered under the capability key — the
+    /// historical fallback for modules without a recorded module→capability
+    /// mapping (frozen by e2e DEC-07).
     #[cfg(feature = "decorator")]
-    fn apply_decorators(&self, cap_type_id: TypeId, boxed: Box<dyn Any>) -> Box<dyn Any> {
+    fn apply_decorators(
+        &self,
+        cap_type_id: TypeId,
+        owner: Option<TypeId>,
+        boxed: Box<dyn Any>,
+    ) -> Box<dyn Any> {
         let decorators = self.decorator.decorators.borrow();
         let Some(dec_list) = decorators.get(&cap_type_id) else {
             return boxed;
         };
         let mut current = boxed;
-        for dec in dec_list {
+        for (dec_owner, dec) in dec_list {
+            if let Some(expected) = owner
+                && *dec_owner != expected
+            {
+                continue;
+            }
             current = dec(current);
         }
         current
@@ -1968,7 +2103,9 @@ impl<S> Kit<S> {
                         .get(&type_id)
                         .copied();
                     match mapped_cap {
-                        Some(cap_type_id) => self.apply_decorators(cap_type_id, boxed),
+                        Some(cap_type_id) => {
+                            self.apply_decorators(cap_type_id, Some(type_id), boxed)
+                        }
                         None => boxed,
                     }
                 };
@@ -2080,7 +2217,7 @@ impl<S> Kit<S> {
         self.configs
             .get_cloned::<C>()
             .ok_or(TraitKitError::MissingConfig {
-                key: std::any::type_name::<C>().to_string(),
+                key: crate::redact::short_type_name::<C>(),
             })
     }
 
@@ -2095,7 +2232,7 @@ impl<S> Kit<S> {
         self.configs
             .get_cloned::<std::sync::Arc<C>>()
             .ok_or(TraitKitError::MissingConfig {
-                key: std::any::type_name::<C>().to_string(),
+                key: crate::redact::short_type_name::<C>(),
             })
     }
 
@@ -2139,7 +2276,7 @@ impl<S> Kit<S> {
     #[cfg(feature = "reload")]
     pub fn reload_config<C: super::Configurable>(&self) -> Result<(), TraitKitError> {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
-            context: "reload_config".into(),
+            context: ContextLabel::ReloadConfig.into(),
             source: e,
         })?;
         self.configs.insert(config);
@@ -2156,7 +2293,7 @@ impl<S> Kit<S> {
         // reload audit event (published after the config is committed
         // and subscribers notified, so observers see the new state).
         self.publish_event(super::events::KitEvent::ConfigChanged {
-            key: std::any::type_name::<C>().to_string(),
+            key: crate::redact::short_type_name::<C>(),
             summary: "reload".to_string(),
         });
         Ok(())
@@ -2246,23 +2383,12 @@ impl Kit {
 
         // XChaCha20-Poly1305 requires a 256-bit (32-byte) key; HKDF needs
         // a reasonably sized input key material. Reject short keys early.
-        if master_key.len() < 16 {
-            return Err(TraitKitError::BuildFailed {
-                context: "set_encrypted".into(),
-                source: Box::new(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!(
-                        "master_key must be at least 16 bytes, got {}",
-                        master_key.len()
-                    ),
-                )),
-            });
-        }
+        validate_master_key(ContextLabel::SetEncrypted, "master_key", master_key)?;
 
         // Derive before serializing: derivation does not depend on the
         // plaintext, so a derivation failure never leaves a generated
         // plaintext buffer behind.
-        let field_key = derive_kit_field_key(master_key, C::PATH, "set_encrypted")?;
+        let field_key = derive_kit_field_key(master_key, C::PATH, ContextLabel::SetEncrypted)?;
 
         let mut plaintext = match serde_json::to_vec(value) {
             Ok(vec) => vec,
@@ -2270,7 +2396,7 @@ impl Kit {
                 // No plaintext exists on this path, but the derived key must
                 // not outlive the call either — Zeroizing wipes it on drop.
                 return Err(TraitKitError::BuildFailed {
-                    context: "set_encrypted".into(),
+                    context: ContextLabel::SetEncrypted.into(),
                     source: Box::new(e),
                 });
             }
@@ -2282,7 +2408,7 @@ impl Kit {
         let encrypted = XChaCha20Crypto::new().encrypt(&plaintext, &*field_key);
         zeroize_bytes(&mut plaintext);
         let (nonce, ciphertext) = encrypted.map_err(|e| TraitKitError::BuildFailed {
-            context: "set_encrypted".into(),
+            context: ContextLabel::SetEncrypted.into(),
             source: Box::new(e),
         })?;
 
@@ -2423,12 +2549,21 @@ impl<S> Kit<S> {
     /// false`), so a dropped override is visible instead of silently
     /// swallowed. `Kit` is single-threaded (`RefCell` state), so records
     /// appear in call order; the async counterpart makes no such promise
-    /// under concurrent calls. The record history grows by one entry per
-    /// call with no cap: high-frequency callers (e.g. a reload callback)
-    /// **must** drain it periodically with
-    /// [`take_config_overrides`](Kit::take_config_overrides) at a rotation
-    /// point — unbounded growth is a documented usage requirement to avoid,
-    /// not just a caveat (see the warning there).
+    /// under concurrent calls. The record history is bounded (the newest
+    /// records win, older ones are dropped and counted by
+    /// [`config_overrides_dropped`](Kit::config_overrides_dropped));
+    /// draining it with [`take_config_overrides`](Kit::take_config_overrides)
+    /// at a rotation point remains worthwhile because drained records are
+    /// returned for further processing.
+    ///
+    /// A successfully applied override notifies the config subscribers and
+    /// publishes a `ConfigChanged` event, exactly like
+    /// [`reload_config`](Kit::reload_config).
+    ///
+    /// Runtime writes replace the config slot only: capabilities that were
+    /// already built keep the values they captured at build time. Modules
+    /// that must observe the new value have to read it on demand (or
+    /// subscribe to the config change).
     ///
     /// Requires the `confers` feature.
     #[cfg(feature = "confers")]
@@ -2445,6 +2580,25 @@ impl<S> Kit<S> {
             }
             Err(_) => false,
         };
+        // 订阅者与审计事件与 `reload_config` 同口径：配置确实变了，
+        // 订阅方必须被通知（否则只有事件总线看得到变化）。
+        if applied {
+            #[cfg(feature = "reload")]
+            {
+                let callbacks: Vec<Rc<dyn Fn()>> =
+                    match self.reload.subscribers.borrow().get(&TypeId::of::<C>()) {
+                        Some(subs) => subs.iter().map(Rc::clone).collect(),
+                        None => Vec::new(),
+                    };
+                for cb in &callbacks {
+                    cb();
+                }
+            }
+            self.publish_event(super::events::KitEvent::ConfigChanged {
+                key: crate::redact::short_type_name::<C>(),
+                summary: "merge".to_string(),
+            });
+        }
         #[cfg(feature = "report")]
         self.report.push_config_override(
             super::report::ConfigOverrideRecord::from_merge_config::<C>(applied),
@@ -2455,17 +2609,13 @@ impl<S> Kit<S> {
     /// [`ConfigOverrideRecord`](super::report::ConfigOverrideRecord)s in record order and leaves
     /// `build_report().config_overrides` empty.
     ///
-    /// # Usage warning: unbounded growth
-    ///
-    /// Like `merge_config` (same `impl<S> Kit<S>` block), this is usable
-    /// on any state marker, and `merge_config` keeps appending one record
-    /// per call with no cap for the kit's whole lifetime — roughly 40
-    /// bytes each. A kit merging on every reload callback accumulates
-    /// megabytes over a long process lifetime, and every
-    /// `build_report()` snapshot clones the whole history. Call this from
-    /// the reload completion path (or any other natural rotation point)
-    /// to keep the history bounded by design; drained records are
-    /// returned for further processing, not silently dropped.
+    /// The history is bounded: at most
+    /// `MAX_CONFIG_OVERRIDE_HISTORY`
+    /// records are kept, older ones are dropped and counted by
+    /// [`config_overrides_dropped`](Kit::config_overrides_dropped).
+    /// Draining on the reload completion path (or any other natural
+    /// rotation point) is still worthwhile: drained records are returned
+    /// for further processing, not silently dropped.
     ///
     /// Requires the `report` feature.
     #[cfg(feature = "report")]
@@ -2473,19 +2623,52 @@ impl<S> Kit<S> {
         self.report.take_config_overrides()
     }
 
+    /// Number of config-override records dropped because the bounded
+    /// history was already full.
+    ///
+    /// A non-zero value means the caller merged more often than the
+    /// history capacity allows; the dropped records are gone from
+    /// `build_report().config_overrides`.
+    ///
+    /// Requires the `report` and `confers` features.
+    #[cfg(all(feature = "report", feature = "confers"))]
+    pub fn config_overrides_dropped(&self) -> u64 {
+        self.report.config_overrides_dropped()
+    }
+
     /// Extract shared fields from config `C` into the Kit's shared overlay.
     ///
     /// Calls `C::extract_shared()` and merges the result into
-    /// `self.confers.shared_fields`. New values override same-named keys from
-    /// previous extractions. If no config of type `C` exists, this is a
-    /// no-op.
+    /// `self.confers.shared_fields`. The first config type to extract a key
+    /// owns it: re-extracting from the same type (e.g. after a config
+    /// reload) updates the value, while a different type extracting the same
+    /// key is refused with a warning (see
+    /// [`SharedConfig`](super::SharedConfig) for the ownership contract).
+    /// If no config of type `C` exists, this is a no-op.
+    ///
+    /// Credential-like fields (`password`, `api_key`, ...) are dropped: the
+    /// overlay is shared by every config type, so a plaintext credential
+    /// entering it would flow into other config types and leave a copy that
+    /// no zeroization pass can wipe.
     ///
     /// Requires the `confers` feature.
     #[cfg(feature = "confers")]
     pub fn extract_shared<C: super::SharedConfig>(&self) {
         if let Ok(config) = self.config::<C>() {
-            let fields = config.extract_shared();
-            self.confers.shared_fields.borrow_mut().extend(fields);
+            let mut fields = config.extract_shared();
+            fields.retain(|key, _| !crate::redact::is_sensitive_key(key));
+            let owner = crate::redact::short_type_name::<C>();
+            let rejected = self
+                .confers
+                .shared_fields
+                .borrow_mut()
+                .merge(fields, &owner);
+            for key in rejected {
+                log::warn!(
+                    "shared overlay: key `{key}` is already owned by another config type; \
+                     extraction from `{owner}` was refused"
+                );
+            }
         }
     }
 
@@ -2495,11 +2678,16 @@ impl<S> Kit<S> {
     /// The updated config is written back to the `TypeMap`. If no config of
     /// type `C` exists, this is a no-op.
     ///
+    /// Credential-like fields are filtered out before the injection, so a
+    /// credential that entered the overlay by another route never reaches
+    /// a config type.
+    ///
     /// Requires the `confers` feature.
     #[cfg(feature = "confers")]
     pub fn inject_shared<C: super::SharedConfig>(&self) {
         if let Ok(mut config) = self.config::<C>() {
-            let overlay = self.confers.shared_fields.borrow().clone();
+            let mut overlay = self.confers.shared_fields.borrow().snapshot();
+            overlay.retain(|key, _| !crate::redact::is_sensitive_key(key));
             config.inject_shared(&overlay);
             self.configs.insert(config);
         }
@@ -2714,7 +2902,7 @@ impl Kit<Ready> {
                 self.publish_event(super::events::KitEvent::HealthChanged {
                     module: name,
                     status: status.as_status_name(),
-                    detail: status.detail().map(str::to_owned),
+                    detail: status.detail().map(crate::core::health::redact_detail),
                 });
             }
         }
@@ -2795,7 +2983,7 @@ impl Kit<Ready> {
                 HealthModuleEntry {
                     module: name,
                     status: status.as_status_name(),
-                    detail: status.detail().map(str::to_owned),
+                    detail: status.detail().map(crate::core::health::redact_detail),
                 }
             })
             .collect::<Vec<_>>();
@@ -2805,6 +2993,7 @@ impl Kit<Ready> {
             _ => "unhealthy",
         };
         HealthAggregate {
+            schema_version: crate::core::health::HEALTH_SCHEMA_VERSION,
             status,
             healthy: worst_rank == 0,
             modules,
@@ -2988,18 +3177,7 @@ impl Kit<Ready> {
     {
         use super::XChaCha20Crypto;
 
-        if master_key.len() < 16 {
-            return Err(TraitKitError::BuildFailed {
-                context: "get_encrypted".into(),
-                source: Box::new(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!(
-                        "master_key must be at least 16 bytes, got {}",
-                        master_key.len()
-                    ),
-                )),
-            });
-        }
+        validate_master_key(ContextLabel::GetEncrypted, "master_key", master_key)?;
 
         let versioned = self
             .encryption
@@ -3008,11 +3186,11 @@ impl Kit<Ready> {
             .get(&TypeId::of::<C>())
             .cloned()
             .ok_or(TraitKitError::MissingConfig {
-                key: std::any::type_name::<C>().to_string(),
+                key: crate::redact::short_type_name::<C>(),
             })?;
         let blob = versioned.blob;
 
-        let field_key = derive_kit_field_key(master_key, C::PATH, "get_encrypted")?;
+        let field_key = derive_kit_field_key(master_key, C::PATH, ContextLabel::GetEncrypted)?;
 
         // Compute the decryption Result first; the derived key zeroes itself
         // on drop (Zeroizing), so it never outlives this call even on error.
@@ -3021,14 +3199,14 @@ impl Kit<Ready> {
         let decrypted =
             XChaCha20Crypto::new().decrypt(blob.nonce(), blob.ciphertext(), &*field_key);
         let mut plaintext = decrypted.map_err(|e| TraitKitError::BuildFailed {
-            context: "get_encrypted".into(),
+            context: ContextLabel::GetEncrypted.into(),
             source: Box::new(e),
         })?;
 
         let parsed: Result<C, _> = serde_json::from_slice(&plaintext);
         zeroize_bytes(&mut plaintext);
         parsed.map_err(|e| TraitKitError::BuildFailed {
-            context: "get_encrypted".into(),
+            context: ContextLabel::GetEncrypted.into(),
             source: Box::new(e),
         })
     }
@@ -3046,7 +3224,7 @@ impl Kit<Ready> {
             .get(&TypeId::of::<C>())
             .map(|entry| entry.key_version)
             .ok_or(TraitKitError::MissingConfig {
-                key: std::any::type_name::<C>().to_string(),
+                key: crate::redact::short_type_name::<C>(),
             })
     }
 
@@ -3069,12 +3247,12 @@ impl Kit<Ready> {
         let stored = self.encrypted_key_version::<C>()?;
         if stored != expected_version {
             return Err(TraitKitError::BuildFailed {
-                context: "get_encrypted_with_version".into(),
+                context: ContextLabel::GetEncryptedWithVersion.into(),
                 source: Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!(
                         "key-version mismatch for `{}`: stored v{stored}, expected v{expected_version}",
-                        std::any::type_name::<C>()
+                        crate::redact::short_type_name::<C>()
                     ),
                 )),
             });
@@ -3104,19 +3282,6 @@ impl Kit<Ready> {
     {
         use super::XChaCha20Crypto;
 
-        if new_master_key.len() < 16 {
-            return Err(TraitKitError::BuildFailed {
-                context: "rotate_master_key".into(),
-                source: Box::new(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!(
-                        "new_master_key must be at least 16 bytes, got {}",
-                        new_master_key.len()
-                    ),
-                )),
-            });
-        }
-
         let stored = self
             .encryption
             .encrypted_configs
@@ -3124,28 +3289,40 @@ impl Kit<Ready> {
             .get(&TypeId::of::<C>())
             .cloned()
             .ok_or(TraitKitError::MissingConfig {
-                key: std::any::type_name::<C>().to_string(),
+                key: crate::redact::short_type_name::<C>(),
             })?;
+
+        // The new key protects the data going forward, so it must satisfy the
+        // full policy. The old key only decrypts the existing blob and is
+        // left unchecked, so a deployment can still rotate away from weak
+        // key material.
+        validate_master_key(
+            ContextLabel::RotateMasterKey,
+            "new_master_key",
+            new_master_key,
+        )?;
 
         // Decrypt with the old key (fail closed on mismatch); both derived
         // keys are Zeroizing containers and wipe themselves on drop.
-        let old_field_key = derive_kit_field_key(old_master_key, C::PATH, "rotate_master_key")?;
+        let old_field_key =
+            derive_kit_field_key(old_master_key, C::PATH, ContextLabel::RotateMasterKey)?;
         let decrypted = XChaCha20Crypto::new().decrypt(
             stored.blob.nonce(),
             stored.blob.ciphertext(),
             &*old_field_key,
         );
         let mut plaintext = decrypted.map_err(|e| TraitKitError::BuildFailed {
-            context: "rotate_master_key (old key)".into(),
+            context: ContextLabel::RotateMasterKeyOldKey.into(),
             source: Box::new(e),
         })?;
 
         // Re-encrypt under the new key generation.
-        let new_field_key = derive_kit_field_key(new_master_key, C::PATH, "rotate_master_key")?;
+        let new_field_key =
+            derive_kit_field_key(new_master_key, C::PATH, ContextLabel::RotateMasterKey)?;
         let encrypted = XChaCha20Crypto::new().encrypt(&plaintext, &*new_field_key);
         zeroize_bytes(&mut plaintext);
         let (nonce, ciphertext) = encrypted.map_err(|e| TraitKitError::BuildFailed {
-            context: "rotate_master_key (new key)".into(),
+            context: ContextLabel::RotateMasterKeyNewKey.into(),
             source: Box::new(e),
         })?;
 
@@ -3844,6 +4021,15 @@ mod key_rotation_tests {
         }
     }
 
+    /// 非恒定字节的测试主密钥：常量字节材料被主密钥校验拒收。
+    fn test_key(seed: u8) -> [u8; 32] {
+        let mut key = [0u8; 32];
+        for (offset, byte) in key.iter_mut().enumerate() {
+            *byte = seed.wrapping_add(u8::try_from(offset).unwrap_or(0));
+        }
+        key
+    }
+
     #[test]
     fn key_version_envelope_stored_and_readable() {
         let kit = Kit::new();
@@ -3851,7 +4037,7 @@ mod key_rotation_tests {
             &RotationConfig {
                 secret: "s3cret".into(),
             },
-            &[9u8; 32],
+            &test_key(9),
             3,
         )
         .expect("set with version");
@@ -3863,13 +4049,13 @@ mod key_rotation_tests {
 
         // Version-checked read succeeds with the right envelope...
         let plain: RotationConfig = ready
-            .get_encrypted_with_version::<RotationConfig>(&[9u8; 32], 3)
+            .get_encrypted_with_version::<RotationConfig>(&test_key(9), 3)
             .expect("version match");
         assert_eq!(plain.secret, "s3cret");
 
         // ...and fails closed on envelope mismatch (before any decryption).
         let err = ready
-            .get_encrypted_with_version::<RotationConfig>(&[9u8; 32], 2)
+            .get_encrypted_with_version::<RotationConfig>(&test_key(9), 2)
             .expect_err("version mismatch");
         assert!(
             err.to_string().contains("v2"),
@@ -3879,8 +4065,8 @@ mod key_rotation_tests {
 
     #[test]
     fn rotate_master_key_migrates_and_bumps_version() {
-        let old_key = [1u8; 32];
-        let new_key = [2u8; 32];
+        let old_key = test_key(1);
+        let new_key = test_key(2);
         let kit = Kit::new();
         kit.set_encrypted(
             &RotationConfig {
@@ -3894,7 +4080,7 @@ mod key_rotation_tests {
 
         // Wrong old key → rotation fails closed, stored blob untouched.
         let err = ready
-            .rotate_master_key::<RotationConfig>(&[7u8; 32], &new_key)
+            .rotate_master_key::<RotationConfig>(&test_key(7), &new_key)
             .expect_err("wrong old key rejected");
         assert!(err.to_string().contains("old key"));
         assert_eq!(ready.encrypted_key_version::<RotationConfig>().unwrap(), 1);
@@ -3923,13 +4109,13 @@ mod key_rotation_tests {
     #[test]
     fn rotate_rejects_short_new_key() {
         let kit = Kit::new();
-        kit.set_encrypted(&RotationConfig { secret: "x".into() }, &[1u8; 32])
+        kit.set_encrypted(&RotationConfig { secret: "x".into() }, &test_key(1))
             .expect("set");
         let ready = kit.build().expect("build ok");
         let err = ready
-            .rotate_master_key::<RotationConfig>(&[1u8; 32], &[3u8; 8])
+            .rotate_master_key::<RotationConfig>(&test_key(1), &[3u8; 8])
             .expect_err("short new key");
-        assert!(err.to_string().contains("at least 16"));
+        assert!(err.to_string().contains("at least 32"));
     }
 }
 
@@ -4228,6 +4414,55 @@ mod sync_config_surface_tests {
         assert_eq!(
             kit.config::<InterpCfg>().unwrap().endpoint,
             "example.net:9090"
+        );
+    }
+
+    /// 超深配置值必须以可捕获的错误返回：序列化与反序列化两侧都不限
+    /// 深度，超深结构会在其中耗尽调用栈并直接终止进程。深度守卫在
+    /// 序列化阶段即中止（不再等到 `from_value`）。
+    #[test]
+    fn load_config_with_rejects_over_deep_config() {
+        #[derive(Clone, serde::Serialize, serde::Deserialize)]
+        struct DeepCfg {
+            nested: serde_json::Value,
+        }
+
+        impl ModuleConfig for DeepCfg {
+            const PATH: &'static str = "test/deep-cfg";
+            fn default_value() -> Self {
+                Self {
+                    nested: serde_json::Value::Null,
+                }
+            }
+        }
+
+        impl Configurable for DeepCfg {
+            fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+                let mut nested = serde_json::Value::String("leaf".into());
+                for _ in 0..200 {
+                    let mut map = serde_json::Map::new();
+                    map.insert("n".to_string(), nested);
+                    nested = serde_json::Value::Object(map);
+                }
+                Ok(Self { nested })
+            }
+        }
+
+        let kit = Kit::new();
+        let vars = HashMap::<String, String>::new();
+        let err = kit
+            .load_config_with::<DeepCfg, _>(&vars)
+            .expect_err("over-deep config must be rejected");
+        let TraitKitError::BuildFailed { context, source } = &err else {
+            panic!("expected BuildFailed, got {err:?}");
+        };
+        assert_eq!(
+            context, "load_config_with (serialize)",
+            "深度守卫在序列化阶段中止"
+        );
+        assert!(
+            source.to_string().contains("nesting depth"),
+            "the source reports the depth limit: {source}"
         );
     }
 
@@ -4569,18 +4804,63 @@ mod sync_health_and_encryption_branch_tests {
         }
     }
 
+    /// 常量字节主密钥（全零 / 重复字节）可被任何人复算，派生出的字段密钥
+    /// 因此是公开的：直接传字节的入口必须与 provider 供给路径同一口径拒收。
+    #[test]
+    fn weak_master_key_is_rejected_on_set_and_get() {
+        let kit = Kit::new();
+        let value = SynSecret {
+            token: "s3cret".into(),
+        };
+
+        for weak in [&[0u8; 32][..], &[b'a'; 32][..]] {
+            let err = kit
+                .set_encrypted(&value, weak)
+                .expect_err("constant-byte master key must be rejected");
+            assert!(
+                matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "set_encrypted"),
+                "expected BuildFailed with the asserted context, got {err:?}"
+            );
+        }
+
+        let ready = kit.build().expect("build");
+        let err = ready
+            .get_encrypted::<SynSecret>(&[0u8; 32])
+            .expect_err("constant-byte master key must be rejected");
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "get_encrypted"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+
+    /// 主密钥长度下限与 provider 路径一致（32 字节）：16 字节材料不再被接受。
+    #[test]
+    fn short_master_key_is_rejected() {
+        let kit = Kit::new();
+        let value = SynSecret {
+            token: "s3cret".into(),
+        };
+        let err = kit
+            .set_encrypted(&value, b"0123456789abcdef")
+            .expect_err("short master key must be rejected");
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "set_encrypted"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+
     #[test]
     fn get_encrypted_with_wrong_key_fails_closed() {
         let mut kit = Kit::new();
         let value = SynSecret {
             token: "s3cret".into(),
         };
-        kit.set_encrypted(&value, b"0123456789abcdef")
+        kit.set_encrypted(&value, b"0123456789abcdef0123456789abcdef")
             .expect("encrypt ok");
         kit.register::<DegradedModule>().expect("register");
         let ready = kit.build().expect("build");
         let err = ready
-            .get_encrypted::<SynSecret>(b"fedcba9876543210")
+            .get_encrypted::<SynSecret>(b"fedcba9876543210fedcba9876543210")
             .expect_err("wrong key must fail closed");
         assert!(
             matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "get_encrypted"),

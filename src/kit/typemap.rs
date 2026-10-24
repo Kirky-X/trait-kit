@@ -7,6 +7,8 @@
 use std::any::{Any, TypeId};
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
+#[cfg(any(feature = "lifecycle", feature = "health"))]
+use std::ops::Deref;
 
 /// A type-keyed map for storing capabilities and configs.
 ///
@@ -92,39 +94,49 @@ impl TypeMap {
 
     /// Get a reference to a stored value by raw `TypeId`.
     ///
-    /// Returns a `Ref` guard that keeps the `RefCell` read-borrowed.
-    /// The downcast reference is valid as long as the guard is alive.
+    /// Returns a [`TypeMapRef`] that keeps the `RefCell` read-borrowed and
+    /// carries the downcast reference inseparably: the value is reachable
+    /// only through [`Deref`](std::ops::Deref) while the guard is alive.
     ///
-    /// Single lookup + single downcast; the guard and the reference are
-    /// returned together. For the clone-based variant see
+    /// Single lookup + single downcast. For the clone-based variant see
     /// [`get_cloned_by_type_id`](Self::get_cloned_by_type_id).
     #[cfg(any(feature = "lifecycle", feature = "health"))]
-    #[allow(
-        unsafe_code,
-        reason = "lifetime re-anchoring of the downcast reference"
-    )]
-    #[allow(
-        clippy::type_complexity,
-        reason = "return type bundles the RefCell guard with the downcast reference"
-    )]
-    pub fn get_ref_by_type_id<T: 'static>(
-        &self,
-        type_id: TypeId,
-    ) -> Option<(Ref<'_, HashMap<TypeId, Box<dyn Any>>>, &T)> {
+    pub fn get_ref_by_type_id<T: 'static>(&self, type_id: TypeId) -> Option<TypeMapRef<'_, T>> {
         let guard = self.inner.borrow();
         let value = guard.get(&type_id)?;
-        let typed = value.downcast_ref::<T>()?;
-        // 先生成裸指针：`typed` 在此之后不再使用，其对 `guard` 的借用结束，
-        // 随后的 `guard` 移动才为借用检查器所允许。
-        let typed_ptr: *const T = std::ptr::from_ref(typed);
-        // SAFETY: `typed_ptr` points to the value stored in the lock-protected
-        // map. `guard` is returned as part of the tuple and keeps the
-        // `RefCell` immutably borrowed for as long as the returned reference
-        // lives, so the value cannot be dropped or mutably borrowed in that
-        // period and stays valid. The raw-pointer round-trip only re-anchors
-        // the lifetime from the intermediate `value` borrow to the returned
-        // tuple; no transmute and no type change is involved.
-        Some((guard, unsafe { &*typed_ptr }))
+        value.downcast_ref::<T>()?;
+        // `Ref::map` 把读借用重新锚定到值本身：返回的 `Ref<'_, T>` 持有同一
+        // 个借用标志，值只能经 `Deref` 取用，守卫无法先于引用被释放。
+        let guard = Ref::map(guard, |map| {
+            map.get(&type_id)
+                .and_then(|boxed| boxed.downcast_ref::<T>())
+                .expect("type id and downcast were checked above")
+        });
+        Some(TypeMapRef { guard })
+    }
+}
+
+/// A read guard bundling [`TypeMap`]'s read borrow with the downcast value.
+///
+/// The borrow flag and the `&T` are packaged together so they cannot be
+/// separated: the value is reachable only through [`Deref`] while the guard
+/// is alive, and the guard cannot be dropped while a reference derived from
+/// it is still borrowed. This makes it impossible to release the read borrow
+/// and then trigger a release of the referenced value (e.g. via `insert`)
+/// while still holding `&T`.
+#[cfg(any(feature = "lifecycle", feature = "health"))]
+pub struct TypeMapRef<'a, T> {
+    /// Holds the read borrow; never read directly — kept alive so the stored
+    /// value stays valid and unmutated for as long as the reference is usable.
+    guard: Ref<'a, T>,
+}
+
+#[cfg(any(feature = "lifecycle", feature = "health"))]
+impl<T> Deref for TypeMapRef<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.guard
     }
 }
 
@@ -258,7 +270,7 @@ mod tests {
         let i32_id = std::any::TypeId::of::<i32>();
         let result = map.get_ref_by_type_id::<i32>(i32_id);
         assert!(result.is_some());
-        let (_guard, val) = result.unwrap();
+        let val = result.unwrap();
         assert_eq!(*val, 42);
     }
 
@@ -276,9 +288,39 @@ mod tests {
     fn get_ref_by_type_id_returns_none_for_wrong_type() {
         let map = TypeMap::new();
         map.insert(42i32);
-        let i32_id = std::any::TypeId::of::<i32>();
+        let i32_id = TypeId::of::<i32>();
         // Request as u64 — downcast should fail
         let result = map.get_ref_by_type_id::<u64>(i32_id);
         assert!(result.is_none());
+    }
+
+    #[cfg(any(feature = "lifecycle", feature = "health"))]
+    #[test]
+    fn ref_guard_and_reference_are_inseparable() {
+        // 回归钉子：get_ref_by_type_id 返回守卫包装类型，读借用标志与 &T
+        // 绑在同一结构上 —— 引用只能经 Deref 获取，守卫无法先于引用释放。
+        // 旧 API 返回 (guard, &T) 二元组，允许先 drop guard 释放读借用、
+        // 再 insert 触发旧值释放，导致 &T 悬垂。
+        let map = TypeMap::new();
+        map.insert(42i32);
+        let tid = TypeId::of::<i32>();
+
+        let guard = map.get_ref_by_type_id::<i32>(tid).unwrap();
+        assert_eq!(*guard, 42);
+
+        // 引用派生自 guard：引用存续期间 guard 必然存活（编译期保证）。
+        let val_ref: &i32 = &guard;
+        assert_eq!(*val_ref, 42);
+
+        // 守卫存活期间写操作只能 panic（读借用未释放），不会释放旧值。
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| map.insert(7i32))).is_err(),
+            "insert must not succeed while the read guard is alive"
+        );
+
+        // 放弃引用之后才能 drop guard，读借用随之释放。
+        drop(guard);
+        map.insert(7i32);
+        assert_eq!(map.get_cloned::<i32>(), Some(7));
     }
 }

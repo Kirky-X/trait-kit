@@ -52,7 +52,7 @@ use std::cell::RefCell;
 #[cfg(feature = "async")]
 use std::sync::{Arc, RwLock};
 
-use crate::error::TraitKitError;
+use crate::error::{ContextLabel, TraitKitError};
 use crate::i18n::tr;
 
 /// 关闭阶段，按枚举定义顺序依次执行。
@@ -151,7 +151,7 @@ pub(crate) fn evaluate_timeout(
 /// use trait_kit::kit::shutdown::{ShutdownCoordinator, ShutdownPhase};
 /// use std::time::Duration;
 ///
-/// let coord = ShutdownCoordinator::new;
+/// let coord = ShutdownCoordinator::new();
 ///
 /// // 注册各阶段钩子
 /// coord.register_hook(ShutdownPhase::StopRequests, || {
@@ -168,7 +168,7 @@ pub(crate) fn evaluate_timeout(
 /// coord.set_phase_timeout(ShutdownPhase::DrainQueue, Duration::from_secs(5));
 ///
 /// // 执行关闭流程
-/// coord.shutdown;
+/// coord.shutdown();
 /// ```
 pub struct ShutdownCoordinator {
     phases: RefCell<[PhaseConfig; 3]>,
@@ -402,7 +402,7 @@ impl ShutdownResult {
         }
         let failures: usize = self.phases.iter().map(|p| p.hook_failures).sum();
         Err(TraitKitError::BuildFailed {
-            context: "shutdown".into(),
+            context: ContextLabel::Shutdown.into(),
             source: Box::new(std::io::Error::other(tr(
                 "trait-kit-error-shutdown-hooks-panicked",
                 &[("failures", &failures.to_string())],
@@ -2023,6 +2023,10 @@ mod async_tests {
         assert!(
             msg.contains("1 remaining lifecycle hook(s) stranded"),
             "the error must carry the stranded count so programmatic detection does not depend on a log subscriber, actual: {msg}"
+        );
+        assert!(
+            !msg.contains("register_shutdown_into"),
+            "the internal call-site name must not enter the public error text, actual: {msg}"
         );
         let source_msg = err
             .source()

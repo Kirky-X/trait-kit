@@ -22,6 +22,11 @@ use serde::Serialize;
 /// type was never registered in the dependency graph (no name to report).
 pub(crate) const UNREGISTERED_OVERRIDE: &str = "(unregistered)";
 
+/// Config-override history capacity: the newest records are kept, older
+/// ones are dropped (and counted) so a high-frequency `merge_config` caller
+/// cannot grow the history without bound.
+pub(crate) const MAX_CONFIG_OVERRIDE_HISTORY: usize = 1024;
+
 /// Feature-gated fields aggregated on `Kit` (same pattern as `ObserverFields`).
 #[derive(Default)]
 pub(crate) struct ReportFields {
@@ -35,6 +40,9 @@ pub(crate) struct ReportFields {
     overrides: RefCell<Vec<(TypeId, OverrideRecord)>>,
     /// Config override records captured at `merge_config` call time.
     config_overrides: RefCell<Vec<ConfigOverrideRecord>>,
+    /// Number of config-override records dropped because the history was
+    /// already at [`MAX_CONFIG_OVERRIDE_HISTORY`].
+    config_overrides_dropped: std::cell::Cell<u64>,
     /// Topological order (module names) captured after `graph.validate`.
     topo_order: RefCell<Vec<&'static str>>,
     /// Total wall time of `build` (set when build finishes).
@@ -74,8 +82,7 @@ impl ReportFields {
         });
     }
 
-    /// Record an override registration (source: `override_module` or
-    /// `override_module_strict`).
+    /// Record an override registration (source: `override_module`).
     pub(crate) fn push_override_record(&self, type_id: TypeId, record: OverrideRecord) {
         self.overrides.borrow_mut().push((type_id, record));
     }
@@ -101,7 +108,19 @@ impl ReportFields {
     /// `report` alone (the snapshot field remains, always empty then).
     #[cfg(feature = "confers")]
     pub(crate) fn push_config_override(&self, record: ConfigOverrideRecord) {
-        self.config_overrides.borrow_mut().push(record);
+        let mut history = self.config_overrides.borrow_mut();
+        if history.len() >= MAX_CONFIG_OVERRIDE_HISTORY {
+            // 有界环形语义：丢最旧的一条，计数留给调用方观测。
+            history.remove(0);
+            self.config_overrides_dropped
+                .set(self.config_overrides_dropped.get() + 1);
+        }
+        history.push(record);
+    }
+
+    /// Number of config-override records dropped by the bounded history.
+    pub(crate) fn config_overrides_dropped(&self) -> u64 {
+        self.config_overrides_dropped.get()
     }
 
     /// Drain the recorded config-override history (record order), leaving
@@ -146,6 +165,7 @@ impl ReportFields {
                 .map(|(_, record)| record.clone())
                 .collect(),
             config_overrides: self.config_overrides.borrow().clone(),
+            config_overrides_dropped: self.config_overrides_dropped(),
             total_elapsed_us: *self.total_elapsed_us.borrow(),
             ..BuildReport::default()
         }
@@ -167,6 +187,9 @@ pub(crate) struct AsyncReportFields {
     modules: Mutex<Vec<ModuleReportEntry>>,
     /// Config override records captured at `merge_config` call time.
     config_overrides: Mutex<Vec<ConfigOverrideRecord>>,
+    /// Number of config-override records dropped because the history was
+    /// already at [`MAX_CONFIG_OVERRIDE_HISTORY`].
+    config_overrides_dropped: std::sync::atomic::AtomicU64,
     /// Topological order (module names) captured after `graph.validate`.
     topo_order: Mutex<Vec<&'static str>>,
     /// Total wall time of `build` (set when build finishes).
@@ -199,10 +222,23 @@ impl AsyncReportFields {
     /// `async,report` alone (the snapshot field remains, always empty then).
     #[cfg(feature = "confers")]
     pub(crate) fn push_config_override(&self, record: ConfigOverrideRecord) {
-        self.config_overrides
+        let mut history = self
+            .config_overrides
             .lock()
-            .expect("AsyncKit report config_overrides lock poisoned")
-            .push(record);
+            .expect("AsyncKit report config_overrides lock poisoned");
+        if history.len() >= MAX_CONFIG_OVERRIDE_HISTORY {
+            // 有界环形语义：丢最旧的一条，计数留给调用方观测。
+            history.remove(0);
+            self.config_overrides_dropped
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        history.push(record);
+    }
+
+    /// Number of config-override records dropped by the bounded history.
+    pub(crate) fn config_overrides_dropped(&self) -> u64 {
+        self.config_overrides_dropped
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Drain the recorded config-override history (record order), leaving
@@ -278,6 +314,7 @@ impl AsyncReportFields {
                 .lock()
                 .expect("AsyncKit report config_overrides lock poisoned")
                 .clone(),
+            config_overrides_dropped: self.config_overrides_dropped(),
             total_elapsed_us: *self
                 .total_elapsed_us
                 .lock()
@@ -295,6 +332,10 @@ pub struct ContractEntry {
     /// Declared capability version (`ModuleMeta::VERSION`).
     pub version: &'static str,
     /// Concrete capability type name (`std::any::type_name`).
+    ///
+    /// The exact format is not promised to be stable across compilers or
+    /// versions — diagnostic use only; match by suffix, never by full
+    /// equality. Use `module` (`ModuleMeta::NAME`) as the stable identity.
     pub capability: &'static str,
     /// Dependency module names.
     pub deps: Vec<&'static str>,
@@ -368,7 +409,8 @@ pub struct OverrideRecord {
 /// lock arrival rather than the order overrides actually landed.
 #[derive(Debug, Clone, Serialize)]
 pub struct ConfigOverrideRecord {
-    /// Overridden config type name (`std::any::type_name`). The exact
+    /// Overridden config type name (short type label: the type name
+    /// without its crate/module path). The exact
     /// format is not promised to be stable across compilers or versions —
     /// diagnostic use only; match by suffix, never by full equality.
     pub config: &'static str,
@@ -388,9 +430,9 @@ impl ConfigOverrideRecord {
     /// tag single-sourced for the sync and async call sites. Same feature
     /// gate as its only callers (`Kit::merge_config`/`AsyncKit::merge_config`).
     #[cfg(feature = "confers")]
-    pub(crate) fn from_merge_config<C: ?Sized>(applied: bool) -> Self {
+    pub(crate) fn from_merge_config<C: ?Sized + 'static>(applied: bool) -> Self {
         Self {
-            config: std::any::type_name::<C>(),
+            config: crate::redact::short_type_name_ref::<C>(),
             source: "merge_config",
             applied,
         }
@@ -418,17 +460,20 @@ pub struct BuildReport {
     /// config). Under concurrent async calls, record order is lock arrival
     /// order and may differ from the order overrides actually landed.
     ///
-    /// # Usage warning: unbounded growth
+    /// # Usage note: bounded history
     ///
-    /// One entry per `merge_config` call, no cap or truncation — roughly
-    /// 40 bytes each, on both `Kit` and the shared `Send + Sync` `AsyncKit`
-    /// where `merge_config` is a runtime API callable at any time from any
-    /// thread. A kit merging on every reload callback accumulates
-    /// megabytes over a long process lifetime, and every `build_report`
-    /// snapshot clones the whole history. Drain periodically with
-    /// `take_config_overrides` (kit-level, `report` feature) at a
-    /// natural rotation point instead of letting the history grow.
+    /// One entry per `merge_config` call — roughly 40 bytes each. The
+    /// kit-level accumulator keeps at most
+    /// `MAX_CONFIG_OVERRIDE_HISTORY`
+    /// entries (newest win); older entries are dropped and counted by
+    /// `config_overrides_dropped`, so the history cannot grow without
+    /// bound. Draining with `take_config_overrides` (kit-level, `report`
+    /// feature) at a natural rotation point still returns the records for
+    /// further processing instead of dropping them silently.
     pub config_overrides: Vec<ConfigOverrideRecord>,
+    /// Number of config-override records dropped because the bounded history
+    /// was full.
+    pub config_overrides_dropped: u64,
     /// Total `build` wall time in microseconds.
     pub total_elapsed_us: Option<u64>,
 }
@@ -441,6 +486,7 @@ impl Default for BuildReport {
             modules: Vec::new(),
             overrides: Vec::new(),
             config_overrides: Vec::new(),
+            config_overrides_dropped: 0,
             total_elapsed_us: None,
         }
     }
@@ -477,6 +523,28 @@ mod tests {
     use crate::core::{AutoBuilder, ModuleMeta};
     use crate::kit::Kit;
     use std::sync::Arc;
+
+    /// 覆盖历史有界：超出容量的记录被丢弃并计数，调用方不会因为高频
+    /// `merge_config` 而累积无界内存。
+    #[cfg(feature = "confers")]
+    #[test]
+    fn config_override_history_is_bounded() {
+        let fields = ReportFields::default();
+        let overflow = 10;
+        for _ in 0..(MAX_CONFIG_OVERRIDE_HISTORY + overflow) {
+            fields.push_config_override(ConfigOverrideRecord {
+                config: "cfg",
+                source: "merge_config",
+                applied: true,
+            });
+        }
+        assert_eq!(
+            fields.snapshot().config_overrides.len(),
+            MAX_CONFIG_OVERRIDE_HISTORY,
+            "history must not exceed the capacity"
+        );
+        assert_eq!(fields.config_overrides_dropped(), overflow as u64);
+    }
 
     #[derive(Debug, Clone)]
     struct Cap(u32);
@@ -541,7 +609,8 @@ mod tests {
         kit.register::<RptTop>().expect("register top");
         kit.register::<RptLeaf>().expect("register leaf");
         kit.register_lazy::<RptLazy>().expect("register lazy");
-        kit.override_module::<RptLeaf>(Arc::new(Cap(99)));
+        kit.override_module::<RptLeaf>(Arc::new(Cap(99)))
+            .expect("no-dep override");
         let ready = kit.build().expect("build ok");
 
         let report = ready.build_report();
@@ -586,22 +655,24 @@ mod tests {
     fn build_report_records_override_source() {
         let mut kit = Kit::new();
         kit.register::<RptLeaf>().expect("register");
-        kit.override_module_strict::<RptLeaf>(Arc::new(Cap(7)))
-            .expect("strict override");
+        kit.override_module::<RptLeaf>(Arc::new(Cap(7)))
+            .expect("override");
         let ready = kit.build().expect("build ok");
         let report = ready.build_report();
         assert_eq!(report.overrides.len(), 1);
         assert_eq!(report.overrides[0].module, "rpt-leaf");
-        assert_eq!(report.overrides[0].source, "override_module_strict");
+        assert_eq!(report.overrides[0].source, "override_module");
     }
 
     #[test]
     fn build_report_marks_never_registered_override() {
         let mut kit = Kit::new();
         kit.register::<RptLeaf>().expect("register");
-        kit.override_module::<RptLeaf>(Arc::new(Cap(5)));
+        kit.override_module::<RptLeaf>(Arc::new(Cap(5)))
+            .expect("no-dep override");
         // RptLazy is never registered: its override lands in the build tail.
-        kit.override_module::<RptLazy>(Arc::new(Cap(9)));
+        kit.override_module::<RptLazy>(Arc::new(Cap(9)))
+            .expect("no-dep override");
 
         let ready = kit.build().expect("build ok");
         let report = ready.build_report();
@@ -622,7 +693,8 @@ mod tests {
         let mut kit = Kit::new();
         // Registration order is irrelevant: only a type that NEVER enters the
         // graph is reported as "(unregistered)".
-        kit.override_module::<RptLeaf>(Arc::new(Cap(3)));
+        kit.override_module::<RptLeaf>(Arc::new(Cap(3)))
+            .expect("no-dep override");
         kit.register::<RptLeaf>().expect("register after override");
 
         let ready = kit.build().expect("build ok");
@@ -632,17 +704,17 @@ mod tests {
     }
 
     #[test]
-    fn build_report_strict_override_of_unregistered_target() {
+    fn build_report_override_of_unregistered_target() {
         let mut kit = Kit::new();
         kit.register::<RptLeaf>().expect("register");
-        kit.override_module_strict::<RptLazy>(Arc::new(Cap(11)))
-            .expect("no deps → strict override of unregistered target is allowed");
+        kit.override_module::<RptLazy>(Arc::new(Cap(11)))
+            .expect("no deps → override of unregistered target is allowed");
 
         let ready = kit.build().expect("build ok");
         let report = ready.build_report();
         assert_eq!(report.overrides.len(), 1);
         assert_eq!(report.overrides[0].module, UNREGISTERED_OVERRIDE);
-        assert_eq!(report.overrides[0].source, "override_module_strict");
+        assert_eq!(report.overrides[0].source, "override_module");
     }
 
     #[test]

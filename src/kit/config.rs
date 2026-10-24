@@ -182,10 +182,28 @@ pub trait ConfigInherit: Clone + 'static {
 
 /// Trait for declaring which config fields participate in the shared namespace.
 ///
-/// The shared namespace is a `serde_json::Map<String, Value>` overlay inside
+/// The shared namespace is an owner-tracked `serde_json::Value` overlay inside
 /// the Kit that bridges values across different config types. When project A
 /// and project B both declare `host` as a shared field, A's `host` value
 /// flows to B automatically via `extract_shared` → `inject_shared`.
+///
+/// # Ownership contract
+///
+/// The overlay records which config type declared each key. The first type
+/// to extract a key owns it: a second, different type extracting the same
+/// key is refused (with a warning) instead of silently overwriting — two
+/// types declaring `host` may mean different things (DB host vs Redis host),
+/// and the later declaration must not replace the earlier value.
+/// Re-extracting from the owning type itself (e.g. after a config reload)
+/// still updates the value. Cross-type flow stays one-directional by design:
+/// values enter the overlay from the owner and reach other types only via
+/// `inject_shared`.
+///
+/// Values are kept as plain `serde_json::Value` (no zeroization).
+/// Credential-like field names (`password`, `api_key`, ...) are filtered out
+/// by the Kit before they enter the overlay and before they are injected, so
+/// a plaintext credential does not cross config types — declare only fields
+/// whose cross-type flow is intended.
 ///
 /// Uses `serde_json::Value` (not `String`) to preserve type information and
 /// avoid parse failures.
@@ -214,6 +232,48 @@ pub trait SharedConfig: Clone + 'static {
 
 use std::collections::HashMap;
 use std::hash::BuildHasher;
+
+/// Owner-tracked shared-field overlay (one per Kit).
+///
+/// `fields` carries the shared values; `owners` records the short config
+/// type name that declared each key. See [`SharedConfig`] for the ownership
+/// contract.
+#[cfg(feature = "confers")]
+#[derive(Default)]
+pub(crate) struct SharedOverlay {
+    pub(crate) fields: serde_json::Map<String, serde_json::Value>,
+    owners: HashMap<String, String>,
+}
+
+#[cfg(feature = "confers")]
+impl SharedOverlay {
+    /// Merge `fields` into the overlay under owner `owner`.
+    ///
+    /// A key already owned by a different config type is refused (returned
+    /// in the rejected list) instead of overwritten; re-merging from the
+    /// owning type updates the value.
+    pub(crate) fn merge(
+        &mut self,
+        fields: serde_json::Map<String, serde_json::Value>,
+        owner: &str,
+    ) -> Vec<String> {
+        let mut rejected = Vec::new();
+        for (key, value) in fields {
+            match self.owners.get(&key) {
+                Some(existing) if *existing != owner => rejected.push(key),
+                _ => {
+                    self.owners.insert(key.clone(), owner.to_string());
+                    self.fields.insert(key, value);
+                }
+            }
+        }
+        rejected
+    }
+
+    pub(crate) fn snapshot(&self) -> serde_json::Map<String, serde_json::Value> {
+        self.fields.clone()
+    }
+}
 
 /// Interpolate `${VAR}` and `${VAR:-default}` patterns in a JSON value.
 ///
@@ -254,27 +314,206 @@ pub fn interpolate_json_value<S: BuildHasher>(
 /// - Arrays are treated as atomic values (replaced, not element-wise merged).
 /// - Scalars are replaced.
 ///
-/// 递归深度与输入嵌套深度一致。实际调用路径中 `Value` 均来自
-/// `serde_json` 解析或 Rust 类型序列化，嵌套深度分别受解析器默认
-/// 128 层递归上限与类型定义约束，不会溢出栈；手工构造超深 `Value`
-/// 不在支持范围内（对这类值 `serde_json` 自身的 `clone`/`Drop` 同样
-/// 递归）。
+/// 合并深度与输入嵌套深度一致。实现改用显式工作栈而非函数递归：合并
+/// 深度再深也不会耗尽调用栈（`serde_json` 解析器另有默认 128 层嵌套上限，
+/// 该上限只作用于文本解析路径，不约束 `from_value`/`to_value` 与程序化
+/// 构造的 `Value`）。
+///
+/// 注意 `serde_json::Value` 的 `clone`/`Drop` 由 `serde_json` 实现且本身
+/// 递归：手工构造的超深 `Value` 在这些操作上仍可能耗尽栈，这属于
+/// `serde_json` 的固有属性，不在本函数的控制范围内。
 #[cfg(feature = "confers")]
 pub fn merge_json_deep(base: &mut serde_json::Value, overlay: &serde_json::Value) {
-    match (base, overlay) {
-        (serde_json::Value::Object(base_map), serde_json::Value::Object(overlay_map)) => {
-            for (key, overlay_val) in overlay_map {
-                if let Some(base_val) = base_map.get_mut(key) {
-                    merge_json_deep(base_val, overlay_val);
-                } else {
-                    base_map.insert(key.clone(), overlay_val.clone());
+    // 显式工作栈代替函数递归：合并深度等于输入嵌套深度，递归展开会在
+    // 超深结构上耗尽调用栈。栈元素是「base 内路径 + overlay 节点」——
+    // serde_json 的 `Map::get_mut` 每次独占借用整张 map，无法像
+    // `interpolate_json_value` 那样同时持有多个子引用。
+    let mut stack: Vec<(Vec<String>, &serde_json::Value)> = vec![(Vec::new(), overlay)];
+    while let Some((path, node)) = stack.pop() {
+        let base_is_object = matches!(
+            lookup_json_path(base, &path),
+            Some(serde_json::Value::Object(_))
+        );
+        match node {
+            serde_json::Value::Object(overlay_map) if base_is_object => {
+                for (key, child) in overlay_map {
+                    let mut child_path = path.clone();
+                    child_path.push(key.clone());
+                    if lookup_json_path(base, &child_path).is_some() {
+                        stack.push((child_path, child));
+                    } else {
+                        write_json_path(base, &child_path, child.clone());
+                    }
                 }
             }
-        }
-        (base, overlay) => {
-            *base = overlay.clone();
+            other => {
+                write_json_path(base, &path, other.clone());
+            }
         }
     }
+}
+
+/// 查找 base 中 `path` 指向的节点；`path` 为 base 内对象键的序列。
+#[cfg(feature = "confers")]
+fn lookup_json_path<'a>(
+    base: &'a serde_json::Value,
+    path: &[String],
+) -> Option<&'a serde_json::Value> {
+    let mut current = base;
+    for key in path {
+        current = current.as_object()?.get(key)?;
+    }
+    Some(current)
+}
+
+/// 把 `value` 写入 base 的 `path` 处：末段键整体替换，空路径替换根节点。
+///
+/// 调用方保证 `path` 的父节点存在且为对象（合并过程只会下降到对象内部）。
+#[cfg(feature = "confers")]
+fn write_json_path(base: &mut serde_json::Value, path: &[String], value: serde_json::Value) {
+    let Some((last, parents)) = path.split_last() else {
+        *base = value;
+        return;
+    };
+    let mut parent = base;
+    for key in parents {
+        parent = parent
+            .get_mut(key)
+            .expect("merge path parent exists while merging");
+    }
+    parent
+        .as_object_mut()
+        .expect("merge path parent is an object while merging")
+        .insert(last.clone(), value);
+}
+
+/// 配置值允许的最大嵌套层数。
+///
+/// 序列化与反序列化两侧都用这个上限把递归深度钉死：
+/// - 序列化走 [`to_json_text_bounded`]（深度守卫 `Formatter`）：嵌套超过
+///   上限即中止序列化，递归深度不再随配置深度增长。
+/// - 反序列化前有 [`exceeds_json_depth`] 预检：`serde_json::from_value`
+///   不限深度，超深结构会在其中耗尽调用栈并直接终止进程。
+///
+/// 取 64：远低于 `serde_json` 文本解析器自身的 128 层上限，深度受限的
+/// 序列化产物回读时仍在解析器上限内。
+#[cfg(feature = "confers")]
+pub(crate) const MAX_CONFIG_DEPTH: usize = 64;
+
+/// 深度受限的 JSON 构造失败。
+#[cfg(feature = "confers")]
+pub(crate) enum BoundedJsonError {
+    /// 嵌套深度超过上限：序列化已在此中止（递归深度被上限钉死）。
+    DepthExceeded {
+        /// 生效的深度上限。
+        max_depth: usize,
+    },
+    /// 其它序列化错误。
+    Serialize(serde_json::Error),
+}
+
+/// 深度守卫写入器：统计输出 JSON 的括号深度，超过上限即中止写入。
+///
+/// `serde_json` 的 `Formatter` 钩子默认不写任何内容（分隔符由
+/// `CompactFormatter` 之类负责），深度守卫因此放在写入侧：输出文本的
+/// 括号深度就是回读解析时的嵌套深度，上限命中即中止序列化——递归深度
+/// 被上限钉死，超深配置走不到把调用栈耗尽的那一步。
+///
+/// 局限：字符串值里的括号也计入计数。配置里的花括号通常成对出现，净
+/// 不平衡的括号要累积到上限才会误判，实践中不可达。
+#[cfg(feature = "confers")]
+struct DepthGuardWriter<W> {
+    inner: W,
+    depth: usize,
+    max_depth: usize,
+    depth_exceeded: std::rc::Rc<std::cell::Cell<bool>>,
+}
+
+#[cfg(feature = "confers")]
+impl<W: std::io::Write> std::io::Write for DepthGuardWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        for &byte in buf {
+            match byte {
+                b'{' | b'[' => {
+                    self.depth += 1;
+                    if self.depth > self.max_depth {
+                        self.depth_exceeded.set(true);
+                        return Err(std::io::Error::other(format!(
+                            "config nesting depth exceeds {} levels",
+                            self.max_depth
+                        )));
+                    }
+                }
+                b'}' | b']' => self.depth = self.depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+/// 深度受限的 JSON 文本构造。
+///
+/// `serde_json::to_value` 的递归深度等于配置嵌套深度：超深配置会在
+/// 序列化阶段耗尽调用栈并终止进程（`catch_unwind` 也捕不到栈溢出）。
+/// 这里改用带深度守卫的写入器：嵌套超过上限即中止序列化，递归深度
+/// 被上限钉死；产物回读时仍受 `serde_json` 文本解析器自身的上限保护。
+#[cfg(feature = "confers")]
+pub(crate) fn to_json_text_bounded<T: serde::Serialize>(
+    value: &T,
+    max_depth: usize,
+) -> Result<String, BoundedJsonError> {
+    let depth_exceeded = std::rc::Rc::new(std::cell::Cell::new(false));
+    // `String` 不实现 `io::Write`：先写进字节缓冲，再按 UTF-8 读回。
+    let mut out: Vec<u8> = Vec::new();
+    {
+        let mut writer = DepthGuardWriter {
+            inner: &mut out,
+            depth: 0,
+            max_depth,
+            depth_exceeded: std::rc::Rc::clone(&depth_exceeded),
+        };
+        let mut serializer =
+            serde_json::Serializer::with_formatter(&mut writer, serde_json::ser::CompactFormatter);
+        match serde::Serialize::serialize(value, &mut serializer) {
+            Ok(()) => {}
+            Err(_) if depth_exceeded.get() => {
+                return Err(BoundedJsonError::DepthExceeded { max_depth });
+            }
+            Err(e) => return Err(BoundedJsonError::Serialize(e)),
+        }
+    }
+    match String::from_utf8(out) {
+        Ok(text) => Ok(text),
+        Err(e) => Err(BoundedJsonError::Serialize(serde_json::Error::io(
+            std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+        ))),
+    }
+}
+
+/// 判定 JSON 值的嵌套深度是否超过上限（显式工作栈，不递归）。
+#[cfg(feature = "confers")]
+pub(crate) fn exceeds_json_depth(value: &serde_json::Value, max_depth: usize) -> bool {
+    let mut stack: Vec<(&serde_json::Value, usize)> = vec![(value, 0)];
+    while let Some((current, depth)) = stack.pop() {
+        if depth > max_depth {
+            return true;
+        }
+        match current {
+            serde_json::Value::Array(items) => {
+                stack.extend(items.iter().map(|item| (item, depth + 1)));
+            }
+            serde_json::Value::Object(map) => {
+                stack.extend(map.values().map(|item| (item, depth + 1)));
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Replace `${VAR}` and `${VAR:-default}` patterns in a single string.
@@ -511,6 +750,33 @@ mod merge_json_tests {
         assert_eq!(base, json!({"x": 42}));
     }
 
+    /// 合并走显式工作栈：深嵌套结构不会耗尽调用栈（旧实现按嵌套深度
+    /// 递归展开，深结构直接冲垮调用栈）。
+    #[test]
+    fn deep_nesting_merges_without_recursion() {
+        const DEPTH: usize = 500;
+
+        fn nest(depth: usize, leaf: serde_json::Value) -> serde_json::Value {
+            let mut current = leaf;
+            for _ in 0..depth {
+                let mut map = serde_json::Map::new();
+                map.insert("n".to_string(), current);
+                current = serde_json::Value::Object(map);
+            }
+            current
+        }
+
+        let mut base = nest(DEPTH, serde_json::Value::String("old".into()));
+        let overlay = nest(DEPTH, serde_json::Value::String("new".into()));
+        merge_json_deep(&mut base, &overlay);
+
+        let mut current = &base;
+        for _ in 0..DEPTH {
+            current = &current["n"];
+        }
+        assert_eq!(current, &serde_json::Value::String("new".into()));
+    }
+
     #[test]
     fn null_overlay_replaces_value() {
         let mut base = json!({"a": 1});
@@ -641,7 +907,7 @@ where
             self.inner
                 .get_key()
                 .map_err(|e| crate::error::TraitKitError::BuildFailed {
-                    context: format!("key provider ({})", self.inner.provider_type()),
+                    context: crate::error::key_provider_context(self.inner.provider_type()),
                     source: Box::new(e),
                 })?;
         Ok(KeyBytes::new(secret.as_slice().to_vec()))
@@ -681,7 +947,9 @@ mod key_provider_tests {
     struct FixedConfersProvider;
     impl confers::secret::SecretKeyProvider for FixedConfersProvider {
         fn get_key(&self) -> Result<confers::SecretBytes, confers::CryptoError> {
-            Ok(confers::SecretBytes::new(vec![7u8; 32]))
+            Ok(confers::SecretBytes::new(
+                b"provider-key-0123456789abcdefghi".to_vec(),
+            ))
         }
         fn provider_type(&self) -> &'static str {
             "fixed-test"
@@ -734,7 +1002,11 @@ mod key_provider_tests {
             .expect_err("must fail closed");
         assert_eq!(err.kind(), crate::ErrorKind::InitFailed);
         let ready = kit.build().expect("build ok");
-        assert!(ready.get_encrypted::<SecretConfig>(&[7u8; 32]).is_err());
+        assert!(
+            ready
+                .get_encrypted::<SecretConfig>(b"other-key-0123456789abcdefghijkl")
+                .is_err()
+        );
     }
 
     #[test]

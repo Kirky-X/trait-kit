@@ -48,6 +48,20 @@ impl Clone for ConfersProviderSlot {
 
 // ─── ConfersConfigHandle ────────────────────────────────────────────────────
 
+/// 过滤掉凭据类键名（`password`、`api_key` 等）的键列表。
+///
+/// `confers::ConfigProvider` 的实现约定：敏感字段不得出现在 `keys()`
+/// 返回的列表里。远程快照没有字段级敏感标记，只能按键名判定，故按
+/// 末段键名过滤。
+fn filter_sensitive_keys(keys: Vec<String>) -> Vec<String> {
+    keys.into_iter()
+        .filter(|key| {
+            let leaf = key.rsplit('.').next().unwrap_or(key);
+            !crate::redact::is_sensitive_key(leaf)
+        })
+        .collect()
+}
+
 /// Cloneable handle to the confers configuration capability.
 ///
 /// Obtained via `kit.require::<ConfersConfigModule>()`. All reads delegate to
@@ -88,9 +102,15 @@ impl ConfersConfigHandle {
     }
 
     /// All non-sensitive configuration keys.
+    ///
+    /// Credential-like key names (`password`, `api_key`, ...) are filtered
+    /// out: the key list travels to whoever holds the handle, and the key
+    /// names alone disclose which credentials the deployment carries.
+    /// Sensitive values stay reachable through the explicit accessors
+    /// ([`get_raw`](Self::get_raw), [`get_string`](Self::get_string)).
     #[must_use]
     pub fn keys(&self) -> Vec<String> {
-        self.provider.keys()
+        filter_sensitive_keys(self.provider.keys())
     }
 
     /// Whether `key` exists in the provider.
@@ -308,6 +328,26 @@ mod tests {
     }
 
     #[test]
+    fn handle_keys_hide_credential_like_names() {
+        let provider = MapProvider::from_pairs([
+            ("db.host", ConfigValue::String("localhost".into())),
+            ("db.password", ConfigValue::String("hunter2".into())),
+            ("api_key", ConfigValue::String("secret".into())),
+        ]);
+
+        let mut kit = Kit::new();
+        register_confers_config(&mut kit, provider).expect("register preset");
+        let ready = kit.build().expect("build ok");
+
+        let cfg = ready
+            .require::<ConfersConfigModule>()
+            .expect("config capability available");
+        assert_eq!(cfg.keys(), vec!["db.host"]);
+        // 值仍可通过显式访问器读取：过滤只针对键名列表。
+        assert_eq!(cfg.get_string("db.password").as_deref(), Some("hunter2"));
+    }
+
+    #[test]
     fn handle_is_cloneable_and_shares_provider() {
         let provider = MapProvider::from_pairs([("a", ConfigValue::I64(1))]);
         let mut kit = Kit::new();
@@ -435,7 +475,9 @@ pub mod remote {
         fn keys(&self) -> Vec<String> {
             let mut out = Vec::new();
             Self::collect_keys(&self.root, "", &mut out);
-            out
+            // `ConfigProvider` 的实现约定：敏感字段不得出现在键列表里。
+            // 远程快照没有字段级敏感标记，按末段键名判定。
+            super::filter_sensitive_keys(out)
         }
     }
 
@@ -602,6 +644,34 @@ pub mod remote {
             assert!(
                 provider.get_raw("db").is_some(),
                 "an interior map node resolves to its own annotated value"
+            );
+        }
+
+        /// 凭据类键名不得出现在键列表里：`ConfigProvider` 的实现约定，
+        /// 键名本身会暴露部署持有哪些凭据。
+        #[test]
+        fn remote_provider_keys_hide_credential_like_names() {
+            let source = MockRemoteSource {
+                json: serde_json::json!({
+                    "db": { "host": "remote-db", "password": "hunter2" },
+                    "api_key": "secret",
+                    "db_token": "t",
+                    "tokenizer": "keep-me"
+                }),
+                id: confers::SourceId::default(),
+            };
+            let snapshot = block_on(<MockRemoteSource as confers::interface::AsyncSource>::load(
+                &source,
+            ))
+            .expect("load snapshot");
+            let provider = RemoteConfigProvider::new(snapshot);
+
+            let mut keys = provider.keys();
+            keys.sort();
+            assert_eq!(
+                keys,
+                vec!["db.host", "tokenizer"],
+                "credential-like key names must not be listed"
             );
         }
 

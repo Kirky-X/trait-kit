@@ -28,7 +28,8 @@
 //!    `register_shutdown_into` 转移进协调器指定阶段（桥接后本方法
 //!    no-op，清理 exactly-once；四条停机入口的选型见 shutdown 模块文档）。
 //! 5. decorator：按 `decorator_module_to_cap` 映射应用（async 侧全部在
-//!    `build` 时应用，无 lazy 路径）。
+//!    `build` 时应用，无 lazy 路径）；被装饰的模块只应用自己的装饰器，
+//!    不越界到仅共享能力类型的其它模块。
 //! 6. factory：typestate cast + 编译期 size/align 布局断言。
 //! 7. negotiate：register 时登记声明版本/最低版本要求，`build` 在依赖图
 //!    校验后、构建开始前校验（sync 侧语义一致；async 侧无 override 路径，
@@ -44,6 +45,16 @@ use std::task::{Context, Poll};
 
 use crate::core::AsyncAutoBuilder;
 use crate::error::TraitKitError;
+
+// 内部调用点标签登记在 error::ContextLabel：reload / encryption 均蕴含
+// confers；关闭桥接的文案另需 shutdown + lifecycle。
+#[cfg(any(
+    feature = "confers",
+    feature = "reload",
+    feature = "encryption",
+    all(feature = "shutdown", feature = "lifecycle")
+))]
+use crate::error::ContextLabel;
 
 use super::AsyncTypeMap;
 
@@ -99,11 +110,19 @@ struct ObserverFields {
     observers: Arc<RwLock<Vec<AsyncObserverRef>>>,
 }
 
+/// Capability `TypeId` → decorators registered for it (owning module
+/// `TypeId` + decorator function).
+#[cfg(feature = "decorator")]
+type AsyncDecoratorRegistry = Arc<RwLock<HashMap<TypeId, Vec<(TypeId, AsyncDecoratorFn)>>>>;
+
 /// Fields gated behind the `decorator` feature.
 #[cfg(feature = "decorator")]
 #[derive(Default)]
 struct DecoratorFields {
-    decorators: Arc<RwLock<HashMap<TypeId, Vec<AsyncDecoratorFn>>>>,
+    /// Capability `TypeId` → decorators registered for it. Each entry
+    /// carries the owning module `TypeId` so a decorator never leaks onto a
+    /// module that merely shares the same capability type.
+    decorators: AsyncDecoratorRegistry,
     decorator_module_to_cap: Arc<RwLock<HashMap<TypeId, TypeId>>>,
 }
 
@@ -113,7 +132,7 @@ struct DecoratorFields {
 struct ConfersFields {
     /// Shared field overlay for cross-type config inheritance (async counterpart).
     /// Values are `serde_json::Value` to preserve type information.
-    shared_fields: Arc<RwLock<serde_json::Map<String, serde_json::Value>>>,
+    shared_fields: Arc<RwLock<super::config::SharedOverlay>>,
     /// Config snapshots for save/restore (async counterpart of Kit's `RefCell<HashMap>`).
     config_snapshots: Arc<RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>,
 }
@@ -587,7 +606,7 @@ impl AsyncKit {
         // config-change audit event to the injected bus (no-op default).
         if let Some(bus) = self.ports.event_bus.read().expect("lock poisoned").as_ref() {
             bus.publish(super::events::KitEvent::ConfigChanged {
-                key: std::any::type_name::<C>().to_string(),
+                key: crate::redact::short_type_name::<C>(),
                 summary: if replaced {
                     "set (replaced)".to_string()
                 } else {
@@ -613,7 +632,7 @@ impl AsyncKit {
         self.configs.insert(std::sync::Arc::new(config));
         if let Some(bus) = self.ports.event_bus.read().expect("lock poisoned").as_ref() {
             bus.publish(super::events::KitEvent::ConfigChanged {
-                key: std::any::type_name::<C>().to_string(),
+                key: crate::redact::short_type_name::<C>(),
                 summary: if replaced {
                     "set_arc (replaced)".to_string()
                 } else {
@@ -634,7 +653,7 @@ impl AsyncKit {
         self.configs
             .get_cloned::<std::sync::Arc<C>>()
             .ok_or(TraitKitError::MissingConfig {
-                key: std::any::type_name::<C>().to_string(),
+                key: crate::redact::short_type_name::<C>(),
             })
     }
 
@@ -1130,7 +1149,7 @@ impl AsyncKit {
             .expect("lock poisoned")
             .entry(TypeId::of::<M::Capability>())
             .or_default()
-            .push(wrapper);
+            .push((TypeId::of::<M>(), wrapper));
         // Record module TypeId → capability TypeId mapping so
         // `build` can look up decorators by module TypeId.
         self.decorator
@@ -1362,21 +1381,27 @@ impl<S> AsyncKit<S> {
     /// Apply registered decorators for one build result (keyed by the
     /// capability `TypeId` recorded by `decorate`, falling back to the
     /// module's own `TypeId`); identity without the `decorator` feature.
+    ///
+    /// A module that was explicitly decorated only receives its own
+    /// decorators; the unmapped fallback keeps the historical
+    /// capability-`TypeId` lookup.
     #[cfg(feature = "decorator")]
     fn wrap_decorated(
         &self,
         type_id: TypeId,
         boxed: Box<dyn Any + Send + Sync>,
     ) -> Box<dyn Any + Send + Sync> {
-        let cap_type_id = self
+        let mapped_cap = self
             .decorator
             .decorator_module_to_cap
             .read()
             .expect("lock poisoned")
             .get(&type_id)
-            .copied()
-            .unwrap_or(type_id);
-        self.apply_decorators(cap_type_id, boxed)
+            .copied();
+        match mapped_cap {
+            Some(cap_type_id) => self.apply_decorators(cap_type_id, Some(type_id), boxed),
+            None => self.apply_decorators(type_id, None, boxed),
+        }
     }
 
     #[cfg(not(feature = "decorator"))]
@@ -1390,10 +1415,16 @@ impl<S> AsyncKit<S> {
     }
 
     /// Apply registered decorators for a capability (keyed by capability `TypeId`).
+    ///
+    /// `owner` narrows the application to the decorators registered for one
+    /// module: a module that was never decorated must not pick up another
+    /// module's decorator just because both share a capability type. `None`
+    /// applies every decorator registered under the capability key.
     #[cfg(feature = "decorator")]
     fn apply_decorators(
         &self,
         cap_type_id: TypeId,
+        owner: Option<TypeId>,
         boxed: Box<dyn Any + Send + Sync>,
     ) -> Box<dyn Any + Send + Sync> {
         let decorators = self.decorator.decorators.read().expect("lock poisoned");
@@ -1401,7 +1432,12 @@ impl<S> AsyncKit<S> {
             return boxed;
         };
         let mut current = boxed;
-        for dec in dec_list {
+        for (dec_owner, dec) in dec_list {
+            if let Some(expected) = owner
+                && *dec_owner != expected
+            {
+                continue;
+            }
             current = dec(current);
         }
         current
@@ -1424,7 +1460,7 @@ impl<S> AsyncKit<S> {
         self.configs
             .get_cloned::<C>()
             .ok_or(TraitKitError::MissingConfig {
-                key: std::any::type_name::<C>().to_string(),
+                key: crate::redact::short_type_name::<C>(),
             })
     }
 
@@ -1578,6 +1614,7 @@ impl AsyncKit<Ready> {
             // 描述"没有任何探针"的活实例，不描述已被停机协议清空的实例。
             if stopped {
                 return ProbeReport {
+                    schema_version: crate::core::probe::PROBE_SCHEMA_VERSION,
                     overall: "unhealthy",
                     healthy: false,
                     probes: Vec::new(),
@@ -1585,6 +1622,7 @@ impl AsyncKit<Ready> {
                 };
             }
             return ProbeReport {
+                schema_version: crate::core::probe::PROBE_SCHEMA_VERSION,
                 overall: "healthy",
                 healthy: true,
                 probes: Vec::new(),
@@ -1612,7 +1650,7 @@ impl AsyncKit<Ready> {
             entries.push(ProbeEntry {
                 name,
                 status: status.as_status_name(),
-                detail: status.detail().map(str::to_owned),
+                detail: status.detail().map(crate::core::health::redact_detail),
                 latency_ms: measured_ms,
             });
         }
@@ -1622,6 +1660,7 @@ impl AsyncKit<Ready> {
             _ => ("unhealthy", false),
         };
         ProbeReport {
+            schema_version: crate::core::probe::PROBE_SCHEMA_VERSION,
             overall,
             healthy,
             probes: entries,
@@ -1848,7 +1887,7 @@ impl AsyncKit<Ready> {
                     context: tr(
                         "trait-kit-error-shutdown-bridge-stranded",
                         &[
-                            ("operation", "register_shutdown_into"),
+                            ("operation", ContextLabel::ShutdownBridge.public()),
                             ("phase", phase.as_str()),
                             ("stranded", &stranded.to_string()),
                         ],
@@ -1928,7 +1967,7 @@ impl AsyncKit<Ready> {
                 self.publish_event(super::events::KitEvent::HealthChanged {
                     module: name,
                     status: status.as_status_name(),
-                    detail: status.detail().map(str::to_owned),
+                    detail: status.detail().map(crate::core::health::redact_detail),
                 });
             }
         }
@@ -1967,7 +2006,7 @@ impl AsyncKit<Ready> {
                 HealthModuleEntry {
                     module: name,
                     status: status.as_status_name(),
-                    detail: status.detail().map(str::to_owned),
+                    detail: status.detail().map(crate::core::health::redact_detail),
                 }
             })
             .collect::<Vec<_>>();
@@ -1977,6 +2016,7 @@ impl AsyncKit<Ready> {
             _ => "unhealthy",
         };
         HealthAggregate {
+            schema_version: crate::core::health::HEALTH_SCHEMA_VERSION,
             status,
             healthy: worst_rank == 0,
             modules,
@@ -2140,11 +2180,12 @@ impl AsyncKit {
     /// interleave as read-read/write-write and lose one override entirely
     /// (lost update, both records still `applied == true`) — callers that
     /// need exclusive write semantics must serialize the calls themselves.
-    /// Under the `report` feature the record history grows by one entry
-    /// per call with no cap: high-frequency callers **must** drain it
-    /// with [`take_config_overrides`](AsyncKit::take_config_overrides) at
-    /// a rotation point — unbounded growth is a documented usage
-    /// requirement to avoid, not just a caveat (see the warning there).
+    /// Under the `report` feature the record history is bounded (the
+    /// newest records win, older ones are dropped and counted by
+    /// [`config_overrides_dropped`](AsyncKit::config_overrides_dropped));
+    /// draining it with [`take_config_overrides`](AsyncKit::take_config_overrides)
+    /// at a rotation point remains worthwhile because drained records are
+    /// returned for further processing, not silently dropped.
     ///
     /// Requires the `confers` feature.
     ///
@@ -2177,9 +2218,9 @@ impl AsyncKit {
     /// Like `merge_config` (same `impl AsyncKit` block, i.e. the
     /// pre-build configuration phase), this is an **Unbuilt-state** API:
     /// the async config surface is a build-time concern, so the record
-    /// history is finite by construction and freezes once the kit is
-    /// `Ready`. Runtime accumulation with unbounded growth is a sync-Kit
-    /// scenario only.
+    /// history stops growing once the kit is `Ready`. The sync `Kit`
+    /// counterpart keeps accepting `merge_config` after `Ready`, so its
+    /// history keeps growing at runtime — bounded by the same capacity.
     ///
     /// Requires the `report` feature.
     #[cfg(feature = "report")]
@@ -2187,12 +2228,32 @@ impl AsyncKit {
         self.report.take_config_overrides()
     }
 
+    /// Number of config-override records dropped because the bounded
+    /// history was already full.
+    ///
+    /// A non-zero value means the caller merged more often than the
+    /// history capacity allows; the dropped records are gone from
+    /// `build_report().config_overrides`.
+    ///
+    /// Requires the `report` and `confers` features.
+    #[cfg(all(feature = "report", feature = "confers"))]
+    pub fn config_overrides_dropped(&self) -> u64 {
+        self.report.config_overrides_dropped()
+    }
+
     /// Extract shared fields from config `C` into the `AsyncKit`'s shared overlay.
     ///
     /// Calls `C::extract_shared` and merges the result into
-    /// `self.confers.shared_fields`. New values override same-named keys from
-    /// previous extractions. If no config of type `C` exists, this is a
-    /// no-op.
+    /// `self.confers.shared_fields`. The first config type to extract a key
+    /// owns it: re-extracting from the same type (e.g. after a config
+    /// reload) updates the value, while a different type extracting the same
+    /// key is refused with a warning. If no config of type `C` exists, this
+    /// is a no-op.
+    ///
+    /// Credential-like fields (`password`, `api_key`, ...) are dropped: the
+    /// overlay is shared by every config type, so a plaintext credential
+    /// entering it would flow into other config types and leave a copy that
+    /// no zeroization pass can wipe.
     ///
     /// Requires the `confers` feature.
     ///
@@ -2202,12 +2263,21 @@ impl AsyncKit {
     #[cfg(feature = "confers")]
     pub fn extract_shared<C: super::SharedConfig + Send + Sync>(&self) {
         if let Ok(config) = self.config::<C>() {
-            let fields = config.extract_shared();
-            self.confers
+            let mut fields = config.extract_shared();
+            fields.retain(|key, _| !crate::redact::is_sensitive_key(key));
+            let owner = crate::redact::short_type_name::<C>();
+            let rejected = self
+                .confers
                 .shared_fields
                 .write()
                 .expect("shared_fields lock poisoned")
-                .extend(fields);
+                .merge(fields, &owner);
+            for key in rejected {
+                log::warn!(
+                    "shared overlay: key `{key}` is already owned by another config type; \
+                     extraction from `{owner}` was refused"
+                );
+            }
         }
     }
 
@@ -2217,6 +2287,10 @@ impl AsyncKit {
     /// The updated config is written back to the `TypeMap`. If no config of
     /// type `C` exists, this is a no-op.
     ///
+    /// Credential-like fields are filtered out before the injection, so a
+    /// credential that entered the overlay by another route never reaches
+    /// a config type.
+    ///
     /// Requires the `confers` feature.
     ///
     /// # Panics
@@ -2225,12 +2299,13 @@ impl AsyncKit {
     #[cfg(feature = "confers")]
     pub fn inject_shared<C: super::SharedConfig + Send + Sync>(&self) {
         if let Ok(mut config) = self.config::<C>() {
-            let overlay = self
+            let mut overlay = self
                 .confers
                 .shared_fields
                 .read()
                 .expect("shared_fields lock poisoned")
-                .clone();
+                .snapshot();
+            overlay.retain(|key, _| !crate::redact::is_sensitive_key(key));
             config.inject_shared(&overlay);
             self.set_config(config);
         }
@@ -2250,7 +2325,7 @@ impl AsyncKit {
         &self,
     ) -> Result<(), TraitKitError> {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
-            context: "load_config".into(),
+            context: ContextLabel::LoadConfig.into(),
             source: e,
         })?;
         self.set_config(config);
@@ -2270,7 +2345,7 @@ impl AsyncKit {
         C: super::Configurable + super::Validatable + Send + Sync + 'static,
     {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
-            context: "load_and_validate".into(),
+            context: ContextLabel::LoadAndValidate.into(),
             source: e,
         })?;
         match config.validate() {
@@ -2279,7 +2354,7 @@ impl AsyncKit {
                 Ok(())
             }
             Err(errors) => Err(TraitKitError::BuildFailed {
-                context: "load_and_validate".into(),
+                context: ContextLabel::LoadAndValidate.into(),
                 source: Box::new(super::ValidationError { errors }),
             }),
         }
@@ -2331,7 +2406,7 @@ impl AsyncKit {
                 .ok_or_else(|| TraitKitError::MissingConfig {
                     key: crate::i18n::tr(
                         "trait-kit-error-no-snapshot",
-                        &[("key", std::any::type_name::<C>())],
+                        &[("key", crate::redact::short_type_name::<C>().as_str())],
                     ),
                 })?;
         let config =
@@ -2339,7 +2414,10 @@ impl AsyncKit {
                 .downcast_ref::<C>()
                 .cloned()
                 .ok_or_else(|| TraitKitError::MissingConfig {
-                    key: format!("{} (snapshot downcast)", std::any::type_name::<C>()),
+                    key: format!(
+                        "{} (snapshot downcast)",
+                        crate::redact::short_type_name::<C>()
+                    ),
                 })?;
         drop(snapshots);
         self.set_config(config);
@@ -2378,18 +2456,57 @@ impl AsyncKit {
         C: super::Configurable + serde::Serialize + serde::de::DeserializeOwned + Send + Sync,
     {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
-            context: "load_config_with".into(),
+            context: ContextLabel::LoadConfigWith.into(),
             source: e,
         })?;
-        let mut json_value =
-            serde_json::to_value(&config).map_err(|e| TraitKitError::BuildFailed {
-                context: "load_config_with (serialize)".into(),
+        // 深度受限的序列化：嵌套超限时序列化在此中止（递归深度被上限
+        // 钉死），不会像 `serde_json::to_value` 那样按配置深度递归到爆栈。
+        let json_text =
+            match super::config::to_json_text_bounded(&config, super::config::MAX_CONFIG_DEPTH) {
+                Ok(text) => text,
+                Err(super::config::BoundedJsonError::DepthExceeded { max_depth }) => {
+                    // 超深配置的析构在 serde_json 内部是递归的（`Value` 的
+                    // `Drop` 逐层下探），在本线程析构会耗尽调用栈并终止进程：
+                    // 错误路径上泄漏这份被拒绝的配置，好过让整个进程崩掉。
+                    std::mem::forget(config);
+                    return Err(TraitKitError::BuildFailed {
+                        context: ContextLabel::LoadConfigWithSerialize.into(),
+                        source: Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("config nesting depth exceeds {max_depth} levels"),
+                        )),
+                    });
+                }
+                Err(super::config::BoundedJsonError::Serialize(e)) => {
+                    return Err(TraitKitError::BuildFailed {
+                        context: ContextLabel::LoadConfigWithSerialize.into(),
+                        source: Box::new(e),
+                    });
+                }
+            };
+        let mut json_value: serde_json::Value =
+            serde_json::from_str(&json_text).map_err(|e| TraitKitError::BuildFailed {
+                context: ContextLabel::LoadConfigWithDeserialize.into(),
                 source: Box::new(e),
             })?;
         super::config::interpolate_json_value(&mut json_value, vars);
+        // `serde_json::from_value` 不限深度（128 层上限只属文本解析器），
+        // 超深结构会在反序列化中耗尽调用栈并终止进程，故先行拦截。
+        if super::config::exceeds_json_depth(&json_value, super::config::MAX_CONFIG_DEPTH) {
+            return Err(TraitKitError::BuildFailed {
+                context: ContextLabel::LoadConfigWithDeserialize.into(),
+                source: Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "config nesting depth exceeds {} levels",
+                        super::config::MAX_CONFIG_DEPTH
+                    ),
+                )),
+            });
+        }
         let interpolated: C =
             serde_json::from_value(json_value).map_err(|e| TraitKitError::BuildFailed {
-                context: "load_config_with (deserialize)".into(),
+                context: ContextLabel::LoadConfigWithDeserialize.into(),
                 source: Box::new(e),
             })?;
         self.set_config(interpolated);
@@ -2476,7 +2593,7 @@ impl AsyncKit {
     #[cfg(feature = "reload")]
     pub fn reload_config<C: super::Configurable + Send + Sync>(&self) -> Result<(), TraitKitError> {
         let config = C::load().map_err(|e| TraitKitError::BuildFailed {
-            context: "reload_config".into(),
+            context: ContextLabel::ReloadConfig.into(),
             source: e,
         })?;
         self.configs.insert(config);
@@ -2516,20 +2633,10 @@ impl AsyncKit {
     {
         use super::XChaCha20Crypto;
 
-        if master_key.len() < 16 {
-            return Err(TraitKitError::BuildFailed {
-                context: "set_encrypted".into(),
-                source: Box::new(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!(
-                        "master_key must be at least 16 bytes, got {}",
-                        master_key.len()
-                    ),
-                )),
-            });
-        }
+        super::kit::validate_master_key(ContextLabel::SetEncrypted, "master_key", master_key)?;
 
-        let field_key = super::kit::derive_kit_field_key(master_key, C::PATH, "set_encrypted")?;
+        let field_key =
+            super::kit::derive_kit_field_key(master_key, C::PATH, ContextLabel::SetEncrypted)?;
 
         let mut plaintext = match serde_json::to_vec(value) {
             Ok(vec) => vec,
@@ -2537,7 +2644,7 @@ impl AsyncKit {
                 // The derived key zeroes itself on drop (Zeroizing); only the
                 // plaintext buffer needs an explicit wipe.
                 return Err(TraitKitError::BuildFailed {
-                    context: "set_encrypted".into(),
+                    context: ContextLabel::SetEncrypted.into(),
                     source: Box::new(e),
                 });
             }
@@ -2546,7 +2653,7 @@ impl AsyncKit {
         let encrypted = XChaCha20Crypto::new().encrypt(&plaintext, &*field_key);
         super::kit::zeroize_bytes(&mut plaintext);
         let (nonce, ciphertext) = encrypted.map_err(|e| TraitKitError::BuildFailed {
-            context: "set_encrypted".into(),
+            context: ContextLabel::SetEncrypted.into(),
             source: Box::new(e),
         })?;
 
@@ -2596,18 +2703,7 @@ impl AsyncKit {
     {
         use super::XChaCha20Crypto;
 
-        if master_key.len() < 16 {
-            return Err(TraitKitError::BuildFailed {
-                context: "get_encrypted".into(),
-                source: Box::new(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!(
-                        "master_key must be at least 16 bytes, got {}",
-                        master_key.len()
-                    ),
-                )),
-            });
-        }
+        super::kit::validate_master_key(ContextLabel::GetEncrypted, "master_key", master_key)?;
 
         let blob = self
             .encryption
@@ -2617,22 +2713,23 @@ impl AsyncKit {
             .get(&TypeId::of::<C>())
             .cloned()
             .ok_or(TraitKitError::MissingConfig {
-                key: std::any::type_name::<C>().to_string(),
+                key: crate::redact::short_type_name::<C>(),
             })?;
 
-        let field_key = super::kit::derive_kit_field_key(master_key, C::PATH, "get_encrypted")?;
+        let field_key =
+            super::kit::derive_kit_field_key(master_key, C::PATH, ContextLabel::GetEncrypted)?;
 
         let decrypted =
             XChaCha20Crypto::new().decrypt(blob.nonce(), blob.ciphertext(), &*field_key);
         let mut plaintext = decrypted.map_err(|e| TraitKitError::BuildFailed {
-            context: "get_encrypted".into(),
+            context: ContextLabel::GetEncrypted.into(),
             source: Box::new(e),
         })?;
 
         let parsed: Result<C, _> = serde_json::from_slice(&plaintext);
         super::kit::zeroize_bytes(&mut plaintext);
         parsed.map_err(|e| TraitKitError::BuildFailed {
-            context: "get_encrypted".into(),
+            context: ContextLabel::GetEncrypted.into(),
             source: Box::new(e),
         })
     }
@@ -4755,6 +4852,32 @@ mod async_config_inheritance_tests {
     }
 
     #[test]
+    fn async_extract_shared_conflicting_declarer_is_refused() {
+        let kit = AsyncKit::new();
+        kit.set_config(AsyncDbConfig {
+            host: "db-host".into(),
+            port: 9999,
+            max_connections: 20,
+        });
+        kit.extract_shared::<AsyncDbConfig>();
+
+        // Same field names from a different config type: the extraction is
+        // refused (keys owned by AsyncDbConfig), so inject still carries the
+        // owner's values.
+        kit.set_config(AsyncAppConfig {
+            host: "app-host".into(),
+            port: 8080,
+            app_name: "my-app".into(),
+        });
+        kit.extract_shared::<AsyncAppConfig>();
+        kit.inject_shared::<AsyncAppConfig>();
+
+        let app_cfg: AsyncAppConfig = kit.config().unwrap();
+        assert_eq!(app_cfg.host, "db-host");
+        assert_eq!(app_cfg.port, 9999);
+    }
+
+    #[test]
     fn async_config_inheritance_survives_build() {
         let kit = AsyncKit::new();
         kit.set_config(AsyncDbConfig {
@@ -4767,7 +4890,7 @@ mod async_config_inheritance_tests {
         let built = block_on(kit.build()).unwrap();
 
         // shared_fields should be accessible on Ready kit
-        let overlay = built.confers.shared_fields.read().unwrap().clone();
+        let overlay = built.confers.shared_fields.read().unwrap().snapshot();
         assert_eq!(
             overlay.get("host"),
             Some(&serde_json::Value::String("prod-db".into()))
@@ -4791,7 +4914,7 @@ mod async_config_inheritance_tests {
         let kit = AsyncKit::new();
         kit.extract_shared::<AsyncDbConfig>();
         let overlay = kit.confers.shared_fields.read().unwrap();
-        assert!(overlay.is_empty());
+        assert!(overlay.fields.is_empty());
     }
 
     #[test]
@@ -4801,9 +4924,10 @@ mod async_config_inheritance_tests {
             .shared_fields
             .write()
             .unwrap()
+            .fields
             .insert("host".into(), serde_json::json!("some-host"));
         kit.inject_shared::<AsyncDbConfig>();
-        assert_eq!(kit.confers.shared_fields.read().unwrap().len(), 1);
+        assert_eq!(kit.confers.shared_fields.read().unwrap().fields.len(), 1);
     }
 
     // ── concurrent safety test ──
@@ -4840,10 +4964,11 @@ mod async_config_inheritance_tests {
         h1.join().unwrap();
         h2.join().unwrap();
 
-        // Both extractions should have completed without panic
+        // Both extractions should have completed without panic (the second
+        // type's extraction of the same keys is refused by the owner check)
         let overlay = kit.confers.shared_fields.read().unwrap();
-        assert!(overlay.contains_key("host"));
-        assert!(overlay.contains_key("port"));
+        assert!(overlay.fields.contains_key("host"));
+        assert!(overlay.fields.contains_key("port"));
     }
 }
 
@@ -5594,6 +5719,31 @@ mod async_probe_tests {
         assert_eq!(slow.calls.load(Ordering::SeqCst), 1);
     }
 
+    /// 对外负载里的 probe detail 必须已脱敏，且负载带 `schema_version`。
+    #[test]
+    fn probe_report_redacts_detail_and_carries_schema_version() {
+        let mut kit = AsyncKit::new();
+        kit.register::<ProbeLeaf>().expect("register leaf");
+        let leaky = FakeProbe::new(
+            HealthStatus::unhealthy("connect failed: password=hunter2"),
+            0,
+        );
+        kit.register_probe("db", leaky);
+
+        let built = block_on(kit.build()).expect("build ok");
+        let report = block_on(built.run_probes());
+
+        assert_eq!(
+            report.probes[0].detail.as_deref(),
+            Some("connect failed: password=[REDACTED]"),
+            "credentials must not reach the readiness payload"
+        );
+        assert_eq!(
+            report.schema_version,
+            crate::core::probe::PROBE_SCHEMA_VERSION
+        );
+    }
+
     #[test]
     fn run_probes_on_empty_registry_is_healthy_by_convention() {
         let mut kit = AsyncKit::new();
@@ -6067,6 +6217,54 @@ mod async_config_api_tests {
         );
     }
 
+    /// 超深配置值必须以可捕获的错误返回：`serde_json::from_value` 不限
+    /// 深度，超深结构会在其中耗尽调用栈并直接终止进程。
+    #[test]
+    fn load_config_with_rejects_over_deep_config() {
+        #[derive(Clone, serde::Serialize, serde::Deserialize)]
+        struct DeepCfg {
+            nested: serde_json::Value,
+        }
+
+        impl ModuleConfig for DeepCfg {
+            const PATH: &'static str = "test/deep-cfg";
+            fn default_value() -> Self {
+                Self {
+                    nested: serde_json::Value::Null,
+                }
+            }
+        }
+
+        impl Configurable for DeepCfg {
+            fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+                let mut nested = serde_json::Value::String("leaf".into());
+                for _ in 0..200 {
+                    let mut map = serde_json::Map::new();
+                    map.insert("n".to_string(), nested);
+                    nested = serde_json::Value::Object(map);
+                }
+                Ok(Self { nested })
+            }
+        }
+
+        let kit = AsyncKit::new();
+        let vars: HashMap<String, String> = HashMap::new();
+        let err = kit
+            .load_config_with::<DeepCfg, _>(&vars)
+            .expect_err("over-deep config must be rejected");
+        let TraitKitError::BuildFailed { context, source } = &err else {
+            panic!("expected BuildFailed, got {err:?}");
+        };
+        assert_eq!(
+            context, "load_config_with (serialize)",
+            "深度守卫在序列化阶段中止"
+        );
+        assert!(
+            source.to_string().contains("nesting depth"),
+            "the source reports the depth limit: {source}"
+        );
+    }
+
     #[test]
     fn load_config_or_default_falls_back_to_default_value() {
         let kit = AsyncKit::new();
@@ -6237,8 +6435,8 @@ mod async_encryption_tests {
         }
     }
 
-    const KEY: &[u8] = b"0123456789abcdef"; // 16 bytes
-    const OTHER_KEY: &[u8] = b"fedcba9876543210";
+    const KEY: &[u8] = b"0123456789abcdef0123456789abcdef"; // 32 bytes
+    const OTHER_KEY: &[u8] = b"fedcba9876543210fedcba9876543210";
 
     #[test]
     fn set_encrypted_rejects_short_master_key() {
@@ -6249,6 +6447,30 @@ mod async_encryption_tests {
         let err = kit.set_encrypted(&value, b"short").unwrap_err();
         assert!(
             matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "set_encrypted"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+
+    /// 常量字节主密钥可被任何人复算：异步路径必须与同步路径、provider
+    /// 供给路径同一口径拒收。
+    #[test]
+    fn weak_master_key_is_rejected() {
+        let kit = AsyncKit::new();
+        let value = SecretCfg {
+            token: "t0p-s3cret".to_string(),
+        };
+        let err = kit
+            .set_encrypted(&value, &[0u8; 32])
+            .expect_err("constant-byte master key must be rejected");
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "set_encrypted"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+        let err = kit
+            .get_encrypted::<SecretCfg>(&[b'a'; 32])
+            .expect_err("constant-byte master key must be rejected");
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "get_encrypted"),
             "expected BuildFailed with the asserted context, got {err:?}"
         );
     }
