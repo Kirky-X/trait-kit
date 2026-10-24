@@ -127,7 +127,9 @@ mod confers_key_provider_bridge_e2e {
     struct WorkingConfersProvider;
     impl confers::secret::SecretKeyProvider for WorkingConfersProvider {
         fn get_key(&self) -> Result<confers::SecretBytes, confers::CryptoError> {
-            Ok(confers::SecretBytes::new(vec![7u8; 32]))
+            Ok(confers::SecretBytes::new(
+                b"provider-key-0123456789abcdefghi".to_vec(),
+            ))
         }
         fn provider_type(&self) -> &'static str {
             "e2e-bridge"

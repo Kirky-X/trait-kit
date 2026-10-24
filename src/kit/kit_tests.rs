@@ -65,25 +65,26 @@ mod tests {
     fn override_module_inserts_into_overrides_map() {
         let kit = Kit::new();
         assert_eq!(kit.overrides.borrow().len(), 0);
-        kit.override_module::<MockCapability>(Arc::new(AtomicUsize::new(42)));
+        kit.override_module::<MockCapability>(Arc::new(AtomicUsize::new(42)))
+            .unwrap();
         assert_eq!(kit.overrides.borrow().len(), 1);
     }
 
     #[test]
-    fn override_module_strict_succeeds_when_deps_registered() {
+    fn override_module_succeeds_when_deps_registered() {
         let mut kit = Kit::new();
         kit.register::<MockCapability>().unwrap();
-        // Now strict override of the dependent module should succeed
-        let result = kit.override_module_strict::<DependentModule>(Arc::new(AtomicUsize::new(99)));
+        // Now override of the dependent module should succeed
+        let result = kit.override_module::<DependentModule>(Arc::new(AtomicUsize::new(99)));
         assert!(result.is_ok());
         assert_eq!(kit.overrides.borrow().len(), 1);
     }
 
     #[test]
-    fn override_module_strict_fails_when_deps_missing() {
-        let mut kit = Kit::new();
+    fn override_module_fails_when_deps_missing() {
+        let kit = Kit::new();
         // Do NOT register MockCapability first
-        let result = kit.override_module_strict::<DependentModule>(Arc::new(AtomicUsize::new(99)));
+        let result = kit.override_module::<DependentModule>(Arc::new(AtomicUsize::new(99)));
         assert!(matches!(
             result,
             Err(TraitKitError::DependencyMissing {
@@ -119,7 +120,8 @@ mod tests {
         // Register the module (so it's in the graph and gets sorted)
         let mut kit = kit;
         kit.register::<CountingModule>().unwrap();
-        kit.override_module::<CountingModule>(Arc::new(AtomicUsize::new(42)));
+        kit.override_module::<CountingModule>(Arc::new(AtomicUsize::new(42)))
+            .expect("no-dep override");
         let built = kit.build().unwrap();
         // require should return the override value (42), not the build_fn value (0)
         let cap = built.require::<CountingModule>().unwrap();
@@ -141,7 +143,8 @@ mod tests {
         // override_module allows injecting a module that was NOT registered.
         // build should still make it available via require.
         let kit = Kit::new();
-        kit.override_module::<MockCapability>(Arc::new(AtomicUsize::new(77)));
+        kit.override_module::<MockCapability>(Arc::new(AtomicUsize::new(77)))
+            .expect("no-dep override");
         let built = kit.build().unwrap();
         let cap = built.require::<MockCapability>().unwrap();
         assert_eq!(cap.load(Ordering::SeqCst), 77);
@@ -172,7 +175,8 @@ mod tests {
         LAZY_BUILDS.store(0, Ordering::SeqCst);
         let mut kit = Kit::new();
         kit.register_lazy::<LazyOverridden>().unwrap();
-        kit.override_module::<LazyOverridden>(Arc::new(AtomicUsize::new(88)));
+        kit.override_module::<LazyOverridden>(Arc::new(AtomicUsize::new(88)))
+            .expect("no-dep override");
         let built = kit.build().unwrap();
 
         let cap = built.require::<LazyOverridden>().unwrap();
@@ -198,7 +202,8 @@ mod tests {
     fn require_ref_returns_override_value() {
         let mut kit = Kit::new();
         kit.register::<CountingModule>().unwrap();
-        kit.override_module::<CountingModule>(Arc::new(AtomicUsize::new(55)));
+        kit.override_module::<CountingModule>(Arc::new(AtomicUsize::new(55)))
+            .expect("no-dep override");
         let built = kit.build().unwrap();
         let r = built.require_ref::<CountingModule>().unwrap();
         assert_eq!((*r).load(Ordering::SeqCst), 55);
@@ -405,7 +410,8 @@ mod tests {
         // Register MockCapability (adds to dependency graph) then override
         // with value 42 to verify it's accessible during lazy build
         kit.register::<MockCapability>().unwrap();
-        kit.override_module::<MockCapability>(Arc::new(AtomicUsize::new(42)));
+        kit.override_module::<MockCapability>(Arc::new(AtomicUsize::new(42)))
+            .expect("no-dep override");
         kit.register_lazy::<LazyDependentModule>().unwrap();
         let built = kit.build().unwrap();
 
@@ -1601,7 +1607,7 @@ mod encryption_tests {
     #[test]
     fn set_and_get_encrypted_roundtrip() {
         let kit = Kit::new();
-        let master_key = [0x42u8; 32];
+        let master_key = *b"master-key-0123456789abcdefghijk";
         let config = SecretConfig {
             api_key: std::env::var("TRAIT_KIT_TEST_API_KEY")
                 .unwrap_or_else(|_| "demo-value".into()),
@@ -1623,7 +1629,7 @@ mod encryption_tests {
     fn get_encrypted_missing_returns_error() {
         let kit = Kit::new();
         let built = kit.build().unwrap();
-        let master_key = [0x42u8; 32];
+        let master_key = *b"master-key-0123456789abcdefghijk";
         let err = built
             .get_encrypted::<SecretConfig>(&master_key)
             .unwrap_err();
@@ -1639,14 +1645,14 @@ mod encryption_tests {
     #[test]
     fn get_encrypted_wrong_key_returns_error() {
         let kit = Kit::new();
-        let master_key = [0x42u8; 32];
+        let master_key = *b"master-key-0123456789abcdefghijk";
         let config = SecretConfig {
             api_key: "secret".into(),
         };
         kit.set_encrypted(&config, &master_key).unwrap();
         let built = kit.build().unwrap();
         // Use a different key to trigger decryption failure
-        let wrong_key = [0xFFu8; 32];
+        let wrong_key = *b"wrong-key-0123456789abcdefghijkl";
         let err = built.get_encrypted::<SecretConfig>(&wrong_key).unwrap_err();
         assert!(matches!(err, TraitKitError::BuildFailed { .. }));
     }
@@ -2583,10 +2589,12 @@ mod config_inheritance_tests {
         kit.confers
             .shared_fields
             .borrow_mut()
+            .fields
             .insert("host".into(), serde_json::json!([1, 2, 3])); // array, not string
         kit.confers
             .shared_fields
             .borrow_mut()
+            .fields
             .insert("port".into(), serde_json::json!("not-a-number")); // string, not number
 
         kit.set_config(TestDbConfig {
@@ -2602,6 +2610,62 @@ mod config_inheritance_tests {
         assert_eq!(db.port, 3306); // unchanged
     }
 
+    #[test]
+    fn extract_shared_first_declarer_owns_conflicting_key() {
+        let kit = Kit::new();
+        // A declares host/port first and owns the overlay keys.
+        kit.set_config(TestDbConfig {
+            host: "db-host".into(),
+            port: 3306,
+            max_connections: 10,
+        });
+        kit.extract_shared::<TestDbConfig>();
+
+        // B declares the same field names with different semantics: its
+        // extraction is refused instead of silently overwriting A's values,
+        // and A's values still flow to B via inject.
+        kit.set_config(TestAppConfig {
+            host: "app-host".into(),
+            port: 9090,
+            app_name: "my-app".into(),
+        });
+        kit.extract_shared::<TestAppConfig>();
+        kit.inject_shared::<TestAppConfig>();
+
+        let app: TestAppConfig = kit.config().expect("app config should exist");
+        assert_eq!(app.host, "db-host"); // A's value, not B's own extraction
+        assert_eq!(app.port, 3306);
+    }
+
+    #[test]
+    fn extract_shared_owner_reload_updates_value() {
+        let kit = Kit::new();
+        kit.set_config(TestDbConfig {
+            host: "old-db".into(),
+            port: 3306,
+            max_connections: 10,
+        });
+        kit.extract_shared::<TestDbConfig>();
+
+        // The owning type re-extracts (config reload): values update.
+        kit.set_config(TestDbConfig {
+            host: "new-db".into(),
+            port: 3307,
+            max_connections: 10,
+        });
+        kit.extract_shared::<TestDbConfig>();
+
+        kit.set_config(TestAppConfig {
+            host: "seed".into(),
+            port: 1,
+            app_name: "app".into(),
+        });
+        kit.inject_shared::<TestAppConfig>();
+        let app: TestAppConfig = kit.config().expect("app config should exist");
+        assert_eq!(app.host, "new-db");
+        assert_eq!(app.port, 3307);
+    }
+
     // ── no-op boundary tests ──
 
     #[test]
@@ -2609,7 +2673,7 @@ mod config_inheritance_tests {
         let kit = Kit::new();
         // No config set — should not panic, overlay stays empty
         kit.extract_shared::<TestDbConfig>();
-        assert!(kit.confers.shared_fields.borrow().is_empty());
+        assert!(kit.confers.shared_fields.borrow().fields.is_empty());
     }
 
     #[test]
@@ -2619,11 +2683,12 @@ mod config_inheritance_tests {
         kit.confers
             .shared_fields
             .borrow_mut()
+            .fields
             .insert("host".into(), serde_json::json!("some-host"));
         // No config set — should not panic
         kit.inject_shared::<TestDbConfig>();
         // Overlay unchanged
-        assert_eq!(kit.confers.shared_fields.borrow().len(), 1);
+        assert_eq!(kit.confers.shared_fields.borrow().fields.len(), 1);
     }
 
     // ── Kit<Ready> tests ──
@@ -3207,5 +3272,373 @@ mod review_followup_tests {
         let _ = ready.require::<FxBuilt>().unwrap();
         let _guard = ready.require_ref::<FxBuilt>().unwrap();
         let _ = ready.require::<FxUnbuilt>();
+    }
+}
+
+/// 装饰器属主隔离：装饰器只作用于被 `decorate` 的模块，不得越界到
+/// 仅共享能力类型的其它模块（interface 路径曾按能力 `TypeId` 兜底查找，
+/// 会把 A 的装饰器套到 B 上）。
+#[cfg(all(test, feature = "di", feature = "decorator"))]
+mod decorator_owner_isolation_tests {
+    use super::super::*;
+    use crate::core::{AutoBuilder, InterfaceBuilder, ModuleMeta};
+    use std::sync::Arc;
+
+    #[derive(Clone)]
+    struct SharedCap {
+        val: u32,
+    }
+
+    trait Primary: 'static {
+        fn val(&self) -> u32;
+    }
+
+    trait Secondary: 'static {
+        fn val(&self) -> u32;
+    }
+
+    impl Primary for SharedCap {
+        fn val(&self) -> u32 {
+            self.val
+        }
+    }
+
+    impl Secondary for SharedCap {
+        fn val(&self) -> u32 {
+            self.val
+        }
+    }
+
+    #[derive(Debug)]
+    struct TestError;
+
+    impl std::fmt::Display for TestError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "test error")
+        }
+    }
+
+    impl std::error::Error for TestError {}
+
+    /// 被装饰的 interface 模块。
+    struct PrimaryMod;
+
+    impl ModuleMeta for PrimaryMod {
+        const NAME: &'static str = "primary-mod";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
+    }
+
+    impl AutoBuilder for PrimaryMod {
+        type Capability = Arc<SharedCap>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<SharedCap>, TraitKitError> {
+            Ok(Arc::new(SharedCap { val: 1 }))
+        }
+    }
+
+    impl InterfaceBuilder for PrimaryMod {
+        type Interface = dyn Primary;
+        type Capability = Arc<SharedCap>;
+        type Error = TestError;
+        fn build(_kit: &Kit) -> Result<Arc<SharedCap>, TestError> {
+            Ok(Arc::new(SharedCap { val: 1 }))
+        }
+        fn into_interface(cap: Arc<SharedCap>) -> Arc<dyn Primary> {
+            cap
+        }
+    }
+
+    /// 同能力类型、未被装饰的 interface 模块。
+    struct SecondaryMod;
+
+    impl ModuleMeta for SecondaryMod {
+        const NAME: &'static str = "secondary-mod";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
+    }
+
+    impl AutoBuilder for SecondaryMod {
+        type Capability = Arc<SharedCap>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<SharedCap>, TraitKitError> {
+            Ok(Arc::new(SharedCap { val: 2 }))
+        }
+    }
+
+    impl InterfaceBuilder for SecondaryMod {
+        type Interface = dyn Secondary;
+        type Capability = Arc<SharedCap>;
+        type Error = TestError;
+        fn build(_kit: &Kit) -> Result<Arc<SharedCap>, TestError> {
+            Ok(Arc::new(SharedCap { val: 2 }))
+        }
+        fn into_interface(cap: Arc<SharedCap>) -> Arc<dyn Secondary> {
+            cap
+        }
+    }
+
+    /// 同能力类型、未被装饰的 eager 模块。
+    struct EagerMod;
+
+    impl ModuleMeta for EagerMod {
+        const NAME: &'static str = "eager-mod";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
+    }
+
+    impl AutoBuilder for EagerMod {
+        type Capability = Arc<SharedCap>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<SharedCap>, TraitKitError> {
+            Ok(Arc::new(SharedCap { val: 3 }))
+        }
+    }
+
+    #[test]
+    fn decorator_only_applies_to_its_own_module() {
+        let mut kit = Kit::new();
+        kit.register_as::<PrimaryMod>().unwrap();
+        kit.register_as::<SecondaryMod>().unwrap();
+        kit.register::<EagerMod>().unwrap();
+        kit.decorate::<PrimaryMod>(|cap: Arc<SharedCap>| {
+            Arc::new(SharedCap { val: cap.val + 100 })
+        });
+
+        let ready = kit.build().unwrap();
+
+        assert_eq!(
+            ready.resolve::<dyn Primary>().unwrap().val(),
+            101,
+            "装饰器应作用于被 decorate 的模块"
+        );
+        assert_eq!(
+            ready.resolve::<dyn Secondary>().unwrap().val(),
+            2,
+            "仅共享能力类型的模块不得继承他人装饰器"
+        );
+        assert_eq!(
+            ready.require::<EagerMod>().unwrap().val,
+            3,
+            "eager 路径同样不得过应用他人装饰器"
+        );
+    }
+
+    /// multi-binding 路径按属主过滤装饰器：同一能力类型的另一个绑定
+    /// 不得被他人装饰器套上。
+    #[cfg(feature = "decorator")]
+    #[test]
+    fn multi_binding_decorator_only_applies_to_its_own_binding() {
+        struct MultiA;
+        struct MultiB;
+
+        impl ModuleMeta for MultiA {
+            const NAME: &'static str = "multi-a";
+        }
+
+        impl AutoBuilder for MultiA {
+            type Capability = Arc<SharedCap>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Arc<SharedCap>, TraitKitError> {
+                Ok(Arc::new(SharedCap { val: 1 }))
+            }
+        }
+
+        impl ModuleMeta for MultiB {
+            const NAME: &'static str = "multi-b";
+        }
+
+        impl AutoBuilder for MultiB {
+            type Capability = Arc<SharedCap>;
+            type Error = TraitKitError;
+            fn build(_kit: &Kit) -> Result<Arc<SharedCap>, TraitKitError> {
+                Ok(Arc::new(SharedCap { val: 2 }))
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.register_multi::<MultiA>().unwrap();
+        kit.register_multi::<MultiB>().unwrap();
+        kit.decorate::<MultiA>(|cap: Arc<SharedCap>| Arc::new(SharedCap { val: cap.val + 100 }));
+
+        let ready = kit.build().unwrap();
+        let all = ready.require_all::<MultiA>().unwrap();
+        assert_eq!(all[0].val, 101, "被装饰的绑定带装饰");
+        assert_eq!(all[1].val, 2, "同能力类型的其它绑定不得继承他人装饰器");
+    }
+}
+
+/// `override_module` 在 `register_multi` / `register_as` 注册路径上也必须
+/// 生效：覆盖值不能只落在 `require::<M>()` 上，而 `require_all` /
+/// `resolve` 仍拿到真实实现（那会让报告里的 `Overridden` 变成假记录）。
+#[cfg(all(test, feature = "di", feature = "report"))]
+mod override_applies_to_multi_and_interface_tests {
+    use super::super::*;
+    use crate::core::{AutoBuilder, InterfaceBuilder, ModuleMeta};
+    use std::sync::Arc;
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct MultiCap {
+        id: u32,
+    }
+
+    struct MultiMod;
+
+    impl ModuleMeta for MultiMod {
+        const NAME: &'static str = "override-multi";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
+    }
+
+    impl AutoBuilder for MultiMod {
+        type Capability = Arc<MultiCap>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<MultiCap>, TraitKitError> {
+            Ok(Arc::new(MultiCap { id: 1 }))
+        }
+    }
+
+    trait Iface: 'static {
+        fn id(&self) -> u32;
+    }
+
+    struct IfaceCap {
+        id: u32,
+    }
+
+    impl Iface for IfaceCap {
+        fn id(&self) -> u32 {
+            self.id
+        }
+    }
+
+    #[derive(Debug)]
+    struct IfaceError;
+
+    impl std::fmt::Display for IfaceError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "iface error")
+        }
+    }
+
+    impl std::error::Error for IfaceError {}
+
+    struct IfaceMod;
+
+    impl ModuleMeta for IfaceMod {
+        const NAME: &'static str = "override-iface";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
+    }
+
+    impl AutoBuilder for IfaceMod {
+        type Capability = Arc<IfaceCap>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Arc<IfaceCap>, TraitKitError> {
+            Ok(Arc::new(IfaceCap { id: 1 }))
+        }
+    }
+
+    impl InterfaceBuilder for IfaceMod {
+        type Interface = dyn Iface;
+        type Capability = Arc<IfaceCap>;
+        type Error = IfaceError;
+        fn build(_kit: &Kit) -> Result<Arc<IfaceCap>, IfaceError> {
+            Ok(Arc::new(IfaceCap { id: 1 }))
+        }
+        fn into_interface(cap: Arc<IfaceCap>) -> Arc<dyn Iface> {
+            cap
+        }
+    }
+
+    #[test]
+    fn override_reaches_multi_and_interface_readers() {
+        let mut kit = Kit::new();
+        kit.register_multi::<MultiMod>().unwrap();
+        kit.register_as::<IfaceMod>().unwrap();
+        kit.override_module::<MultiMod>(Arc::new(MultiCap { id: 99 }))
+            .expect("no-dep override");
+        kit.override_module::<IfaceMod>(Arc::new(IfaceCap { id: 99 }))
+            .expect("no-dep override");
+
+        let ready = kit.build().unwrap();
+
+        let all = ready.require_all::<MultiMod>().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, 99, "multi binding must carry the override");
+        assert_eq!(
+            ready.resolve::<dyn Iface>().unwrap().id(),
+            99,
+            "interface object must carry the override"
+        );
+    }
+}
+
+/// 超深配置不得终止进程：`load_config_with` 的深度守卫在序列化阶段
+/// 中止递归（`serde_json::to_value` 会按配置深度递归到爆栈），错误
+/// 可被调用方捕获。
+#[cfg(feature = "confers")]
+mod deep_config_tests {
+    use super::super::*;
+    use crate::kit::Configurable;
+    use std::collections::HashMap;
+
+    /// 程序化构造的深嵌套配置：不经过文本解析器，避免解析器自身的
+    /// 深度上限先一步拒绝（那测不到序列化路径）。
+    #[derive(Clone, serde::Serialize, serde::Deserialize)]
+    struct DeepConfig(serde_json::Value);
+
+    impl Configurable for DeepConfig {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            let mut current = serde_json::Value::String("leaf".into());
+            for _ in 0..5000 {
+                let mut map = serde_json::Map::new();
+                map.insert("n".to_string(), current);
+                current = serde_json::Value::Object(map);
+            }
+            Ok(DeepConfig(current))
+        }
+    }
+
+    #[test]
+    fn load_config_with_rejects_deeply_nested_config_instead_of_crashing() {
+        let kit = Kit::new();
+        let vars = HashMap::new();
+        let err = kit
+            .load_config_with::<DeepConfig, _>(&vars)
+            .expect_err("deeply nested config must be rejected");
+        assert!(
+            matches!(err, TraitKitError::BuildFailed { .. }),
+            "expected BuildFailed, got {err:?}"
+        );
+    }
+}
+
+/// 配置类型名进入错误文本前裁掉 crate / 模块路径：内部结构不外泄。
+#[cfg(test)]
+mod short_type_name_in_errors_tests {
+    use super::super::*;
+
+    #[derive(Clone, Debug)]
+    struct InternalConfigType {
+        _value: u32,
+    }
+
+    #[test]
+    fn missing_config_error_key_omits_module_path() {
+        let kit = Kit::new();
+        let err = kit
+            .config::<InternalConfigType>()
+            .expect_err("config is not set");
+        let TraitKitError::MissingConfig { key } = &err else {
+            panic!("expected MissingConfig, got {err:?}");
+        };
+        assert_eq!(key, "InternalConfigType");
+        assert!(!key.contains("::"), "内部模块路径不得进入错误文本: {key}");
     }
 }

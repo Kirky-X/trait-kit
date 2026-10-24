@@ -212,7 +212,8 @@ mod build_report_json_roundtrip_e2e {
         kit.register::<RptEagerDep>().unwrap();
         kit.register::<RptJsonTop>().unwrap();
         kit.register_lazy::<RptJsonLazy>().unwrap();
-        kit.override_module::<RptJsonOverridden>(Arc::new(42));
+        kit.override_module::<RptJsonOverridden>(Arc::new(42))
+            .expect("override should be accepted");
         kit.set_config(RptMergeCfg {
             host: "orig".into(),
         });
@@ -293,7 +294,8 @@ mod build_report_json_roundtrip_e2e {
 
         let mut kit = Kit::new();
         kit.register::<RptEagerDep>().unwrap();
-        kit.override_module::<RptJsonOverridden>(Arc::new(42));
+        kit.override_module::<RptJsonOverridden>(Arc::new(42))
+            .expect("override should be accepted");
 
         let ready = kit.build().expect("build should succeed");
         assert_eq!(
@@ -336,7 +338,8 @@ mod build_report_json_roundtrip_e2e {
 
         let mut kit = Kit::new();
         kit.register_lazy::<RptJsonLazy>().unwrap();
-        kit.override_module::<RptJsonLazy>(Arc::new(77));
+        kit.override_module::<RptJsonLazy>(Arc::new(77))
+            .expect("override should be accepted");
 
         let ready = kit.build().expect("build should succeed");
         // lazy builder 返回 3，override 返回 77：拿到 77 说明 builder 未执行。

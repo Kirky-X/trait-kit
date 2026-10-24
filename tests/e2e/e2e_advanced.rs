@@ -407,7 +407,8 @@ mod core_scenarios {
         let mut kit = Kit::new();
         kit.register::<CountedModule>().expect("register");
         // Override with a value that differs from what build_fn would produce.
-        kit.override_module::<CountedModule>(Arc::new(777u32));
+        kit.override_module::<CountedModule>(Arc::new(777u32))
+            .expect("no-dep override");
         let built = kit.build().expect("build");
         let cap = built.require::<CountedModule>().expect("require");
         assert_eq!(*cap, 777, "override value should be returned");
@@ -418,15 +419,45 @@ mod core_scenarios {
         );
     }
 
-    // A07: override_module on unregistered module
+    // A07: override_module on unregistered module（无依赖声明时仍放行：
+    // 依赖图校验只覆盖已声明的依赖，模块本身无需 register）
     #[test]
     fn a07_override_module_on_unregistered_module() {
         let kit = Kit::new();
-        // AlphaModule is NOT registered, but override should still work.
-        kit.override_module::<AlphaModule>(Arc::new(555u32));
+        // AlphaModule is NOT registered and declares no dependencies, so the
+        // override is accepted.
+        kit.override_module::<AlphaModule>(Arc::new(555u32))
+            .expect("no-dep override on unregistered module is accepted");
         let built = kit.build().expect("build");
         let cap = built.require::<AlphaModule>().expect("require overridden");
         assert_eq!(*cap, 555);
+    }
+
+    // A07b: override_module fail-closed when a declared dependency is missing
+    struct OrphanOverride;
+    impl_module_meta!(OrphanOverride, "orphan-override", deps = [AlphaModule]);
+    impl AutoBuilder for OrphanOverride {
+        type Capability = Arc<u32>;
+        type Error = TraitKitError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(0))
+        }
+    }
+
+    #[test]
+    fn a07b_override_module_fails_when_deps_missing() {
+        let kit = Kit::new();
+        // AlphaModule is NOT registered and OrphanOverride declares it as a
+        // dependency: the override must be refused instead of landing in the
+        // build tail as an unvalidated value.
+        let result = kit.override_module::<OrphanOverride>(Arc::new(1u32));
+        assert!(matches!(
+            result,
+            Err(TraitKitError::DependencyMissing {
+                module: "orphan-override",
+                missing: "alpha"
+            })
+        ));
     }
 
     // A27: override_module wins over register_lazy (lazy builder never runs)
@@ -436,7 +467,8 @@ mod core_scenarios {
         COUNTED_BUILDS.store(0, Ordering::SeqCst);
         let mut kit = Kit::new();
         kit.register_lazy::<CountedModule>().expect("register_lazy");
-        kit.override_module::<CountedModule>(Arc::new(999u32));
+        kit.override_module::<CountedModule>(Arc::new(999u32))
+            .expect("no-dep override");
         let built = kit.build().expect("build");
         // The injected value wins; the lazy builder is never triggered —
         // neither at build nor at the first require.
@@ -448,7 +480,7 @@ mod core_scenarios {
         );
     }
 
-    // A08: override_module_strict succeeds when deps registered
+    // A08: override_module succeeds when deps registered
     struct StrictTarget;
     impl_module_meta!(StrictTarget, "strict-target", deps = [AlphaModule]);
     impl AutoBuilder for StrictTarget {
@@ -460,11 +492,11 @@ mod core_scenarios {
     }
 
     #[test]
-    fn a08_override_module_strict_succeeds_when_deps_registered() {
+    fn a08_override_module_succeeds_when_deps_registered() {
         let mut kit = Kit::new();
         kit.register::<AlphaModule>().expect("register dep");
-        kit.override_module_strict::<StrictTarget>(Arc::new(888u32))
-            .expect("strict override should succeed");
+        kit.override_module::<StrictTarget>(Arc::new(888u32))
+            .expect("override should succeed");
         let built = kit.build().expect("build");
         let cap = built.require::<StrictTarget>().expect("require");
         assert_eq!(*cap, 888);
@@ -628,12 +660,12 @@ mod core_scenarios {
         }
     }
 
-    // E19: override_module_strict with missing dep
+    // E19: override_module with missing dep
     #[test]
-    fn e19_override_module_strict_missing_dep_returns_dependency_missing() {
-        let mut kit = Kit::new();
+    fn e19_override_module_missing_dep_returns_dependency_missing() {
+        let kit = Kit::new();
         // Do NOT register AlphaModule (StrictTarget depends on it).
-        let result = kit.override_module_strict::<StrictTarget>(Arc::new(0u32));
+        let result = kit.override_module::<StrictTarget>(Arc::new(0u32));
         match result {
             Err(TraitKitError::DependencyMissing { module, missing }) => {
                 assert_eq!(module, "strict-target");
@@ -1179,11 +1211,12 @@ mod core_scenarios {
         kit.register_multi::<MultiA>().expect("register_multi A");
         kit.register_multi::<MultiB>().expect("register_multi B");
         // override_module (test injection, unregistered)
-        kit.override_module::<SelfSufficient>(Arc::new(123u32));
-        // override_module_strict (with registered dep)
+        kit.override_module::<SelfSufficient>(Arc::new(123u32))
+            .expect("no-dep override");
+        // override_module (with registered dep)
         kit.register::<EagerDep>().expect("register EagerDep");
-        kit.override_module_strict::<LazyDependent>(Arc::new(456u32))
-            .expect("strict override");
+        kit.override_module::<LazyDependent>(Arc::new(456u32))
+            .expect("override");
 
         let built = kit.build().expect("build should succeed");
         // Eager
@@ -2239,17 +2272,19 @@ mod encryption_boundary {
         let r0 = kit.set_encrypted(&cfg, &[]);
         // 1-byte key.
         let r1 = kit.set_encrypted(&cfg, &[42u8]);
-        // 100-byte key (longer than 32, still valid for HKDF).
+        // 100-byte key (longer than 32, still valid for HKDF) but constant-byte
+        // material, which the master-key policy rejects.
         let r100 = kit.set_encrypted(&cfg, &[0u8; 100]);
 
-        // All three should succeed (HKDF accepts any input length).
-        // If any fails, it would be a BuildFailed with context "set_encrypted".
-        // We don't force success — we just record the behavior.
+        // All three are rejected before HKDF runs: the master key must be at
+        // least 32 bytes and must not be constant-byte material. If any were
+        // to fail, it would be a BuildFailed with context "set_encrypted".
+        // We don't force the failure mode — we just record the behavior.
         let _ = r0;
         let _ = r1;
         let _ = r100;
         // The test passes by virtue of not panicking; the assertions above
-        // document that HKDF does not fail on these inputs.
+        // document that these inputs never reach the HKDF stage.
     }
 
     // E17: tampered ciphertext (best-effort analog)

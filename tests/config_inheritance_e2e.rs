@@ -87,16 +87,17 @@ fn e2e_config_inheritance_a_b_project_scenario() {
 
     kit.extract_shared::<TraitKitConfig>();
 
-    // Also extract from CacheConfig — last extractor wins, overriding
-    // host/port in the overlay
+    // CacheConfig declares the same field names, but the overlay is
+    // owner-tracked: the first declarer wins, so this extraction is refused
+    // instead of overwriting the overlay.
     kit.extract_shared::<CacheConfig>();
 
     kit.inject_shared::<DbConfig>();
 
     let db_after: DbConfig = kit.config().unwrap();
-    // CacheConfig was extracted last, so its values win
-    assert_eq!(db_after.host, "cache.example.com");
-    assert_eq!(db_after.port, 6379);
+    // TraitKitConfig extracted first and owns the keys, so its values win
+    assert_eq!(db_after.host, "prod.example.com");
+    assert_eq!(db_after.port, 8080);
     // DbConfig-specific fields unchanged
     assert_eq!(db_after.max_connections, 10);
     assert_eq!(db_after.database, "mydb");

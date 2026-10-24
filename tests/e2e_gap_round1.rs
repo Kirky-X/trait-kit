@@ -202,7 +202,7 @@ mod gap_346_349_version_family_on_unencrypted {
         );
 
         let err = ready
-            .get_encrypted_with_version::<NeverEncrypted>(&[1u8; 32], 1)
+            .get_encrypted_with_version::<NeverEncrypted>(b"never-enc-key-0123456789abcdefgh", 1)
             .expect_err("versioned reads of an unencrypted type must error");
         assert!(
             matches!(&err, TraitKitError::MissingConfig { .. }),
@@ -210,7 +210,10 @@ mod gap_346_349_version_family_on_unencrypted {
         );
 
         let err = ready
-            .rotate_master_key::<NeverEncrypted>(&[1u8; 32], &[2u8; 32])
+            .rotate_master_key::<NeverEncrypted>(
+                b"never-enc-key-0123456789abcdefgh",
+                b"never-rot-key-0123456789abcdefgh",
+            )
             .expect_err("rotating an unencrypted type must error");
         assert!(
             matches!(&err, TraitKitError::MissingConfig { .. }),
@@ -267,13 +270,13 @@ mod gap_350_deserialize_failure_build_failed {
             &AsymmetricCfg {
                 token: "s3cret".into(),
             },
-            b"0123456789abcdef",
+            b"0123456789abcdef0123456789abcdef",
         )
         .expect("set succeeds (no constraint on the serialize side)");
         let ready = kit.build().unwrap();
 
         let err = ready
-            .get_encrypted::<AsymmetricCfg>(b"0123456789abcdef")
+            .get_encrypted::<AsymmetricCfg>(b"0123456789abcdef0123456789abcdef")
             .expect_err(
                 "a correct key with failed deserialization must take the serde failure branch",
             );

@@ -133,18 +133,24 @@ fn e2e_decorator_applies_on_lazy_first_require() {
     assert_eq!(*ready.require::<LazyDeco>().unwrap(), 15);
 }
 
-/// multi-binding 路径：装饰器按能力类型作用于每个聚合绑定。
+/// multi-binding 路径：装饰器只作用于被装饰的那个绑定。
+///
+/// 装饰器按属主隔离：同一能力类型的其它绑定不共享本模块的装饰器
+/// （与 eager / lazy / interface 三条路径同口径）。
 #[test]
 fn e2e_decorator_applies_on_multi_binding_path() {
     let mut kit = Kit::new();
     kit.register_multi::<MultiDecoA>().unwrap();
     kit.register_multi::<MultiDecoB>().unwrap();
-    // 装饰器按 Arc<u64> 能力类型注册 → 聚合构建的每个绑定均被包装。
+    // 装饰器注册给 MultiDecoA（Arc<u64> 能力类型）→ 只作用于该绑定。
     kit.decorate::<MultiDecoA>(|cap: Arc<u64>| Arc::new(*cap + 100));
     let ready = kit.build().unwrap();
     let all = ready.require_all::<MultiDecoA>().unwrap();
     assert_eq!(*all[0], 101, "multi binding A should carry the decoration");
-    assert_eq!(*all[1], 102, "multi binding B should carry the decoration");
+    assert_eq!(
+        *all[1], 2,
+        "multi binding B must not inherit another module's decorator"
+    );
 }
 
 /// interface 路径：register_as 构建产物在 into_interface 前被装饰。

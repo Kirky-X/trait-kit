@@ -126,3 +126,39 @@ fn derive_shared_config_kit_extract_inject_flow() {
     assert_eq!(app_cfg.port, 8080);
     assert_eq!(app_cfg.app_name, "my-app"); // unchanged
 }
+
+// ── 凭据类字段不进共享命名空间 ──
+
+#[derive(Clone, Debug, PartialEq, SharedConfig)]
+#[shared(password)]
+struct SecretSourceConfig {
+    password: String,
+}
+
+#[derive(Clone, Debug, PartialEq, SharedConfig)]
+#[shared(password)]
+struct SecretTargetConfig {
+    password: String,
+}
+
+/// 共享命名空间是一张无属主的扁平表：凭据类字段若进入其中，会随
+/// `inject_shared` 流向其它配置类型，且这份明文副本无处零化。
+#[test]
+fn kit_shared_overlay_does_not_flow_credentials_across_config_types() {
+    let kit = Kit::new();
+    kit.set_config(SecretSourceConfig {
+        password: "source-secret".into(),
+    });
+    kit.set_config(SecretTargetConfig {
+        password: "target-secret".into(),
+    });
+
+    kit.extract_shared::<SecretSourceConfig>();
+    kit.inject_shared::<SecretTargetConfig>();
+
+    let target: SecretTargetConfig = kit.config().unwrap();
+    assert_eq!(
+        target.password, "target-secret",
+        "凭据字段不得经共享命名空间跨配置类型流动"
+    );
+}

@@ -25,7 +25,7 @@
 /// impl_module_meta!(MyModule, "my-module");
 ///
 /// assert_eq!(MyModule::NAME, "my-module");
-/// assert!(MyModule::dependencies.is_empty);
+/// assert!(MyModule::dependencies().is_empty());
 /// ```
 #[macro_export]
 macro_rules! impl_module_meta {
