@@ -77,6 +77,22 @@ impl HealthStatus {
     }
 }
 
+/// 详情文本的最大字符数：超出部分截断，避免后端错误文本放大响应体。
+#[cfg(feature = "health")]
+const MAX_DETAIL_LEN: usize = 512;
+
+/// 抹掉详情文本中的凭据片段（URL userinfo、`password=`/`token=` 之类的
+/// 键值对、`Bearer` 令牌），并截断超长文本。
+///
+/// 健康与就绪端点通常免鉴权，而检查器写入的 detail 常含连接串与口令；
+/// 框架侧统一兜底，实现方不必逐个字段自查。原始 detail 仍保留在
+/// [`HealthStatus`] 内，调用方需要完整文本时自行读取。
+#[cfg(feature = "health")]
+#[must_use]
+pub fn redact_detail(detail: &str) -> String {
+    crate::redact::truncate(&crate::redact::redact_text(detail, false), MAX_DETAIL_LEN)
+}
+
 /// Per-module health entry of a [`HealthAggregate`] JSON export.
 #[cfg(all(feature = "health", feature = "report"))]
 #[derive(Debug, Clone, serde::Serialize)]
@@ -87,9 +103,8 @@ pub struct HealthModuleEntry {
     pub status: &'static str,
     /// Detail message for degraded / unhealthy states, if any.
     ///
-    /// Carried verbatim into the readiness payload (`to_json`), so
-    /// checkers must never embed credentials, connection strings or
-    /// internal topology in the detail.
+    /// Credentials are masked and the text is truncated before it enters
+    /// the readiness payload (`to_json`) — see [`redact_detail`].
     pub detail: Option<String>,
 }
 
@@ -97,14 +112,16 @@ pub struct HealthModuleEntry {
 ///
 /// The overall status is the worst-of across all registered health checkers
 /// (`unhealthy` > `degraded` > `healthy`); an empty checker set is healthy by
-/// convention. Module details are carried verbatim into the JSON payload —
-/// keep credentials and internal topology out of
-/// [`HealthModuleEntry::detail`]. The `modules` order is not specified: it
+/// convention. Module details are redacted (credentials masked, text
+/// truncated) before they enter the JSON payload — see
+/// [`redact_detail`]. The `modules` order is not specified: it
 /// follows the checker registry's iteration order and may vary across
 /// runs.
 #[cfg(all(feature = "health", feature = "report"))]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct HealthAggregate {
+    /// Payload schema version (see [`HEALTH_SCHEMA_VERSION`]).
+    pub schema_version: u32,
     /// Worst-of overall status name.
     pub status: &'static str,
     /// Convenience flag: `status == "healthy"`.
@@ -112,6 +129,10 @@ pub struct HealthAggregate {
     /// Per-module statuses.
     pub modules: Vec<HealthModuleEntry>,
 }
+
+/// Version of the `/healthz` JSON payload schema.
+#[cfg(all(feature = "health", feature = "report"))]
+pub const HEALTH_SCHEMA_VERSION: u32 = 1;
 
 #[cfg(all(feature = "health", feature = "report"))]
 impl HealthAggregate {
@@ -563,6 +584,23 @@ mod aggregate_tests {
         }
     }
 
+    struct AggSecret;
+    impl ModuleMeta for AggSecret {
+        const NAME: &'static str = "agg-secret";
+    }
+    impl AutoBuilder for AggSecret {
+        type Capability = Arc<AggCap>;
+        type Error = AggError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(AggCap))
+        }
+    }
+    impl HealthCheck for AggSecret {
+        fn check(_cap: &Self::Capability) -> HealthStatus {
+            HealthStatus::unhealthy("db error: password=hunter2")
+        }
+    }
+
     #[test]
     fn status_name_and_detail_are_flat() {
         assert_eq!(HealthStatus::Healthy.as_status_name(), "healthy");
@@ -598,6 +636,52 @@ mod aggregate_tests {
         assert_eq!(value["status"], "degraded");
         assert_eq!(value["healthy"], false);
         assert_eq!(value["modules"].as_array().map(Vec::len), Some(2));
+    }
+
+    /// 详情文本里的凭据必须在进入对外负载前被抹掉：健康端点通常免鉴权。
+    #[test]
+    fn redact_detail_masks_credentials() {
+        assert_eq!(
+            redact_detail("connect failed: postgres://svc:s3cr3t@10.0.0.7:5432/orders"), // pragma: allowlist secret
+            "connect failed: postgres://[REDACTED]@10.0.0.7:5432/orders"
+        );
+        assert_eq!(redact_detail("password=hunter2"), "password=[REDACTED]");
+        assert_eq!(redact_detail("token: abc123"), "token: [REDACTED]");
+        assert_eq!(
+            redact_detail("Authorization: Bearer abc123"),
+            "Authorization: Bearer [REDACTED]"
+        );
+        assert_eq!(
+            redact_detail("plain detail without secrets"),
+            "plain detail without secrets"
+        );
+    }
+
+    #[test]
+    fn redact_detail_truncates_long_text() {
+        let long = "x".repeat(MAX_DETAIL_LEN + 100);
+        let redacted = redact_detail(&long);
+        assert!(redacted.ends_with("[truncated]"), "got {redacted:?}");
+        assert!(redacted.chars().count() <= MAX_DETAIL_LEN + "[truncated]".len());
+    }
+
+    /// 对外负载里的 detail 必须已脱敏：健康端点通常免鉴权。
+    #[test]
+    fn health_aggregate_redacts_module_detail() {
+        let mut kit = Kit::new();
+        kit.register::<AggSecret>().unwrap();
+        kit.register_health_check::<AggSecret>();
+        let ready = kit.build().unwrap();
+
+        let agg = ready.health_aggregate();
+        let entry = agg.modules.first().expect("entry");
+        assert_eq!(entry.status, "unhealthy");
+        assert_eq!(
+            entry.detail.as_deref(),
+            Some("db error: password=[REDACTED]"),
+            "credentials must not reach the health payload"
+        );
+        assert_eq!(agg.schema_version, HEALTH_SCHEMA_VERSION);
     }
 
     #[test]

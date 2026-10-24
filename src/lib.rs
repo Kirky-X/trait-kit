@@ -12,6 +12,7 @@
 pub mod core;
 mod error;
 pub mod kit;
+mod redact;
 
 pub mod i18n;
 
@@ -67,12 +68,15 @@ pub(crate) mod test_helpers {
     ///
     /// # Panics
     ///
-    /// Panics if the future does not complete within `MAX_POLLS` iterations,
+    /// Panics if the future does not complete within `MAX_DURATION`,
     /// preventing infinite loops from hanging the test suite.
     pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
-        /// Maximum number of poll iterations before panicking.
-        /// Generous enough for any reasonable test future.
-        const MAX_POLLS: u32 = 1_000_000;
+        /// Wall-clock budget before the executor gives up.
+        const MAX_DURATION: std::time::Duration = std::time::Duration::from_secs(30);
+        /// Pause between polls: no-op wakers never wake the executor, so
+        /// timer-backed futures (e.g. the probe timeout) only become ready
+        /// once real time has passed.
+        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_micros(50);
 
         let waker = task::Waker::noop();
         // `Context::from_waker` takes `&Waker`; the borrow is required by the
@@ -80,18 +84,17 @@ pub(crate) mod test_helpers {
         #[allow(clippy::needless_borrow)]
         let mut cx = task::Context::from_waker(&waker);
         let mut future = std::pin::pin!(future);
-        let mut polls = 0u32;
+        let started = std::time::Instant::now();
         loop {
             match future.as_mut().poll(&mut cx) {
                 Poll::Ready(v) => return v,
                 Poll::Pending => {
-                    polls += 1;
+                    std::thread::sleep(POLL_INTERVAL);
                     assert!(
-                        polls < MAX_POLLS,
+                        started.elapsed() < MAX_DURATION,
                         "block_on: future did not complete within \
-                         {MAX_POLLS} poll iterations (possible infinite loop)"
+                         {MAX_DURATION:?} (possible infinite loop)"
                     );
-                    std::hint::spin_loop();
                 }
             }
         }

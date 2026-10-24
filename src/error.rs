@@ -13,7 +13,6 @@ use crate::kit::shutdown::ShutdownPhase;
 /// Follows the `ProjectNameError` naming convention used across the base workspace.
 ///
 /// `Display` 实现通过 [`tr`] 查询 Fluent 消息目录，自动根据当前 locale 输出对应语言文本。
-#[derive(Debug)]
 pub enum TraitKitError {
     /// 依赖图中检测到环。
     CycleDetected {
@@ -162,13 +161,16 @@ impl fmt::Display for TraitKitError {
                 ),
             ),
             Self::BuildFailed { context, source } => {
-                let source_str = source.to_string();
+                let source_str = sanitize_source_text(&source.to_string());
                 write!(
                     f,
                     "{}",
                     tr(
                         "trait-kit-error-build-failed",
-                        &[("context", context.as_str()), ("source", &source_str)],
+                        &[
+                            ("context", public_context(context)),
+                            ("source", &source_str),
+                        ],
                     )
                 )
             }
@@ -201,13 +203,16 @@ impl fmt::Display for TraitKitError {
             }
             #[cfg(feature = "lifecycle")]
             Self::LifecycleFailed { context, source } => {
-                let source_str = source.to_string();
+                let source_str = sanitize_source_text(&source.to_string());
                 write!(
                     f,
                     "{}",
                     tr(
                         "trait-kit-error-lifecycle-failed",
-                        &[("context", context.as_str()), ("source", &source_str)],
+                        &[
+                            ("context", public_context(context)),
+                            ("source", &source_str),
+                        ],
                     )
                 )
             }
@@ -236,6 +241,222 @@ impl std::error::Error for TraitKitError {
             _ => None,
         }
     }
+}
+
+/// 调试输出里的底层错误占位：只显示脱敏后的文本。
+struct RedactedSource(String);
+
+impl fmt::Debug for RedactedSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+/// 错误类型的调试输出。
+///
+/// 形状与派生实现一致（变体名 + 字段），但底层错误原文与内部调用点
+/// 标签都经过脱敏：下游用 `{:?}` 或 tracing 的 `?err` 记录时不会带出
+/// 服务器绝对路径、口令与内部函数名。原始上下文仍可通过变体的公开
+/// 字段读取。
+impl fmt::Debug for TraitKitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CycleDetected { cycle } => f
+                .debug_struct("CycleDetected")
+                .field("cycle", cycle)
+                .finish(),
+            Self::DependencyMissing { module, missing } => f
+                .debug_struct("DependencyMissing")
+                .field("module", module)
+                .field("missing", missing)
+                .finish(),
+            Self::AlreadyRegistered { module } => f
+                .debug_struct("AlreadyRegistered")
+                .field("module", module)
+                .finish(),
+            Self::DecoratorTargetMissing { module } => f
+                .debug_struct("DecoratorTargetMissing")
+                .field("module", module)
+                .finish(),
+            Self::VersionIncompatible {
+                module,
+                dependency,
+                required,
+                provided,
+            } => f
+                .debug_struct("VersionIncompatible")
+                .field("module", module)
+                .field("dependency", dependency)
+                .field("required", required)
+                .field("provided", provided)
+                .finish(),
+            Self::BuildFailed { context, source } => f
+                .debug_struct("BuildFailed")
+                .field("context", &public_context(context))
+                .field(
+                    "source",
+                    &RedactedSource(sanitize_source_text(&source.to_string())),
+                )
+                .finish(),
+            Self::MissingCapability { key } => f
+                .debug_struct("MissingCapability")
+                .field("key", key)
+                .finish(),
+            Self::CapabilityTypeMismatch { key } => f
+                .debug_struct("CapabilityTypeMismatch")
+                .field("key", key)
+                .finish(),
+            Self::MissingConfig { key } => {
+                f.debug_struct("MissingConfig").field("key", key).finish()
+            }
+            #[cfg(feature = "lifecycle")]
+            Self::LifecycleFailed { context, source } => f
+                .debug_struct("LifecycleFailed")
+                .field("context", &public_context(context))
+                .field(
+                    "source",
+                    &RedactedSource(sanitize_source_text(&source.to_string())),
+                )
+                .finish(),
+            #[cfg(feature = "shutdown")]
+            Self::ShutdownTimedOut { phases } => f
+                .debug_struct("ShutdownTimedOut")
+                .field("phases", phases)
+                .finish(),
+        }
+    }
+}
+
+/// 底层错误原文的最大字符数：公开 `Display` 里的原文不无限长。
+const MAX_SOURCE_TEXT_LEN: usize = 512;
+
+/// 脱敏底层错误原文后再进入公开 `Display`。
+///
+/// 公开错误文本可能回显给客户端，服务器绝对路径与凭据片段不应随之
+/// 泄漏；未脱敏的原文仍可通过 [`std::error::Error::source`] 取回。
+fn sanitize_source_text(text: &str) -> String {
+    crate::redact::truncate(&crate::redact::redact_text(text, true), MAX_SOURCE_TEXT_LEN)
+}
+
+/// 内部调用点标签登记：变体 → 写入公开 `context` 字段的原始标签。
+///
+/// 变体集合、原始标签与反查表由同一次展开生成，新增标签不会与
+/// 登记表脱节；对外文案映射见 [`ContextLabel::public`]（穷尽匹配，
+/// 漏登记即编译失败）。
+macro_rules! context_labels {
+    ($($variant:ident => $raw:literal),* $(,)?) => {
+        /// 内部调用点标签：与模块名等用户上下文区分的封闭集合。
+        ///
+        /// 内部调用点的标签只能取自本枚举：写进公开 `context` 字段的
+        /// 是原始标签，进入对外错误文本的是 [`ContextLabel::public`]
+        /// 给出的类别文案。模块名（`ModuleMeta::NAME`）与本地化诊断
+        /// 短语等非标签形态的上下文不在本枚举内，原样保留。
+        #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+        pub(crate) enum ContextLabel {
+            $($variant,)*
+        }
+
+        impl ContextLabel {
+            /// 写入公开 `context` 字段的原始标签。
+            const fn raw(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $raw,)*
+                }
+            }
+
+            /// 按原始标签反查登记项。
+            fn from_raw(raw: &str) -> Option<Self> {
+                match raw {
+                    $($raw => Some(Self::$variant),)*
+                    _ => None,
+                }
+            }
+
+            /// 全部登记项：测试据此核对登记表与折叠结果一致。
+            #[cfg(test)]
+            const ALL: &'static [Self] = &[$(Self::$variant,)*];
+        }
+    };
+}
+
+context_labels! {
+    LoadConfig => "load_config",
+    LoadConfigWith => "load_config_with",
+    LoadConfigWithSerialize => "load_config_with (serialize)",
+    LoadConfigWithDeserialize => "load_config_with (deserialize)",
+    LoadAndValidate => "load_and_validate",
+    ReloadConfig => "reload_config",
+    SetEncrypted => "set_encrypted",
+    GetEncrypted => "get_encrypted",
+    GetEncryptedWithVersion => "get_encrypted_with_version",
+    RotateMasterKey => "rotate_master_key",
+    RotateMasterKeyOldKey => "rotate_master_key (old key)",
+    RotateMasterKeyNewKey => "rotate_master_key (new key)",
+    OnReady => "on_ready",
+    Shutdown => "shutdown",
+    ShutdownBridge => "register_shutdown_into",
+}
+
+impl ContextLabel {
+    /// 进入对外错误文本的类别文案。
+    ///
+    /// 穷尽匹配：新增标签变体而未给出对外文案时编译失败，内部调用点
+    /// 不会以原始标签形态漏进错误文本。本地化诊断短语里的操作名也
+    /// 取自这里（短语整体原样保留，只有操作名换成类别文案）。
+    pub(crate) const fn public(self) -> &'static str {
+        match self {
+            Self::LoadConfig | Self::LoadConfigWith => "configuration load",
+            Self::LoadConfigWithSerialize => "configuration load (serialize)",
+            Self::LoadConfigWithDeserialize => "configuration load (deserialize)",
+            Self::LoadAndValidate => "configuration load (validated)",
+            Self::ReloadConfig => "configuration reload",
+            Self::SetEncrypted => "encrypted configuration write",
+            Self::GetEncrypted | Self::GetEncryptedWithVersion => "encrypted configuration read",
+            Self::RotateMasterKey => "master key rotation",
+            Self::RotateMasterKeyOldKey => "master key rotation (old key)",
+            Self::RotateMasterKeyNewKey => "master key rotation (new key)",
+            Self::OnReady => "readiness hook",
+            Self::Shutdown => "shutdown",
+            Self::ShutdownBridge => "hook registration",
+        }
+    }
+}
+
+impl From<ContextLabel> for String {
+    fn from(label: ContextLabel) -> Self {
+        label.raw().to_string()
+    }
+}
+
+/// 主密钥供给方上下文的族前缀：provider 类型名随运行时变化。
+///
+/// 类型名留在 `context` 字段里供程序化定位，进入对外文本前按族前缀
+/// 折叠，类型名不外泄。
+pub(crate) const KEY_PROVIDER_CONTEXT_PREFIX: &str = "key provider (";
+
+/// 主密钥供给方的上下文标签：类型名进字段、不进对外文本。
+#[cfg(feature = "encryption")]
+pub(crate) fn key_provider_context(provider_type: &str) -> String {
+    format!("{KEY_PROVIDER_CONTEXT_PREFIX}{provider_type})")
+}
+
+/// 对外文案里的上下文标签：内部调用点名不进入错误文本。
+///
+/// `BuildFailed` / `LifecycleFailed` 的 `context` 记录的是内部调用点
+/// （`load_config`、`rotate_master_key (old key)` 之类），这些名字随
+/// 错误文本流向调用方会暴露内部实现结构。内部调用点标签一律登记在
+/// [`ContextLabel`]，此处折叠成稳定的类别标签；模块名
+/// （`ModuleMeta::NAME`）与本地化诊断短语等非标签形态的上下文原样
+/// 保留。原始标签仍可通过变体的公开字段读取（程序化匹配不受影响）。
+fn public_context(context: &str) -> &str {
+    if let Some(label) = ContextLabel::from_raw(context) {
+        return label.public();
+    }
+    // 主密钥供给方：provider 类型名随运行时变化，按族前缀折叠。
+    if context.starts_with(KEY_PROVIDER_CONTEXT_PREFIX) {
+        return "master key provider";
+    }
+    context
 }
 
 /// Coarse failure classification for precise downstream matching.
@@ -434,6 +655,41 @@ mod tests {
         );
     }
 
+    /// 公开错误文本不得带出服务器绝对路径与凭据：原文仍可经
+    /// `Error::source()` 取回。
+    #[test]
+    fn build_failed_display_redacts_paths_and_credentials() {
+        let err = TraitKitError::BuildFailed {
+            context: "load_config".into(),
+            source: Box::new(std::io::Error::other(
+                "Configuration file not found: /etc/app/config/prod.toml (password=hunter2)",
+            )),
+        };
+        let msg = format!("{err}");
+        assert!(
+            !msg.contains("/etc/app/config"),
+            "absolute path must not leak: {msg}"
+        );
+        assert!(!msg.contains("hunter2"), "credentials must not leak: {msg}");
+        assert!(
+            msg.contains("prod.toml"),
+            "file name stays available for diagnosis: {msg}"
+        );
+    }
+
+    #[test]
+    fn build_failed_display_redacts_windows_paths() {
+        let err = TraitKitError::BuildFailed {
+            context: "load_config".into(),
+            source: Box::new(std::io::Error::other(
+                r"cannot open C:\app\config\prod.toml",
+            )),
+        };
+        let msg = format!("{err}");
+        assert!(!msg.contains(r"app\config"), "path must not leak: {msg}");
+        assert!(msg.contains("prod.toml"), "file name stays: {msg}");
+    }
+
     #[test]
     fn missing_capability_display_contains_key() {
         let err = TraitKitError::MissingCapability { key: "cap".into() };
@@ -455,17 +711,163 @@ mod tests {
 
     #[cfg(feature = "lifecycle")]
     #[test]
-    fn lifecycle_failed_display_contains_context_and_source() {
+    fn lifecycle_failed_display_contains_public_context_and_source() {
         let err = TraitKitError::LifecycleFailed {
             context: "on_ready".into(),
             source: Box::new(std::io::Error::other("fail")),
         };
         let msg = format!("{err}");
+        // 内部调用点名不进入错误文本，只有对外类别标签。
         assert!(
-            msg.contains("on_ready"),
-            "should contain context: got '{msg}'"
+            !msg.contains("on_ready"),
+            "internal call-site label must not leak: {msg}"
+        );
+        assert!(
+            msg.contains("readiness hook"),
+            "should contain public context: got '{msg}'"
         );
         assert!(msg.contains("fail"), "should contain source: got '{msg}'");
+    }
+
+    /// 内部调用点标签不进入对外错误文本：模块名等非标签形态原样保留。
+    #[test]
+    fn build_failed_display_hides_internal_call_site_labels() {
+        let err = TraitKitError::BuildFailed {
+            context: "load_config_with".into(),
+            source: Box::new(std::io::Error::other("boom")),
+        };
+        let msg = format!("{err}");
+        assert!(
+            !msg.contains("load_config_with"),
+            "internal call-site label must not leak: {msg}"
+        );
+        assert!(
+            msg.contains("configuration"),
+            "should contain public context: got '{msg}'"
+        );
+
+        let module_err = TraitKitError::BuildFailed {
+            context: "counter-module".into(),
+            source: Box::new(std::io::Error::other("boom")),
+        };
+        let module_msg = format!("{module_err}");
+        assert!(
+            module_msg.contains("counter-module"),
+            "module names stay visible: {module_msg}"
+        );
+    }
+
+    /// 模块名不按字符串形态被当成内部调用点折叠：折叠只针对登记在册
+    /// 的内部调用点标签。
+    #[test]
+    fn module_names_survive_the_context_folding() {
+        let err = TraitKitError::BuildFailed {
+            context: "my_module".into(),
+            source: Box::new(std::io::Error::other("boom")),
+        };
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("my_module"),
+            "a module name must stay visible: {msg}"
+        );
+        assert!(
+            !msg.contains("operation"),
+            "a module name must not be folded into a generic category: {msg}"
+        );
+    }
+
+    /// 主密钥供给方的 provider 类型名不进入对外错误文本。
+    #[test]
+    fn key_provider_type_name_stays_out_of_public_text() {
+        let err = TraitKitError::BuildFailed {
+            context: "key provider (env)".into(),
+            source: Box::new(std::io::Error::other("boom")),
+        };
+        let msg = format!("{err}");
+        assert!(
+            !msg.contains("env"),
+            "the provider type name must not leak: {msg}"
+        );
+        assert!(
+            msg.contains("master key provider"),
+            "the public category stays available: {msg}"
+        );
+    }
+
+    /// 关闭桥接的本地化上下文不携带内部函数名：桥接阶段仍留在文案里。
+    #[test]
+    fn shutdown_bridge_context_hides_internal_operation_name() {
+        let context = tr(
+            "trait-kit-error-shutdown-bridge-stranded",
+            &[
+                ("operation", ContextLabel::ShutdownBridge.public()),
+                ("phase", "drain_queue"),
+                ("stranded", "2"),
+            ],
+        );
+        let err = TraitKitError::BuildFailed {
+            context,
+            source: Box::new(std::io::Error::other("boom")),
+        };
+        let msg = format!("{err}");
+        assert!(
+            !msg.contains("register_shutdown_into"),
+            "the internal operation name must not leak: {msg}"
+        );
+        assert!(
+            msg.contains("hook registration"),
+            "the public operation wording stays available: {msg}"
+        );
+        assert!(
+            msg.contains("drain_queue"),
+            "the bridge phase stays available for diagnosis: {msg}"
+        );
+    }
+
+    /// 登记在册的内部调用点标签一律折叠为对外类别文案：原始标签
+    /// 不残留在对外文本里。
+    #[test]
+    fn every_registered_label_folds_to_its_public_category() {
+        for label in ContextLabel::ALL {
+            let public = public_context(label.raw());
+            assert_eq!(
+                public,
+                label.public(),
+                "label {label:?} must fold to its registered public wording"
+            );
+            if public != label.raw() {
+                assert!(
+                    !public.contains(label.raw()),
+                    "the raw label must not survive in the public text: {public}"
+                );
+            }
+        }
+    }
+
+    /// `{:?}` 不得带出底层错误原文：下游日志与 tracing 的 `?err` 会
+    /// 原样记录调试输出。
+    #[test]
+    fn debug_output_redacts_source_text() {
+        let err = TraitKitError::BuildFailed {
+            context: "load_config".into(),
+            source: Box::new(std::io::Error::other(
+                "Configuration file not found: /etc/app/config/prod.toml (password=hunter2)",
+            )),
+        };
+        let debug = format!("{err:?}");
+        assert!(debug.contains("BuildFailed"), "variant name stays: {debug}");
+        assert!(
+            !debug.contains("/etc/app/config"),
+            "absolute path must not leak: {debug}"
+        );
+        assert!(
+            !debug.contains("hunter2"),
+            "credentials must not leak: {debug}"
+        );
+        assert!(
+            !debug.contains("load_config"),
+            "internal call-site label must not leak: {debug}"
+        );
     }
 
     #[test]

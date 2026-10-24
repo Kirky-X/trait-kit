@@ -92,9 +92,9 @@ pub struct ProbeEntry {
     pub status: &'static str,
     /// Detail message for degraded / unhealthy states, if any.
     ///
-    /// This string is carried verbatim into the readiness payload
-    /// (`to_json`), so probe implementations must never embed
-    /// credentials, connection strings or internal topology in the detail.
+    /// Credentials are masked and the text is truncated before it enters
+    /// the readiness payload (`to_json`) — see
+    /// [`redact_detail`](super::health::redact_detail).
     pub detail: Option<String>,
     /// Wall latency in milliseconds, measured by the framework around the
     /// `probe.await` call — not the probe's self-reported
@@ -116,12 +116,15 @@ pub struct ProbeEntry {
 /// reported as serviceable. Empty does not imply healthy; always check
 /// `stopped` (or match on `healthy`) before drawing a readiness verdict.
 ///
-/// Probe details are carried verbatim into the JSON payload — keep
-/// credentials and internal topology out of [`ProbeEntry::detail`].
+/// Probe details are redacted (credentials masked, text truncated) before
+/// they enter the JSON payload — see
+/// [`redact_detail`](super::health::redact_detail).
 #[cfg(feature = "probe")]
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "report", derive(serde::Serialize))]
 pub struct ProbeReport {
+    /// Payload schema version (see [`PROBE_SCHEMA_VERSION`]).
+    pub schema_version: u32,
     /// Worst-of overall status name.
     pub overall: &'static str,
     /// Convenience flag: `overall == "healthy"`.
@@ -137,6 +140,10 @@ pub struct ProbeReport {
     /// executed pass, including the healthy-by-convention empty registry.
     pub stopped: bool,
 }
+
+/// Version of the `/health/ready` JSON payload schema.
+#[cfg(feature = "probe")]
+pub const PROBE_SCHEMA_VERSION: u32 = 1;
 
 #[cfg(all(feature = "probe", feature = "report"))]
 impl ProbeReport {
@@ -213,6 +220,7 @@ mod tests {
     #[test]
     fn probe_report_json_round_trips() {
         let report = ProbeReport {
+            schema_version: PROBE_SCHEMA_VERSION,
             overall: "degraded",
             healthy: false,
             probes: vec![ProbeEntry {
