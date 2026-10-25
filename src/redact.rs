@@ -540,4 +540,45 @@ mod tests {
             "open [REDACTED]token failed"
         );
     }
+
+    /// 方案词独立成片段（`Bearer <凭据>`）：方案词保留，块头与块内材料
+    /// 都要抹除。
+    #[test]
+    fn redact_text_masks_pem_block_after_a_standalone_auth_scheme() {
+        let redacted = redact_text(
+            "Bearer -----BEGIN CERTIFICATE----- MIIB -----END CERTIFICATE-----",
+            false,
+        );
+        assert!(
+            !redacted.contains("MIIB"),
+            "PEM 块内的材料不得外泄: {redacted}"
+        );
+        assert!(
+            redacted.starts_with("Bearer "),
+            "方案词本身必须保留: {redacted}"
+        );
+    }
+
+    /// `password =<值>` 形态且值开启 PEM 块：块内材料同样要抹除。
+    #[test]
+    fn redact_text_masks_pem_block_after_a_compact_separator() {
+        let redacted = redact_text("password =-----BEGIN CERTIFICATE----- MIIB", false);
+        assert!(
+            !redacted.contains("MIIB"),
+            "PEM 块内的材料不得外泄: {redacted}"
+        );
+    }
+
+    /// userinfo 段含路径分隔符时不按 userinfo 规则折叠：片段原样保留，
+    /// 后续仍按普通片段处理。
+    #[test]
+    fn redact_text_keeps_url_whose_userinfo_contains_a_path() {
+        assert_eq!(redact_text("https://a/b@host", true), "https://a/b@host");
+    }
+
+    /// 绝对路径没有可保留的文件名（以分隔符结尾）：整段抹除。
+    #[test]
+    fn redact_text_masks_absolute_path_without_a_file_name() {
+        assert_eq!(redact_text("/etc/", true), "[REDACTED]");
+    }
 }

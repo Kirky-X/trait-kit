@@ -438,6 +438,15 @@ mod tests {
         let e = TestError;
         assert_eq!(format!("{e}"), "test error");
     }
+
+    /// `ZeroTestModule` 的判定函数自身也要覆盖健康分支：端到端路径只
+    /// 产出零值，健康分支只能由直接调用判定函数触达。
+    #[test]
+    fn health_zero_module_reports_healthy_for_positive_value() {
+        let cap = Arc::new(TestCap { value: 7 });
+        let status = ZeroTestModule::check(&cap);
+        assert_eq!(status, HealthStatus::Healthy);
+    }
 }
 
 #[cfg(all(test, feature = "health", feature = "async"))]
@@ -697,6 +706,14 @@ mod aggregate_tests {
                 .contains("\"healthy\"")
         );
     }
+
+    /// 聚合测试模块的错误类型也要能渲染：`Display` 是构建失败路径的
+    /// 错误文本来源。
+    #[test]
+    fn health_agg_test_error_display() {
+        let e = AggError;
+        assert_eq!(format!("{e}"), "agg error");
+    }
 }
 
 #[cfg(all(test, feature = "health"))]
@@ -765,5 +782,12 @@ mod history_tests {
         assert!(kit.health_history().is_empty());
         kit.record_health_history();
         assert!(kit.health_history().is_empty(), "no checkers → no samples");
+    }
+
+    /// 历史测试模块的错误类型也要能渲染：构建失败路径的错误文本来源。
+    #[test]
+    fn health_hist_test_error_display() {
+        let e = HistError;
+        assert_eq!(format!("{e}"), "hist error");
     }
 }

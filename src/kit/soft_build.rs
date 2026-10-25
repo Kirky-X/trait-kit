@@ -125,7 +125,6 @@ mod tests {
     }
 
     static CAPTURED_RECORDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
-
     struct CaptureLogger;
 
     impl log::Log for CaptureLogger {

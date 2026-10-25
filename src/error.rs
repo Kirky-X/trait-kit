@@ -1065,3 +1065,117 @@ mod display_branch_tests {
         assert_eq!(msg, "capability type mismatch for `k`");
     }
 }
+
+// 调试输出的逐变体分支
+
+/// 手写 `Debug` 的每个变体分支都要有独立覆盖：`Debug` 是下游日志与
+/// tracing 的 `?err` 出口，某个变体漏掉分支即等于该变体未经脱敏就外泄。
+#[cfg(test)]
+mod debug_variant_tests {
+    use super::TraitKitError;
+
+    #[test]
+    fn debug_renders_graph_error_variants_with_their_fields() {
+        let cycle = TraitKitError::CycleDetected {
+            cycle: vec!["alpha", "beta"],
+        };
+        let debug = format!("{cycle:?}");
+        assert!(debug.contains("CycleDetected"), "got '{debug}'");
+        assert!(debug.contains("alpha"), "got '{debug}'");
+        assert!(debug.contains("beta"), "got '{debug}'");
+
+        let missing = TraitKitError::DependencyMissing {
+            module: "mod-a",
+            missing: "mod-b",
+        };
+        let debug = format!("{missing:?}");
+        assert!(debug.contains("DependencyMissing"), "got '{debug}'");
+        assert!(debug.contains("mod-a"), "got '{debug}'");
+        assert!(debug.contains("mod-b"), "got '{debug}'");
+
+        let registered = TraitKitError::AlreadyRegistered {
+            module: "my-module",
+        };
+        let debug = format!("{registered:?}");
+        assert!(debug.contains("AlreadyRegistered"), "got '{debug}'");
+        assert!(debug.contains("my-module"), "got '{debug}'");
+
+        let decorator = TraitKitError::DecoratorTargetMissing { module: "target" };
+        let debug = format!("{decorator:?}");
+        assert!(debug.contains("DecoratorTargetMissing"), "got '{debug}'");
+        assert!(debug.contains("target"), "got '{debug}'");
+    }
+
+    #[test]
+    fn debug_renders_version_incompatible_with_all_four_fields() {
+        let err = TraitKitError::VersionIncompatible {
+            module: "consumer",
+            dependency: "provider",
+            required: "1.2.0",
+            provided: "1.1.0",
+        };
+        let debug = format!("{err:?}");
+        assert!(debug.contains("VersionIncompatible"), "got '{debug}'");
+        for field in ["consumer", "provider", "1.2.0", "1.1.0"] {
+            assert!(
+                debug.contains(field),
+                "field '{field}' must stay visible: got '{debug}'"
+            );
+        }
+    }
+
+    #[test]
+    fn debug_renders_capability_variants_with_their_keys() {
+        let missing = TraitKitError::MissingCapability {
+            key: "cap-a".into(),
+        };
+        let debug = format!("{missing:?}");
+        assert!(debug.contains("MissingCapability"), "got '{debug}'");
+        assert!(debug.contains("cap-a"), "got '{debug}'");
+
+        let mismatch = TraitKitError::CapabilityTypeMismatch {
+            key: "cap-b".into(),
+        };
+        let debug = format!("{mismatch:?}");
+        assert!(debug.contains("CapabilityTypeMismatch"), "got '{debug}'");
+        assert!(debug.contains("cap-b"), "got '{debug}'");
+    }
+
+    #[cfg(feature = "lifecycle")]
+    #[test]
+    fn debug_renders_lifecycle_failed_without_the_internal_label() {
+        let err = TraitKitError::LifecycleFailed {
+            context: "on_ready".into(),
+            source: Box::new(std::io::Error::other("boom")),
+        };
+        let debug = format!("{err:?}");
+        assert!(debug.contains("LifecycleFailed"), "got '{debug}'");
+        assert!(
+            !debug.contains("on_ready"),
+            "the internal call-site label must not leak: {debug}"
+        );
+    }
+
+    #[cfg(feature = "shutdown")]
+    #[test]
+    fn debug_renders_shutdown_timed_out_with_its_phases() {
+        let err = TraitKitError::ShutdownTimedOut {
+            phases: vec![crate::kit::shutdown::ShutdownPhase::DrainQueue],
+        };
+        let debug = format!("{err:?}");
+        assert!(debug.contains("ShutdownTimedOut"), "got '{debug}'");
+        assert!(debug.contains("DrainQueue"), "got '{debug}'");
+    }
+
+    /// 空环路序列是"未定位"的标记形态：`Display` 必须渲染本地化诊断短语，
+    /// 而不是渲染一个空的环路列表。
+    #[test]
+    fn cycle_detected_display_renders_the_unknown_cycle_marker() {
+        let err = TraitKitError::CycleDetected { cycle: Vec::new() };
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("unknown cycle") || msg.contains("未知循环"),
+            "the empty cycle must render the diagnostic marker: got '{msg}'"
+        );
+    }
+}

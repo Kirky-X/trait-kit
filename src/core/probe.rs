@@ -216,6 +216,18 @@ mod tests {
         assert_eq!(outcome.latency.as_millis(), 42);
     }
 
+    /// 带延迟的探针：延迟分支会真的等待，采集到的延迟同时进入结果。
+    #[test]
+    fn probe_with_delay_waits_and_reports_the_latency() {
+        let probe = StaticProbe {
+            status: HealthStatus::Healthy,
+            delay_ms: 2,
+        };
+        let outcome = crate::test_helpers::block_on(probe.probe());
+        assert!(outcome.status.is_healthy());
+        assert_eq!(outcome.latency, std::time::Duration::from_millis(2));
+    }
+
     #[cfg(feature = "report")]
     #[test]
     fn probe_report_json_round_trips() {

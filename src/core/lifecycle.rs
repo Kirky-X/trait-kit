@@ -411,4 +411,21 @@ mod async_tests {
         let e = AsyncTestError;
         assert_eq!(format!("{e}"), "async test error");
     }
+
+    /// 测试模块自身声明的依赖与构建实现也要被调用：默认实现的语义
+    /// （无依赖、构建成功）是其余生命周期用例的前提。
+    #[test]
+    fn async_test_module_declares_no_dependencies() {
+        assert!(AsyncTestModule::dependencies().is_empty());
+    }
+
+    #[test]
+    fn async_test_module_builds_its_capability() {
+        let kit = AsyncKit::new();
+        let cap = block_on(AsyncTestModule::build(&kit)).expect("build should succeed");
+        assert!(
+            Arc::strong_count(&cap) >= 1,
+            "the built capability is handed to the caller"
+        );
+    }
 }

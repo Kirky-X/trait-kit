@@ -487,6 +487,22 @@ mod tests {
             assert_eq!(t.get("feature"), Some(ToggleValue::Bool(false)));
             assert!(t.contains("feature"));
         }
+
+        /// `remove` 命中不存在的键：遍历注册表后落到 `None`。
+        #[test]
+        fn confers_toggle_remove_unknown_key_returns_none() {
+            let mut t = ConfersToggle::new();
+            t.set("feature".into(), ToggleValue::Bool(true));
+            assert_eq!(t.remove("absent"), None);
+        }
+
+        /// 非布尔取值落在侧表：`contains` 直接命中侧表条目。
+        #[test]
+        fn confers_toggle_contains_typed_side_entry() {
+            let mut t = ConfersToggle::new();
+            t.set("limit".into(), ToggleValue::Int(100));
+            assert!(t.contains("limit"));
+        }
     }
 }
 
