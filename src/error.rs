@@ -232,6 +232,13 @@ impl fmt::Display for TraitKitError {
     }
 }
 
+/// 错误链出口：底层错误原文原样返回。
+///
+/// 脱敏边界在这里：进入人类可读文本的路径（[`fmt::Display`] 与
+/// [`fmt::Debug`]）都已脱敏，而 `source()` 是**程序化**取回原文的出口——
+/// 错误链遍历、`?` 转换与诊断工具依赖它，抹掉会让错误失去可处理性。
+/// 原文并不因此变成新暴露面：`BuildFailed` / `LifecycleFailed` 的
+/// `source` 字段本就是公开字段，调用方可直接读取。
 impl std::error::Error for TraitKitError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -883,6 +890,73 @@ mod tests {
     fn error_source_returns_none_for_simple_variants() {
         let err = TraitKitError::MissingConfig { key: "x".into() };
         assert!(std::error::Error::source(&err).is_none());
+    }
+
+    /// 脱敏边界：`source()` 是程序化取回原文的出口，原文照旧返回；进入
+    /// 人类可读文本的 `Display` / `Debug` 必须脱敏。两侧行为各自钉死，
+    /// 任一侧漂移即红灯。
+    #[test]
+    fn source_keeps_original_text_while_display_and_debug_stay_redacted() {
+        let err = TraitKitError::BuildFailed {
+            context: "load_config".into(),
+            source: Box::new(std::io::Error::other(
+                "Configuration file not found: /etc/app/config/prod.toml (password=hunter2)",
+            )),
+        };
+
+        let source = std::error::Error::source(&err).expect("source must stay exposed");
+        assert!(
+            source.to_string().contains("/etc/app/config"),
+            "source() keeps the original text for programmatic use: {source}"
+        );
+
+        let display = format!("{err}");
+        assert!(
+            !display.contains("/etc/app/config"),
+            "display must stay redacted: {display}"
+        );
+        assert!(
+            !display.contains("hunter2"),
+            "display must stay redacted: {display}"
+        );
+
+        let debug = format!("{err:?}");
+        assert!(
+            !debug.contains("/etc/app/config"),
+            "debug must stay redacted: {debug}"
+        );
+        assert!(
+            !debug.contains("hunter2"),
+            "debug must stay redacted: {debug}"
+        );
+    }
+
+    /// 同一条边界在 `LifecycleFailed` 变体上同样成立。
+    #[cfg(feature = "lifecycle")]
+    #[test]
+    fn lifecycle_source_keeps_original_text_while_display_stays_redacted() {
+        let err = TraitKitError::LifecycleFailed {
+            context: "on_ready".into(),
+            source: Box::new(std::io::Error::other(
+                "readiness probe failed: /var/lib/app/secret.key (token=abc123)",
+            )),
+        };
+
+        let source = std::error::Error::source(&err).expect("source must stay exposed");
+        assert!(
+            source.to_string().contains("/var/lib/app"),
+            "source() keeps the original text for programmatic use: {source}"
+        );
+
+        let display = format!("{err}");
+        assert!(
+            !display.contains("/var/lib/app"),
+            "display must stay redacted: {display}"
+        );
+        assert!(
+            !display.contains("abc123"),
+            "display must stay redacted: {display}"
+        );
     }
 
     #[cfg(feature = "lifecycle")]
