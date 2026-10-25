@@ -124,8 +124,8 @@ cargo test --features i18n
 
 ### 代码质量工具
 
-- **diting**：代码简化、架构优化、性能审查
-- **tiangang**：SAST 安全扫描（发布前必须 0 CRITICAL）
+- **代码质量审查**：代码简化、架构优化、性能审查
+- **SAST 安全扫描**：发布前必须 0 CRITICAL
 - **kueiku**：硬性 bug 分析与根因定位
 
 ## 🚀 提交与 PR 流程

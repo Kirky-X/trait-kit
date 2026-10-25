@@ -100,7 +100,7 @@ mod core_scenarios {
         }
     }
 
-    /// Module that reads `i32` config in its build callback (B07).
+    /// Module that reads `i32` config in its build callback.
     struct ConfigReaderModule;
     impl_module_meta!(ConfigReaderModule, "config-reader");
     impl AutoBuilder for ConfigReaderModule {
@@ -112,7 +112,7 @@ mod core_scenarios {
         }
     }
 
-    /// Build-fn that always returns Err (E08).
+    /// Build-fn that always returns Err.
     #[derive(Debug, thiserror::Error)]
     #[error("intentional build failure for {0}")]
     struct BuildErr(String);
@@ -127,7 +127,7 @@ mod core_scenarios {
         }
     }
 
-    /// Lazy module that always fails (E11).
+    /// Lazy module that always fails.
     struct FailingLazyModule;
     impl_module_meta!(FailingLazyModule, "failing-lazy");
     impl AutoBuilder for FailingLazyModule {

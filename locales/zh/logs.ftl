@@ -15,3 +15,7 @@ trait-kit-soft-build-degraded = 模块 `{ $module }` 构建失败: { $error }；
 trait-kit-probe-timeout-measured = 探针在 { $measured_ms } 毫秒后超时
 trait-kit-probe-registry-stopped = 探针注册表已因关闭而停止
 trait-kit-probe-timeout-no-verdict = 探针在给出结论前超时
+
+# 健康就绪载荷（检查器找不到对应能力时的防御分支 detail 文案）
+
+trait-kit-health-capability-not-found = 未找到能力

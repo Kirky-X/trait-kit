@@ -145,13 +145,19 @@ pub(crate) fn validate_master_key(
     key: &[u8],
 ) -> Result<(), TraitKitError> {
     if key.len() < MIN_MASTER_KEY_LEN {
+        let min_len = MIN_MASTER_KEY_LEN.to_string();
+        let actual = key.len().to_string();
         return Err(TraitKitError::BuildFailed {
             context: context.into(),
             source: Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                format!(
-                    "{key_label} must be at least {MIN_MASTER_KEY_LEN} bytes, got {}",
-                    key.len()
+                tr(
+                    "trait-kit-error-master-key-too-short",
+                    &[
+                        ("key_label", key_label),
+                        ("min_len", &min_len),
+                        ("actual", &actual),
+                    ],
                 ),
             )),
         });
@@ -161,7 +167,10 @@ pub(crate) fn validate_master_key(
             context: context.into(),
             source: Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                format!("{key_label} must not be constant-byte key material"),
+                tr(
+                    "trait-kit-error-master-key-weak-material",
+                    &[("key_label", key_label)],
+                ),
             )),
         });
     }
@@ -912,9 +921,9 @@ impl Kit {
                 .downcast_ref::<C>()
                 .cloned()
                 .ok_or_else(|| TraitKitError::MissingConfig {
-                    key: format!(
-                        "{} (snapshot downcast)",
-                        crate::redact::short_type_name::<C>()
+                    key: tr(
+                        "trait-kit-error-snapshot-downcast-failed",
+                        &[("key", crate::redact::short_type_name::<C>().as_str())],
                     ),
                 })?;
         drop(snapshots);
@@ -975,7 +984,10 @@ impl Kit {
                         context: ContextLabel::LoadConfigWithSerialize.into(),
                         source: Box::new(std::io::Error::new(
                             std::io::ErrorKind::InvalidData,
-                            format!("config nesting depth exceeds {max_depth} levels"),
+                            tr(
+                                "trait-kit-error-config-nesting-depth-exceeded",
+                                &[("max_depth", &max_depth.to_string())],
+                            ),
                         )),
                     });
                 }
@@ -999,9 +1011,9 @@ impl Kit {
                 context: ContextLabel::LoadConfigWithDeserialize.into(),
                 source: Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!(
-                        "config nesting depth exceeds {} levels",
-                        super::config::MAX_CONFIG_DEPTH
+                    tr(
+                        "trait-kit-error-config-nesting-depth-exceeded",
+                        &[("max_depth", &super::config::MAX_CONFIG_DEPTH.to_string())],
                     ),
                 )),
             });
@@ -1059,16 +1071,16 @@ impl Kit {
         #[cfg(feature = "version-negotiation")]
         self.validate_version_requirements()?;
 
-        // Phase 1: Build eager modules (overrides + build_fn in topo order)
+        // Step 1: Build eager modules (overrides + build_fn in topo order)
         self.build_eager_modules(&sorted)?;
 
-        // Phase 2: Transfer lazy builders to lazy slots
+        // Step 2: Transfer lazy builders to lazy slots
         self.transfer_lazy_builders();
 
-        // Phase 3: Build multi-binding modules
+        // Step 3: Build multi-binding modules
         self.build_multi_bindings()?;
 
-        // Phase 4: Build interface modules
+        // Step 4: Build interface modules
         #[cfg(feature = "di")]
         self.build_interface_modules()?;
 
@@ -1170,7 +1182,7 @@ impl Kit {
         Ok(kit)
     }
 
-    /// Phase 1: Build eager modules in topological order.
+    /// Step 1: Build eager modules in topological order.
     ///
     /// For each module in the sorted list:
     /// 1. Check overrides first (skip `build_fn` if override exists)
@@ -1431,7 +1443,7 @@ impl Kit {
     #[allow(clippy::trivially_copy_pass_by_ref)] // signature parity
     fn notify_module_error(_list: &ObserverList, _name: &'static str, _err: &TraitKitError) {}
 
-    /// Phase 2: Transfer lazy builders to lazy slots for first-access construction.
+    /// Step 2: Transfer lazy builders to lazy slots for first-access construction.
     fn transfer_lazy_builders(&self) {
         let lazy: Vec<(TypeId, LazyBuildFn)> = self.lazy_builders.borrow_mut().drain().collect();
         self.lazy_slots.borrow_mut().reserve(lazy.len());
@@ -1446,7 +1458,7 @@ impl Kit {
         }
     }
 
-    /// Phase 3: Build all multi-binding modules.
+    /// Step 3: Build all multi-binding modules.
     fn build_multi_bindings(&self) -> Result<(), TraitKitError> {
         let multi: Vec<(TypeId, Vec<(TypeId, BuildFn)>)> =
             self.multi_builders.borrow_mut().drain().collect();
@@ -1469,7 +1481,7 @@ impl Kit {
         Ok(())
     }
 
-    /// Phase 4: Build all interface-registered modules.
+    /// Step 4: Build all interface-registered modules.
     ///
     /// Decorators are applied inside the registered `build_fn` (keyed by the
     /// module's capability `TypeId`, before `into_interface`) — the same
@@ -1570,7 +1582,7 @@ impl Kit {
             match caps.get_ref_by_type_id::<M::Capability>(type_id) {
                 Some(cap_ref) => M::check(&cap_ref),
                 None => crate::core::health::HealthStatus::Unhealthy {
-                    detail: "capability not found".to_string(),
+                    detail: tr("trait-kit-health-capability-not-found", &[]),
                 },
             }
         });
@@ -3250,9 +3262,13 @@ impl Kit<Ready> {
                 context: ContextLabel::GetEncryptedWithVersion.into(),
                 source: Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!(
-                        "key-version mismatch for `{}`: stored v{stored}, expected v{expected_version}",
-                        crate::redact::short_type_name::<C>()
+                    tr(
+                        "trait-kit-error-key-version-mismatch",
+                        &[
+                            ("key", crate::redact::short_type_name::<C>().as_str()),
+                            ("stored", &stored.to_string()),
+                            ("expected_version", &expected_version.to_string()),
+                        ],
                     ),
                 )),
             });

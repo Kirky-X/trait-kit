@@ -5,6 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
 license.workspace = true
 description = "Proc-macro crate for trait-kit: #[derive(Module)] generates ModuleMeta declarations."
 keywords = ["trait-kit", "derive", "module", "di"]
@@ -18,12 +20,7 @@ proc-macro = true
 
 [dependencies]
 # syn 仅声明宏展开所需 4 个特性；不启用 clone-impls（本 crate 对 AST 只读）
-syn = { version = "3.0", default-features = false, features = [
-    "derive",
-    "parsing",
-    "printing",
-    "proc-macro",
-] }
+syn = { version = "3.0", default-features = false, features = ["derive", "parsing", "printing", "proc-macro"] }
 quote = { version = "1.0", default-features = false, features = ["proc-macro"] }
 proc-macro2 = { version = "1.0", default-features = false, features = ["proc-macro"] }
 

@@ -162,15 +162,13 @@ impl fmt::Display for TraitKitError {
             ),
             Self::BuildFailed { context, source } => {
                 let source_str = sanitize_source_text(&source.to_string());
+                let context_text = public_context(context);
                 write!(
                     f,
                     "{}",
                     tr(
                         "trait-kit-error-build-failed",
-                        &[
-                            ("context", public_context(context)),
-                            ("source", &source_str),
-                        ],
+                        &[("context", &context_text), ("source", &source_str),],
                     )
                 )
             }
@@ -204,15 +202,13 @@ impl fmt::Display for TraitKitError {
             #[cfg(feature = "lifecycle")]
             Self::LifecycleFailed { context, source } => {
                 let source_str = sanitize_source_text(&source.to_string());
+                let context_text = public_context(context);
                 write!(
                     f,
                     "{}",
                     tr(
                         "trait-kit-error-lifecycle-failed",
-                        &[
-                            ("context", public_context(context)),
-                            ("source", &source_str),
-                        ],
+                        &[("context", &context_text), ("source", &source_str),],
                     )
                 )
             }
@@ -405,27 +401,34 @@ context_labels! {
 }
 
 impl ContextLabel {
-    /// 进入对外错误文本的类别文案。
+    /// 进入对外错误文本的类别文案对应的 Fluent 消息 id。
     ///
     /// 穷尽匹配：新增标签变体而未给出对外文案时编译失败，内部调用点
     /// 不会以原始标签形态漏进错误文本。本地化诊断短语里的操作名也
     /// 取自这里（短语整体原样保留，只有操作名换成类别文案）。
-    pub(crate) const fn public(self) -> &'static str {
+    pub(crate) const fn public_message_id(self) -> &'static str {
         match self {
-            Self::LoadConfig | Self::LoadConfigWith => "configuration load",
-            Self::LoadConfigWithSerialize => "configuration load (serialize)",
-            Self::LoadConfigWithDeserialize => "configuration load (deserialize)",
-            Self::LoadAndValidate => "configuration load (validated)",
-            Self::ReloadConfig => "configuration reload",
-            Self::SetEncrypted => "encrypted configuration write",
-            Self::GetEncrypted | Self::GetEncryptedWithVersion => "encrypted configuration read",
-            Self::RotateMasterKey => "master key rotation",
-            Self::RotateMasterKeyOldKey => "master key rotation (old key)",
-            Self::RotateMasterKeyNewKey => "master key rotation (new key)",
-            Self::OnReady => "readiness hook",
-            Self::Shutdown => "shutdown",
-            Self::ShutdownBridge => "hook registration",
+            Self::LoadConfig | Self::LoadConfigWith => "trait-kit-context-configuration-load",
+            Self::LoadConfigWithSerialize => "trait-kit-context-configuration-load-serialize",
+            Self::LoadConfigWithDeserialize => "trait-kit-context-configuration-load-deserialize",
+            Self::LoadAndValidate => "trait-kit-context-configuration-load-validated",
+            Self::ReloadConfig => "trait-kit-context-configuration-reload",
+            Self::SetEncrypted => "trait-kit-context-encrypted-config-write",
+            Self::GetEncrypted | Self::GetEncryptedWithVersion => {
+                "trait-kit-context-encrypted-config-read"
+            }
+            Self::RotateMasterKey => "trait-kit-context-master-key-rotation",
+            Self::RotateMasterKeyOldKey => "trait-kit-context-master-key-rotation-old-key",
+            Self::RotateMasterKeyNewKey => "trait-kit-context-master-key-rotation-new-key",
+            Self::OnReady => "trait-kit-context-readiness-hook",
+            Self::Shutdown => "trait-kit-context-shutdown",
+            Self::ShutdownBridge => "trait-kit-context-hook-registration",
         }
+    }
+
+    /// 进入对外错误文本的类别文案（按当前 locale 本地化）。
+    pub(crate) fn public_text(self) -> String {
+        tr(self.public_message_id(), &[])
     }
 }
 
@@ -455,15 +458,15 @@ pub(crate) fn key_provider_context(provider_type: &str) -> String {
 /// [`ContextLabel`]，此处折叠成稳定的类别标签；模块名
 /// （`ModuleMeta::NAME`）与本地化诊断短语等非标签形态的上下文原样
 /// 保留。原始标签仍可通过变体的公开字段读取（程序化匹配不受影响）。
-fn public_context(context: &str) -> &str {
+fn public_context(context: &str) -> String {
     if let Some(label) = ContextLabel::from_raw(context) {
-        return label.public();
+        return label.public_text();
     }
     // 主密钥供给方：provider 类型名随运行时变化，按族前缀折叠。
     if context.starts_with(KEY_PROVIDER_CONTEXT_PREFIX) {
-        return "master key provider";
+        return tr("trait-kit-context-master-key-provider", &[]);
     }
-    context
+    context.to_string()
 }
 
 /// Coarse failure classification for precise downstream matching.
@@ -807,7 +810,10 @@ mod tests {
         let context = tr(
             "trait-kit-error-shutdown-bridge-stranded",
             &[
-                ("operation", ContextLabel::ShutdownBridge.public()),
+                (
+                    "operation",
+                    ContextLabel::ShutdownBridge.public_text().as_str(),
+                ),
                 ("phase", "drain_queue"),
                 ("stranded", "2"),
             ],
@@ -839,7 +845,7 @@ mod tests {
             let public = public_context(label.raw());
             assert_eq!(
                 public,
-                label.public(),
+                label.public_text(),
                 "label {label:?} must fold to its registered public wording"
             );
             if public != label.raw() {

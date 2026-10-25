@@ -31,8 +31,14 @@ trait-kit-error-lock-poisoned-operation-phase = shutdown coordinator `{ $operati
 trait-kit-error-shutdown-bridge-stranded = shutdown bridge `{ $operation }` on phase `{ $phase }`; { $stranded } remaining lifecycle hook(s) stranded and will never run
 trait-kit-error-config-validation-failed = config validation failed: { $errors }
 trait-kit-error-no-snapshot = no snapshot found for `{ $key }`
+trait-kit-error-snapshot-downcast-failed = { $key } (snapshot downcast)
+trait-kit-error-config-nesting-depth-exceeded = config nesting depth exceeds { $max_depth } levels
+trait-kit-error-master-key-too-short = { $key_label } must be at least { $min_len } bytes, got { $actual }
+trait-kit-error-master-key-weak-material = { $key_label } must not be constant-byte key material
+trait-kit-error-key-version-mismatch = key-version mismatch for `{ $key }`: stored v{ $stored }, expected v{ $expected_version }
 i18n-error-invalid-locale = invalid locale `{ $input }`: { $reason }
 i18n-error-invalid-number = invalid number `{ $input }`: { $reason }
+i18n-error-number-not-finite = value is not finite (NaN or Infinity)
 i18n-error-date = date error: { $detail }
 i18n-error-format = formatting error: { $detail }
 
@@ -50,3 +56,20 @@ trait-kit-diag-unknown = <unknown>
 trait-kit-diag-multi-binding = <multi-binding>
 trait-kit-diag-interface = <interface>
 trait-kit-diag-unknown-cycle = <unknown cycle>
+
+# public context category labels (folded from internal call-site labels, interpolated into error messages)
+
+trait-kit-context-configuration-load = configuration load
+trait-kit-context-configuration-load-serialize = configuration load (serialize)
+trait-kit-context-configuration-load-deserialize = configuration load (deserialize)
+trait-kit-context-configuration-load-validated = configuration load (validated)
+trait-kit-context-configuration-reload = configuration reload
+trait-kit-context-encrypted-config-write = encrypted configuration write
+trait-kit-context-encrypted-config-read = encrypted configuration read
+trait-kit-context-master-key-rotation = master key rotation
+trait-kit-context-master-key-rotation-old-key = master key rotation (old key)
+trait-kit-context-master-key-rotation-new-key = master key rotation (new key)
+trait-kit-context-readiness-hook = readiness hook
+trait-kit-context-shutdown = shutdown
+trait-kit-context-hook-registration = hook registration
+trait-kit-context-master-key-provider = master key provider

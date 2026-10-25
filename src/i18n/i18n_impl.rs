@@ -17,7 +17,7 @@ use icu_locale::Locale;
 use icu_plurals::{PluralCategory, PluralRules, PluralRulesOptions};
 use writeable::Writeable;
 
-use super::{I18nError, I18nFormatter};
+use super::{I18nError, I18nFormatter, tr};
 
 impl I18nFormatter {
     /// Create a new formatter for the given BCP-47 locale tag.
@@ -62,7 +62,7 @@ impl I18nFormatter {
         if !value.is_finite() {
             return Err(I18nError::InvalidNumber {
                 input: value.to_string(),
-                reason: "value is not finite (NaN or Infinity)".into(),
+                reason: tr("i18n-error-number-not-finite", &[]),
             });
         }
         // f64 的 `Display` 输出最短往返（shortest round-trip）的定点表示：

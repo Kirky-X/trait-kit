@@ -13,14 +13,12 @@ workspace = true
 [dependencies]
 trait-kit = { workspace = true }
 trait-kit-macros = { version = "0.5.0-rc.10", path = "../macros", default-features = false }
-# serde + confers are direct deps because #[derive(Config)] expands to code that
-# references confers::* / serde::* paths from the *caller's* crate.
+# serde/confers 为直接依赖：#[derive(Config)] 展开引用调用方的 confers::*/serde::* 路径
 serde = { workspace = true, optional = true }
 confers = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
-# cargo-machete 只做源码字面扫描，无法看到 #[derive(SharedConfig)] 展开代码引用的
-# serde_json::* 路径；该依赖是宏展开的编译期必需项（删除后 E0433），故声明豁免。
+# cargo-machete 无法看到宏展开引用的 serde_json::* 路径（删除后 E0433），故声明豁免
 [package.metadata.cargo-machete]
 ignored = ["serde_json"]
 

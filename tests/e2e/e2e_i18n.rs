@@ -78,6 +78,30 @@ mod i18n_shutdown_e2e {
         );
     }
 
+    /// 对外类别标签随 locale 本地化：`BuildFailed` 的 `context` 在
+    /// 进入 Fluent 模板前折叠为类别标签，该标签本身经 zh 目录渲染。
+    #[test]
+    fn e2e_i18n_build_failed_context_category_localized_zh() {
+        ensure_zh();
+        let err = trait_kit::TraitKitError::BuildFailed {
+            context: "load_config".into(),
+            source: Box::new(std::io::Error::other("boom")),
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("配置加载"),
+            "the zh locale should render the zh public context category: got '{msg}'"
+        );
+        assert!(
+            !msg.contains("configuration load"),
+            "the en public context category must not leak into the zh locale: got '{msg}'"
+        );
+        assert!(
+            !msg.contains("load_config"),
+            "the internal call-site label must not leak: got '{msg}'"
+        );
+    }
+
     /// CMP-14 补充：直接构造变体的 Display 与协调器产出路径一致
     /// （同一 tr 消息 id：trait-kit-error-shutdown-timed-out）。
     #[test]

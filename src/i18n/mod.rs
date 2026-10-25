@@ -657,6 +657,161 @@ mod tests {
         }
     }
 
+    /// 守卫：对外类别标签在 EN/ZH 束中按预期渲染（无占位符）。
+    ///
+    /// 与 `bundle_hardcoded_i18n_keys_render_in_en_and_zh` 同口径：FTL 行
+    /// 语法错误会被 Fluent 静默降级，此处逐字断言以防回退到 key 本身。
+    #[test]
+    fn bundle_public_context_labels_render_in_en_and_zh() {
+        for (key, en, zh) in [
+            (
+                "trait-kit-context-configuration-load",
+                "configuration load",
+                "配置加载",
+            ),
+            (
+                "trait-kit-context-configuration-load-serialize",
+                "configuration load (serialize)",
+                "配置加载（序列化）",
+            ),
+            (
+                "trait-kit-context-configuration-load-deserialize",
+                "configuration load (deserialize)",
+                "配置加载（反序列化）",
+            ),
+            (
+                "trait-kit-context-configuration-load-validated",
+                "configuration load (validated)",
+                "配置加载（已校验）",
+            ),
+            (
+                "trait-kit-context-configuration-reload",
+                "configuration reload",
+                "配置重载",
+            ),
+            (
+                "trait-kit-context-encrypted-config-write",
+                "encrypted configuration write",
+                "加密配置写入",
+            ),
+            (
+                "trait-kit-context-encrypted-config-read",
+                "encrypted configuration read",
+                "加密配置读取",
+            ),
+            (
+                "trait-kit-context-master-key-rotation",
+                "master key rotation",
+                "主密钥轮换",
+            ),
+            (
+                "trait-kit-context-master-key-rotation-old-key",
+                "master key rotation (old key)",
+                "主密钥轮换（旧密钥）",
+            ),
+            (
+                "trait-kit-context-master-key-rotation-new-key",
+                "master key rotation (new key)",
+                "主密钥轮换（新密钥）",
+            ),
+            (
+                "trait-kit-context-readiness-hook",
+                "readiness hook",
+                "就绪钩子",
+            ),
+            ("trait-kit-context-shutdown", "shutdown", "关闭"),
+            (
+                "trait-kit-context-hook-registration",
+                "hook registration",
+                "钩子注册",
+            ),
+            (
+                "trait-kit-context-master-key-provider",
+                "master key provider",
+                "主密钥供给方",
+            ),
+        ] {
+            assert_eq!(
+                format_from_bundle("en", key, &[]).as_deref(),
+                Some(en),
+                "{key}: en bundle degraded to the raw key"
+            );
+            assert_eq!(
+                format_from_bundle("zh", key, &[]).as_deref(),
+                Some(zh),
+                "{key}: zh bundle degraded to the raw key"
+            );
+        }
+    }
+
+    /// 守卫：配置/密钥类错误文案在 EN/ZH 束中按预期渲染。
+    #[test]
+    fn bundle_config_and_key_error_keys_render_in_en_and_zh() {
+        for (key, args, en, zh) in [
+            (
+                "trait-kit-error-master-key-too-short",
+                &[
+                    ("key_label", "master_key"),
+                    ("min_len", "32"),
+                    ("actual", "5"),
+                ][..],
+                "master_key must be at least 32 bytes, got 5",
+                "`master_key` 至少需要 32 字节，实际 5 字节",
+            ),
+            (
+                "trait-kit-error-master-key-weak-material",
+                &[("key_label", "master_key")][..],
+                "master_key must not be constant-byte key material",
+                "`master_key` 不能是常量字节密钥材料",
+            ),
+            (
+                "trait-kit-error-config-nesting-depth-exceeded",
+                &[("max_depth", "32")][..],
+                "config nesting depth exceeds 32 levels",
+                "配置嵌套深度超过 32 层",
+            ),
+            (
+                "trait-kit-error-key-version-mismatch",
+                &[
+                    ("key", "DbConfig"),
+                    ("stored", "5"),
+                    ("expected_version", "7"),
+                ][..],
+                "key-version mismatch for `DbConfig`: stored v5, expected v7",
+                "`DbConfig` 的密钥版本不匹配: 已存 v5，期望 v7",
+            ),
+            (
+                "trait-kit-error-snapshot-downcast-failed",
+                &[("key", "DbConfig")][..],
+                "DbConfig (snapshot downcast)",
+                "DbConfig（快照类型转换失败）",
+            ),
+            (
+                "i18n-error-number-not-finite",
+                &[][..],
+                "value is not finite (NaN or Infinity)",
+                "数值不是有限数（NaN 或 Infinity）",
+            ),
+            (
+                "trait-kit-health-capability-not-found",
+                &[][..],
+                "capability not found",
+                "未找到能力",
+            ),
+        ] {
+            assert_eq!(
+                format_from_bundle("en", key, args).as_deref(),
+                Some(en),
+                "{key}: en bundle degraded to the raw key"
+            );
+            assert_eq!(
+                format_from_bundle("zh", key, args).as_deref(),
+                Some(zh),
+                "{key}: zh bundle degraded to the raw key"
+            );
+        }
+    }
+
     #[test]
     fn bundle_en_and_zh_lookup_with_args() {
         assert_eq!(

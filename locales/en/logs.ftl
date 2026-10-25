@@ -16,3 +16,7 @@ trait-kit-soft-build-degraded = module `{ $module }` build failed: { $error }; d
 trait-kit-probe-timeout-measured = probe timed out after { $measured_ms }ms
 trait-kit-probe-registry-stopped = probe registry stopped by shutdown
 trait-kit-probe-timeout-no-verdict = probe timed out before returning a verdict
+
+# health readiness payload (detail text of the defensive branch where a checker finds no capability)
+
+trait-kit-health-capability-not-found = capability not found

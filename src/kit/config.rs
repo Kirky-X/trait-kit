@@ -438,9 +438,9 @@ impl<W: std::io::Write> std::io::Write for DepthGuardWriter<W> {
                     self.depth += 1;
                     if self.depth > self.max_depth {
                         self.depth_exceeded.set(true);
-                        return Err(std::io::Error::other(format!(
-                            "config nesting depth exceeds {} levels",
-                            self.max_depth
+                        return Err(std::io::Error::other(crate::i18n::tr(
+                            "trait-kit-error-config-nesting-depth-exceeded",
+                            &[("max_depth", &self.max_depth.to_string())],
                         )));
                     }
                 }

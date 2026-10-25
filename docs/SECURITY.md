@@ -85,7 +85,7 @@
 
 `TraitKitError` 统一错误类型，`Display` 通过 `tr()` 本地化输出；底层错误原文在进入公开文本前统一脱敏（凭据片段与服务器绝对路径被遮蔽，文本截断），未脱敏的原文保留在结构化的 `source` 里供程序化处理，而非仅靠文本。
 
-- **内部调用点不入文本**：`BuildFailed` / `LifecycleFailed` 的 `context` 在进入 Fluent 模板前折叠为对外类别标签（`load_config` → `configuration load`，`set_encrypted` → `encrypted configuration write`）。折叠只作用于登记在册的内部调用点标签（封闭集合，新增标签必须登记，否则编译失败），不再按字符串形态猜测——模块名（`ModuleMeta::NAME`）与本地化诊断短语原样保留；主密钥供给方的 provider 类型名按族前缀折叠（`key provider (env)` → `master key provider`）。原始标签仍可通过变体的公开字段读取，程序化匹配不受影响。
+- **内部调用点不入文本**：`BuildFailed` / `LifecycleFailed` 的 `context` 在进入 Fluent 模板前折叠为对外类别标签（`load_config` → `configuration load`，`set_encrypted` → `encrypted configuration write`）。折叠只作用于登记在册的内部调用点标签（封闭集合，新增标签必须登记，否则编译失败），不再按字符串形态猜测——模块名（`ModuleMeta::NAME`）与本地化诊断短语原样保留；主密钥供给方的 provider 类型名按族前缀折叠（`key provider (env)` → `master key provider`）。对外类别标签本身经 Fluent 目录本地化（`trait-kit-context-*`），中文目录下输出对应中文文案。原始标签仍可通过变体的公开字段读取，程序化匹配不受影响。
 - **调试输出同样脱敏**：`TraitKitError` 的 `Debug` 为手写实现，底层错误原文经脱敏后输出——下游用 `{:?}` 或 tracing 的 `?err` 记录时不会带出服务器绝对路径与口令。
 - **内部类型路径不入文本**：配置类型名进入错误文本、配置变更事件与覆盖记录前先裁掉 crate / 模块路径（`my_crate::config::DbConfig` → `DbConfig`）；泛型实参一并裁掉但容器名保留（`core::option::Option<crate::Db>` → `Option`）。
 

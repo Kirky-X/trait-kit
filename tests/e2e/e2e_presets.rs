@@ -93,8 +93,8 @@ fn prs01_no_default_features_core_api_gate() {
 }
 
 /// feature 名单完整（与 Cargo.toml [features] 一致）。
-/// rc4 批次新增 report/presets/compose/presets-remote/negotiate 五项（13 → 18）；
-/// rc5 批次新增 di/request-scope/version-negotiation 三项（18 → 21）。
+/// 新增 report/presets/compose/presets-remote/negotiate 五项（13 → 18）；
+/// 新增 di/request-scope/version-negotiation 三项（18 → 21）。
 #[test]
 fn prs02_feature_table_lists_all_features() {
     let features = parse_features();

@@ -1016,7 +1016,7 @@ impl AsyncKit {
             match caps.read_by_type_id::<M::Capability>(type_id) {
                 Some(cap_guard) => M::check(&cap_guard),
                 None => crate::core::health::HealthStatus::Unhealthy {
-                    detail: "capability not found".to_string(),
+                    detail: crate::i18n::tr("trait-kit-health-capability-not-found", &[]),
                 },
             }
         });
@@ -1887,7 +1887,10 @@ impl AsyncKit<Ready> {
                     context: tr(
                         "trait-kit-error-shutdown-bridge-stranded",
                         &[
-                            ("operation", ContextLabel::ShutdownBridge.public()),
+                            (
+                                "operation",
+                                ContextLabel::ShutdownBridge.public_text().as_str(),
+                            ),
                             ("phase", phase.as_str()),
                             ("stranded", &stranded.to_string()),
                         ],
@@ -2414,9 +2417,9 @@ impl AsyncKit {
                 .downcast_ref::<C>()
                 .cloned()
                 .ok_or_else(|| TraitKitError::MissingConfig {
-                    key: format!(
-                        "{} (snapshot downcast)",
-                        crate::redact::short_type_name::<C>()
+                    key: crate::i18n::tr(
+                        "trait-kit-error-snapshot-downcast-failed",
+                        &[("key", crate::redact::short_type_name::<C>().as_str())],
                     ),
                 })?;
         drop(snapshots);
@@ -2473,7 +2476,10 @@ impl AsyncKit {
                         context: ContextLabel::LoadConfigWithSerialize.into(),
                         source: Box::new(std::io::Error::new(
                             std::io::ErrorKind::InvalidData,
-                            format!("config nesting depth exceeds {max_depth} levels"),
+                            crate::i18n::tr(
+                                "trait-kit-error-config-nesting-depth-exceeded",
+                                &[("max_depth", &max_depth.to_string())],
+                            ),
                         )),
                     });
                 }
@@ -2497,9 +2503,9 @@ impl AsyncKit {
                 context: ContextLabel::LoadConfigWithDeserialize.into(),
                 source: Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!(
-                        "config nesting depth exceeds {} levels",
-                        super::config::MAX_CONFIG_DEPTH
+                    crate::i18n::tr(
+                        "trait-kit-error-config-nesting-depth-exceeded",
+                        &[("max_depth", &super::config::MAX_CONFIG_DEPTH.to_string())],
                     ),
                 )),
             });

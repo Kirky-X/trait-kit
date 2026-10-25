@@ -392,7 +392,7 @@ pub enum TraitKitError {
 
 `Display` 实现通过 `tr()` 自动本地化输出。
 
-对外文本的脱敏口径：`BuildFailed` / `LifecycleFailed` 的 `context` 在进入消息模板前折叠为对外类别标签（`load_config` → `configuration`，`set_encrypted` → `encrypted configuration write`），模块名等非标签形态原样保留；底层错误原文（凭据片段、服务器绝对路径）在 `Display` 与 `Debug` 两侧都经脱敏；配置类型名裁掉 crate / 模块路径后出现（`my_crate::config::DbConfig` → `DbConfig`；泛型实参一并裁掉但容器名保留，`core::option::Option<crate::Db>` → `Option`）。原始 `context` 与未脱敏原文仍可通过变体公开字段与 `Error::source()` 取回。
+对外文本的脱敏口径：`BuildFailed` / `LifecycleFailed` 的 `context` 在进入消息模板前折叠为对外类别标签（`load_config` → `configuration load`，`set_encrypted` → `encrypted configuration write`），类别标签经 Fluent 目录本地化（`trait-kit-context-*`），模块名等非标签形态原样保留；底层错误原文（凭据片段、服务器绝对路径）在 `Display` 与 `Debug` 两侧都经脱敏；配置类型名裁掉 crate / 模块路径后出现（`my_crate::config::DbConfig` → `DbConfig`；泛型实参一并裁掉但容器名保留，`core::option::Option<crate::Db>` → `Option`）。原始 `context` 与未脱敏原文仍可通过变体公开字段与 `Error::source()` 取回。
 
 ### `TraitKitResult<T>`
 

@@ -2727,7 +2727,7 @@ mod config_inheritance_tests {
     }
 }
 
-/// 版本协商四注册路径奇偶性测试（fix-audit-defects-r1 批次 A）。
+/// 版本协商四注册路径奇偶性测试。
 ///
 /// 缺陷现状：`record_module_versions` 仅在 `register()` 调用，
 /// lazy/multi/as 三条路径的 `VERSION`/`required_versions` 不进入协商记录，
@@ -3064,7 +3064,7 @@ mod negotiation_parity_tests {
     }
 }
 
-/// lazy 能力检索口径统一测试（fix-audit-defects-r1 批次 B）。
+/// lazy 能力检索口径统一测试。
 ///
 /// 缺陷现状：`contains`/`optional`/`require_ref` 只查 `capabilities`，
 /// 对 `register_lazy` 模块 `require()` 构建后的 `OnceLock` 缓存失明（`get_arc`
@@ -3145,7 +3145,7 @@ mod lazy_retrieval_semantics_tests {
     }
 }
 
-/// lazy builder panic 恢复（审计缺陷修复批次 C）。
+/// lazy builder panic 恢复。
 ///
 /// 缺陷现状：`require()` 首建路径 take 出 builder 后只在返回 `Err`
 /// 的分支放回；builder panic（或 decorator `.expect` panic）会 unwind 跳过
@@ -3197,7 +3197,7 @@ mod lazy_builder_panic_tests {
 }
 
 /// 复查（review）跟进修复测试：contains 类型统一（L1）与
-/// `require_ref` lazy 守卫借用冲突的契约钉住（M1）。
+/// `require_ref` lazy 守卫借用冲突的契约钉住。
 mod review_followup_tests {
     use super::super::*;
     use crate::core::{AutoBuilder, ModuleMeta};
@@ -3257,7 +3257,7 @@ mod review_followup_tests {
         ));
     }
 
-    /// M1 契约钉住：`require_ref` 的 lazy 守卫存活期间触发另一个 lazy
+    /// 契约钉住：`require_ref` 的 lazy 守卫存活期间触发另一个 lazy
     /// 模块的首建会 panic（`lazy_slots.borrow_mut` 冲突，见 `require_ref`
     /// 文档的 Borrow-conflict caveat）。若未来改为 `try_borrow_mut` 错误
     /// 路径，此测试应同步更新语义。

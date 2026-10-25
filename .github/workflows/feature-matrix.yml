@@ -1,4 +1,4 @@
-# feature 组合矩阵（FEATURE_AUDIT 遗留项：feature imply 裂缝的回归门禁）。
+# feature 组合矩阵（feature imply 裂缝的回归门禁）。
 # PR 每次都跑 22 个单开 check 成本过高，故此处仅定时/手动触发；
 # 单开裂缝在 PR 门禁之外由 src/kit/presets.rs 的 compile_error 守卫兜底
 # （presets-remote→async 链）。
