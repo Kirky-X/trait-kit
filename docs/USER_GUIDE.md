@@ -303,7 +303,7 @@ cargo run -p trait-kit-examples --example async_basic --features async
 
 ### 测试注入
 
-用 `override_module::<M>(cap)` 以预构建值覆盖模块能力，跳过真实构建函数；`override_module_strict::<M>(cap)` 额外验证依赖存在性：
+用 `override_module::<M>(cap)` 以预构建值覆盖模块能力，跳过真实构建函数；注入期会校验依赖存在性，未注册依赖即返回 `DependencyMissing`：
 
 ```rust,ignore
 kit.override_module::<LoggerModule>(Arc::new(test_logger));
@@ -344,7 +344,7 @@ let kit = kit.build()?;
 
 其他常见问题：
 
-- **typestate 编译错误**：编译期排除的误用是 `Kit<Ready>` 上调用注册/构建方法（`ready_cannot_register` / `ready_cannot_build`）与 `Kit<Unbuilt>` 上调用 `optional()`（`unbuilt_cannot_optional`），请检查调用阶段。`require()` 在 `Kit<Unbuilt>` 上可编译（供 `AutoBuilder::build` 回调使用），对未构建的模块返回 `MissingCapability` 错误而非编译失败。
+- **typestate 编译错误**：编译期排除的误用包括 `Kit<Ready>` 上调用注册/构建方法（`ready_cannot_register` / `ready_cannot_build` / `ready_cannot_set_config` / `ready_cannot_override_module` / `ready_cannot_with_metrics_port`）与 `Kit<Unbuilt>` 上调用 `optional()`（同步 `unbuilt_cannot_optional` / 异步 `async_unbuilt_cannot_optional`）；完整夹具清单见 `tests/ui/`（11 个，另含 decorator / lifecycle / observer / probe 门控组的 Ready 态违规），请检查调用阶段。`require()` 在 `Kit<Unbuilt>` 上可编译（供 `AutoBuilder::build` 回调使用），对未构建的模块返回 `MissingCapability` 错误而非编译失败。
 - **feature 方法不存在**：方法级门控 API（如 `subscribe`、`set_encrypted`）需启用对应 feature，参见 [README 特性标志](../README.md#-特性标志)。
 - **跨线程使用 `Kit` 报 `!Sync`**：改用 `AsyncKit`（`async` feature），或在单线程内使用 `Kit`。
 

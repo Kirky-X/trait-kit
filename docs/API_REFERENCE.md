@@ -89,8 +89,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `with_observer(obs)` | `observer` | 附加构建观察者 |
 | `decorate::<M>(f)` | `decorator` | 注册能力装饰器（目标未注册时 `build()` 期 panic；装饰器按属主隔离，只作用于被装饰的模块） |
 | `try_decorate::<M>(f)` | `decorator` | 装饰器注册（目标未注册时返回 `DecoratorTargetMissing`） |
-| `override_module::<M>(cap)` | — | 覆盖模块能力（测试注入） |
-| `override_module_strict::<M>(cap)` | — | 覆盖并验证依赖存在性 |
+| `override_module::<M>(cap)` | — | 覆盖模块能力（测试注入）；注入期校验 `M::dependencies` 均已注册，未注册即返回 `DependencyMissing` |
 | `set_config::<C>(value)` | — | 存储类型化配置 |
 | `set_config_arc::<C>(value)` | — | 存储配置并以 `Arc` 快照共享 |
 | `load_config::<C>()` | `confers` | 通过 `Configurable::load()` 加载配置 |
@@ -113,6 +112,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `set_encrypted::<C>(val, key)` | `encryption` | 加密存储配置（XChaCha20-Poly1305） |
 | `set_encrypted_with_version::<C>(val, key, version)` | `encryption` | 带密钥版本的加密存储（配合轮换） |
 | `set_encrypted_with_key_provider::<C, P>(val, provider)` | `encryption` | 经 `KeyProvider` 调用时取钥（fail-closed） |
+| `contains_encrypted::<C>()` | `encryption` | 检查加密配置是否已注册（定义在 `impl Kit<Unbuilt>`，仅构建前可调用；`Kit<Ready>` 上无此方法） |
 | `with_metrics_port(port)` | — | 注入 `MetricsPort` 观测端口 |
 | `with_log_port(port)` | — | 注入 `LogPort` 观测端口 |
 | `with_event_bus(bus)` | — | 注入 `EventBus` 事件总线 |
@@ -148,7 +148,6 @@ pub trait AutoBuilder: ModuleMeta {
 | `enable_toggle(key, bool)` / `is_toggle_enabled(key)` | `toggle` | 运行时修改/查询 feature flag |
 | `set_toggle` / `get_toggle` / `list_toggles` | `toggle` | 类型化开关句柄（`remove_toggle` 仅 `Kit<Unbuilt>`（`impl Kit`）提供，不在本表方法面，见上表） |
 | `get_encrypted::<C>(key)` | `encryption` | 解密检索配置 |
-| `contains_encrypted::<C>()` | `encryption` | 检查加密配置是否存在 |
 | `get_encrypted_with_version::<C>(key, expected_version)` | `encryption` | 按密钥版本解密检索 |
 | `rotate_master_key::<C>(old, new)` | `encryption` | 主密钥轮换并迁移旧密文（错钥 fail-closed，版本递增） |
 | `encrypted_key_version::<C>()` | `encryption` | 查询密文当前密钥版本 |
@@ -350,12 +349,14 @@ pub trait SharedConfig: Clone + 'static {
 - `Kit::inject_shared::<C>()` — 从 overlay 注入共享字段到配置
 - `#[derive(SharedConfig)]` + `#[shared(field1, field2)]` — 自动生成实现
 
-共享命名空间是 Kit 内唯一一张扁平表，键只有字段名，没有属主（配置类型 / 模块 / 租户）维度：
-两个配置类型声明同名字段（`host`、`port`、`token` 这类通用名很常见）时，后 `extract_shared` 的值
-覆盖先写入的值，随后 `inject_shared` 把该值写进任何声明了同名字段的配置类型。overlay 中的值以
-明文 `serde_json::Value` 存放，不走零化路径。凭据类字段名（`password`、`api_key` 等）由 Kit 在
-写入与注入两侧过滤掉，凭据明文不会跨配置类型流动；把凭据类字段标为 shared 之前请先确认同 Kit
-内没有第二个同名声明——非凭据类的通用字段名仍会跨类型流动。
+共享命名空间带属主维度：overlay 记录每个键由哪个配置类型首次声明，**先提取者持有键**（Ownership
+contract）。两个配置类型声明同名字段（`host`、`port`、`token` 这类通用名很常见）时，后 `extract_shared`
+一方的同名键被拒绝写入并打 `log::warn!`（两处 `host` 未必是同一个主机），不会静默覆盖先写入的值；
+属主自身重提取（配置重载）仍更新值。跨类型流向保持单向：值经 `extract_shared` 进入 overlay，只通过
+`inject_shared` 写进声明了同名字段的其它配置类型。overlay 中的值以明文 `serde_json::Value` 存放，不走
+零化路径。凭据类字段名（`password`、`api_key` 等）由 Kit 在写入与注入两侧过滤掉，凭据明文不会跨配置
+类型流动；即便属主制挡住了同名冲突，被标为 shared 的凭据字段仍会经注入流向其它类型——请只对确实需要
+跨类型流动的字段使用 shared。
 
 #### `populate_defaults`
 
@@ -593,7 +594,9 @@ pub struct BuildReport {
     pub topo_order: Vec<&'static str>,              // 校验通过的拓扑序模块名
     pub modules: Vec<ModuleReportEntry>,            // 按构建完成序的逐模块记录
     pub overrides: Vec<OverrideRecord>,             // 注册期观察到的能力覆盖（override_module 家族）
-    pub config_overrides: Vec<ConfigOverrideRecord>, // 配置级覆盖记录（merge_config 家族）
+    pub config_overrides: Vec<ConfigOverrideRecord>, // 配置级覆盖记录（merge_config 家族，有界历史）
+    pub config_overrides_dropped: u64,              // 有界历史满后被丢弃的覆盖记录数
+    pub total_elapsed_us: Option<u64>,              // build 墙钟耗时（微秒）
 }
 ```
 
@@ -718,7 +721,7 @@ pub trait BuildObserver: Send + Sync + 'static {
 
 `BuildReport` 的 override 语义分两层：
 
-- **模块级** `overrides`：`override_module` / `override_module_strict` 家族的注册记录（sync-only，async 报告恒为空）
+- **模块级** `overrides`：`override_module` 家族的注册记录（sync-only，async 报告恒为空）
 - **配置级** `config_overrides`：`merge_config`（sync 与 async）每次调用的 `{ config, source, applied }`，按记录顺序排列（顺序调用/单线程下即调用顺序；`AsyncKit` 并发调用下为加锁到达序，不代表实际应用顺序）；`applied=false` 表示目标配置不存在、override 被丢弃——显性呈现而非静默吞并；`applied=true` 表示本次调用执行了 apply，不承诺最终配置仍包含该 override（并发 `set_config`/`merge_config` 可能随后覆盖）。**使用警告（运行期累积仅 sync 侧成立）**：`Kit::merge_config`/`Kit::take_config_overrides` 任意状态可用（`impl<S>`），记录有界累积（保留最近 `MAX_CONFIG_OVERRIDE_HISTORY` 条，更旧丢弃并由 `config_overrides_dropped()` 计数；每条约 40B，`build_report()` 快照整段 clone 该历史）——高频调用（如每次 reload 回调）的长生命周期 Kit 应在轮转点调用 `take_config_overrides()` 排空并取回记录；`AsyncKit` 侧两者为构建前（Unbuilt）API（与 `set_config` 同口径），Ready 后历史冻结、无运行期累积
 
 ### 其他方法级门控速查

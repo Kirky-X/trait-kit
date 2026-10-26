@@ -22,7 +22,6 @@
 ## 使用
 
 ```rust
-use trait_kit::core::Module;
 use trait_kit_macros::Module;
 
 #[derive(Module)]

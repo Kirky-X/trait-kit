@@ -438,7 +438,7 @@ workspace 结构图、依赖图验证、数据流、线程安全模型与目录�
 
 ### 🔄 构建生命周期
 
-`Kit` 的能力检索以 `build()` 之后为主：注册期方法位于 `Kit<Unbuilt>`，检索期方法位于 `Kit<Ready>`。编译期排除的误用（trybuild UI 测试断言，见 `tests/ui/`）是 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建方法；`require()` / `require_all()` / `resolve()` / `config()` / `get_arc()` 等定义在 `impl<S> Kit<S>` 的检索方法在 `Kit<Unbuilt>` 上亦可编译调用（供 `AutoBuilder::build` 回调读取依赖与配置），对未构建模块返回运行时错误；`require_ref` / `contains` / `factory` 仅存在于 `Kit<Ready>`。
+`Kit` 的能力检索以 `build()` 之后为主：注册期方法位于 `Kit<Unbuilt>`，检索期方法位于 `Kit<Ready>`。- **编译期排除的误用**（trybuild UI 测试断言，见 `tests/ui/` 共 11 个夹具）包括 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建/配置/override 等方法；`require()` / `require_all()` / `resolve()` / `config()` / `get_arc()` 等定义在 `impl<S> Kit<S>` 的检索方法在 `Kit<Unbuilt>` 上亦可编译调用（供 `AutoBuilder::build` 回调读取依赖与配置），对未构建模块返回运行时错误；`require_ref` / `contains` / `factory` 仅存在于 `Kit<Ready>`。
 
 | 阶段 | 类型状态 | 可用操作 |
 |------|----------|----------|
@@ -451,7 +451,7 @@ workspace 结构图、依赖图验证、数据流、线程安全模型与目录�
 
 ### ⚙️ 配置：confers 集成
 
-trait-kit 通过 `confers` → `reload` → `encryption` 三级 feature 继承链集成 [`confers`](https://crates.io/crates/confers) 0.6；下表按能力面展开五层，其中第 1、2 层同属 `confers` feature，第 5 层的 `ConfigInherit` / `SharedConfig` derive 来自 `trait-kit-macros`（需另行直接依赖）。
+trait-kit 通过 `confers` → `reload` → `encryption` 三级 feature 继承链集成 [`confers`](https://crates.io/crates/confers) 0.6.0-rc.12（0.6 线预发布版）；下表按能力面展开五层，其中第 1、2 层同属 `confers` feature，第 5 层的 `ConfigInherit` / `SharedConfig` derive 来自 `trait-kit-macros`（需另行直接依赖）。
 
 | 层级 | Feature | 能力 |
 |------|---------|------|
@@ -510,8 +510,8 @@ kit.inject_shared::<DbConfig>();             // 注入到 DbConfig
 | 类型 | 位置 | 说明 |
 |------|------|------|
 | 单元测试 | `src/`（`#[cfg(test)]`） | 模块内部逻辑 |
-| 集成测试 | `tests/`（6 个目标）+ `tests/e2e/`（13 个注册目标） | `basic`、`config_inheritance_e2e`、`e2e_core`、`e2e_async`、`e2e_concurrency`、`e2e_feature_combinations` 等 |
-| 编译期 UI 测试 | `tests/compile_fail.rs` + `tests/ui/`（4 个用例）+ `tests/ui/probe_sensitive/`（probe 门控组 1 个） | 基于 trybuild，断言 typestate 误用（未构建即检索等）无法编译 |
+| 集成测试 | `tests/`（8 个目标）+ `tests/e2e/`（13 个注册目标） | `basic`、`config_inheritance_e2e`、`e2e_core`、`e2e_async`、`e2e_concurrency`、`e2e_feature_combinations` 等 |
+| 编译期 UI 测试 | `tests/compile_fail.rs` + `tests/ui/`（11 个用例：根 7 个 + `probe_sensitive/`、`observer_ready/`、`decorator_ready/`、`lifecycle_ready/` 各 1 个） | 基于 trybuild，断言 typestate 误用（未构建即检索等）无法编译 |
 | 宏 crate 测试 | `macros/tests/` | `#[derive(Module)]` 展开正确性与编译失败用例 |
 | 文档测试 | README 与 doc 注释中的 `rust` 代码块 | 随 `cargo test` 编译运行 |
 | 示例验证 | `examples/`（20 个） | 每个示例独立运行，断言失败即 panic |
@@ -519,7 +519,7 @@ kit.inject_shared::<DbConfig>();             // 注入到 DbConfig
 
 </details>
 
-测试规模：主 crate `src/` 与 `tests/` 共 **932** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `macros/tests/` 6 个。
+测试规模：主 crate `src/` 与 `tests/` 共 **1020** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `macros/tests/` 6 个。
 
 ### 常用命令（与 CI 一致）
 
@@ -563,7 +563,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 - **漏洞报告**：请勿通过公开 Issue 报告，使用 GitHub 私密通道 [Security Advisories](https://github.com/Kirky-X/trait-kit/security/policy)（"Report a vulnerability"）。维护者承诺 48 小时内确认、7 天内给出初步评估（见 [SECURITY.md](docs/SECURITY.md)）。
 - **默认禁用 unsafe**：`#![deny(unsafe_code)]` 全 crate 强制；生产代码仅 5 处经 SAFETY 论证与 review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×1：`AsyncTypeMap` 的 `RwLock` 读守卫；同步 `TypeMap` 改用 `Ref::map` 守卫包装，无需 unsafe），另有 1 处测试模块豁免（`src/kit/config.rs` 的 zeroize spare-capacity 断言）。
-- **编译期排除误用**：typestate 将 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建误用前置为编译错误（trybuild UI 测试断言）；依赖图在 `build()` 时做缺失依赖与环检测。
+- **编译期排除误用**：typestate 将 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建/配置/override 等误用前置为编译错误（trybuild UI 测试断言，`tests/ui/` 共 11 个夹具，含 decorator / lifecycle / observer / probe 门控组）；依赖图在 `build()` 时做缺失依赖与环检测。
 - **明确的线程安全边界**：同步 `Kit` 为 `!Sync`（编译器强制，见 `static_assertions` 断言），多线程用 `AsyncKit`（`Send + Sync`）。
 - **加密配置存储**（`encryption`）：XChaCha20-Poly1305 AEAD，HKDF 从主密钥与 `ModuleConfig::PATH` 派生字段密钥；`EncryptedBlob` 的 `Debug` 实现不泄露加密材料。
 - **供应链门禁**：`cargo deny check`（`deny.toml`：advisories / licenses / bans / sources）+ `cargo audit` 为 CI 必过项；CodeQL 静态分析常开；lefthook 私钥扫描拦截凭据入库。
@@ -584,7 +584,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 <table>
 <tr><th>状态</th><th>条目</th><th>说明</th></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.10</b>（2026-10-19）</td><td>当前版本：i18n 默认语言严格英文与 <code>locales/{en,zh}/</code> 按域拆分、<code>rustls</code> 0.23.46 安全升级、统一纯 MIT 许可、发布切 crates.io trusted publishing（OIDC）与发布幂等三元组（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
-<tr><td>✅</td><td><b>0.5.0-rc.9</b>（2026-10-03）</td><td>服务探针注册面（新 <code>probe</code> feature）、async 健康聚合（<code>health_aggregate</code> / <code>health_json</code>）、构建报告 <code>config_overrides</code> 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一、关闭协调器 hook panic 隔离等（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.9</b>（2026-10-10）</td><td>服务探针注册面（新 <code>probe</code> feature）、async 健康聚合（<code>health_aggregate</code> / <code>health_json</code>）、构建报告 <code>config_overrides</code> 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一、关闭协调器 hook panic 隔离等（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.6</b>（2026-09-21）</td><td>rc.4–rc.6 已发布：观测端口与事件总线、Toggle 完整落地、<code>trait-kit-derive</code> 并入 <code>trait-kit-macros</code>、<code>confers</code> 依赖改走 crates.io（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
 <tr><td>✅</td><td><b>性能基准</b></td><td>criterion 基准 <code>benches/kit_bench.rs</code> 与 <code>docs/PERFORMANCE.md</code> 基线报告已建立（现行基线 2026-09-29）。</td></tr>
 <tr><td>📋</td><td><b>0.5.0 正式发布</b></td><td>次版本位 +1 后，按工作区发布计划同步下游仓库（oxcache、dbnexus、inklog、limiteron、sdforge）的 <code>path + version</code> 依赖要求。</td></tr>
@@ -620,7 +620,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 ### PR 流程
 
-1. 从 `main` 创建 feature 分支（`feat/<功能>` / `fix/<问题>`），禁止直接提交到 main。
+1. 本仓工作流为 **main 直提**（`.pre-commit-config.yaml` 注明：未配置 `no-commit-to-branch` 类分支保护钩子，该钩子保护的是 `master`，在本仓不会生效）；如需评审流程，可从 `main` 创建 feature 分支（`feat/<功能>` / `fix/<问题>`）提 PR。
 2. 确保所有测试通过且 Clippy 零告警，新功能附带测试。
 3. 保持 README 与 API 变更同步（`docs/API_REFERENCE.md`、`docs/USER_GUIDE.md`）。
 4. CI（fmt / clippy / check / test / 三平台构建 / doc / 安全 / 覆盖率）全部通过后等待 review。
@@ -634,7 +634,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 详见 [CHANGELOG.md](docs/CHANGELOG.md)。近期版本要点：
 
 - **0.5.0-rc.10**（2026-10-19）：i18n 默认语言严格英文与 `locales/{en,zh}/` 按域拆分；`rustls` 0.23.46 安全升级；统一纯 MIT 许可；发布切 crates.io trusted publishing（OIDC）与发布幂等三元组。
-- **0.5.0-rc.9**（2026-10-03）：服务探针注册面（新 `probe` feature）、async 健康聚合、构建报告 `config_overrides` 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一等。
+- **0.5.0-rc.9**（2026-10-10）：服务探针注册面（新 `probe` feature）、async 健康聚合、构建报告 `config_overrides` 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一等。
 - **0.5.0-rc.6**（2026-09-21）：`confers` 依赖改走 crates.io；依赖升级（syn 3.0、criterion 0.8、rustls 0.23.45）；发布流程加固（先发 `trait-kit-macros` 再发主 crate）。
 - **0.5.0-rc.5**（2026-09-14）：`trait-kit-derive` 并入 `trait-kit-macros`（`ConfigInherit` / `SharedConfig` 迁移，derive 子包退役）。
 - **0.5.0-rc.4**（2026-09-13）：观测端口（`MetricsPort` / `LogPort`）、运行时事件总线 `EventBus`、Toggle 完整落地、AsyncKit 配置对称补齐（rc.3 未单独发布，并入本节）。

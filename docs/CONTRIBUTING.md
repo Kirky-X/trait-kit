@@ -112,7 +112,6 @@ cargo test --features i18n
 | `check-yaml` / `check-toml` / `check-merge-conflict` | 配置语法与冲突标记检查 |
 | `check-added-large-files` | 大文件拦截（`--maxkb=1000`，即 >1000KB） |
 | `detect-private-key` / `detect-secrets` | 私钥泄露检测与密钥基线扫描 |
-| `no-commit-to-branch` | 禁止直接提交到 `master` |
 | `typos` | 拼写检查 |
 | `cargo-fmt` | `cargo fmt --all -- --check` |
 | `cargo-check` | `cargo check --all-features` |
@@ -130,7 +129,7 @@ cargo test --features i18n
 
 ## 🚀 提交与 PR 流程
 
-1. 从 `main` 创建 feature 分支（如 `feat/<功能>` 或 `fix/<问题>`），**禁止直接提交到 main**。
+1. 本仓工作流为 **main 直提**（`.pre-commit-config.yaml` 注明：不设 `no-commit-to-branch`——该钩子保护的是 `master`，在本仓不会生效，故未配置分支保护钩子）；外部贡献者可从 `main` 创建 feature 分支（如 `feat/<功能>` 或 `fix/<问题>`）提 PR。
 2. 提交信息遵循 conventional commits：`feat(scope): ...`、`fix(scope): ...`、`docs: ...` 等。
 3. 确保本地检查全部通过：
    - pre-commit hooks 全绿

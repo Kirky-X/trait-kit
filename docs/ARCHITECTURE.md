@@ -277,9 +277,17 @@ src/
     ├── mod.rs          # I18nManager + I18nFormatter + tr()
     ├── i18n_impl.rs    # 实现细节
     └── messages/
-        ├── mod.rs      # FTL 嵌入
-        ├── en.ftl      # 英文消息
-        └── zh.ftl      # 中文消息
+        └── mod.rs      # FTL 嵌入（include_str! 内嵌仓库根 locales/ 下的域文件）
+
+locales/               # FTL 语言包（仓库根，按域拆分，非 src/ 内）
+├── en/
+│   ├── errors.ftl     # 英文错误消息
+│   ├── logs.ftl       # 英文日志/降级/探针载荷消息
+│   └── examples.ftl   # 英文示例演示输出
+└── zh/
+    ├── errors.ftl     # 中文错误消息
+    ├── logs.ftl       # 中文日志/降级/探针载荷消息
+    └── examples.ftl   # 中文示例演示输出
 ```
 
 ## 🧵 线程安全模型

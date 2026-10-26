@@ -93,7 +93,7 @@
 
 - **健康 / 就绪 detail**：凭据片段（URL userinfo、`password=` / `token=` 键值对（分隔符两侧带空格亦覆盖）、`Bearer` / `Basic` 等认证方案之后的凭据、PEM 块内自 `-----BEGIN` 起至 `-----END` 的私钥材料）在进入 JSON 载荷与事件总线前替换为 `[REDACTED]`，超长文本截断。
 - **配置键名**：`ConfersConfigHandle::keys()` 与 `RemoteConfigProvider::keys()` 过滤掉 `password` / `api_key` / `private_key` 之类的凭据类键名——键名本身会暴露部署持有哪些凭据；值仍可通过显式访问器按名读取。
-- **共享命名空间**：`extract_shared` / `inject_shared` 过滤掉凭据类字段名：共享表是无属主的扁平表，凭据明文进入后既会随注入流向其它配置类型，也留下无处零化的副本。
+- **共享命名空间**：`extract_shared` / `inject_shared` 过滤掉凭据类字段名：overlay 带属主维度（先提取者持有键，异配置类型提取同名键被拒并告警），但属主制只挡同名冲突——凭据明文一旦进入，仍会随注入流向其它配置类型，并留下无处零化的副本。
 
 ### 不可信配置的结构约束
 

@@ -57,6 +57,10 @@
 - **凭据类键名不再外泄**：`ConfersConfigHandle::keys()` 与 `RemoteConfigProvider::keys()` 过滤掉 `password` / `api_key` / `private_key` 之类的键名（键名本身会暴露部署持有哪些凭据），值仍可通过显式访问器读取
 - **深嵌套 JSON**：`merge_json_deep` 改用显式工作栈（不再按嵌套深度递归）；`load_config_with`（同步/异步）的深度守卫前移到序列化阶段——序列化走带深度守卫的写入器（嵌套超过 `MAX_CONFIG_DEPTH` 即中止，递归深度被上限钉死），`serde_json::to_value` 与 `from_value` 都不限深度，超深结构原本会直接终止进程
 
+### Changed
+
+- **依赖**：`confers` 声明 req 更新至 0.6.0-rc.12（rc.10 节记录的 0.6.0-rc.10 之后跟进；`Cargo.lock` 同步解析 0.6.0-rc.12）
+
 ### Fixed
 
 - **`override_module` 覆盖面**：`register_multi` / `register_as` 注册的模块现在同样消费覆盖值，`require_all` / `resolve` 不再拿到真实实现（此前报告记 `Overridden` 而实际生效的是真实能力）

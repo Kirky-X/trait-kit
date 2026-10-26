@@ -444,7 +444,7 @@ The workspace diagram, dependency-graph validation, data flow, thread-safety mod
 
 ### 🔄 Build Lifecycle
 
-Capability retrieval centers on `build()`: registration methods live on `Kit<Unbuilt>`, retrieval methods on `Kit<Ready>`. Compile-time rejection (asserted by trybuild UI tests in `tests/ui/`) covers `optional()` on `Kit<Unbuilt>` and register/build on `Kit<Ready>`; retrieval methods defined on `impl<S> Kit<S>` — `require()` / `require_all()` / `resolve()` / `config()` / `get_arc()` — also compile on `Kit<Unbuilt>` (for use inside `AutoBuilder::build` callbacks) and return a runtime error for unbuilt modules, while `require_ref` / `contains` / `factory` exist only on `Kit<Ready>`.
+Capability retrieval centers on `build()`: registration methods live on `Kit<Unbuilt>`, retrieval methods on `Kit<Ready>`. Compile-time rejection (asserted by trybuild UI tests in `tests/ui/`, 11 fixtures in total) covers `optional()` on `Kit<Unbuilt>` and register/build/config/override and more on `Kit<Ready>`; retrieval methods defined on `impl<S> Kit<S>` — `require()` / `require_all()` / `resolve()` / `config()` / `get_arc()` — also compile on `Kit<Unbuilt>` (for use inside `AutoBuilder::build` callbacks) and return a runtime error for unbuilt modules, while `require_ref` / `contains` / `factory` exist only on `Kit<Ready>`.
 
 | Phase | Typestate | Available operations |
 |-------|-----------|----------------------|
@@ -457,7 +457,7 @@ The actual execution path inside `build()` (missing-dep check → cycle detectio
 
 ### ⚙️ Configuration: confers Integration
 
-trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.6 through the three-level feature inheritance chain `confers` → `reload` → `encryption`; the table below expands it into five capability layers, where layers 1 and 2 both belong to the `confers` feature and layer 5's `ConfigInherit` / `SharedConfig` derives come from `trait-kit-macros` (a separate direct dependency).
+trait-kit integrates with [`confers`](https://crates.io/crates/confers) 0.6.0-rc.12 (a pre-release on the 0.6 line) through the three-level feature inheritance chain `confers` → `reload` → `encryption`; the table below expands it into five capability layers, where layers 1 and 2 both belong to the `confers` feature and layer 5's `ConfigInherit` / `SharedConfig` derives come from `trait-kit-macros` (a separate direct dependency).
 
 | Level | Feature | Capability |
 |-------|---------|------------|
@@ -516,8 +516,8 @@ kit.inject_shared::<DbConfig>();             // inject into DbConfig
 | Type | Location | Description |
 |------|----------|-------------|
 | Unit tests | `src/` (`#[cfg(test)]`) | Module-internal logic |
-| Integration tests | `tests/` (6 targets) + `tests/e2e/` (13 registered targets) | `basic`, `config_inheritance_e2e`, `e2e_core`, `e2e_async`, `e2e_concurrency`, `e2e_feature_combinations`, etc. |
-| Compile-time UI tests | `tests/compile_fail.rs` + `tests/ui/` (4 cases) + `tests/ui/probe_sensitive/` (probe-gated group, 1 case) | trybuild-based: assert typestate misuse (`optional()` on `Kit<Unbuilt>`, register/build on `Kit<Ready>`) fails to compile |
+| Integration tests | `tests/` (8 targets) + `tests/e2e/` (13 registered targets) | `basic`, `config_inheritance_e2e`, `e2e_core`, `e2e_async`, `e2e_concurrency`, `e2e_feature_combinations`, etc. |
+| Compile-time UI tests | `tests/compile_fail.rs` + `tests/ui/` (11 cases: 7 at the root + one each in `probe_sensitive/`, `observer_ready/`, `decorator_ready/`, `lifecycle_ready/`) | trybuild-based: assert typestate misuse (`optional()` on `Kit<Unbuilt>`, register/build on `Kit<Ready>`) fails to compile |
 | Macro-crate tests | `macros/tests/` | `#[derive(Module)]` expansion correctness and compile-fail cases |
 | Doc tests | `rust` code blocks in the README and doc comments | Compiled and run by `cargo test` |
 | Example validation | `examples/` (20) | Each example runs standalone; failed assertions panic |
@@ -525,7 +525,7 @@ kit.inject_shared::<DbConfig>();             // inject into DbConfig
 
 </details>
 
-Test scale: the main crate's `src/` and `tests/` contain **932** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `macros/tests/`.
+Test scale: the main crate's `src/` and `tests/` contain **1020** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `macros/tests/`.
 
 ### Common Commands (same as CI)
 
@@ -569,7 +569,7 @@ Baseline numbers, the measurement environment, and reproduction commands live in
 
 - **Vulnerability reporting**: do not open public issues; use GitHub's private [Security Advisories](https://github.com/Kirky-X/trait-kit/security/policy) channel ("Report a vulnerability"). Kirky.X commits to acknowledging reports within 48 hours and providing an initial assessment within 7 days (see [SECURITY.md](docs/SECURITY.md)).
 - **unsafe denied by default**: `#![deny(unsafe_code)]` is enforced crate-wide; only 5 locally audited exemptions exist in production code (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×1 (`AsyncTypeMap` `RwLock` read guard; the sync `TypeMap` now uses a `Ref::map` guard wrapper and needs no unsafe), plus 1 test-only exemption (`src/kit/config.rs`, zeroize spare-capacity assertion).
-- **Compile-time misuse prevention**: typestate turns `optional()` on `Kit<Unbuilt>` and register/build on `Kit<Ready>` into compile errors (trybuild UI tests); the dependency graph is checked for missing deps and cycles at `build()`.
+- **Compile-time misuse prevention**: typestate turns `optional()` on `Kit<Unbuilt>` and register/build/config/override and more on `Kit<Ready>` into compile errors (trybuild UI tests, 11 fixtures in `tests/ui/`); the dependency graph is checked for missing deps and cycles at `build()`.
 - **Explicit thread-safety boundary**: the sync `Kit` is `!Sync` (compiler-enforced, see the `static_assertions` assertions); use `AsyncKit` (`Send + Sync`) for multi-threading.
 - **Encrypted config storage** (`encryption`): XChaCha20-Poly1305 AEAD with field keys derived via HKDF from the master key and `ModuleConfig::PATH`; `EncryptedBlob`'s `Debug` implementation never leaks encrypted material.
 - **Supply-chain gates**: `cargo deny check` (`deny.toml`: advisories / licenses / bans / sources) + `cargo audit` are mandatory CI gates; CodeQL static analysis runs continuously; the lefthook private-key scan blocks credentials from entering the repo.
@@ -590,7 +590,7 @@ Entries carry over the existing plan; status is aligned with the current reposit
 <table>
 <tr><th>Status</th><th>Item</th><th>Description</th></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.10</b> (2026-10-19)</td><td>Current release: strict-English default locale with domain-split <code>locales/{en,zh}/</code>, <code>rustls</code> 0.23.46 security upgrade, unified pure-MIT license, release switched to crates.io trusted publishing (OIDC) with the idempotency triple (see the <a href="docs/CHANGELOG.md">CHANGELOG</a>).</td></tr>
-<tr><td>✅</td><td><b>0.5.0-rc.9</b> (2026-10-03)</td><td>service-probe registry (new <code>probe</code> feature), async health aggregation (<code>health_aggregate</code> / <code>health_json</code>), explicit <code>config_overrides</code> in build reports, feature-matrix and benchmark-regression CI gates; fixes for version-negotiation path parity, unified lazy retrieval semantics, and shutdown-coordinator hook panic isolation (see the <a href="docs/CHANGELOG.md">CHANGELOG</a>).</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.9</b> (2026-10-10)</td><td>service-probe registry (new <code>probe</code> feature), async health aggregation (<code>health_aggregate</code> / <code>health_json</code>), explicit <code>config_overrides</code> in build reports, feature-matrix and benchmark-regression CI gates; fixes for version-negotiation path parity, unified lazy retrieval semantics, and shutdown-coordinator hook panic isolation (see the <a href="docs/CHANGELOG.md">CHANGELOG</a>).</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.6</b> (2026-09-21)</td><td>rc.4–rc.6 released: observability ports and event bus, full Toggle implementation, <code>trait-kit-derive</code> merged into <code>trait-kit-macros</code>, <code>confers</code> dependency moved to crates.io (see the <a href="docs/CHANGELOG.md">CHANGELOG</a>).</td></tr>
 <tr><td>✅</td><td><b>Performance benchmarks</b></td><td>Criterion benchmarks in <code>benches/kit_bench.rs</code> and the <code>docs/PERFORMANCE.md</code> baseline report are in place (current baseline 2026-09-29).</td></tr>
 <tr><td>📋</td><td><b>0.5.0 stable release</b></td><td>After the minor version bump, sync the <code>path + version</code> dependency requirements of downstream crates (oxcache, dbnexus, inklog, limiteron, sdforge) per the workspace release plan.</td></tr>
@@ -626,7 +626,7 @@ Common commands matching CI (full tests, lint, zero-warning docs, dependency aud
 
 ### Pull Request Process
 
-1. Create a feature branch from `main` (`feat/<name>` / `fix/<name>`); committing directly to main is not allowed.
+1. This repository's workflow is **direct commits to main** (`.pre-commit-config.yaml` notes that no `no-commit-to-branch`-style branch-protection hook is configured; that hook guards `master` and would never fire here). For a review flow, create a feature branch from `main` (`feat/<name>` / `fix/<name>`) and open a PR.
 2. Ensure all tests pass and Clippy is clean; add tests for new functionality.
 3. Keep the README in sync with API changes (`docs/API_REFERENCE.md`, `docs/USER_GUIDE.md`).
 4. Wait for review after CI (fmt / clippy / check / test / three-platform builds / doc / security / coverage) passes.
@@ -640,7 +640,7 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 See [CHANGELOG.md](docs/CHANGELOG.md). Recent highlights:
 
 - **0.5.0-rc.10** (2026-10-19): strict-English default locale with domain-split `locales/{en,zh}/`; `rustls` 0.23.46 security upgrade; unified pure-MIT license; release switched to crates.io trusted publishing (OIDC) with the idempotency triple.
-- **0.5.0-rc.9** (2026-10-03): service-probe registry (new `probe` feature), async health aggregation, explicit `config_overrides` in build reports, feature-matrix and benchmark-regression CI gates; fixes for version-negotiation path parity, unified lazy retrieval semantics, and more.
+- **0.5.0-rc.9** (2026-10-10): service-probe registry (new `probe` feature), async health aggregation, explicit `config_overrides` in build reports, feature-matrix and benchmark-regression CI gates; fixes for version-negotiation path parity, unified lazy retrieval semantics, and more.
 - **0.5.0-rc.6** (2026-09-21): `confers` dependency moved to crates.io; dependency upgrades (syn 3.0, criterion 0.8, rustls 0.23.45); release process hardening (publish `trait-kit-macros` before the main crate).
 - **0.5.0-rc.5** (2026-09-14): `trait-kit-derive` merged into `trait-kit-macros` (`ConfigInherit` / `SharedConfig` migration; derive sub-crate retired).
 - **0.5.0-rc.4** (2026-09-13): observability ports (`MetricsPort` / `LogPort`), runtime `EventBus`, full Toggle implementation, symmetric AsyncKit config API (rc.3 was never released separately; folded into this section).
