@@ -45,11 +45,11 @@ confers = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 # ICU4X 按组件引入：门面 crate 会无条件编入 13 个组件，体积不可接受
-icu_collator = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
-icu_datetime = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
-icu_decimal = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
-icu_locale = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
-icu_plurals = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
+icu_collator = { version = "2.4", default-features = false, features = ["compiled_data"], optional = true }
+icu_datetime = { version = "2.4", default-features = false, features = ["compiled_data"], optional = true }
+icu_decimal = { version = "2.4", default-features = false, features = ["compiled_data"], optional = true }
+icu_locale = { version = "2.4", default-features = false, features = ["compiled_data"], optional = true }
+icu_plurals = { version = "2.4", default-features = false, features = ["compiled_data"], optional = true }
 writeable = { version = "0.6", default-features = false, features = ["alloc"], optional = true }
 sys-locale = { version = "0.3", default-features = false, optional = true }
 # futures-timer：全局后台线程驱动超时延迟，保持 executor 无关

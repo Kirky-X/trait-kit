@@ -4515,9 +4515,14 @@ mod kit_toggle_surface_tests {
 
         let removed = kit.remove_toggle("feat");
         assert_eq!(removed, Some(ToggleValue::Str("on".into())));
-        // The Bool(true) from the first set lives in the confers registry:
-        // the second remove disables it and returns its prior state.
+        // The first Bool(true) survives only in backend-specific storage:
+        // the confers registry keeps it, so a second remove still reports
+        // it; the pure memory backend overwrites in place (ToggleBackend::
+        // set contract) and has nothing left to return.
+        #[cfg(feature = "confers")]
         assert_eq!(kit.remove_toggle("feat"), Some(ToggleValue::Bool(true)));
+        #[cfg(not(feature = "confers"))]
+        assert_eq!(kit.remove_toggle("feat"), None);
         // Reads honor the removal contract after tombstoning.
         assert_eq!(
             kit.get_toggle("feat"),

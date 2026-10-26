@@ -20,6 +20,11 @@
 //! 体引用仅在该 feature 下存在的类型/方法（BuildObserver、decorate、
 //! register_lifecycle），无对应 feature 时会产生附带错误，故按 feature
 //! 分组门控。
+//!
+//! observer_ready 组额外要求全特性面：其 E0599 help 段（`with_subscriber`
+//! 相似名建议）只在全部特性开启的方法面下产生；部分特性组合会退化为
+//! "the method was found for Kit" note，实测单开任意一个缺失特性均不能
+//! 稳定复现快照，故按全集门控（CI test/release 均以 --all-features 执行）。
 
 #[cfg(feature = "async")]
 #[test]
@@ -28,7 +33,30 @@ fn compile_fail_tests() {
     t.compile_fail("tests/ui/*.rs");
     #[cfg(feature = "probe")]
     t.compile_fail("tests/ui/probe_sensitive/*.rs");
-    #[cfg(feature = "observer")]
+    #[cfg(all(
+        feature = "async",
+        feature = "confers",
+        feature = "reload",
+        feature = "encryption",
+        feature = "di",
+        feature = "interface",
+        feature = "lifecycle",
+        feature = "health",
+        feature = "probe",
+        feature = "request-scope",
+        feature = "scope",
+        feature = "toggle",
+        feature = "observer",
+        feature = "decorator",
+        feature = "shutdown",
+        feature = "i18n",
+        feature = "report",
+        feature = "presets",
+        feature = "presets-remote",
+        feature = "version-negotiation",
+        feature = "negotiate",
+        feature = "compose"
+    ))]
     t.compile_fail("tests/ui/observer_ready/*.rs");
     #[cfg(feature = "decorator")]
     t.compile_fail("tests/ui/decorator_ready/*.rs");
