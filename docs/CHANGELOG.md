@@ -68,6 +68,7 @@
 
 - **测试基建**：`block_on` 辅助函数改为按真实时间推进（no-op waker 无法唤醒定时器类 future，探针超时用例此前依赖机器速度才能通过）
 - **文档**：修正 `merge_json_deep` 关于「解析器 128 层上限」的失效论证；`SharedConfig` 共享命名空间补属主缺失的告警；README/README_EN/USER_GUIDE/CONTRIBUTING/SECURITY 同步 unsafe 豁免计数与主密钥策略
+- **文档**：同步「覆盖历史有界」语义至全部文案——API_REFERENCE（`merge_config` / `take_config_overrides` / `BuildReport` 注记 / 使用警告 5 处）与 README、PERFORMANCE、bench 注释仍残留 rc.9 的「无上限/无界累积/GB 级 OOM」旧论证，现统一为：有界 1024 条环形语义（丢弃计数 `config_overrides_dropped()`），report 组合下剔除 `config/write_merge_config` 基准的理由改为满容量后 O(n) 头删簿记混入测量（OOM 风险已不存在）
 
 ---
 

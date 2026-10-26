@@ -19,8 +19,9 @@
 //! `toggle`-gated API surface; `confers` adds the
 //! `config/write_merge_config` benchmark (it is skipped silently under
 //! `--features toggle` alone, and under `--all-features` it is compiled out:
-//! the `report`-gated record accumulation would grow unboundedly per
-//! iteration and invalidate the measurement). Baseline numbers, the
+//! the `report`-gated bounded-history ring eviction (an O(n) shift per call
+//! once the 1024-entry cap is reached) would mix bookkeeping into the
+//! read-modify-write measurement and invalidate it). Baseline numbers, the
 //! gate-derivation ledger and thresholds all live in `docs/PERFORMANCE.md` /
 //! `scripts/bench_gate.py`.
 
@@ -209,11 +210,11 @@ fn bench_config(c: &mut Criterion) {
     });
     // `merge_config` is a read-modify-write usable on every state marker
     // (benchmarked on a ready kit). Measured **without** the `report`
-    // feature on purpose: the report record accumulates per call with no
-    // cap (see `take_config_overrides`), so an iterated benchmark under
-    // `report` would grow the Vec by GBs within one run and degrade into
-    // a realloc/cache-miss benchmark whose numbers depend on iteration
-    // count. The pure read-modify-write cost is what this measures.
+    // feature on purpose: the report history is bounded (1024 entries, see
+    // `take_config_overrides`), but once the cap is reached every call
+    // pays an O(n) Vec shift plus drop bookkeeping, so an iterated
+    // benchmark under `report` would measure that bookkeeping instead of
+    // the pure read-modify-write cost this bench targets.
     #[cfg(all(feature = "confers", not(feature = "report")))]
     c.bench_function("config/write_merge_config", |b| {
         b.iter(|| {

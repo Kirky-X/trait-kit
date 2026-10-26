@@ -28,7 +28,7 @@ cargo bench --features toggle -- build/three_module_chain
 | require | `require/arc_capability_top` | `require::<M>()` 取 `Arc` 能力（期望 ≈ 一次 `Arc::clone`） |
 | config | `config/read_clone` | `config::<C>()` 读（含 `Clone` 拷贝，5 元素 Vec 的中型结构） |
 | config | `config/write_set_config` | `set_config` 覆写（`TypeMap` 换值） |
-| config | `config/write_merge_config` | `merge_config` 读-改-写（`confers` feature；Ready Kit 可用）。**仅在无 `report` 的组合下测量**：`report` 下该基准被编译剔除——报告记录随调用无上限累积（见 `take_config_overrides`），迭代式基准会在单次运行内累积 GB 级 `Vec` 并退化为 realloc/cache 测量（迭代数即机器速度的函数，数字不可比，2–8GB 内存 runner 有 OOM 风险） |
+| config | `config/write_merge_config` | `merge_config` 读-改-写（`confers` feature；Ready Kit 可用）。**仅在无 `report` 的组合下测量**：`report` 下该基准被编译剔除——报告历史虽有界（1024 条环形语义），但满容量后每次调用触发 O(n) 头删 + 丢弃计数（见 `take_config_overrides`），迭代式基准会把簿记成本混入测量并退化为 memmove/cache 测量（迭代数即机器速度的函数，数字不可比） |
 | toggle | `toggle/set` | `enable_toggle`（Ready Kit，HashMap 后端） |
 | toggle | `toggle/get` | `is_toggle_enabled`（未命中 → 命中路径均为此量级） |
 
@@ -61,7 +61,7 @@ CI 阈值推导以本表为准（×100 后向上取整到整千，见下方「CI
 
 - `toggle/get` 在本机两次独立全量运行（高负载时段 1778 ns、负载 1.12 复测 1728 ns）稳定在 ~1.7 µs 量级；审查轮曾观察到一次 454 ns 的单点值，在本机不可复现，不作为基线。若未来出现稳定的更低值，按下方刷新规则重测并同步两处。
 - 历史（2026-09-10）快照中 toggle/set ≈21 ns、toggle/get ≈12 ns 与当前 HEAD 的实测不可对齐，根因未查明（其测量条件无法复现），仅作历史记录保留在下节，不参与门禁推导。
-- `report` 特性的记录/排空路径（`merge_config` 的 `push_config_override` 记录成本与 `take_config_overrides` 的 `mem::take` 轮转换出）**无基准覆盖，属显式非目标**：`config/write_merge_config` 在 report 组合下被编译剔除（迭代式基准下记录 `Vec` 无上限增长，见 `benches/kit_bench.rs`），CI bench 亦只跑 `toggle,confers`。该路径为诊断用途、量级远低于热路径，不要因本表无此轴而误以为已测。
+- `report` 特性的记录/排空路径（`merge_config` 的 `push_config_override` 记录成本与 `take_config_overrides` 的 `mem::take` 轮转换出）**无基准覆盖，属显式非目标**：`config/write_merge_config` 在 report 组合下被编译剔除（迭代式基准下环形驱逐的簿记成本混入测量，见 `benches/kit_bench.rs`），CI bench 亦只跑 `toggle,confers`。该路径为诊断用途、量级远低于热路径，不要因本表无此轴而误以为已测。
 
 ## 🗄 历史快照（2026-09-10，不参与门禁推导）
 

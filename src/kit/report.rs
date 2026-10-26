@@ -25,6 +25,13 @@ pub(crate) const UNREGISTERED_OVERRIDE: &str = "(unregistered)";
 /// Config-override history capacity: the newest records are kept, older
 /// ones are dropped (and counted) so a high-frequency `merge_config` caller
 /// cannot grow the history without bound.
+#[cfg_attr(
+    not(feature = "confers"),
+    allow(
+        dead_code,
+        reason = "its only readers (confers-gated push_config_override on Kit and AsyncKit, plus the confers-gated test) are compiled out under report without confers; the constant stays so the bound remains visible next to the history fields it documents"
+    )
+)]
 pub(crate) const MAX_CONFIG_OVERRIDE_HISTORY: usize = 1024;
 
 /// Feature-gated fields aggregated on `Kit` (same pattern as `ObserverFields`).

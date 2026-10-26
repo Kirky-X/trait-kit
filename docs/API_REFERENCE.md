@@ -101,7 +101,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `restore_config::<C>()` | `confers` | 回滚配置到最近快照 |
 | `has_snapshot::<C>()` | `confers` | 检查指定类型快照是否存在 |
 | `populate_defaults::<C>()` | `confers` | 空 Kit 时填充 `ModuleConfig::default_value()`（`impl<S>`，两态可用） |
-| `merge_config::<C>(ovr)` | `confers` | 任意状态可用（`impl<S>`，构建期与运行期皆可调用）；应用 `ConfigInherit` 字段覆盖；每次调用记录进 `build_report().config_overrides`（`report` 特性，`applied=false` = 目标配置不存在被丢弃；记录无上限，高频调用配 `take_config_overrides()` 轮转） |
+| `merge_config::<C>(ovr)` | `confers` | 任意状态可用（`impl<S>`，构建期与运行期皆可调用）；应用 `ConfigInherit` 字段覆盖；每次调用记录进 `build_report().config_overrides`（`report` 特性，`applied=false` = 目标配置不存在被丢弃；记录有界——保留最近 `MAX_CONFIG_OVERRIDE_HISTORY` 条（1024），更旧的丢弃并由 `config_overrides_dropped()` 计数；高频调用的长生命周期 Kit 仍可在轮转点配 `take_config_overrides()` 排空取回记录） |
 | `extract_shared::<C>()` | `confers` | 从配置提取共享字段到 overlay |
 | `inject_shared::<C>()` | `confers` | 从 overlay 注入共享字段到配置 |
 | `enable_toggle(key, bool)` | `toggle` | 设置 feature flag |
@@ -157,7 +157,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `module_count()` | — | 已注册模块数 |
 | `build_report()` | `report` | 结构化构建报告（JSON） |
 | `contract_manifest()` | `report` | 契约清单导出 |
-| `take_config_overrides()` | `report` | 任意状态可用（`impl<S>`，与 `merge_config` 同 impl 块，列于本表仅因排空轮转点多在运行期）；排空并返回 `config_overrides` 历史（记录序）——高频 `merge_config` 的长生命周期 Kit 以此防无界累积（每条约 40B，`build_report()` 快照整段 clone） |
+| `take_config_overrides()` | `report` | 任意状态可用（`impl<S>`，与 `merge_config` 同 impl 块，列于本表仅因排空轮转点多在运行期）；排空并返回 `config_overrides` 历史（记录序）——历史已自带上界（1024 条环形语义），排空用于在轮转点取回记录继续处理，兼防满容量后 `merge_config` 的 O(n) 头删与 `build_report()` 快照整段 clone 的持续成本 |
 | `emit_event(event)` | — | 发布自定义 `KitEvent` |
 
 ### 声明宏
@@ -428,7 +428,7 @@ pub trait AsyncAutoBuilder: ModuleMeta {
 | `health_json()` | `health` + `report` | 健康聚合 JSON 导出，与同步 `Kit<Ready>` 对位 |
 | `build_report()` `report` | 结构化构建报告（JSON），与同步 `Kit<Ready>` 对位；async 构建状态集仅 `built`（无 override/lazy 面） |
 | `contract_manifest()` `report` | 契约清单导出（NAME/VERSION/capability/deps），与同步 `Kit<Ready>` 对位 |
-| `take_config_overrides()` `report` | 排空并返回 `config_overrides` 历史（构建前 `AsyncKit<Unbuilt>` 态 API，与 `set_config` 同口径——累积仅发生在构建前，Ready 后历史冻结、无运行期无界累积；排空动作语义（换出并返回记录序）与同步侧一致） |
+| `take_config_overrides()` `report` | 排空并返回 `config_overrides` 历史（构建前 `AsyncKit<Unbuilt>` 态 API，与 `set_config` 同口径——累积仅发生在构建前，Ready 后历史冻结、无运行期累积；排空动作语义（换出并返回记录序）与同步侧一致） |
 | `populate_defaults::<C>()` | 构建前 `AsyncKit<Unbuilt>` 态配置面入口（与同 impl 块的 `merge_config` / `take_config_overrides` 同口径；Ready 态无此方法——异步配置面为构建期关注点）：空 Kit 时填充 `C::default_value()`、已有值不覆盖，返回 `bool` 表示是否发生填充。`AsyncKit` 版本的约束为 `C: ModuleConfig + Send + Sync`（同步 `Kit` 仅要求 `C: ModuleConfig`）——差异源于 `AsyncKit` 是共享 `Send + Sync` 类型 |
 
 ### `di` — 接口/实现分离
@@ -634,7 +634,7 @@ pub struct ConfigOverrideRecord {
 
 > `config` 字段来自 `std::any::type_name`，其精确格式在不同编译器/版本间不承诺稳定——只作诊断用途，禁止按全等匹配。
 > `config_overrides` 的记录序仅在单线程顺序调用下等于调用序；`AsyncKit` 为共享 `Send + Sync` 类型，并发 `merge_config` 的记录序是加锁到达序，且读-改-写非原子。
-> 该历史**无上限累积**（每条约 40 B），高频 `merge_config` 的长生命周期 Kit 需在轮转点用 `take_config_overrides()` 排空，否则每次 `build_report()` 快照都整段 clone。
+> 该历史**有界**：保留最近 `MAX_CONFIG_OVERRIDE_HISTORY`（1024）条，更旧的丢弃并由 `config_overrides_dropped()` 计数。高频 `merge_config` 的长生命周期 Kit 仍建议在轮转点用 `take_config_overrides()` 排空——满容量后每次 `merge_config` 触发 O(n) 头删，每次 `build_report()` 快照都整段 clone。
 
 #### `ContractManifest` / `ContractEntry`
 
@@ -719,7 +719,7 @@ pub trait BuildObserver: Send + Sync + 'static {
 `BuildReport` 的 override 语义分两层：
 
 - **模块级** `overrides`：`override_module` / `override_module_strict` 家族的注册记录（sync-only，async 报告恒为空）
-- **配置级** `config_overrides`：`merge_config`（sync 与 async）每次调用的 `{ config, source, applied }`，按记录顺序排列（顺序调用/单线程下即调用顺序；`AsyncKit` 并发调用下为加锁到达序，不代表实际应用顺序）；`applied=false` 表示目标配置不存在、override 被丢弃——显性呈现而非静默吞并；`applied=true` 表示本次调用执行了 apply，不承诺最终配置仍包含该 override（并发 `set_config`/`merge_config` 可能随后覆盖）。**使用警告（运行期累积仅 sync 侧成立）**：`Kit::merge_config`/`Kit::take_config_overrides` 任意状态可用（`impl<S>`），记录随调用无界累积（每条约 40B，`build_report()` 快照整段 clone 该历史）——高频调用（如每次 reload 回调）的长生命周期 Kit 应在轮转点调用 `take_config_overrides()` 排空并取回记录；`AsyncKit` 侧两者为构建前（Unbuilt）API（与 `set_config` 同口径），Ready 后历史冻结、无运行期累积
+- **配置级** `config_overrides`：`merge_config`（sync 与 async）每次调用的 `{ config, source, applied }`，按记录顺序排列（顺序调用/单线程下即调用顺序；`AsyncKit` 并发调用下为加锁到达序，不代表实际应用顺序）；`applied=false` 表示目标配置不存在、override 被丢弃——显性呈现而非静默吞并；`applied=true` 表示本次调用执行了 apply，不承诺最终配置仍包含该 override（并发 `set_config`/`merge_config` 可能随后覆盖）。**使用警告（运行期累积仅 sync 侧成立）**：`Kit::merge_config`/`Kit::take_config_overrides` 任意状态可用（`impl<S>`），记录有界累积（保留最近 `MAX_CONFIG_OVERRIDE_HISTORY` 条，更旧丢弃并由 `config_overrides_dropped()` 计数；每条约 40B，`build_report()` 快照整段 clone 该历史）——高频调用（如每次 reload 回调）的长生命周期 Kit 应在轮转点调用 `take_config_overrides()` 排空并取回记录；`AsyncKit` 侧两者为构建前（Unbuilt）API（与 `set_config` 同口径），Ready 后历史冻结、无运行期累积
 
 ### 其他方法级门控速查
 

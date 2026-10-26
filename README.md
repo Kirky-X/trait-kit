@@ -553,7 +553,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 ## 📊 性能
 
-性能来自设计层面：typestate 把依赖图验证全部前置到 `build()`，`Kit<Ready>` 上的能力检索是 `TypeId` 查表 + 克隆；同步 `Kit` 基于 `RefCell` 无锁设计。criterion 基准设施覆盖 build / require / config / toggle 四个热路径轴（`benches/kit_bench.rs`，基准目标需 `--features toggle`，全量 7 项需 `cargo bench --features toggle,confers`——`config/write_merge_config` 依赖 `confers`，且在 `report` 开启时因记录无界累积被编译排除）；基线（2026-09-29 安静复测）实测 `require`（≈16 ns）与裸 `Arc::clone` + `TypeId` 查找同量级，验证了"零开销能力检索"的设计目标，大结构能力建议改用 `require_ref`（借用读）。
+性能来自设计层面：typestate 把依赖图验证全部前置到 `build()`，`Kit<Ready>` 上的能力检索是 `TypeId` 查表 + 克隆；同步 `Kit` 基于 `RefCell` 无锁设计。criterion 基准设施覆盖 build / require / config / toggle 四个热路径轴（`benches/kit_bench.rs`，基准目标需 `--features toggle`，全量 7 项需 `cargo bench --features toggle,confers`——`config/write_merge_config` 依赖 `confers`，且在 `report` 开启时因环形驱逐簿记混入测量被编译排除）；基线（2026-09-29 安静复测）实测 `require`（≈16 ns）与裸 `Arc::clone` + `TypeId` 查找同量级，验证了"零开销能力检索"的设计目标，大结构能力建议改用 `require_ref`（借用读）。
 
 基线数字、测量环境与复现命令见 [⚡ 性能基准](docs/PERFORMANCE.md)。
 
