@@ -2276,10 +2276,11 @@ impl AsyncKit {
                 .expect("shared_fields lock poisoned")
                 .merge(fields, &owner);
             for key in rejected {
-                log::warn!(
-                    "shared overlay: key `{key}` is already owned by another config type; \
-                     extraction from `{owner}` was refused"
+                let message = crate::i18n::tr(
+                    "trait-kit-log-shared-overlay-refused",
+                    &[("key", &key), ("owner", &owner)],
                 );
+                log::warn!("{message}");
             }
         }
     }

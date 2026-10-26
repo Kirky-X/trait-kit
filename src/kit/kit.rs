@@ -2608,7 +2608,7 @@ impl<S> Kit<S> {
             }
             self.publish_event(super::events::KitEvent::ConfigChanged {
                 key: crate::redact::short_type_name::<C>(),
-                summary: "merge".to_string(),
+                summary: tr("trait-kit-event-config-changed-merge", &[]),
             });
         }
         #[cfg(feature = "report")]
@@ -2676,10 +2676,11 @@ impl<S> Kit<S> {
                 .borrow_mut()
                 .merge(fields, &owner);
             for key in rejected {
-                log::warn!(
-                    "shared overlay: key `{key}` is already owned by another config type; \
-                     extraction from `{owner}` was refused"
+                let message = tr(
+                    "trait-kit-log-shared-overlay-refused",
+                    &[("key", &key), ("owner", &owner)],
                 );
+                log::warn!("{message}");
             }
         }
     }

@@ -5,7 +5,8 @@
 //! 语言包按域拆分（与 base 工作区 confers/inklog 的 `locales/{en,zh}/` 布局一致）：
 //!
 //! - `errors`：错误 `Display` 模板（`TraitKitError`/`I18nError`）与诊断上下文标记；
-//! - `logs`：`log` facade 输出（软构建降级、关闭桥接）与探针 readiness 载荷；
+//! - `logs`：`log` facade 输出（软构建降级、关闭桥接）与探针 readiness 载荷、
+//!   运行时事件载荷（`KitEvent::ConfigChanged` 事件摘要）；
 //! - `examples`：`examples/` crate 的演示输出。
 //!
 //! `include_str!` 使磁盘文件与内嵌内容同源（改磁盘即生效）；域清单守卫测试

@@ -1,7 +1,8 @@
 # trait-kit log / degradation / probe payload messages — English (fallback)
 #
-# Domain: `log` facade output (soft-build degradation, shutdown bridge) and
-# probe readiness payloads surfaced through health/probe APIs.
+# Domain: `log` facade output (soft-build degradation, shutdown bridge),
+# probe readiness payloads surfaced through health/probe APIs, and runtime
+# event payloads (KitEvent::ConfigChanged summary).
 
 # register_shutdown_into stranded-hook log channel
 
@@ -20,3 +21,11 @@ trait-kit-probe-timeout-no-verdict = probe timed out before returning a verdict
 # health readiness payload (detail text of the defensive branch where a checker finds no capability)
 
 trait-kit-health-capability-not-found = capability not found
+
+# shared-config overlay extraction refusal log
+
+trait-kit-log-shared-overlay-refused = shared overlay: key `{ $key }` is already owned by another config type; extraction from `{ $owner }` was refused
+
+# KitEvent::ConfigChanged summary (event-bus payload)
+
+trait-kit-event-config-changed-merge = merge
