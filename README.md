@@ -510,7 +510,7 @@ kit.inject_shared::<DbConfig>();             // 注入到 DbConfig
 | 类型 | 位置 | 说明 |
 |------|------|------|
 | 单元测试 | `src/`（`#[cfg(test)]`） | 模块内部逻辑 |
-| 集成测试 | `tests/`（8 个目标）+ `tests/e2e/`（13 个注册目标） | `basic`、`config_inheritance_e2e`、`e2e_core`、`e2e_async`、`e2e_concurrency`、`e2e_feature_combinations` 等 |
+| 集成测试 | `tests/`（9 个目标）+ `tests/e2e/`（13 个注册目标） | `basic`、`config_inheritance_e2e`、`e2e_core`、`e2e_async`、`e2e_concurrency`、`e2e_feature_combinations` 等 |
 | 编译期 UI 测试 | `tests/compile_fail.rs` + `tests/ui/`（11 个用例：根 7 个 + `probe_sensitive/`、`observer_ready/`、`decorator_ready/`、`lifecycle_ready/` 各 1 个） | 基于 trybuild，断言 typestate 误用（未构建即检索等）无法编译 |
 | 宏 crate 测试 | `macros/tests/` | `#[derive(Module)]` 展开正确性与编译失败用例 |
 | 文档测试 | README 与 doc 注释中的 `rust` 代码块 | 随 `cargo test` 编译运行 |
@@ -519,7 +519,7 @@ kit.inject_shared::<DbConfig>();             // 注入到 DbConfig
 
 </details>
 
-测试规模：主 crate `src/` 与 `tests/` 共 **1020** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `macros/tests/` 6 个。
+测试规模：主 crate `src/` 与 `tests/` 共 **1037** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `macros/tests/` 6 个。
 
 ### 常用命令（与 CI 一致）
 

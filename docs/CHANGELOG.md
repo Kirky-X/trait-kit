@@ -474,7 +474,9 @@
 - `TypeMap` 类型安全存储（以 `TypeId` 为键）
 - 依赖图验证：环检测 + 拓扑排序构建
 
-[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.7...HEAD
+[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.10...HEAD
+[0.5.0-rc.10]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.9...v0.5.0-rc.10
+[0.5.0-rc.9]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.7...v0.5.0-rc.9
 [0.5.0-rc.8]: https://crates.io/crates/trait-kit/0.5.0-rc.8
 [0.5.0-rc.7]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.6...v0.5.0-rc.7
 [0.5.0-rc.6]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.5...v0.5.0-rc.6

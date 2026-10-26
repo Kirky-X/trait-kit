@@ -9,7 +9,7 @@
 | 项 | 内容 |
 |---|---|
 | 所属仓库 | [trait-kit](https://github.com/Kirky-X/trait-kit) |
-| 依赖方向 | 本 crate → `trait-kit`（示例以 `path = ".."` 依赖父 crate）；需使用派生宏的示例另有 `trait-kit-macros` 依赖 |
+| 依赖方向 | 本 crate → `trait-kit`（`examples/Cargo.toml` 以 `trait-kit = { workspace = true }` 复用根 `Cargo.toml` 的 workspace 依赖，其声明为 `path = "."`，即本地父 crate）；需使用派生宏的示例另有 `trait-kit-macros` 依赖 |
 | 是否发布 | 否：`publish = false`，仅用于演示与回归验证 |
 | 版本与支持 | 版本经 `version.workspace = true` 随仓库统一；仅维护当前 minor 版本线，见 [安全文档 · 支持的版本](../docs/SECURITY.md#-支持的版本与维护策略) |
 

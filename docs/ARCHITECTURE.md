@@ -246,6 +246,7 @@ sequenceDiagram
 src/
 ├── lib.rs              # crate 入口，re-export
 ├── error.rs            # TraitKitError 错误类型（i18n 本地化）
+├── redact.rs           # 对外文本脱敏：抹掉凭据片段、绝对路径与内部类型路径（内部模块）
 ├── prelude.rs          # 常用类型再导出
 ├── core/
 │   ├── mod.rs          # 模块声明 + re-export

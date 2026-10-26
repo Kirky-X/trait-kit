@@ -626,7 +626,7 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 | 完全无外部依赖（纯内存）的场景 | 240+ |
 
 > 既有测试资产基线（编写时 rc.2 时点 grep 实测）：src 内联 **394** 个 `#[test]`；`tests/` **185** 个测试函数（basic 45 / e2e_advanced 84 / e2e_feature_combinations 42 / config_inherit_derive 6 / shared_config_derive 5 / config_inheritance_e2e 2 / compile_fail 1 runner→当时 3 个 ui 用例；e2e_* 文件当时位于 `tests/` 顶层，落地后迁入 `tests/e2e/`，见 §重要发现-7）；examples **20** 个。
-> 落地后现状（当前仓库 grep 实测）：`tests/` 共 **294** 个测试函数——`tests/e2e/` 13 个注册目标 202 个、顶层 8 个集成文件 92 个、`compile_fail.rs` 1 runner 驱动 11 个 ui 用例（根 7 个 + 4 个门控子目录各 1）；src 内联 **726** 个（`src` + `tests` 合计 1020，与 README 测试规模口径一致）。
+> 落地后现状（当前仓库 grep 实测）：`tests/` 共 **311** 个测试函数——`tests/e2e/` 13 个注册目标 202 个、顶层 9 个集成文件 109 个、`compile_fail.rs` 1 runner 驱动 11 个 ui 用例（根 7 个 + 4 个门控子目录各 1）；src 内联 **726** 个（`src` + `tests` 合计 1037，与 README 测试规模口径一致）。
 > 说明：既有覆盖口径存在合法重叠（一条场景可同时引用 tests/ 集成测试与 src 内联测试）；"需新增"取最强缺口判定。后续落地阶段允许将粒度过细的场景合并实现，但 **ID 保持稳定**以便追溯。
 
 ### 编写基线核对说明

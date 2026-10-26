@@ -516,7 +516,7 @@ kit.inject_shared::<DbConfig>();             // inject into DbConfig
 | Type | Location | Description |
 |------|----------|-------------|
 | Unit tests | `src/` (`#[cfg(test)]`) | Module-internal logic |
-| Integration tests | `tests/` (8 targets) + `tests/e2e/` (13 registered targets) | `basic`, `config_inheritance_e2e`, `e2e_core`, `e2e_async`, `e2e_concurrency`, `e2e_feature_combinations`, etc. |
+| Integration tests | `tests/` (9 targets) + `tests/e2e/` (13 registered targets) | `basic`, `config_inheritance_e2e`, `e2e_core`, `e2e_async`, `e2e_concurrency`, `e2e_feature_combinations`, etc. |
 | Compile-time UI tests | `tests/compile_fail.rs` + `tests/ui/` (11 cases: 7 at the root + one each in `probe_sensitive/`, `observer_ready/`, `decorator_ready/`, `lifecycle_ready/`) | trybuild-based: assert typestate misuse (`optional()` on `Kit<Unbuilt>`, register/build on `Kit<Ready>`) fails to compile |
 | Macro-crate tests | `macros/tests/` | `#[derive(Module)]` expansion correctness and compile-fail cases |
 | Doc tests | `rust` code blocks in the README and doc comments | Compiled and run by `cargo test` |
@@ -525,7 +525,7 @@ kit.inject_shared::<DbConfig>();             // inject into DbConfig
 
 </details>
 
-Test scale: the main crate's `src/` and `tests/` contain **1020** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `macros/tests/`.
+Test scale: the main crate's `src/` and `tests/` contain **1037** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `macros/tests/`.
 
 ### Common Commands (same as CI)
 
