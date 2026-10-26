@@ -174,7 +174,7 @@ fn e2e_decorator_applies_on_interface_path() {
 
 // 装饰器 panic 语义固化
 
-/// 装饰器闭包自身 panic：panic 穿透 build 传播给调用方。
+/// 装饰器闭包自身 panic：panic 穿透 build() 传播给调用方。
 #[test]
 fn e2e_decorator_closure_panic_propagates_from_build() {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

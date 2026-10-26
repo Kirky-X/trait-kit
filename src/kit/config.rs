@@ -89,7 +89,7 @@ pub trait ModuleConfig: Clone + 'static {
 pub trait Validatable: Clone + 'static {
     /// Validate the configuration value.
     ///
-    /// Returns `Ok()` if valid, or `Err` with all failure reasons.
+    /// Returns `Ok(())` if valid, or `Err` with all failure reasons.
     ///
     /// # Errors
     ///
@@ -166,7 +166,7 @@ impl std::error::Error for ValidationError {}
 /// impl ConfigInherit for DbConfig {
 ///     type Override = DbConfigOverride;
 ///     fn apply_override(&mut self, ovr: &Self::Override) {
-///         if let Some(ref h) = ovr.host { self.host = h.clone; }
+///         if let Some(ref h) = ovr.host { self.host = h.clone(); }
 ///         if let Some(ref p) = ovr.port { self.port = *p; }
 ///     }
 /// }

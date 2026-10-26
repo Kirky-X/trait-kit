@@ -34,9 +34,9 @@ use std::future::Future;
 /// use trait_kit::kit::soft_build;
 ///
 /// # struct PromptStore;
-/// # impl PromptStore { fn in_memory -> Self { Self } }
+/// # impl PromptStore { fn in_memory() -> Self { Self } }
 /// # struct LoadError;
-/// # async fn load_remote_prompts -> Result<PromptStore, LoadError> { unimplemented! }
+/// # async fn load_remote_prompts() -> Result<PromptStore, LoadError> { unimplemented!() }
 ///
 /// // Prompt store is best-effort: if the remote load fails, the host still
 /// // comes up serving from the in-memory fallback (the failure is logged).

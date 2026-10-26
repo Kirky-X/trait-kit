@@ -280,7 +280,7 @@ mod async_scope {
         /// ```ignore
         /// let cap = MyModule::build(&kit).await?;
         /// scope.insert::<MyModule>(cap);
-        /// let retrieved = scope.require::<MyModule>?;
+        /// let retrieved = scope.require::<MyModule>()?;
         /// ```
         pub fn insert<M: AsyncAutoBuilder>(&self, capability: M::Capability)
         where

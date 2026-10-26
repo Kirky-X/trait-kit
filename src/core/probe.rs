@@ -12,7 +12,7 @@
 //!   as `HealthCheck`, intentionally synchronous; see its docs for the
 //!   two-stage probe/report split.
 //! - [`ServiceProbe`] — a real async network probe (the framework measures
-//!   wall latency around each `probe.await`),
+//!   wall latency around each `probe().await`),
 //!   executed only when the caller explicitly awaits
 //!   `AsyncKit<Ready>::run_probes` / `probe_aggregate`. This is where
 //!   network I/O belongs. Bounded execution entries —
@@ -35,7 +35,7 @@ pub struct ProbeOutcome {
     pub status: HealthStatus,
     /// Probe-internal duration as reported by the implementation
     /// (diagnostic only). The framework does not trust this value:
-    /// `run_probes` measures wall latency around the `probe.await`
+    /// `run_probes()` measures wall latency around the `probe().await`
     /// itself and records **that** measurement in
     /// [`ProbeEntry::latency_ms`], so a faulty or inflated self-report
     /// never reaches the readiness payload.
@@ -97,7 +97,7 @@ pub struct ProbeEntry {
     /// [`redact_detail`](super::health::redact_detail).
     pub detail: Option<String>,
     /// Wall latency in milliseconds, measured by the framework around the
-    /// `probe.await` call — not the probe's self-reported
+    /// `probe().await` call — not the probe's self-reported
     /// [`ProbeOutcome::latency`]. On a timed-out probe (bounded variants)
     /// this is the elapsed time at cancellation, i.e. close to the timeout.
     pub latency_ms: u64,

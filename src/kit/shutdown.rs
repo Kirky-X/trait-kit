@@ -543,7 +543,7 @@ fn lock_poisoned(context: String) -> TraitKitError {
 /// use trait-kit::kit::shutdown::{AsyncShutdownCoordinator, ShutdownPhase};
 /// use std::time::Duration;
 ///
-/// let coord = AsyncShutdownCoordinator::new;
+/// let coord = AsyncShutdownCoordinator::new();
 ///
 /// coord.register_hook(ShutdownPhase::StopRequests, || {
 ///     Box::pin(async {
@@ -551,7 +551,7 @@ fn lock_poisoned(context: String) -> TraitKitError {
 ///     })
 /// }).expect("register_hook failed");
 ///
-/// let result = coord.shutdown.await;
+/// let result = coord.shutdown().await;
 /// ```
 #[cfg(feature = "async")]
 pub struct AsyncShutdownCoordinator {
@@ -617,7 +617,7 @@ impl AsyncShutdownCoordinator {
 
     /// 注册一个异步关闭钩子到指定阶段。
     ///
-    /// 钩子返回 `Pin<Box<dyn Future<Output = > + Send>>`；调用方闭包
+    /// 钩子返回 `Pin<Box<dyn Future<Output = ()> + Send>>`；调用方闭包
     /// 通常写作 `|| Box::pin(async { ... })`，返回位置的 unsizing
     /// coercion 会自动完成擦除。
     ///

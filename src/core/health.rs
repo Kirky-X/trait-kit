@@ -215,13 +215,13 @@ pub trait HealthCheck: crate::core::AutoBuilder {
 /// //
 /// // impl AsyncLifecycle for DbPoolModule {
 /// //     fn on_ready<'a>(kit: &'a AsyncKit<Ready>)
-/// //         -> Pin<Box<dyn Future<Output = Result<, Self::Error>> + Send + 'a>>
+/// //         -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>>
 /// //     {
 /// //         Box::pin(async move {
-/// //             let pool: Arc<PoolHandle> = kit.require::<DbPoolModule>?;
-/// //             let ok = select_1_probe(&pool).await.is_ok;
+/// //             let pool: Arc<PoolHandle> = kit.require::<DbPoolModule>()?;
+/// //             let ok = select_1_probe(&pool).await.is_ok();
 /// //             pool.probe_reachable.store(ok, Ordering::Relaxed);
-/// //             Ok()
+/// //             Ok(())
 /// //         })
 /// //     }
 /// // }

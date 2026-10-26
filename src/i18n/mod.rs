@@ -16,7 +16,7 @@
 //! ```rust
 //! use trait_kit::i18n::I18nManager;
 //!
-//! let mgr = I18nManager::init;
+//! let mgr = I18nManager::init();
 //! ```
 //!
 //! 语言协商保留：显式指定 locale 即可切换目录（如中文）：

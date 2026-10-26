@@ -73,7 +73,7 @@ fn main() {
     });
 
     let mut kit = Kit::new();
-    // Method-call `.clone` (not the `Arc::clone` free function) so the
+    // Method-call `.clone()` (not the `Arc::clone` free function) so the
     // unsized coercion to `Arc<dyn BuildObserver>` applies at the argument.
     kit.with_observer(observer.clone());
     kit.register::<LoggerModule>()

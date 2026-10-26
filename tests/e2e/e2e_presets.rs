@@ -466,7 +466,7 @@ mod presets_remote_error_e2e {
         }
     }
 
-    /// AsyncSource::load 失败 → build.await 失败，错误文本含源错误，
+    /// AsyncSource::load 失败 → build().await 失败，错误文本含源错误，
     /// source 链下探到 PresetError::RemoteLoad。
     #[test]
     fn e2e_presets_remote_source_failure_fails_build() {

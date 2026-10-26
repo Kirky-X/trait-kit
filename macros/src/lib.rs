@@ -36,8 +36,8 @@
 //! // Equivalent to the hand-written impl:
 //! // impl ModuleMeta for DbModule {
 //! //     const NAME: &'static str = "db";
-//! //     fn dependencies -> &'static [(&'static str, TypeId)] {
-//! //         &[(LoggerModule::NAME, TypeId::of::<LoggerModule>)]
+//! //     fn dependencies() -> &'static [(&'static str, TypeId)] {
+//! //         &[(LoggerModule::NAME, TypeId::of::<LoggerModule>())]
 //! //     }
 //! // }
 //! ```

@@ -261,7 +261,7 @@ pub struct Ready;
 ///
 /// The error variant is `Box<dyn Error + Send + 'static>` to match
 /// `TraitKitError::BuildFailed::source` (which is `Send` so that `TraitKitError: Send`
-/// and `tokio::spawn(async move { kit.build.await })` compiles on a
+/// and `tokio::spawn(async move { kit.build().await })` compiles on a
 /// multi-threaded runtime). The future is `Send` because both
 /// `Box<dyn Any + Send + Sync>` and `Box<dyn Error + Send + 'static>` are
 /// `Send`.
@@ -671,7 +671,7 @@ impl AsyncKit {
     /// Because modules are constructed in topological order and each
     /// capability is inserted into the shared [`AsyncTypeMap`] immediately
     /// after its `build` future resolves, a module's `build` callback may
-    /// call `kit.require::<DepModule>?` to pull in the capability of any
+    /// call `kit.require::<DepModule>()?` to pull in the capability of any
     /// already-built dependency. This is the canonical DI pattern and works
     /// transitively (A→B→C chains). The `require` method lives in
     /// `impl<S> AsyncKit<S>` so it is available on `&AsyncKit<Unbuilt>`
@@ -679,7 +679,7 @@ impl AsyncKit {
     ///
     /// ```text
     /// // Inside an AsyncAutoBuilder::build callback:
-    /// let dep_cap = kit.require::<DepModule>?;  // dep was built earlier
+    /// let dep_cap = kit.require::<DepModule>()?;  // dep was built earlier
     /// ```
     ///
     /// The kit's `capabilities` map is backed by `Arc<RwLock<...>>`, so a
@@ -1555,7 +1555,7 @@ impl AsyncKit<Ready> {
     /// not proof of health.
     ///
     /// Per-probe latencies are measured by the framework around each
-    /// `probe.await`; the probe's self-reported
+    /// `probe().await`; the probe's self-reported
     /// [`ProbeOutcome::latency`](crate::core::probe::ProbeOutcome::latency)
     /// is diagnostic and never recorded.
     ///
@@ -3072,7 +3072,7 @@ mod tests {
     /// Verifies `TraitKitError` is `Send` (so it can cross
     /// `tokio::spawn` boundaries). Before `TraitKitError::BuildFailed::source`
     /// was `Box<dyn Error>` (without `+ Send`), which made the entire enum
-    /// `!Send` and blocked `tokio::spawn(async move { kit.build.await })`.
+    /// `!Send` and blocked `tokio::spawn(async move { kit.build().await })`.
     #[test]
     fn kit_error_is_send() {
         fn assert_send<T: Send>() {}
@@ -3290,8 +3290,8 @@ mod tests {
 
     //
     // MockBModule: no deps, cap = Arc<Bcap{n:42}>.
-    // MockAModule: declares dep on MockBModule; build calls
-    //   `kit.require::<MockBModule>?` and embeds B's n into A's cap.
+    // MockAModule: declares dep on MockBModule; build() calls
+    //   `kit.require::<MockBModule>()?` and embeds B's n into A's cap.
     //   This is the canonical DI pattern from design.md Decision 3.
     // MockCModule / MockChainBModule / MockChainAModule: transitive
     //   A→B→C chain; each build callback calls require on its direct dep.
@@ -3299,7 +3299,7 @@ mod tests {
     //
     // `From<TraitKitError> for MockError` lets `?` convert require errors
     // (matches the production pattern in design.md where DbNexusModule
-    // uses `kit.require::<OxcacheModule>?` with `OxcacheError: From<TraitKitError>`).
+    // uses `kit.require::<OxcacheModule>()?` with `OxcacheError: From<TraitKitError>`).
 
     impl From<TraitKitError> for MockError {
         fn from(e: TraitKitError) -> Self {
@@ -5840,7 +5840,7 @@ mod async_probe_tests {
         );
     }
 
-    /// 报告中的延迟由框架在 `probe.await` 外侧实测，不采信实现自报值。
+    /// 报告中的延迟由框架在 `probe().await` 外侧实测，不采信实现自报值。
     #[test]
     fn run_probes_measures_wall_latency_not_the_self_reported_value() {
         let mut kit = AsyncKit::new();

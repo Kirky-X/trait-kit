@@ -738,7 +738,7 @@ fn e2e_async_factory_fresh_instances_and_error_propagation() {
     }
 }
 
-// 异步构建体 panic 直接穿透 build.await（无 catch_unwind 隔离）
+// 异步构建体 panic 直接穿透 build().await（无 catch_unwind 隔离）
 
 struct AsyncPanicMod;
 impl_module_meta!(AsyncPanicMod, "async-panic-mod");
@@ -755,7 +755,7 @@ impl AsyncAutoBuilder for AsyncPanicMod {
 }
 
 /// 与 sync lazy 面（catch_unwind 隔离为 BuildFailed）显式对照：async
-/// 构建体 panic 沿 build.await 穿透到调用方，不转 BuildFailed。
+/// 构建体 panic 沿 build().await 穿透到调用方，不转 BuildFailed。
 #[test]
 #[should_panic(expected = "async build panic blast")]
 fn e2e_async_build_body_panic_propagates_to_caller() {
