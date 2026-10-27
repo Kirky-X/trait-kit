@@ -9,7 +9,7 @@
 //! 3. The encryption key is HKDF-derived from `master_key` + `ModuleConfig::PATH`,
 //!    so the same master key produces different field keys per module.
 //!
-//! Run: `cargo run -p trait-kit-example --example encryption --features encryption`
+//! Run: `cargo run -p trait-kit-examples --example encryption --features encryption`
 
 use trait_kit::kit::config::ModuleConfig;
 use trait_kit::prelude::*;

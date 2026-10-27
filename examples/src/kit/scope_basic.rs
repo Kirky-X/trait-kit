@@ -7,7 +7,7 @@
 //! - Each scope creates independent instances (not shared with main Kit)
 //! - Lazy construction: first `require` triggers build, result is cached
 //!
-//! Run: `cargo run -p trait-kit-example --example scope_basic --features scope`
+//! Run: `cargo run -p trait-kit-examples --example scope_basic --features request-scope`
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

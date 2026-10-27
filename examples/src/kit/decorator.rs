@@ -7,7 +7,7 @@
 //!   a module's capability after build
 //! - Multiple decorators can be registered; applied in registration order
 //!
-//! Run: `cargo run -p trait-kit-example --example decorator --features decorator`
+//! Run: `cargo run -p trait-kit-examples --example decorator --features decorator`
 
 use std::sync::Arc;
 use trait_kit::prelude::*;

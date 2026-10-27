@@ -7,7 +7,7 @@
 //! - `Kit::register_as::<M>` — register behind a `dyn Trait` interface
 //! - `Kit::resolve::<I>` — retrieve by interface type (`Arc<dyn Trait>`)
 //!
-//! Run: `cargo run -p trait-kit-example --example interface --features interface`
+//! Run: `cargo run -p trait-kit-examples --example interface --features di`
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

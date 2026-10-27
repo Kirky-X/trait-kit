@@ -4,7 +4,7 @@
 //!
 //! Bridges trait-kit's `Configurable` trait to confers' `#[derive(Config)]`
 //! generated `load_sync`. Demonstrates env-var override + default fallback.
-//! Run: `cargo run -p trait-kit-example --example confers_loader --features confers`
+//! Run: `cargo run -p trait-kit-examples --example confers_loader --features confers`
 
 use std::error::Error;
 use trait_kit::prelude::*;

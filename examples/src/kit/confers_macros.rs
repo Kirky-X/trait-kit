@@ -6,7 +6,7 @@
 //! `default_value`, then having a module's `build` retrieve that config via
 //! `kit.config::<C>`.
 //!
-//! Run: `cargo run -p trait-kit-example --example confers_macros --features confers`
+//! Run: `cargo run -p trait-kit-examples --example confers_macros --features confers`
 
 use std::sync::Arc;
 use trait_kit::kit::config::ModuleConfig;

@@ -8,7 +8,7 @@
 //! - `Kit::restore_config::<C>` — 回滚到快照
 //! - `Kit::has_snapshot::<C>` — 检查快照是否存在
 //!
-//! Run: `cargo run -p trait-kit-example --example snapshot_restore --features confers`
+//! Run: `cargo run -p trait-kit-examples --example snapshot_restore --features confers`
 
 use trait_kit::prelude::*;
 

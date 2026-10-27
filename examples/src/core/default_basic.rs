@@ -3,7 +3,7 @@
 //! Default feature — no confers, no macros.
 //!
 //! Demonstrates the core typestate flow: `Kit<Unbuilt>` → `Kit<Ready>`.
-//! Run: `cargo run -p trait-kit-example --example default_basic`
+//! Run: `cargo run -p trait-kit-examples --example default_basic`
 
 use std::sync::Arc;
 use trait_kit::prelude::*;

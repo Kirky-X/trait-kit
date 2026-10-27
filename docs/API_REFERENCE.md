@@ -101,8 +101,8 @@ pub trait AutoBuilder: ModuleMeta {
 | `has_snapshot::<C>()` | `confers` | 检查指定类型快照是否存在 |
 | `populate_defaults::<C>()` | `confers` | 空 Kit 时填充 `ModuleConfig::default_value()`（`impl<S>`，两态可用） |
 | `merge_config::<C>(ovr)` | `confers` | 任意状态可用（`impl<S>`，构建期与运行期皆可调用）；应用 `ConfigInherit` 字段覆盖；每次调用记录进 `build_report().config_overrides`（`report` 特性，`applied=false` = 目标配置不存在被丢弃；记录有界——保留最近 `MAX_CONFIG_OVERRIDE_HISTORY` 条（1024），更旧的丢弃并由 `config_overrides_dropped()` 计数；高频调用的长生命周期 Kit 仍可在轮转点配 `take_config_overrides()` 排空取回记录） |
-| `extract_shared::<C>()` | `confers` | 从配置提取共享字段到 overlay |
-| `inject_shared::<C>()` | `confers` | 从 overlay 注入共享字段到配置 |
+| `extract_shared::<C>()` | `confers` | 从配置提取共享字段到 overlay（`impl<S>`，两态可用） |
+| `inject_shared::<C>()` | `confers` | 从 overlay 注入共享字段到配置（`impl<S>`，两态可用） |
 | `enable_toggle(key, bool)` | `toggle` | 设置 feature flag |
 | `is_toggle_enabled(key)` | `toggle` | 查询 flag 状态 |
 | `set_toggle` / `get_toggle` / `remove_toggle` / `list_toggles` | `toggle` | 类型化开关句柄（`ToggleValue`：Bool/Int/Float/Str） |
@@ -115,12 +115,12 @@ pub trait AutoBuilder: ModuleMeta {
 | `contains_encrypted::<C>()` | `encryption` | 检查加密配置是否已注册（定义在 `impl Kit<Unbuilt>`，仅构建前可调用；`Kit<Ready>` 上无此方法） |
 | `with_metrics_port(port)` | — | 注入 `MetricsPort` 观测端口 |
 | `with_log_port(port)` | — | 注入 `LogPort` 观测端口 |
-| `with_event_bus(bus)` | — | 注入 `EventBus` 事件总线 |
+| `with_event_bus(bus)` | — | 注入 `EventBus` 事件总线（`impl<S>`，两态可用） |
 | `build()` | — | 验证依赖图 → 拓扑排序 → 构建 → `Kit<Ready>` |
 
 #### `Kit<Ready>` — 运行阶段
 
-> `require` / `get_arc` / `require_all` / `resolve` / `config` / `config_arc` / `subscribe` / `reload_config` / `merge_config` 定义在 `impl<S> Kit<S>` 上，`Kit<Unbuilt>` 态亦可编译调用（供 `AutoBuilder::build` 回调读取依赖与配置）；`require_ref` / `contains` / `factory` 定义在 `impl Kit<Ready>` 上，`Kit<Unbuilt>` 态调用即编译错误。下表列出时以主要使用场景为准。编译期排除的误用包括：`Kit<Unbuilt>` 上的 `optional()`（`unbuilt_cannot_optional`）与 `Kit<Ready>` 上的注册/构建方法（`ready_cannot_register` / `ready_cannot_build`，UI 测试断言）。
+> `require` / `get_arc` / `require_all` / `resolve` / `config` / `config_arc` / `subscribe` / `reload_config` / `merge_config` / `extract_shared` / `inject_shared` / `with_event_bus` / `emit_event` 定义在 `impl<S> Kit<S>` 上，`Kit<Unbuilt>` 态亦可编译调用（供 `AutoBuilder::build` 回调读取依赖与配置；其中 `extract_shared` / `inject_shared` 需 `confers`，`subscribe` / `reload_config` 需 `reload`）；`require_ref` / `contains` / `factory` 定义在 `impl Kit<Ready>` 上，`Kit<Unbuilt>` 态调用即编译错误。下表列出时以主要使用场景为准。编译期排除的误用包括：`Kit<Unbuilt>` 上的 `optional()`（`unbuilt_cannot_optional`）与 `Kit<Ready>` 上的注册/构建方法（`ready_cannot_register` / `ready_cannot_build`，UI 测试断言）。
 
 | 方法 | Feature | 说明 |
 |---|---|---|
@@ -157,7 +157,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `build_report()` | `report` | 结构化构建报告（JSON） |
 | `contract_manifest()` | `report` | 契约清单导出 |
 | `take_config_overrides()` | `report` | 任意状态可用（`impl<S>`，与 `merge_config` 同 impl 块，列于本表仅因排空轮转点多在运行期）；排空并返回 `config_overrides` 历史（记录序）——历史已自带上界（1024 条环形语义），排空用于在轮转点取回记录继续处理，兼防满容量后 `merge_config` 的 O(n) 头删与 `build_report()` 快照整段 clone 的持续成本 |
-| `emit_event(event)` | — | 发布自定义 `KitEvent` |
+| `emit_event(event)` | — | 发布自定义 `KitEvent`（`impl<S>`，两态可用） |
 
 ### 声明宏
 

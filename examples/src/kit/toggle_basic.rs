@@ -7,7 +7,7 @@
 //! - `Kit::is_toggle_enabled(key)` — 查询 flag 状态
 //! - `Kit::register_if_toggle::<M>(key)` — 按 flag 条件注册模块
 //!
-//! Run: `cargo run -p trait-kit-example --example toggle_basic --features toggle`
+//! Run: `cargo run -p trait-kit-examples --example toggle_basic --features toggle`
 
 use std::sync::Arc;
 use trait_kit::prelude::*;

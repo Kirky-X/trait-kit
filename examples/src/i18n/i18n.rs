@@ -10,7 +10,7 @@
 //! - `I18nFormatter::new` — ICU4X locale 感知格式化
 //! - `TraitKitError` 的 `Display` 输出自动本地化
 //!
-//! Run: `cargo run -p trait-kit-example --example i18n`
+//! Run: `cargo run -p trait-kit-examples --example i18n`
 
 use trait_kit::TraitKitError;
 use trait_kit::i18n::{I18nFormatter, I18nManager, tr};

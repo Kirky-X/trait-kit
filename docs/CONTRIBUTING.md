@@ -44,15 +44,15 @@ pre-commit install
 
 ```sh
 # 构建（全特性 / 无默认特性，与 CI 一致）
-cargo build --all-features --lib
-cargo build --no-default-features --lib
+cargo build --all-features --workspace
+cargo build --no-default-features --workspace
 
 # 测试（全特性，与 CI 一致）
-cargo test --all-features --lib
+cargo test --workspace --all-features
 
 # 格式化与 Lint
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # 文档（零告警标准）
 RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
@@ -81,8 +81,8 @@ cargo +1.97.1 check
 trait-kit 的 feature 之间存在继承关系（`encryption` → `reload` → `confers`），提交前请至少覆盖以下组合（对齐 CI 与验收矩阵）：
 
 ```sh
-cargo test --all-features --lib
-cargo test                          # 默认特性
+cargo test --workspace --all-features   # 与 CI test job 一致
+cargo test                              # 默认特性
 cargo test --no-default-features
 cargo test --features confers
 cargo test --features shutdown
@@ -133,7 +133,7 @@ cargo test --features i18n
 2. 提交信息遵循 conventional commits：`feat(scope): ...`、`fix(scope): ...`、`docs: ...` 等。
 3. 确保本地检查全部通过：
    - pre-commit hooks 全绿
-   - `cargo test --all-features --lib` 通过
+   - `cargo test --workspace --all-features` 通过
    - 新功能附带测试；API/文档变更保持 README、CHANGELOG 同步
 4. 推送分支并创建 PR，描述中包含：变更说明、测试结果、影响的 feature。
 5. CI（fmt / clippy / test / 跨平台构建 / cargo deny / doc）全部通过后等待 review。

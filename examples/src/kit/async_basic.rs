@@ -7,7 +7,7 @@
 //! Uses a minimal single-threaded `block_on` executor (no tokio required
 //! because the futures resolve immediately).
 //!
-//! Run: `cargo run -p trait-kit-example --example async_basic --features async`
+//! Run: `cargo run -p trait-kit-examples --example async_basic --features async`
 
 use std::future::Future;
 use std::pin::Pin;

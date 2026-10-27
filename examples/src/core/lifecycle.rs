@@ -7,7 +7,7 @@
 //! - `Kit::register_lifecycle::<M>` to register hooks
 //! - `Kit<Ready>::shutdown` to invoke shutdown in reverse order
 //!
-//! Run: `cargo run -p trait-kit-example --example lifecycle --features lifecycle`
+//! Run: `cargo run -p trait-kit-examples --example lifecycle --features lifecycle`
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};

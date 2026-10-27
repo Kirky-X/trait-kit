@@ -5,7 +5,7 @@
 //! Registers a callback that fires when `reload_config::<C>` re-loads the
 //! value. Uses `Rc<Cell<u32>>` to count invocations across the `Kit<Unbuilt>`
 //! → `Kit<Ready>` boundary (callbacks survive `build`).
-//! Run: `cargo run -p trait-kit-example --example hot_reload --features reload`
+//! Run: `cargo run -p trait-kit-examples --example hot_reload --features reload`
 
 use std::cell::Cell;
 use std::error::Error;

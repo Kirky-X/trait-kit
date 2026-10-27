@@ -8,7 +8,7 @@
 //! - `set_phase_timeout` / `set_global_timeout` 超时控制
 //! - `shutdown` 执行并检查结果
 //!
-//! Run: `cargo run -p trait-kit-example --example shutdown --features shutdown`
+//! Run: `cargo run -p trait-kit-examples --example shutdown --features shutdown`
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
