@@ -137,7 +137,7 @@ mod tests {
         let fmt = I18nFormatter::new("en-US").expect("en-US locale");
         match fmt.format_number(f64::NAN) {
             Err(I18nError::InvalidNumber { input, .. }) => {
-                assert!(!input.is_empty());
+                assert_ne!(input, "");
             }
             other => panic!("expected InvalidNumber, got {other:?}"),
         }

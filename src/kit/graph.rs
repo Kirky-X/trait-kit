@@ -412,7 +412,7 @@ mod tests {
     fn graph_validate_empty_succeeds() {
         let g = DependencyGraph::new();
         let sorted = g.validate().unwrap();
-        assert!(sorted.is_empty());
+        assert_eq!(sorted, [] as [TypeId; 0]);
     }
 
     #[test]
@@ -521,7 +521,7 @@ mod tests {
     fn graph_dependency_names_unknown_returns_empty() {
         let g = DependencyGraph::new();
         let names = g.dependency_names(TypeId::of::<types::A>());
-        assert!(names.is_empty());
+        assert_eq!(names, [] as [&str; 0]);
     }
 
     #[test]

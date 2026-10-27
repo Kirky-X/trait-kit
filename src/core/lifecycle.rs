@@ -60,7 +60,6 @@ pub trait AsyncLifecycle: crate::core::AsyncAutoBuilder {
         clippy::type_complexity,
         reason = "Pin<Box<dyn Future + Send>> is the canonical dyn-compatible async dispatch type"
     )]
-    #[must_use]
     fn on_ready<'a>(
         _kit: &'a crate::kit::AsyncKit<crate::kit::async_kit::Ready>,
     ) -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>> {
@@ -416,7 +415,7 @@ mod async_tests {
     /// （无依赖、构建成功）是其余生命周期用例的前提。
     #[test]
     fn async_test_module_declares_no_dependencies() {
-        assert!(AsyncTestModule::dependencies().is_empty());
+        assert_eq!(AsyncTestModule::dependencies(), []);
     }
 
     #[test]

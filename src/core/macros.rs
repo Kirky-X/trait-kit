@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn macro_generates_empty_dependencies_when_no_deps() {
-        assert!(MacroModuleNoDeps::dependencies().is_empty());
+        assert_eq!(MacroModuleNoDeps::dependencies(), []);
     }
 
     #[test]
@@ -333,7 +333,7 @@ mod async_macro_tests {
 
     #[test]
     fn macro_async_generates_empty_dependencies() {
-        assert!(MacroAsyncModule::dependencies().is_empty());
+        assert_eq!(MacroAsyncModule::dependencies(), []);
     }
 
     #[test]
@@ -381,7 +381,7 @@ mod async_macro_tests {
 
     #[test]
     fn hand_written_async_module_dependencies_empty() {
-        assert!(HandAsyncModule::dependencies().is_empty());
+        assert_eq!(HandAsyncModule::dependencies(), []);
     }
 }
 
@@ -444,7 +444,7 @@ mod sync_auto_builder_tests {
 
     #[test]
     fn macro_sync_generates_empty_dependencies() {
-        assert!(MacroSyncModule::dependencies().is_empty());
+        assert_eq!(MacroSyncModule::dependencies(), []);
     }
 
     #[test]
@@ -492,6 +492,6 @@ mod sync_auto_builder_tests {
 
     #[test]
     fn hand_written_sync_module_dependencies_empty() {
-        assert!(HandSyncModule::dependencies().is_empty());
+        assert_eq!(HandSyncModule::dependencies(), []);
     }
 }

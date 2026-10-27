@@ -4579,7 +4579,7 @@ mod async_decorator_tests {
         });
         let built = block_on(kit.build()).unwrap();
         let cap = built.require::<AsyncDecModule>().unwrap();
-        assert!(!cap.val.is_empty());
+        assert_ne!(cap.val, "");
     }
 }
 
@@ -5447,7 +5447,7 @@ mod async_report_tests {
             .iter()
             .find(|m| m.name == "rpt-async-leaf")
             .expect("leaf entry");
-        assert!(leaf.deps.is_empty());
+        assert_eq!(leaf.deps, [] as [&str; 0]);
     }
 
     #[test]
@@ -5486,7 +5486,7 @@ mod async_report_tests {
             "capability type name: {}",
             leaf.capability
         );
-        assert!(leaf.deps.is_empty());
+        assert_eq!(leaf.deps, [] as [&str; 0]);
 
         let top = manifest
             .modules

@@ -1030,7 +1030,7 @@ mod contract_manifest_tests {
             .find(|m| m.module == "manifest-leaf")
             .expect("leaf");
         assert_eq!(leaf.version, "2.1.0");
-        assert!(leaf.deps.is_empty());
+        assert_eq!(leaf.deps, [] as [&str; 0]);
         assert!(
             leaf.capability.contains("ManifestCap"),
             "capability type name: {}",

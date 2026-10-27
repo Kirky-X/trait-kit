@@ -654,8 +654,8 @@ mod encrypted_blob_tests {
     #[test]
     fn getters_return_empty_for_empty_blob() {
         let blob = EncryptedBlob::new(Vec::new(), Vec::new());
-        assert!(blob.nonce().is_empty());
-        assert!(blob.ciphertext().is_empty());
+        assert_eq!(blob.nonce(), [] as [u8; 0]);
+        assert_eq!(blob.ciphertext(), [] as [u8; 0]);
     }
 
     #[test]

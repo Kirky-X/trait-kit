@@ -3509,7 +3509,7 @@ mod i18n_module_tests {
         impl ModuleMeta for Plain {
             const NAME: &'static str = "plain";
         }
-        assert!(<Plain as ModuleMeta>::i18n_ftl().is_empty());
+        assert_eq!(<Plain as ModuleMeta>::i18n_ftl(), []);
     }
 }
 
@@ -4530,7 +4530,7 @@ mod kit_toggle_surface_tests {
             "tombstoned key reads as absent"
         );
 
-        assert!(kit.list_toggles().is_empty());
+        assert_eq!(kit.list_toggles(), [] as [(String, ToggleValue); 0]);
         kit.set_toggle("a", ToggleValue::Int(1));
         kit.set_toggle("b", ToggleValue::Bool(false));
         let listed: std::collections::HashMap<String, ToggleValue> =

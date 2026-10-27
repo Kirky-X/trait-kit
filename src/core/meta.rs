@@ -370,7 +370,7 @@ mod async_tests {
     #[test]
     fn mock_logger_module_dependencies_empty() {
         let deps = MockLoggerModule::dependencies();
-        assert!(deps.is_empty());
+        assert_eq!(deps, []);
     }
 }
 
@@ -530,7 +530,7 @@ mod interface_builder_tests {
     #[test]
     fn console_logger_module_dependencies_empty() {
         let deps = ConsoleLoggerModule::dependencies();
-        assert!(deps.is_empty());
+        assert_eq!(deps, []);
     }
 }
 

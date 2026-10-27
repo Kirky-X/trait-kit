@@ -1236,7 +1236,7 @@ mod tests {
             ],
         };
         assert!(result.is_ok());
-        assert!(result.timed_out_phases().is_empty());
+        assert_eq!(result.timed_out_phases(), [] as [ShutdownPhase; 0]);
         assert!(result.into_result().is_ok());
     }
 
@@ -2067,7 +2067,7 @@ mod into_result_failures_tests {
             ],
         };
         assert!(!result.is_ok());
-        assert!(result.timed_out_phases().is_empty());
+        assert_eq!(result.timed_out_phases(), [] as [ShutdownPhase; 0]);
         let err = result.into_result().unwrap_err();
         let TraitKitError::BuildFailed { context, source } = &err else {
             panic!("expected BuildFailed, got {err:?}")

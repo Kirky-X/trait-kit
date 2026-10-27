@@ -654,7 +654,7 @@ mod tests {
     #[test]
     fn scope_module_dependencies_empty() {
         let deps = ScopeModule::dependencies();
-        assert!(deps.is_empty());
+        assert_eq!(deps, []);
     }
 
     /// scope builder panic：首次 require 返回 `BuildFailed`（含 panic 摘要），
@@ -811,6 +811,6 @@ mod async_tests {
     #[test]
     fn async_scope_module_dependencies_empty() {
         let deps = AsyncScopeModule::dependencies();
-        assert!(deps.is_empty());
+        assert_eq!(deps, []);
     }
 }
