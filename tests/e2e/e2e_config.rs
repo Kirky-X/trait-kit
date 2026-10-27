@@ -426,3 +426,107 @@ fn e2e_load_config_with_double_dollar_escape_forms() {
         "placeholders after an escape should still interpolate"
     );
 }
+
+// 失败路径的存储与文案语义固化：load 失败不写入、restore 无快照的
+// key 为本地化模板、reload 失败保留旧值。
+
+/// load() 抛错的配置类型（模拟外部资源不可得）。
+#[derive(Clone, Debug, PartialEq)]
+struct LoadBoomCfg {
+    v: u32,
+}
+impl Configurable for LoadBoomCfg {
+    fn load() -> Result<Self, Box<dyn Error + Send>> {
+        Err(Box::new(std::io::Error::other("load refused")))
+    }
+}
+
+/// load_config 失败：BuildFailed{context="load_config", source=原始错误}
+/// 传播，且配置表不写入该类型。
+#[test]
+fn e2e_load_config_failure_does_not_store() {
+    let kit = Kit::new();
+    let err = kit
+        .load_config::<LoadBoomCfg>()
+        .expect_err("a failed C::load() should propagate as BuildFailed");
+    match err {
+        TraitKitError::BuildFailed { context, source } => {
+            assert_eq!(&*context, "load_config");
+            assert!(
+                source.to_string().contains("load refused"),
+                "the source should preserve the original error: {source}"
+            );
+        }
+        other => panic!("expected BuildFailed, got: {other}"),
+    }
+    // contains_config 为 Ready 态方法：空 kit 可直接 build 后核对存储面。
+    let ready = kit
+        .build()
+        .expect("a kit without modules should still build after a failed load_config");
+    assert!(
+        !ready.contains_config::<LoadBoomCfg>(),
+        "a failed load_config must not store the config type"
+    );
+}
+
+/// restore_config 无快照：MissingConfig 的 key 是本地化 no-snapshot 模板
+/// 内插类型名（en-US 兜底为 "no snapshot found for `T`"，zh 为
+/// "未找到 `T` 的配置快照"），而非裸类型名。
+#[derive(Clone, Debug, PartialEq)]
+struct NoSnapCfg {
+    v: u32,
+}
+impl Configurable for NoSnapCfg {
+    fn load() -> Result<Self, Box<dyn Error + Send>> {
+        Ok(Self { v: 1 })
+    }
+}
+
+#[test]
+fn e2e_restore_without_snapshot_key_is_localized_message() {
+    let kit = Kit::new();
+    let err = kit
+        .restore_config::<NoSnapCfg>()
+        .expect_err("restore without a snapshot should fail");
+    match err {
+        TraitKitError::MissingConfig { key } => {
+            assert!(
+                key.contains("NoSnapCfg"),
+                "the localized message should interpolate the type name: {key}"
+            );
+            assert_ne!(
+                key, "NoSnapCfg",
+                "the key should be the localized no-snapshot template, not the bare type name"
+            );
+        }
+        other => panic!("expected MissingConfig, got: {other}"),
+    }
+}
+
+/// reload_config 失败：BuildFailed 传播，配置表保留 reload 前的旧值。
+#[derive(Clone, Debug, PartialEq)]
+struct ReloadBoomCfg {
+    v: u32,
+}
+impl Configurable for ReloadBoomCfg {
+    fn load() -> Result<Self, Box<dyn Error + Send>> {
+        Err(Box::new(std::io::Error::other("reload refused")))
+    }
+}
+
+#[test]
+fn e2e_reload_failure_keeps_old_config_value() {
+    let kit = Kit::new();
+    kit.set_config(ReloadBoomCfg { v: 7 });
+
+    let err = kit
+        .reload_config::<ReloadBoomCfg>()
+        .expect_err("a failing reload should propagate as BuildFailed");
+    assert!(matches!(err, TraitKitError::BuildFailed { .. }));
+
+    assert_eq!(
+        kit.config::<ReloadBoomCfg>().unwrap().v,
+        7,
+        "the old value must be retained after a failed reload"
+    );
+}
