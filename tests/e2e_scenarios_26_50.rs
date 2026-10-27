@@ -111,7 +111,7 @@ mod rld10_subscriber_panic {
 // ─── 场景 30 · ENC-07 短密钥 InvalidInput 消息含实际长度 ───
 // ─── 场景 32 · ENC-09 弱密钥两侧拒收（sync/async） ───
 
-#[cfg(feature = "encryption")]
+#[cfg(all(feature = "encryption", feature = "async"))]
 mod enc_error_surface {
     use super::*;
     use trait_kit::kit::ModuleConfig;
