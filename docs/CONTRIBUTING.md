@@ -31,7 +31,7 @@
 - **Rust 1.97.1+**（`Cargo.toml` 中 `rust-version = "1.97.1"`，edition 2024）
 - **cargo**、**rustfmt**、**clippy**（随 rustup 安装）
 - **cargo-deny**：`cargo install cargo-deny`（lefthook 与 CI 依赖审计需要）
-- **pre-commit** 或 **lefthook**（二选一；两者覆盖面不完全等价——pre-commit 含 `detect-secrets` / `cargo-check` 等检查，lefthook 额外含 `cargo-deny`、私钥 grep 与 pre-push 的 `cargo-audit` / 覆盖率门禁）：
+- **pre-commit** 或 **lefthook**（二选一；两者覆盖面不完全等价——pre-commit 含 `detect-secrets` / `cargo-check` 等检查，lefthook 在提交期含 `cargo-deny` 与私钥 grep、pre-push 含覆盖率门禁；`cargo-deny` / `cargo-audit` 在 pre-commit 框架中挂在 pre-push 阶段（`pre-commit install -t pre-push` 启用））：
 
 ```sh
 uv tool install pre-commit   # 或 pip install pre-commit
@@ -117,7 +117,7 @@ cargo test --features i18n
 | `cargo-check` | `cargo check --all-features` |
 | `cargo-clippy` | `cargo clippy --all-targets --all-features -- -D warnings` |
 
-> `cargo-deny`（许可证/安全通告/封禁依赖审计）不在 pre-commit 中，挂在 `lefthook.yml` 与 CI 上。
+> `cargo-deny`（许可证/安全通告/封禁依赖审计）两套钩子均有配置：pre-commit 框架中为 pre-push 阶段钩子（`pre-commit install -t pre-push` 启用），lefthook 中在 pre-commit 阶段运行；CI 亦有对应 job（`.github/workflows/ci.yml`）。
 
 > **禁止使用 `--no-verify` 跳过 hooks**，这是安全红线。
 

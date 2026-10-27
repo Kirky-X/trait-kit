@@ -355,7 +355,7 @@ Enable the desired level in `Cargo.toml`:
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.5.0-rc.10", features = ["encryption"] }
+trait-kit = { version = "0.5.0-rc.11", features = ["encryption"] }
 ```
 
 </details>
@@ -525,7 +525,7 @@ kit.inject_shared::<DbConfig>();             // inject into DbConfig
 
 </details>
 
-Test scale: the main crate's `src/` and `tests/` contain **1037** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `macros/tests/`.
+Test scale: the main crate's `src/` and `tests/` contain **1040** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `macros/tests/`.
 
 ### Common Commands (same as CI)
 
@@ -589,7 +589,8 @@ Entries carry over the existing plan; status is aligned with the current reposit
 
 <table>
 <tr><th>Status</th><th>Item</th><th>Description</th></tr>
-<tr><td>✅</td><td><b>0.5.0-rc.10</b> (2026-10-19)</td><td>Current release: strict-English default locale with domain-split <code>locales/{en,zh}/</code>, <code>rustls</code> 0.23.46 security upgrade, unified pure-MIT license, release switched to crates.io trusted publishing (OIDC) with the idempotency triple (see the <a href="docs/CHANGELOG.md">CHANGELOG</a>).</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.11</b> (2026-10-28)</td><td>Current release: tightened <code>override_module</code> dependency-graph validation (unregistered dependencies rejected at injection time) and shared-overlay ownership isolation; full redaction of external text and error <code>Debug</code> output; master-key admission policy; <code>TypeMap</code> read-reference guard (unsafe exemptions 6→5); depth guard moved earlier for deeply nested JSON; <code>confers</code> dependency 0.6.0-rc.12 (see the <a href="docs/CHANGELOG.md">CHANGELOG</a>).</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.10</b> (2026-10-19)</td><td>strict-English default locale with domain-split <code>locales/{en,zh}/</code>, <code>rustls</code> 0.23.46 security upgrade, unified pure-MIT license, release switched to crates.io trusted publishing (OIDC) with the idempotency triple (see the <a href="docs/CHANGELOG.md">CHANGELOG</a>).</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.9</b> (2026-10-10)</td><td>service-probe registry (new <code>probe</code> feature), async health aggregation (<code>health_aggregate</code> / <code>health_json</code>), explicit <code>config_overrides</code> in build reports, feature-matrix and benchmark-regression CI gates; fixes for version-negotiation path parity, unified lazy retrieval semantics, and shutdown-coordinator hook panic isolation (see the <a href="docs/CHANGELOG.md">CHANGELOG</a>).</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.6</b> (2026-09-21)</td><td>rc.4–rc.6 released: observability ports and event bus, full Toggle implementation, <code>trait-kit-derive</code> merged into <code>trait-kit-macros</code>, <code>confers</code> dependency moved to crates.io (see the <a href="docs/CHANGELOG.md">CHANGELOG</a>).</td></tr>
 <tr><td>✅</td><td><b>Performance benchmarks</b></td><td>Criterion benchmarks in <code>benches/kit_bench.rs</code> and the <code>docs/PERFORMANCE.md</code> baseline report are in place (current baseline 2026-09-29).</td></tr>
@@ -639,6 +640,7 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 
 See [CHANGELOG.md](docs/CHANGELOG.md). Recent highlights:
 
+- **0.5.0-rc.11** (2026-10-28): tightened `override_module` dependency-graph validation and shared-overlay ownership isolation; full redaction of external text and error `Debug` output; master-key admission policy; `TypeMap` read-reference guard removes one unsafe; depth guard moved earlier for deeply nested JSON; `confers` dependency 0.6.0-rc.12.
 - **0.5.0-rc.10** (2026-10-19): strict-English default locale with domain-split `locales/{en,zh}/`; `rustls` 0.23.46 security upgrade; unified pure-MIT license; release switched to crates.io trusted publishing (OIDC) with the idempotency triple.
 - **0.5.0-rc.9** (2026-10-10): service-probe registry (new `probe` feature), async health aggregation, explicit `config_overrides` in build reports, feature-matrix and benchmark-regression CI gates; fixes for version-negotiation path parity, unified lazy retrieval semantics, and more.
 - **0.5.0-rc.6** (2026-09-21): `confers` dependency moved to crates.io; dependency upgrades (syn 3.0, criterion 0.8, rustls 0.23.45); release process hardening (publish `trait-kit-macros` before the main crate).

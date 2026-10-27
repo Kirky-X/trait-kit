@@ -537,7 +537,7 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 | 层级 | 内容 | 命令 | 允许 mock？ |
 |------|------|------|-----------|
 | L1 单元 | src 内联 726 个 `#[test]`（45 处 `#[cfg(test)]` + 67 处 `#[cfg(all(test, feature = …))]` 门控块，覆盖 28 个文件） | `cargo test --all-features --lib` | 允许 |
-| L2 集成 | `tests/` 顶层 9 个集成文件（`api_reference_gate` / `basic` / `compile_fail`（1 个 runner 测试）/ `config_inherit_derive` / `config_inheritance_e2e` / `e2e_gap_round1` / `e2e_gap_round2` / `e2e_scenarios_26_50` / `shared_config_derive`，共 109 个测试函数）+ `tests/e2e/` 13 个注册目标（202 个测试函数；`e2e_advanced` / `e2e_feature_combinations` 等已迁入子目录，见 §5.3；注意 §重要发现-3：feature 组按 `--features` 分轮执行） | `cargo test --features confers,reload,encryption && cargo test --features async,lifecycle,health,request-scope,toggle,observer,decorator,shutdown,di && cargo test --features i18n` | 允许（纯内存） |
+| L2 集成 | `tests/` 顶层 9 个集成文件（`api_reference_gate` / `basic` / `compile_fail`（1 个 runner 测试）/ `config_inherit_derive` / `config_inheritance_e2e` / `e2e_gap_round1` / `e2e_gap_round2` / `e2e_scenarios_26_50` / `shared_config_derive`，共 109 个测试函数）+ `tests/e2e/` 13 个注册目标（205 个测试函数；`e2e_advanced` / `e2e_feature_combinations` 等已迁入子目录，见 §5.3；注意 §重要发现-3：feature 组按 `--features` 分轮执行） | `cargo test --features confers,reload,encryption && cargo test --features async,lifecycle,health,request-scope,toggle,observer,decorator,shutdown,di && cargo test --features i18n` | 允许（纯内存） |
 | L2b 编译期 | `tests/ui/` 11 个 trybuild 用例（根 7 个 + `probe_sensitive/`、`observer_ready/`、`decorator_ready/`、`lifecycle_ready/` 各 1 个；typestate 违规） | `cargo test --test compile_fail` | — |
 | L3 examples | 20 个示例逐一运行（见 5.2，需按 `required-features` 传 feature） | `cargo run -p trait-kit-examples --features <f> --example <name>` | 禁 mock |
 | L4 E2E | `tests/e2e/`（本文档 §2 场景 ID 落点，13 个文件已落地） | `cargo test --features <组合> --test e2e_<名>`（子目录不被自动发现，已由根 `Cargo.toml` 显式 `[[test]]` 注册 13 个目标） | 禁 mock |
@@ -626,7 +626,7 @@ async / di / lifecycle / health / request-scope / toggle / observer / decorator 
 | 完全无外部依赖（纯内存）的场景 | 240+ |
 
 > 既有测试资产基线（编写时 rc.2 时点 grep 实测）：src 内联 **394** 个 `#[test]`；`tests/` **185** 个测试函数（basic 45 / e2e_advanced 84 / e2e_feature_combinations 42 / config_inherit_derive 6 / shared_config_derive 5 / config_inheritance_e2e 2 / compile_fail 1 runner→当时 3 个 ui 用例；e2e_* 文件当时位于 `tests/` 顶层，落地后迁入 `tests/e2e/`，见 §重要发现-7）；examples **20** 个。
-> 落地后现状（当前仓库 grep 实测）：`tests/` 共 **311** 个测试函数——`tests/e2e/` 13 个注册目标 202 个、顶层 9 个集成文件 109 个、`compile_fail.rs` 1 runner 驱动 11 个 ui 用例（根 7 个 + 4 个门控子目录各 1）；src 内联 **726** 个（`src` + `tests` 合计 1037，与 README 测试规模口径一致）。
+> 落地后现状（当前仓库 grep 实测）：`tests/` 共 **314** 个测试函数——`tests/e2e/` 13 个注册目标 205 个、顶层 9 个集成文件 109 个、`compile_fail.rs` 1 runner 驱动 11 个 ui 用例（根 7 个 + 4 个门控子目录各 1）；src 内联 **726** 个（`src` + `tests` 合计 1040，与 README 测试规模口径一致）。
 > 说明：既有覆盖口径存在合法重叠（一条场景可同时引用 tests/ 集成测试与 src 内联测试）；"需新增"取最强缺口判定。后续落地阶段允许将粒度过细的场景合并实现，但 **ID 保持稳定**以便追溯。
 
 ### 编写基线核对说明
