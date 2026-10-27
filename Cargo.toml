@@ -21,7 +21,7 @@ all-features = true
 workspace = true
 
 [workspace.package]
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 edition = "2024"
 rust-version = "1.97.1"
 authors = ["Kirky-X <Kirky-X@outlook.com>"]
@@ -72,7 +72,7 @@ criterion = { version = "0.8", default-features = false, features = ["cargo_benc
 # async-trait 无任何 feature，显式关闭仅为声明统一。
 async-trait = { version = "0.1", default-features = false }
 serde_json = { workspace = true }
-trait-kit-macros = { version = "0.5.0-rc.10", path = "macros", default-features = false }
+trait-kit-macros = { version = "0.5.0-rc.11", path = "macros", default-features = false }
 
 [[bench]]
 name = "kit_bench"
