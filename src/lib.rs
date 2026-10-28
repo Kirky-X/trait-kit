@@ -12,6 +12,8 @@
 pub mod core;
 mod error;
 pub mod kit;
+#[cfg(feature = "masking")]
+pub mod masking;
 mod redact;
 
 pub mod i18n;

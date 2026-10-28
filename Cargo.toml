@@ -61,6 +61,12 @@ unic-langid = { version = "0.9", default-features = false }
 log = { version = "0.4", default-features = false }
 # zeroize：confers derive_field_key 返回 Zeroizing<[u8; 32]>，需显式命名类型
 zeroize = { version = "1.9", default-features = false, optional = true }
+# masking 引擎（feature `masking`）：regex/fancy-regex 检测面 + AC 字面量加速 + TOML 规则表
+regex = { version = "1.13", default-features = false, features = ["std", "perf", "unicode"], optional = true }
+fancy-regex = { version = "0.19", default-features = false, features = ["std", "perf"], optional = true }
+aho-corasick = { version = "1.1", default-features = false, features = ["std", "perf-literal"], optional = true }
+toml = { version = "1.1", default-features = false, features = ["parse", "serde"], optional = true }
+tracing = { version = "0.1", default-features = false, optional = true }
 
 [dev-dependencies]
 # thiserror 无 std 走 core::error::Error；serial_test 仅用同步 #[serial]
@@ -89,6 +95,8 @@ async = []
 confers = ["dep:confers", "dep:serde", "dep:serde_json", "confers/feature-toggle"]
 # 热重载订阅（Kit 自有 SubscriberMap；订阅簿记迁至 confers DynamicField，故拉入 confers/dynamic）
 reload = ["confers", "confers/dynamic"]
+# Masking engine: PII/credential detection & redaction, single source shared by inklog/limiteron.
+masking = ["dep:regex", "dep:fancy-regex", "dep:aho-corasick", "dep:serde_json", "dep:toml", "dep:tracing"]
 # 加密配置存储（映射 confers encryption；三层继承链 encryption → reload → confers 在此成立）
 encryption = ["reload", "confers", "confers/encryption", "dep:zeroize"]
 # Interface/implementation separation: register_as / resolve behind a feature gate.
