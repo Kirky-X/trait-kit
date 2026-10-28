@@ -1,0 +1,7 @@
+error: proc-macro derive panicked
+ --> tests/ui/shared_config_unknown_field.rs:6:10
+  |
+6 | #[derive(SharedConfig)]
+  |          ^^^^^^^^^^^^
+  |
+  = help: message: SharedConfig: field `nonexistent` listed in #[shared(...)] does not exist in struct `S`

@@ -1,0 +1,7 @@
+error: proc-macro derive panicked
+ --> tests/ui/config_inherit_on_enum.rs:6:10
+  |
+6 | #[derive(ConfigInherit)]
+  |          ^^^^^^^^^^^^^
+  |
+  = help: message: ConfigInherit only supports structs

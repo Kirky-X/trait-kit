@@ -1,0 +1,7 @@
+error: proc-macro derive panicked
+ --> tests/ui/shared_config_empty_attr.rs:6:10
+  |
+6 | #[derive(SharedConfig)]
+  |          ^^^^^^^^^^^^
+  |
+  = help: message: SharedConfig requires at least one field in #[shared(...)]

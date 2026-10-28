@@ -4123,6 +4123,31 @@ mod async_health_tests {
         }
     }
 
+    /// unhealthy 严重度（`worst_rank` > 1）映射到聚合状态字符串。
+    struct UnhealthyHcModule;
+    impl ModuleMeta for UnhealthyHcModule {
+        const NAME: &'static str = "async-hc-unhealthy";
+        fn dependencies() -> &'static [(&'static str, TypeId)] {
+            &[]
+        }
+    }
+    impl AsyncAutoBuilder for UnhealthyHcModule {
+        type Capability = Arc<AsyncHcCap>;
+        type Error = MockError;
+        fn build<'a>(
+            _kit: &'a AsyncKit,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<AsyncHcCap>, MockError>> + Send + 'a>> {
+            Box::pin(async move { Ok(Arc::new(AsyncHcCap { val: 0 })) })
+        }
+    }
+    impl AsyncHealthCheck for UnhealthyHcModule {
+        fn check(_cap: &Arc<AsyncHcCap>) -> HealthStatus {
+            HealthStatus::Unhealthy {
+                detail: "zero".into(),
+            }
+        }
+    }
+
     #[test]
     fn async_health_check_reports_degraded_status() {
         let mut kit = AsyncKit::new();
@@ -4135,6 +4160,21 @@ mod async_health_tests {
                 detail: "slow".into()
             }
         );
+    }
+
+    /// `worst_rank` > 1 时聚合状态必须是 "unhealthy" 而非 "degraded"。
+    #[cfg(feature = "report")]
+    #[test]
+    fn async_health_aggregate_reports_unhealthy_worst_rank() {
+        let mut kit = AsyncKit::new();
+        kit.register::<UnhealthyHcModule>().unwrap();
+        kit.register_health_check::<UnhealthyHcModule>();
+        let built = block_on(kit.build()).unwrap();
+        let aggregate = built.health_aggregate();
+        assert_eq!(aggregate.status, "unhealthy");
+        assert!(!aggregate.healthy, "unhealthy is not healthy");
+        assert_eq!(aggregate.modules.len(), 1);
+        assert_eq!(aggregate.modules[0].status, "unhealthy");
     }
 
     #[cfg(feature = "report")]
@@ -5664,6 +5704,33 @@ mod async_probe_tests {
         }
     }
 
+    /// 空注册表（未停机）聚合为 Healthy。
+    #[test]
+    fn probe_aggregate_without_probes_is_healthy() {
+        let mut kit = AsyncKit::new();
+        kit.register::<ProbeLeaf>().expect("register");
+        let built = block_on(kit.build()).expect("build ok");
+        let status = block_on(built.probe_aggregate());
+        assert!(
+            matches!(status, HealthStatus::Healthy),
+            "empty registry without stop must be Healthy, got {status:?}"
+        );
+    }
+
+    /// 全部探针健康：`worst_rank` 为 0，聚合 Healthy。
+    #[test]
+    fn probe_aggregate_all_healthy_is_healthy() {
+        let mut kit = AsyncKit::new();
+        kit.register::<ProbeLeaf>().expect("register");
+        kit.register_probe("db", FakeProbe::new(HealthStatus::Healthy, 0));
+        let built = block_on(kit.build()).expect("build ok");
+        let status = block_on(built.probe_aggregate());
+        assert!(
+            matches!(status, HealthStatus::Healthy),
+            "all-healthy probes must aggregate to Healthy, got {status:?}"
+        );
+    }
+
     impl ServiceProbe for FakeProbe {
         fn probe<'a>(&'a self) -> Pin<Box<dyn Future<Output = ProbeOutcome> + Send + 'a>> {
             Box::pin(async move {
@@ -6099,7 +6166,7 @@ mod async_config_api_tests {
     }
 
     /// `load` always fails — exercises every load-error path.
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     struct FailingCfg;
 
     impl Configurable for FailingCfg {
@@ -6288,6 +6355,155 @@ mod async_config_api_tests {
         );
         assert_eq!(fallback.config::<FailingCfg>().unwrap(), FailingCfg);
     }
+
+    #[test]
+    fn load_config_with_propagates_load_failure() {
+        let kit = AsyncKit::new();
+        let err = kit
+            .load_config_with::<FailingCfg, _>(&HashMap::new())
+            .unwrap_err();
+        assert!(
+            matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "load_config_with"),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+
+    /// 序列化必定失败的配置：命中受限序列化器的 `Serialize` 错误分支。
+    #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+    struct SerializeFailAsyncCfg;
+
+    impl Configurable for SerializeFailAsyncCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Ok(Self)
+        }
+    }
+
+    impl serde::Serialize for SerializeFailAsyncCfg {
+        fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("serialize boom"))
+        }
+    }
+
+    #[test]
+    fn load_config_with_propagates_serialize_failure() {
+        let kit = AsyncKit::new();
+        let err = kit
+            .load_config_with::<SerializeFailAsyncCfg, _>(&HashMap::new())
+            .unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                TraitKitError::BuildFailed { context, .. } if context == "load_config_with (serialize)"
+            ),
+            "expected BuildFailed with the serialize context, got {err:?}"
+        );
+    }
+
+    /// 序列化产物是占位字符串，插值后无法反序列化回自身：命中
+    /// `from_value` 失败分支。
+    #[derive(Debug, Clone, PartialEq)]
+    struct StrictAsyncCfg {
+        n: StrictAsyncU32,
+    }
+
+    impl serde::Serialize for StrictAsyncCfg {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            self.n.serialize(serializer)
+        }
+    }
+
+    impl<'de> serde::Deserialize<'de> for StrictAsyncCfg {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            Ok(Self {
+                n: StrictAsyncU32::deserialize(deserializer)?,
+            })
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct StrictAsyncU32(u32);
+
+    impl serde::Serialize for StrictAsyncU32 {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            serializer.serialize_str("${N}")
+        }
+    }
+
+    impl<'de> serde::Deserialize<'de> for StrictAsyncU32 {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            let s = String::deserialize(deserializer)?;
+            let v: u32 = s.parse().map_err(serde::de::Error::custom)?;
+            if v == 0 {
+                return Err(serde::de::Error::custom("zero is not allowed"));
+            }
+            Ok(Self(v))
+        }
+    }
+
+    impl Configurable for StrictAsyncCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Ok(Self {
+                n: StrictAsyncU32(7),
+            })
+        }
+    }
+
+    #[test]
+    fn load_config_with_propagates_deserialize_failure() {
+        let kit = AsyncKit::new();
+        let mut vars: HashMap<String, String> = HashMap::new();
+        vars.insert("N".to_string(), "0".to_string());
+        let err = kit
+            .load_config_with::<StrictAsyncCfg, _>(&vars)
+            .unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                TraitKitError::BuildFailed { context, .. } if context == "load_config_with (deserialize)"
+            ),
+            "expected BuildFailed with the deserialize context, got {err:?}"
+        );
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct MergeDropCfg {
+        host: String,
+    }
+
+    #[derive(Clone, Default)]
+    struct MergeDropCfgOverride {
+        host: Option<String>,
+    }
+
+    impl crate::kit::ConfigInherit for MergeDropCfg {
+        type Override = MergeDropCfgOverride;
+
+        fn apply_override(&mut self, ovr: &Self::Override) {
+            if let Some(ref h) = ovr.host {
+                self.host.clone_from(h);
+            }
+        }
+    }
+
+    /// 覆盖历史有界：超限后丢最旧并计数。
+    #[cfg(feature = "report")]
+    #[test]
+    fn config_overrides_dropped_counts_beyond_the_cap() {
+        let kit = AsyncKit::new();
+        kit.set_config(MergeDropCfg {
+            host: "a".to_string(),
+        });
+        for i in 0..1026u32 {
+            kit.merge_config::<MergeDropCfg>(MergeDropCfgOverride {
+                host: Some(format!("h{i}")),
+            });
+        }
+        assert_eq!(
+            kit.config_overrides_dropped(),
+            2,
+            "two records beyond the 1024 cap are counted as dropped"
+        );
+    }
 }
 
 // Reload surface tests
@@ -6430,6 +6646,12 @@ mod async_encryption_tests {
         }
     }
 
+    impl crate::kit::Configurable for SecretCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Err(Box::new(std::io::Error::other("no config source")))
+        }
+    }
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     struct OtherCfg {
         n: u32,
@@ -6439,6 +6661,12 @@ mod async_encryption_tests {
         const PATH: &'static str = "other.toml";
         fn default_value() -> Self {
             Self { n: 0 }
+        }
+    }
+
+    impl crate::kit::Configurable for OtherCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Err(Box::new(std::io::Error::other("no config source")))
         }
     }
 
@@ -6518,6 +6746,57 @@ mod async_encryption_tests {
         };
         kit.set_encrypted(&value, KEY).expect("encrypt ok");
         assert!(kit.get_encrypted::<SecretCfg>(OTHER_KEY).is_err());
+    }
+
+    /// 序列化必定失败的值：命中 `set_encrypted` 的序列化错误分支，且
+    /// 失败后不得留下半成品加密条目。
+    #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+    struct SerializeFailSecret;
+
+    impl ModuleConfig for SerializeFailSecret {
+        const PATH: &'static str = "failing-secret.toml";
+        fn default_value() -> Self {
+            Self
+        }
+    }
+
+    impl serde::Serialize for SerializeFailSecret {
+        fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("serialize boom"))
+        }
+    }
+
+    #[test]
+    fn set_encrypted_propagates_serialize_failure() {
+        let kit = AsyncKit::new();
+        let err = kit.set_encrypted(&SerializeFailSecret, KEY).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                TraitKitError::BuildFailed { context, .. } if context == "set_encrypted"
+            ),
+            "expected BuildFailed with the asserted context, got {err:?}"
+        );
+        assert!(
+            !kit.contains_encrypted::<SerializeFailSecret>(),
+            "a failed set must not leave an encrypted entry behind"
+        );
+    }
+
+    /// 加密配置类型同样走 `load_config_or_default` 的默认值回退。
+    #[test]
+    fn load_config_or_default_falls_back_for_encryption_fixture_types() {
+        let kit = AsyncKit::new();
+        assert!(
+            !kit.load_config_or_default::<SecretCfg>().unwrap(),
+            "no config source -> default"
+        );
+        assert_eq!(kit.config::<SecretCfg>().unwrap().token, "");
+        assert!(
+            !kit.load_config_or_default::<OtherCfg>().unwrap(),
+            "no config source -> default"
+        );
+        assert_eq!(kit.config::<OtherCfg>().unwrap().n, 0);
     }
 }
 

@@ -313,6 +313,20 @@ mod tests {
         assert_eq!(short_type_path("DbConfig"), "DbConfig");
     }
 
+    /// URL userinfo（`scheme://user:pass@host`）整段抹除，host 保留。
+    #[test]
+    fn redact_text_masks_url_userinfo() {
+        let out = redact_text(
+            "connect postgres://alice:s3cret@db.internal:5432/app now",
+            false,
+        );
+        assert!(
+            out.contains("postgres://[REDACTED]@db.internal:5432/app"),
+            "userinfo must be masked with the host kept: {out}"
+        );
+        assert!(!out.contains("s3cret"), "secret must not survive: {out}");
+    }
+
     /// 泛型实参被裁掉，留下拥有泛型参数的类型名本身（容器名不丢）。
     #[test]
     fn short_type_path_drops_generic_arguments() {

@@ -158,6 +158,19 @@ mod semver_tests {
         assert!(compat("1.0.0", "1.0.0+build-2"));
     }
 
+    /// 预发布对预发布、base 不同：回退为 base 比较（semver §11.3）。
+    #[test]
+    fn prerelease_vs_prerelease_different_bases_falls_back_to_base_order() {
+        assert!(
+            compat("1.2.0-alpha", "1.0.0-beta"),
+            "provider base newer satisfies the requirement"
+        );
+        assert!(
+            !compat("1.0.0-alpha", "1.2.0-beta"),
+            "provider base older must not satisfy"
+        );
+    }
+
     /// prerelease 标识符比较遵循 semver §11.4：数字段数值比较、
     /// 字母数字段 ASCII 字典序、数字段 < 字母数字段、等长前缀段少者小。
     #[test]

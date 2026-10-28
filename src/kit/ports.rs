@@ -139,7 +139,9 @@ mod tests {
         });
         port.record_counter("ops", 10);
         port.record_counter("ops", 5);
-        assert_eq!(sum.load(Ordering::SeqCst), 15);
+        port.record_gauge("queue_depth", 1.5);
+        port.record_histogram("latency_ms", 0.5);
+        assert_eq!(sum.load(Ordering::SeqCst), 15, "counter values recorded");
     }
 
     #[test]

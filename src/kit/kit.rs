@@ -3720,6 +3720,25 @@ mod require_error_kind_tests {
         );
     }
 
+    /// `require_ref` 的直取降级路径：盒类型与 `M::Capability` 不一致时
+    /// 返回 `MissingCapability`（借用守卫无法成立）。
+    #[test]
+    fn require_ref_wrong_type_capability_is_missing_capability() {
+        let mut kit = Kit::new();
+        kit.register::<KindModule>().expect("register");
+        let ready = kit.build().expect("build ok");
+        ready.capabilities.insert_boxed(
+            std::any::TypeId::of::<KindModule>(),
+            Box::new(Arc::new(OtherCap)),
+        );
+
+        let err = ready.require_ref::<KindModule>().unwrap_err();
+        assert!(
+            matches!(err, crate::TraitKitError::MissingCapability { .. }),
+            "require_ref reports MissingCapability on downcast failure, got {err:?}"
+        );
+    }
+
     #[test]
     fn kind_covers_all_variants() {
         let missing = crate::TraitKitError::MissingCapability { key: "k".into() };
@@ -4492,6 +4511,206 @@ mod sync_config_surface_tests {
         assert!(
             matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "load_config_with"),
             "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+
+    /// 序列化必定失败的配置：命中受限序列化器的 `Serialize` 错误分支
+    ///（与深度超限不同的另一条序列化失败路径）。
+    #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+    struct SerializeFailCfg;
+
+    impl Configurable for SerializeFailCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Ok(Self)
+        }
+    }
+
+    impl serde::Serialize for SerializeFailCfg {
+        fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("serialize boom"))
+        }
+    }
+
+    #[test]
+    fn load_config_with_propagates_serialize_failure() {
+        let kit = Kit::new();
+        let err = kit
+            .load_config_with::<SerializeFailCfg, _>(&HashMap::new())
+            .unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                TraitKitError::BuildFailed { context, .. } if context == "load_config_with (serialize)"
+            ),
+            "expected BuildFailed with the serialize context, got {err:?}"
+        );
+    }
+
+    /// 序列化产物是占位字符串，插值后无法反序列化回自身：命中
+    /// `from_value` 失败分支。
+    #[derive(Debug, Clone, PartialEq)]
+    struct StrictCfg {
+        n: StrictU32,
+    }
+
+    impl serde::Serialize for StrictCfg {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            self.n.serialize(serializer)
+        }
+    }
+
+    impl<'de> serde::Deserialize<'de> for StrictCfg {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            Ok(Self {
+                n: StrictU32::deserialize(deserializer)?,
+            })
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct StrictU32(u32);
+
+    impl serde::Serialize for StrictU32 {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            serializer.serialize_str("${N}")
+        }
+    }
+
+    impl<'de> serde::Deserialize<'de> for StrictU32 {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            let s = String::deserialize(deserializer)?;
+            let v: u32 = s.parse().map_err(serde::de::Error::custom)?;
+            if v == 0 {
+                return Err(serde::de::Error::custom("zero is not allowed"));
+            }
+            Ok(Self(v))
+        }
+    }
+
+    impl Configurable for StrictCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Ok(Self { n: StrictU32(7) })
+        }
+    }
+
+    #[test]
+    fn load_config_with_propagates_deserialize_failure() {
+        let kit = Kit::new();
+        let mut vars: HashMap<String, String> = HashMap::new();
+        vars.insert("N".to_string(), "0".to_string());
+        let err = kit.load_config_with::<StrictCfg, _>(&vars).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                TraitKitError::BuildFailed { context, .. } if context == "load_config_with (deserialize)"
+            ),
+            "expected BuildFailed with the deserialize context, got {err:?}"
+        );
+    }
+
+    /// 插值边界形态：缺失变量保留原样、缺省值生效、未闭合占位符保留原样。
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct InterpEdgeCfg {
+        missing: String,
+        with_default: String,
+        unclosed: String,
+    }
+
+    impl Configurable for InterpEdgeCfg {
+        fn load() -> Result<Self, Box<dyn std::error::Error + Send + 'static>> {
+            Ok(Self {
+                missing: "${UNSET_VAR}".to_string(),
+                with_default: "${UNSET_VAR:-fallback}".to_string(),
+                unclosed: "${UNSET_VAR:-fallback".to_string(),
+            })
+        }
+    }
+
+    #[test]
+    fn load_config_with_interpolation_edge_forms() {
+        let kit = Kit::new();
+        kit.load_config_with::<InterpEdgeCfg, _>(&HashMap::new())
+            .expect("edge-form interpolation must not fail");
+        let cfg = kit.config::<InterpEdgeCfg>().unwrap();
+        assert_eq!(
+            cfg.missing, "${UNSET_VAR}",
+            "missing var without default is preserved"
+        );
+        assert_eq!(cfg.with_default, "fallback", "default value is used");
+        assert_eq!(
+            cfg.unclosed, "${UNSET_VAR:-fallback",
+            "unclosed pattern is preserved"
+        );
+    }
+}
+
+// ─── merge_config 订阅通知与有界覆盖历史（reload / report） ────────────
+
+#[cfg(all(test, feature = "confers"))]
+mod sync_merge_config_tests {
+    use crate::kit::{ConfigInherit, Kit};
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct MergeCfg {
+        host: String,
+    }
+
+    #[derive(Clone, Default)]
+    struct MergeCfgOverride {
+        host: Option<String>,
+    }
+
+    impl ConfigInherit for MergeCfg {
+        type Override = MergeCfgOverride;
+
+        fn apply_override(&mut self, ovr: &Self::Override) {
+            if let Some(ref h) = ovr.host {
+                self.host.clone_from(h);
+            }
+        }
+    }
+
+    /// 应用的覆盖必须通知 reload 订阅者（与 `reload_config` 同口径）。
+    #[cfg(feature = "reload")]
+    #[test]
+    fn merge_config_notifies_reload_subscribers() {
+        let kit = Kit::new();
+        kit.set_config(MergeCfg {
+            host: "a".to_string(),
+        });
+        let hits = Rc::new(Cell::new(0u32));
+        let sink = Rc::clone(&hits);
+        kit.subscribe::<MergeCfg>(move || sink.set(sink.get() + 1));
+        kit.merge_config::<MergeCfg>(MergeCfgOverride {
+            host: Some("b".to_string()),
+        });
+        assert_eq!(hits.get(), 1, "one applied override notifies once");
+    }
+
+    /// 覆盖历史有界：超限后丢最旧并计数，take 取出保留的 1024 条。
+    #[cfg(feature = "report")]
+    #[test]
+    fn config_override_history_is_bounded_with_drop_count() {
+        let kit = Kit::new();
+        kit.set_config(MergeCfg {
+            host: "a".to_string(),
+        });
+        for i in 0..1026u32 {
+            kit.merge_config::<MergeCfg>(MergeCfgOverride {
+                host: Some(format!("h{i}")),
+            });
+        }
+        assert_eq!(
+            kit.config_overrides_dropped(),
+            2,
+            "two records beyond the 1024 cap are counted as dropped"
+        );
+        assert_eq!(
+            kit.take_config_overrides().len(),
+            1024,
+            "the retained window holds exactly the cap"
         );
     }
 }

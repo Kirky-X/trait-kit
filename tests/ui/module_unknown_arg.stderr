@@ -1,0 +1,5 @@
+error: unknown `module` argument `nme`; expected `name` or `deps`
+ --> tests/ui/module_unknown_arg.rs:7:10
+  |
+7 | #[module(nme = "x")]
+  |          ^^^

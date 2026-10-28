@@ -1,0 +1,5 @@
+error: expected `deps(A, B)` or `deps = [A, B]`
+ --> tests/ui/module_deps_bad_syntax.rs:7:10
+  |
+7 | #[module(deps)]
+  |          ^^^^
