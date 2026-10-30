@@ -21,7 +21,7 @@ all-features = true
 workspace = true
 
 [workspace.package]
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 edition = "2024"
 rust-version = "1.97.1"
 authors = ["Kirky-X <Kirky-X@outlook.com>"]
@@ -63,7 +63,7 @@ log = { version = "0.4", default-features = false }
 zeroize = { version = "1.9", default-features = false, optional = true }
 # masking 引擎（feature `masking`）：regex/fancy-regex 检测面 + AC 字面量加速 + TOML 规则表
 regex = { version = "1.13", default-features = false, features = ["std", "perf", "unicode"], optional = true }
-fancy-regex = { version = "0.19", default-features = false, features = ["std", "perf"], optional = true }
+fancy-regex = { version = "0.20", default-features = false, features = ["std", "perf"], optional = true }
 aho-corasick = { version = "1.1", default-features = false, features = ["std", "perf-literal"], optional = true }
 toml = { version = "1.1", default-features = false, features = ["parse", "serde"], optional = true }
 tracing = { version = "0.1", default-features = false, optional = true }
@@ -78,7 +78,7 @@ criterion = { version = "0.8", default-features = false, features = ["cargo_benc
 # async-trait 无任何 feature，显式关闭仅为声明统一。
 async-trait = { version = "0.1", default-features = false }
 serde_json = { workspace = true }
-trait-kit-macros = { version = "0.5.0-rc.11", path = "macros", default-features = false }
+trait-kit-macros = { version = "0.5.0-rc.12", path = "macros", default-features = false }
 
 [[bench]]
 name = "kit_bench"

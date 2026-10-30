@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+## [0.5.0-rc.12] - 2026-10-31
+
 ### Added
 
 - `masking` feature：PII/凭据掩码引擎（`DataMasker` / `MaskRule` / `MaskRuleRegistry` /

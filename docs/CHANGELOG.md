@@ -11,6 +11,7 @@
 <summary>📑 目录</summary>
 
 - [`Unreleased`](#unreleased)
+- [`0.5.0-rc.12`](#050-rc12---2026-10-31)
 - [`0.5.0-rc.11`](#050-rc11---2026-10-28)
 - [`0.5.0-rc.10`](#050-rc10---2026-10-19)
 - [`0.5.0-rc.9`](#050-rc9---2026-10-10)
@@ -36,6 +37,17 @@
 ---
 
 ## [Unreleased]
+
+---
+
+## [0.5.0-rc.12] - 2026-10-31
+
+### Added
+
+- `masking` feature：PII/凭据掩码引擎（`DataMasker` / `MaskRule` / `MaskRuleRegistry` /
+  `MaskMatch` / `AcMasker`）自 inklog 下沉为本仓单一来源，含 secret-scan 出站门族
+  （`SecretScanGate` / `SecretPatternRegistry` / `EntropyScanner`）与
+  `MaskError` 错误类型；inklog 与 limiteron 共用同一实现，21 条内置规则语义与顺序不变。
 
 ---
 
@@ -479,7 +491,8 @@
 - `TypeMap` 类型安全存储（以 `TypeId` 为键）
 - 依赖图验证：环检测 + 拓扑排序构建
 
-[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.11...HEAD
+[Unreleased]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.12...HEAD
+[0.5.0-rc.12]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.11...v0.5.0-rc.12
 [0.5.0-rc.11]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.10...v0.5.0-rc.11
 [0.5.0-rc.10]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.9...v0.5.0-rc.10
 [0.5.0-rc.9]: https://github.com/Kirky-X/trait-kit/compare/v0.5.0-rc.7...v0.5.0-rc.9
