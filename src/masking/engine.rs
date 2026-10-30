@@ -40,7 +40,7 @@
 //! ## 使用示例
 //!
 //! ```rust
-//! use inklog::masking::DataMasker;
+//! use trait_kit::masking::DataMasker;
 //!
 //! let masker = DataMasker::new();
 //!
@@ -178,7 +178,7 @@ static NAME_FIELD_PATTERNS: LazyLock<Vec<regex::Regex>> = LazyLock::new(|| {
 /// # Example
 ///
 /// ```ignore
-/// use inklog::masking::DataMasker;
+/// use trait_kit::masking::DataMasker;
 ///
 /// let masker = DataMasker::new();
 ///
@@ -596,7 +596,7 @@ pub fn secret_scan_masker() -> DataMasker {
 /// # Example
 ///
 /// ```rust
-/// use inklog::DataMasker;
+/// use trait_kit::masking::DataMasker;
 ///
 /// let masker = DataMasker::builder()
 ///     .disable_builtin("email")
@@ -1341,7 +1341,7 @@ impl MaskRule {
 /// # Example
 ///
 /// ```rust
-/// use inklog::MaskRule;
+/// use trait_kit::masking::MaskRule;
 ///
 /// let rule = MaskRule::builder("custom_phone")
 ///     .pattern(r"\b\d{3}-\d{4}\b")

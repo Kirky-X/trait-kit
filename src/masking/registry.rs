@@ -17,7 +17,7 @@ use super::error::MaskError;
 /// # Example
 ///
 /// ```rust
-/// use inklog::MaskRuleRegistry;
+/// use trait_kit::masking::MaskRuleRegistry;
 ///
 /// let mut registry = MaskRuleRegistry::with_builtins();
 /// assert!(registry.active_rules().len() >= 21);
