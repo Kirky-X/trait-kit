@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 //! 出站脱敏门（feature `secret-scan`）。
 //!
-//! [`SecretScanGate`] 组合 [`SecretPatternRegistry`](super::secret_patterns::SecretPatternRegistry)
-//! 与值熵扫描（[`EntropyScanner`](super::secret_entropy::EntropyScanner)），
+//! [`SecretScanGate`] 组合 [`SecretPatternRegistry`]
+//! 与值熵扫描（[`EntropyScanner`]），
 //! 提供逐模式命中计数与超限 fail-closed 出口：
 //!
 //! - `mask`：不返回错误——替换全部命中并累加计数；

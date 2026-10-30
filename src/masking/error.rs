@@ -23,7 +23,7 @@ pub enum MaskError {
     },
 
     /// secret-scan fail-closed：单条输入超过掩码上限
-    /// （[`MAX_MASK_INPUT_BYTES`](super::engine::MAX_MASK_INPUT_BYTES)）——不扫描
+    /// （`MAX_MASK_INPUT_BYTES`）——不扫描
     /// 即不可证安全，`mask_checked` 拒绝输出。
     SecretScanOversizedInput { size: usize, limit: usize },
 }

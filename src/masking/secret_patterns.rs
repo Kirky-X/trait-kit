@@ -103,7 +103,7 @@ pub struct SecretMatch {
 
 /// Secret 值形态模式注册中心。
 ///
-/// 不做内部同步（与 [`MaskRuleRegistry`](super::masking_registry::MaskRuleRegistry)
+/// 不做内部同步（与 [`MaskRuleRegistry`](crate::masking::MaskRuleRegistry)
 /// 同一取舍）：多线程各自构建，或冻结进 [`SecretScanGate`](super::secret_scan::SecretScanGate)
 /// 后经 `Arc` 共享。
 #[derive(Debug, Clone, Default)]

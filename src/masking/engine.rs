@@ -379,7 +379,7 @@ impl DataMasker {
     /// 规则集，PII 不漏）。未挂门时退化为 `mask()`（永远 `Ok`）。
     ///
     /// 与 `mask` 的分叉点：超大输入在 `mask` 以整体遮蔽收口
-    /// （[`OVERSIZED_INPUT_REDACTION`]，fail-closed），在 `mask_checked`
+    /// （`OVERSIZED_INPUT_REDACTION`，fail-closed），在 `mask_checked`
     /// 拒绝并返回错误（fail-closed）。
     ///
     /// # Errors

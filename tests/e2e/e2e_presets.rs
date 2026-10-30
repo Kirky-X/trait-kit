@@ -191,6 +191,7 @@ fn prs05_encryption_chain_expansion() {
     feature = "i18n",
     feature = "di",
     feature = "lifecycle",
+    feature = "masking",
     feature = "version-negotiation",
     feature = "observer",
     feature = "probe",
@@ -204,10 +205,10 @@ fn prs05_encryption_chain_expansion() {
 ))]
 #[test]
 fn prs03_all_features_gate_reached() {
-    // 能编译并执行到此处 = 22 项 feature 全部激活（cfg 列表覆盖全部非
-    // 别名 feature，数量与下一行断言的「22 feature + default」一致）。
+    // 能编译并执行到此处 = 23 项 feature 全部激活（cfg 列表覆盖全部非
+    // 别名 feature，数量与下一行断言的「23 feature + default」一致）。
     let features = parse_features();
-    assert_eq!(features.len(), 23, "22 features plus the empty default set");
+    assert_eq!(features.len(), 24, "23 features plus the empty default set");
 }
 
 /// examples crate 20 个示例全部显式 `[[example]]` 注册，且
