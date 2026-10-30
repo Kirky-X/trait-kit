@@ -350,7 +350,7 @@ fn main() {
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.5.0-rc.11", features = ["encryption"] }
+trait-kit = { version = "0.5.0-rc.12", features = ["encryption"] }
 ```
 
 </details>
@@ -584,7 +584,8 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 <table>
 <tr><th>状态</th><th>条目</th><th>说明</th></tr>
-<tr><td>✅</td><td><b>0.5.0-rc.11</b>（2026-10-28）</td><td>当前版本：<code>override_module</code> 依赖图校验收紧（未注册依赖注入期即拒绝）与共享 overlay 属主隔离；对外文本与错误 <code>Debug</code> 全面脱敏；主密钥准入策略；<code>TypeMap</code> 读引用守卫（unsafe 豁免 6→5 处）；深嵌套 JSON 深度守卫前移；<code>confers</code> 依赖 0.6.0-rc.12（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.12</b>（2026-10-31）</td><td>当前版本：新增 <code>masking</code> feature——PII/凭据掩码引擎（<code>DataMasker</code> / <code>MaskRule</code> / <code>MaskRuleRegistry</code> / <code>AcMasker</code>）自 inklog 下沉为本仓单一来源，含 secret-scan 出站门族（<code>SecretScanGate</code> / <code>SecretPatternRegistry</code> / <code>EntropyScanner</code>）与 <code>MaskError</code>；inklog 与 limiteron 共用同一实现，21 条内置规则语义与顺序不变（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.11</b>（2026-10-28）</td><td><code>override_module</code> 依赖图校验收紧（未注册依赖注入期即拒绝）与共享 overlay 属主隔离；对外文本与错误 <code>Debug</code> 全面脱敏；主密钥准入策略；<code>TypeMap</code> 读引用守卫（unsafe 豁免 6→5 处）；深嵌套 JSON 深度守卫前移；<code>confers</code> 依赖 0.6.0-rc.12（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.10</b>（2026-10-19）</td><td>i18n 默认语言严格英文与 <code>locales/{en,zh}/</code> 按域拆分、<code>rustls</code> 0.23.46 安全升级、统一纯 MIT 许可、发布切 crates.io trusted publishing（OIDC）与发布幂等三元组（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.9</b>（2026-10-10）</td><td>服务探针注册面（新 <code>probe</code> feature）、async 健康聚合（<code>health_aggregate</code> / <code>health_json</code>）、构建报告 <code>config_overrides</code> 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一、关闭协调器 hook panic 隔离等（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.6</b>（2026-09-21）</td><td>rc.4–rc.6 已发布：观测端口与事件总线、Toggle 完整落地、<code>trait-kit-derive</code> 并入 <code>trait-kit-macros</code>、<code>confers</code> 依赖改走 crates.io（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
@@ -635,6 +636,7 @@ cargo llvm-cov --workspace --all-features --fail-under-lines 95
 
 详见 [CHANGELOG.md](docs/CHANGELOG.md)。近期版本要点：
 
+- **0.5.0-rc.12**（2026-10-31）：新增 `masking` feature——PII/凭据掩码引擎自 inklog 下沉为本仓单一来源，含 secret-scan 出站门族与 `MaskError`；inklog 与 limiteron 共用同一实现，21 条内置规则语义与顺序不变。
 - **0.5.0-rc.11**（2026-10-28）：`override_module` 依赖图校验收紧与共享 overlay 属主隔离；对外文本与错误 `Debug` 全面脱敏；主密钥准入；`TypeMap` 读引用守卫去 unsafe；深嵌套 JSON 深度守卫前移；`confers` 依赖 0.6.0-rc.12。
 - **0.5.0-rc.10**（2026-10-19）：i18n 默认语言严格英文与 `locales/{en,zh}/` 按域拆分；`rustls` 0.23.46 安全升级；统一纯 MIT 许可；发布切 crates.io trusted publishing（OIDC）与发布幂等三元组。
 - **0.5.0-rc.9**（2026-10-10）：服务探针注册面（新 `probe` feature）、async 健康聚合、构建报告 `config_overrides` 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一等。
