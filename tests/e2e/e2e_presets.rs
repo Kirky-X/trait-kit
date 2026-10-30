@@ -111,6 +111,7 @@ fn prs02_feature_table_lists_all_features() {
         "i18n",
         "interface",
         "lifecycle",
+        "masking",
         "negotiate",
         "observer",
         "presets",
@@ -130,7 +131,7 @@ fn prs02_feature_table_lists_all_features() {
             "Cargo.toml [features] is missing feature '{f}': got {names:?}"
         );
     }
-    // 除 22 个 feature 外仅允许空集 default（PRS-01 的可编译前提；数量
+    // 除 23 个 feature 外仅允许空集 default（PRS-01 的可编译前提；数量
     // 与 prs02 期望表一致）。
     assert_eq!(
         features.get("default").map(Vec::is_empty),
@@ -140,7 +141,7 @@ fn prs02_feature_table_lists_all_features() {
     assert_eq!(
         names.len(),
         expected.len() + 1,
-        "[features] should contain exactly 22 features plus default: got {names:?}"
+        "[features] should contain exactly 23 features plus default: got {names:?}"
     );
 }
 
