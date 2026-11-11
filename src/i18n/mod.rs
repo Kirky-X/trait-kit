@@ -29,13 +29,21 @@
 //!
 //! 需要跟随宿主系统语言时，调用 [`I18nManager::init_with_system_locale`]
 //! （仅 `i18n` feature 下可用），它检测到 `zh*` 才启用中文目录。
+//!
+//! # 宿主注册覆盖
+//!
+//! 宿主框架可经 [`I18nManager::register_translation`] 注册进程级翻译
+//! 覆盖（注册优先于内置语言包，占位符 `{ $name }` 替换语义与内置路径
+//! 一致），供 sdforge 等宿主把自己的翻译存储桥接到本管理器；测试隔离
+//! 用 [`I18nManager::clear_registered_translations`]。
 
 #[cfg(feature = "i18n")]
 mod i18n_impl;
 mod messages;
 
+use std::collections::HashMap;
 use std::fmt;
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock, RwLock};
 
 use fluent_bundle::concurrent::FluentBundle;
 use fluent_bundle::{FluentArgs, FluentResource, FluentValue};
@@ -199,12 +207,93 @@ fn format_from_bundle(lang: &str, message_id: &str, args: &[(&str, &str)]) -> Op
     format_from_custom_bundle(bundle, message_id, args)
 }
 
+// 宿主注册覆盖层（进程级）
+//
+// 注册面：I18nManager::register_translation / clear_registered_translations。
+// 查询链最高优先级：注册[当前语言] → 内置[当前语言] → 注册[en] →
+// 内置[en] → key 本身（与 sdforge 宿主注册面 translate_for 同一链路，
+// 供其桥接存储层后语义对齐）。
+
+/// 宿主注册翻译表：归一化语言（`"zh"` / `"en"`）→ 该语言的
+/// `key → 模板` 表。
+///
+/// 注册阶段写（写锁），翻译热路径读（读锁）：读路径为一次惰性初始化
+/// 原子读加无竞争读锁，相对 Fluent 格式化的分配开销可忽略；表为空时
+/// 语言桶查找即未命中，查询行为与无任何注册时完全一致（内置束路径
+/// 本身无锁）。
+static REGISTERED_TRANSLATIONS: LazyLock<RwLock<HashMap<&'static str, HashMap<String, String>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+/// 归一化 locale 到注册桶语言（`"zh"` / `"en"`）。
+///
+/// 与 [`MessageCatalog::global`] 的语言束选择同一规则：小写化后以
+/// `zh` 开头选 zh，其余（含未知语言）一律归 en。
+fn normalize_registered_lang(locale: &str) -> &'static str {
+    if locale.to_lowercase().starts_with("zh") {
+        "zh"
+    } else {
+        "en"
+    }
+}
+
+/// 查询注册覆盖层；未注册返回 `None`。占位符按
+/// [`format_registered_template`] 语义替换。任何路径不 panic。
+fn registered_lookup(lang: &str, message_id: &str, args: &[(&str, &str)]) -> Option<String> {
+    let registered = REGISTERED_TRANSLATIONS
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    registered
+        .get(lang)?
+        .get(message_id)
+        .map(|template| format_registered_template(template, args))
+}
+
+/// 宿主注册模板的 `{ $name }` 占位符替换（单遍扫描）。
+///
+/// 宿主字符串是任意文本（键可含 `.`、值可含任意花括号），不走 Fluent
+/// 解析——解析失败会静默丢失注册项。占位符形态与内置 Fluent 路径一致：
+/// `{ $name }` 与 `{$name}` 均按去空白后 `$` 前缀识别；参数值按字面
+/// 插入、不会被再次解析（单遍，与内置路径的注入防护语义一致）；未知
+/// 占位符与非占位符花括号原样保留。
+fn format_registered_template(template: &str, args: &[(&str, &str)]) -> String {
+    if args.is_empty() || !template.contains('{') {
+        return template.to_string();
+    }
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(open) = rest.find('{') {
+        let Some(close_rel) = rest[open..].find('}') else {
+            break;
+        };
+        let inner = rest[open + 1..open + close_rel].trim();
+        match inner.strip_prefix('$').map(str::trim) {
+            Some(name) if !name.is_empty() => {
+                out.push_str(&rest[..open]);
+                match args.iter().find(|(arg_name, _)| *arg_name == name) {
+                    Some((_, value)) => out.push_str(value),
+                    // 未知占位符：保留原 `{ $name }` 文本。
+                    None => out.push_str(&rest[open..=open + close_rel]),
+                }
+                rest = &rest[open + close_rel + 1..];
+            }
+            _ => {
+                // 非占位符花括号：原样输出开括号，从其后继续扫描。
+                out.push_str(&rest[..=open]);
+                rest = &rest[open + 1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Fluent 消息目录（完整 Fluent 语法，由 `fluent-bundle` 支撑）。
 ///
 /// 两种形态：
 ///
 /// - [`MessageCatalog::global`]：进程级 EN/ZH 双束（[`OnceLock`] 缓存），
-///   查询链为当前语言束 → en 束 → key 本身；
+///   查询链为注册覆盖[当前语言] → 当前语言束 → 注册覆盖[en] → en 束 →
+///   key 本身；
 /// - [`MessageCatalog::parse`]：Kit 模块 overlay 目录（运行时 FTL 片段），
 ///   自包含，缺 key 返回 key 本身（由 `Kit::module_tr` 再回退全局目录）。
 pub(crate) enum MessageCatalog {
@@ -255,16 +344,19 @@ impl MessageCatalog {
 
     /// 翻译消息 key，带参数替换。
     ///
-    /// `{ $var }` 占位符由 Fluent 引擎解析。全局目录查询链为当前语言 →
-    /// en → key 本身；overlay 目录缺 key 返回 key 本身。任何路径不 panic。
+    /// `{ $var }` 占位符由 Fluent 引擎解析。全局目录查询链为
+    /// 注册覆盖[当前语言] → 当前语言束 → 注册覆盖[en] → en 束 →
+    /// key 本身；overlay 目录缺 key 返回 key 本身。任何路径不 panic。
     pub(crate) fn translate(&self, message_id: &str, args: &[(&str, &str)]) -> String {
         match self {
-            Self::Global { lang } => format_from_bundle(lang, message_id, args)
+            Self::Global { lang } => registered_lookup(lang, message_id, args)
+                .or_else(|| format_from_bundle(lang, message_id, args))
                 .or_else(|| {
                     if *lang == "en" {
                         None
                     } else {
-                        format_from_bundle("en", message_id, args)
+                        registered_lookup("en", message_id, args)
+                            .or_else(|| format_from_bundle("en", message_id, args))
                     }
                 })
                 .unwrap_or_else(|| message_id.to_string()),
@@ -378,6 +470,52 @@ impl I18nManager {
     #[must_use]
     pub fn locale_tag(&self) -> &str {
         &self.locale_tag
+    }
+
+    /// 注册一条宿主翻译覆盖（进程级，全局生效）。
+    ///
+    /// 语义（与 sdforge 宿主注册面对齐，供其桥接翻译存储层）：
+    ///
+    /// - `locale` 小写化后以 `zh` 开头归入 zh 注册桶，其余（含未知
+    ///   语言）归入 en 注册桶——与语言束选择同一规则；
+    /// - 同一 `(语言桶, key)` 重复注册时后写覆盖先写；
+    /// - 注册覆盖位于查询链最高优先级：注册[当前语言] → 内置[当前
+    ///   语言] → 注册[en] → 内置[en] → key 本身；
+    /// - `value` 为任意文本模板，`{ $name }` 占位符由 [`translate`](Self::translate)
+    ///   的 `args` 单遍替换，与内置路径的占位符形态及注入防护语义一致。
+    ///
+    /// 注册阶段写、翻译热路径读；未注册任何条目时查询行为与无本 API
+    /// 时完全一致。测试隔离用
+    /// [`clear_registered_translations`](Self::clear_registered_translations)。
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use trait_kit::i18n::{tr, I18nManager};
+    ///
+    /// I18nManager::register_translation("en", "demo-greeting", "hello { $who }");
+    /// assert_eq!(tr("demo-greeting", &[("who", "kit")]), "hello kit");
+    /// ```
+    pub fn register_translation(locale: &str, key: &str, value: &str) {
+        let lang = normalize_registered_lang(locale);
+        let mut registered = REGISTERED_TRANSLATIONS
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        registered
+            .entry(lang)
+            .or_default()
+            .insert(key.to_string(), value.to_string());
+    }
+
+    /// 清空全部宿主注册翻译（测试隔离用）。
+    ///
+    /// 只清注册覆盖层：内置 en/zh 语言包（惰性重建、不可移除）与全局
+    /// locale 不受影响，清空后内置消息照常翻译。
+    pub fn clear_registered_translations() {
+        REGISTERED_TRANSLATIONS
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
     /// 内部构造：根据 locale 选择全局语言束。
@@ -969,6 +1107,178 @@ mod tests {
             msg.contains("my-cap"),
             "tr() output should contain key: got '{msg}'"
         );
+    }
+
+    // ─── 宿主注册翻译测试 ─────────────────────────────────────────────────
+    //
+    // 注册表是进程级可变状态（与 GLOBAL_I18N 同族），统一
+    // #[serial(i18n_global)] 串行；每个用例自清自理（首尾各 clear 一次），
+    // 不依赖串行组内执行顺序。
+
+    #[test]
+    #[serial(i18n_global)]
+    fn register_translation_overrides_builtin() {
+        I18nManager::clear_registered_translations();
+        let mgr = I18nManager::build("en");
+        let builtin = "module `m` is already registered";
+        assert_eq!(
+            mgr.translate("trait-kit-error-already-registered", &[("module", "m")]),
+            builtin
+        );
+        I18nManager::register_translation(
+            "en",
+            "trait-kit-error-already-registered",
+            "host override: { $module }",
+        );
+        assert_eq!(
+            mgr.translate("trait-kit-error-already-registered", &[("module", "m")]),
+            "host override: m"
+        );
+        I18nManager::clear_registered_translations();
+    }
+
+    #[test]
+    #[serial(i18n_global)]
+    fn register_translation_normalizes_locale_to_buckets() {
+        I18nManager::clear_registered_translations();
+        // zh-CN（含大写 ZH 前缀）归 zh 桶；未知语言归 en 桶。
+        I18nManager::register_translation("zh-CN", "reg-loc-a", "中文值");
+        I18nManager::register_translation("fr-FR", "reg-loc-b", "french text lands in en");
+        assert_eq!(
+            I18nManager::build("zh").translate("reg-loc-a", &[]),
+            "中文值"
+        );
+        assert_eq!(
+            I18nManager::build("en").translate("reg-loc-b", &[]),
+            "french text lands in en"
+        );
+        // en 目录下查 zh 注册键：链路后段（注册[en]/内置[en]）均未命中
+        // → 返 key 本身，注册不跨桶串味。
+        assert_eq!(
+            I18nManager::build("en").translate("reg-loc-a", &[]),
+            "reg-loc-a"
+        );
+        I18nManager::clear_registered_translations();
+    }
+
+    #[test]
+    #[serial(i18n_global)]
+    fn register_translation_last_write_wins() {
+        I18nManager::clear_registered_translations();
+        I18nManager::register_translation("en", "reg-lww", "first");
+        I18nManager::register_translation("en", "reg-lww", "second");
+        assert_eq!(I18nManager::build("en").translate("reg-lww", &[]), "second");
+        I18nManager::clear_registered_translations();
+    }
+
+    #[test]
+    #[serial(i18n_global)]
+    fn register_translation_fallback_chain_prefers_builtin_over_registered_en() {
+        I18nManager::clear_registered_translations();
+        // 仅注册 en 覆盖内置已有键：zh 目录查询仍取内置 zh（内置[zh]
+        // 先于注册[en]），en 目录查询取注册覆盖。
+        I18nManager::register_translation(
+            "en",
+            "trait-kit-error-already-registered",
+            "registered-en override",
+        );
+        let zh = I18nManager::build("zh");
+        assert!(
+            zh.translate("trait-kit-error-already-registered", &[("module", "m")])
+                .contains("已注册"),
+            "builtin zh must win over registered en for the zh catalog"
+        );
+        assert_eq!(
+            I18nManager::build("en").translate("trait-kit-error-already-registered", &[]),
+            "registered-en override"
+        );
+        I18nManager::clear_registered_translations();
+        // 仅注册 en 的新键（无内置条目）：zh 目录查询经注册[en] 兜底命中。
+        I18nManager::register_translation("en", "reg-chain-new", "en-only value");
+        assert_eq!(
+            I18nManager::build("zh").translate("reg-chain-new", &[]),
+            "en-only value"
+        );
+        I18nManager::clear_registered_translations();
+    }
+
+    #[test]
+    #[serial(i18n_global)]
+    fn clear_registered_translations_restores_builtin_and_key_fallback() {
+        I18nManager::clear_registered_translations();
+        I18nManager::register_translation("en", "trait-kit-error-already-registered", "gone");
+        I18nManager::clear_registered_translations();
+        assert_eq!(
+            I18nManager::build("en")
+                .translate("trait-kit-error-already-registered", &[("module", "m")]),
+            "module `m` is already registered",
+            "builtin message must translate again after clear"
+        );
+        assert_eq!(
+            I18nManager::build("en").translate("reg-cleared-missing", &[]),
+            "reg-cleared-missing",
+            "unknown key must fall back to the key itself after clear"
+        );
+    }
+
+    #[test]
+    #[serial(i18n_global)]
+    fn register_translation_placeholder_parity_with_builtin() {
+        I18nManager::clear_registered_translations();
+        // 同一占位符形态与参数：注册路径与内置 Fluent 路径同样完成替换、
+        // 不留花括号（间距形态 `{ $x }` / `{$x}` 均识别）。
+        I18nManager::register_translation(
+            "en",
+            "reg-parity-spaced",
+            "module `{ $module }` is taken",
+        );
+        I18nManager::register_translation(
+            "en",
+            "reg-parity-compact",
+            "module `{$module}` is taken",
+        );
+        let builtin = I18nManager::build("en")
+            .translate("trait-kit-error-already-registered", &[("module", "m")]);
+        let spaced = I18nManager::build("en").translate("reg-parity-spaced", &[("module", "m")]);
+        let compact = I18nManager::build("en").translate("reg-parity-compact", &[("module", "m")]);
+        assert_eq!(builtin, "module `m` is already registered");
+        assert_eq!(spaced, "module `m` is taken");
+        assert_eq!(compact, "module `m` is taken");
+        // 单遍替换：参数值中的 `{ $module }` 按字面插入，不再解析
+        // （与内置路径 bundle_arg_value_is_not_reparsed_as_pattern 同语义）。
+        let injected = I18nManager::build("en")
+            .translate("reg-parity-spaced", &[("module", "{ $module } injected")]);
+        assert_eq!(injected, "module `{ $module } injected` is taken");
+        // 未知占位符保留原文；非占位符花括号原样输出。
+        I18nManager::register_translation(
+            "en",
+            "reg-parity-unknown",
+            "keep { $nope } and {literal}",
+        );
+        assert_eq!(
+            I18nManager::build("en").translate("reg-parity-unknown", &[("x", "1")]),
+            "keep { $nope } and {literal}"
+        );
+        I18nManager::clear_registered_translations();
+    }
+
+    #[test]
+    #[serial(i18n_global)]
+    fn register_translation_resolves_for_both_language_buckets() {
+        I18nManager::clear_registered_translations();
+        // 同一键在两个语言桶各注册一条：en/zh 目录都能解析（键集一致，
+        // 不依赖内置键，注册面自身即双语闭环）。
+        I18nManager::register_translation("en", "reg-both", "english value");
+        I18nManager::register_translation("zh", "reg-both", "中文值");
+        assert_eq!(
+            I18nManager::build("en").translate("reg-both", &[]),
+            "english value"
+        );
+        assert_eq!(
+            I18nManager::build("zh").translate("reg-both", &[]),
+            "中文值"
+        );
+        I18nManager::clear_registered_translations();
     }
 
     // ─── I18nFormatter 测试 ─────────────────────────────────────────────────
