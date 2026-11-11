@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+## [0.5.0-rc.13] - 2026-11-12
+
+### Added
+
+- `I18nManager` 宿主注册 API：`register_translation(locale, key, value)` /
+  `clear_registered_translations()`——宿主（sdforge 桥接层及各下游仓）可在运行期注册自有
+  翻译并覆盖内置文案，回退链保持 注册 → 内置 → 键本身；占位符语义与内置 Fluent 路径一致，
+  含 8 条单测（覆盖/归一/后写胜出/回退链/占位符一致性/清除恢复）。
+
 ## [0.5.0-rc.12] - 2026-10-31
 
 ### Added
