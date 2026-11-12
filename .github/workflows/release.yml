@@ -70,8 +70,15 @@ jobs:
       - name: Verify release uniqueness (idempotency guard)
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          COUNT=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate --jq "[.[] | select(.tag_name == \"${TAG}\")] | length")
-          echo "release objects for ${TAG}: ${COUNT}"
+          # 2026-11-12 实录：create-release 落库后 API 列表端点偶发读延迟（0 计数假阴性，
+          # 对象实际存在），守卫误杀发布链。改 5 次 6s 退避重试，取最终收敛值判定。
+          COUNT=0
+          for i in 1 2 3 4 5; do
+            COUNT=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate --jq "[.[] | select(.tag_name == \"${TAG}\")] | length")
+            echo "attempt $i: release objects for ${TAG}: ${COUNT}"
+            [ "${COUNT}" = "1" ] && break
+            sleep 6
+          done
           if [ "${COUNT}" != "1" ]; then
             echo "::error::expected exactly 1 release for ${TAG}, found ${COUNT}; release state is not idempotent"
             exit 1
