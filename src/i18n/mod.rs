@@ -126,6 +126,11 @@ impl std::error::Error for I18nError {}
 
 /// 基于 ICU4X 编译数据的 locale 感知格式化器。
 ///
+/// ICU4X 复数类别类型重导出：下游仓（含受依赖环约束、无法直依赖 `icu_plurals` 的仓）
+/// 经 trait-kit 使用 ICU 格式化时，无需自持 ICU 依赖面，即可命名本类型。
+#[cfg(feature = "i18n")]
+pub use icu_plurals::PluralCategory;
+
 /// 通过 BCP-47 locale 标签（如 `"en-US"`、`"zh-CN"`）构造。
 /// 所有格式化器在构造时 eagerly 创建，后续格式化调用低分配。
 ///

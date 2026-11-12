@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+## [0.5.0-rc.14] - 2026-11-12
+
+### Added
+
+- `i18n` feature 重导出 ICU4X `PluralCategory`（`trait_kit::i18n::PluralCategory`）：下游仓
+  （含受依赖环约束、无法直依赖 `icu_plurals` 的仓）使用 ICU 复数格式化时无需自持 ICU
+  依赖面，消除「传递依赖直引用」在 resolver 2018+ 下不可编译的缺口。
+
 ## [0.5.0-rc.13] - 2026-11-12
 
 ### Added
