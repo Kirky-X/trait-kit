@@ -14,6 +14,10 @@
 - [🔧 进阶用法](#-进阶用法)
 - [✅ 最佳实践](#-最佳实践)
 - [🩺 故障排查](#-故障排查)
+- [🧩 更多能力（注册模式、构建报告、组合与协商）](#-更多能力注册模式构建报告组合与协商)
+- [💡 为什么选择 trait-kit？](#-为什么选择-trait-kit)
+- [🔗 带依赖的模块](#-带依赖的模块)
+- [🎨 特性标志](#-特性标志)
 
 </details>
 
@@ -349,3 +353,125 @@ let kit = kit.build()?;
 - **跨线程使用 `Kit` 报 `!Sync`**：改用 `AsyncKit`（`async` feature），或在单线程内使用 `Kit`。
 
 仍有问题？请到 [GitHub Issues](https://github.com/Kirky-X/trait-kit/issues) 搜索或提问。
+
+---
+
+## 🧩 更多能力（注册模式、构建报告、组合与协商）
+
+- **灵活注册模式**：`register_lazy`（首次 `require` 时构建并缓存）、`register_multi` + `require_all`（多绑定聚合）、`register_if`（运行时谓词）、`override_module`（测试注入）、`factory::<M>()`（每次调用创建新实例）。
+- **接口/实现分离**（`di`）：`register_as` / `resolve::<dyn Trait>()` 类型擦除注册与检索。
+- **作用域依赖**（`request-scope`）：`Scope` / `AsyncScope` 每请求实例隔离。
+- **特性开关**（`toggle`）：`enable_toggle` / `is_toggle_enabled` / `register_if_toggle` 运行时字符串键控启停。
+- **模块装饰器**（`decorator`）：`decorate::<M>(fn)` 构建后能力包装/增强。
+- **结构化构建报告**（`report`）：`BuildReport` JSON 导出与 `contract_manifest()` 契约清单；依赖图 `graph_dot()` / `graph_mermaid()` 文本导出无门控，默认可用。
+- **预设模块**（`presets` / `presets-remote`）：`ConfersConfigModule` 将 confers 配置中心纳入 Kit 模块体系，支持远程配置源。
+- **子 Kit 组合**（`compose`）：子 `Kit` 以单一模块身份注册进父 `Kit`，能力命名空间隔离。
+- **版本协商**（`version-negotiation`）：`ModuleMeta::VERSION` 与 `required_versions` 在 `build()` 时做 semver 兼容校验。
+- **事件总线与观测端口**（默认可用，无 feature 门控）：`KitEvent` / `EventBus` 生命周期事件与 `MetricsPort` / `LogPort` 注入式观测，默认 `NoOp` 实现零开销。
+
+## 💡 为什么选择 trait-kit？
+
+对比常见的依赖装配方案，trait-kit 定位在"手动装配"和"完整 DI 框架"之间：
+
+| 方案 | 优点 | 缺点 |
+| --- | --- | --- |
+| **手动装配** | 简单，无依赖。 | 模式不统一，每个项目各自为政。 |
+| **trait-kit** | 标准化模式，类型安全，轻量级。 | 仍需显式声明依赖关系。 |
+| **完整 DI（shaku 等）** | 自动解析，更少胶水代码。 | 依赖更重，魔法行为，调试困难。 |
+
+trait-kit 提供 DI 框架的**标准化**，同时保持手动装配的**显式性**。
+
+## 🔗 带依赖的模块
+
+模块通过 `ModuleMeta::dependencies()` 声明依赖（`impl_module_meta!` 宏支持 `deps = [...]` 语法）。Kit 在 `build()` 时验证依赖图，并按拓扑顺序构造模块：
+
+```rust
+use std::sync::Arc;
+use trait_kit::impl_module_meta;
+use trait_kit::prelude::*;
+
+struct Logger;
+impl Logger {
+    fn info(&self, msg: &str) { println!("[LOG] {msg}"); }
+}
+
+struct LoggerModule;
+impl ModuleMeta for LoggerModule {
+    const NAME: &'static str = "logger";
+    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+        &[]
+    }
+}
+
+impl AutoBuilder for LoggerModule {
+    type Capability = Arc<Logger>;
+    type Error = TraitKitError;
+    fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+        Ok(Arc::new(Logger))
+    }
+}
+
+struct Storage {
+    _logger: Arc<Logger>,
+}
+
+struct StorageModule;
+// 宏一行声明名称 + 依赖（等价于手写 dependencies()）
+impl_module_meta!(StorageModule, "storage", deps = [LoggerModule]);
+
+impl AutoBuilder for StorageModule {
+    type Capability = Arc<Storage>;
+    type Error = TraitKitError;
+    fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
+        let logger = kit.require::<LoggerModule>()?;
+        Ok(Arc::new(Storage { _logger: logger }))
+    }
+}
+
+fn main() {
+    let mut kit = Kit::new();
+    kit.register::<LoggerModule>().unwrap();
+    kit.register::<StorageModule>().unwrap();
+    let kit = kit.build().unwrap();
+
+    let storage = kit.require::<StorageModule>().unwrap();
+    let _ = storage;
+}
+```
+
+## 🎨 特性标志
+
+`default = []`：默认不启用任何可选 feature。高级 feature 自动继承低级 feature（`encryption` → `reload` → `confers`）。
+
+<table>
+<tr><th>Feature</th><th>启用</th><th>说明</th><th>默认</th></tr>
+<tr><td><code>async</code></td><td>—</td><td><code>AsyncKit</code>：<code>Send + Sync</code> 异步能力管理，无额外依赖。</td><td>—</td></tr>
+<tr><td><code>confers</code></td><td><code>dep:confers</code>, <code>dep:serde</code>, <code>dep:serde_json</code>, <code>confers/feature-toggle</code></td><td><code>Configurable</code> + <code>ModuleConfig</code> trait + <code>Config</code> derive 宏再导出。</td><td>—</td></tr>
+<tr><td><code>reload</code></td><td><code>confers</code>, <code>confers/dynamic</code></td><td><code>subscribe</code> / <code>reload_config</code> 热重载订阅。</td><td>—</td></tr>
+<tr><td><code>masking</code></td><td><code>regex</code>, <code>fancy-regex</code>, <code>aho-corasick</code>, <code>toml</code>, <code>serde_json</code>, <code>tracing</code></td><td><code>DataMasker</code> / <code>MaskRule</code> / <code>MaskRuleRegistry</code> PII/凭据掩码引擎与 secret-scan 出站门（自 inklog 下沉的单一来源）。</td><td>—</td></tr>
+<tr><td><code>encryption</code></td><td><code>reload</code>, <code>confers</code>, <code>confers/encryption</code>, <code>dep:zeroize</code></td><td><code>set_encrypted</code> / <code>get_encrypted</code> 加密配置存储。</td><td>—</td></tr>
+<tr><td><code>di</code></td><td>—</td><td>接口/实现分离：<code>register_as</code> / <code>resolve</code> 支持 <code>dyn Trait</code> 类型擦除。</td><td>—</td></tr>
+<tr><td><code>lifecycle</code></td><td>—</td><td>生命周期钩子：<code>on_ready</code>（构建后）+ <code>on_shutdown</code>（清理）。</td><td>—</td></tr>
+<tr><td><code>health</code></td><td>—</td><td>健康检查：<code>HealthCheck</code> trait + <code>HealthStatus</code> 状态报告；<code>AsyncHealthCheck</code>（health+async）的 <code>check</code> 刻意保持同步——网络探活应走 <code>on_ready</code> 探测一次并缓存结论，或用 <code>probe</code> 特性的 <code>ServiceProbe</code>；勿在 <code>check</code> 内做网络 I/O。</td><td>—</td></tr>
+<tr><td><code>probe</code></td><td><code>health</code>, <code>dep:futures-timer</code></td><td>服务探针注册面：对象安全 <code>ServiceProbe</code> 异步探针——<code>register_probe</code>/<code>unregister_probe</code>/<code>probe_names</code>（任意状态可动态增减）、<code>AsyncKit&lt;Ready&gt;::run_probes()</code>（明细 + worst-of 聚合 + JSON；<code>latency_ms</code> 为框架实测墙钟）、<code>probe_aggregate()</code>（worst-of 结论）及 <code>run_probes_with_timeout()</code>/<code>probe_aggregate_with_timeout()</code>（单探针硬上限，悬挂探针记 unhealthy 继续跑完）；shutdown 自动注销并标记 stopped——停机后 <code>run_probes()</code> 返回显性不可服务（<code>stopped=true</code>），空注册表 ≠ 全部健康。与 <code>health</code> 的分工：<code>check</code> 只读缓存状态，<code>ServiceProbe</code> 才做真正的网络探活。</td><td>—</td></tr>
+<tr><td><code>request-scope</code></td><td>—</td><td>作用域依赖：<code>Scope</code> / <code>AsyncScope</code> 每请求实例隔离。</td><td>—</td></tr>
+<tr><td><code>toggle</code></td><td>—</td><td>特性开关：运行时字符串键控的模块启用/禁用。</td><td>—</td></tr>
+<tr><td><code>observer</code></td><td>—</td><td>构建可观测：<code>BuildObserver</code> 回调（开始/完成/错误）。</td><td>—</td></tr>
+<tr><td><code>decorator</code></td><td>—</td><td>模块装饰器：构建后能力包装/增强。</td><td>—</td></tr>
+<tr><td><code>shutdown</code></td><td>—</td><td>优雅关闭协调器：分阶段有序关闭 + 超时强退。</td><td>—</td></tr>
+<tr><td><code>i18n</code></td><td><code>dep:icu_collator</code>, <code>dep:icu_datetime</code>, <code>dep:icu_decimal</code>, <code>dep:icu_locale</code>, <code>dep:icu_plurals</code>, <code>dep:writeable</code>, <code>dep:sys-locale</code></td><td>ICU4X 国际化：本地化数字/日期/复数/排序格式化（按组件引入，不引 <code>icu</code> 门面 crate）。</td><td>—</td></tr>
+<tr><td><code>report</code></td><td><code>dep:serde</code>, <code>dep:serde_json</code></td><td>结构化构建报告：<code>BuildReport</code> JSON 与 <code>contract_manifest()</code> 契约清单（依赖图 DOT/Mermaid 导出 <code>graph_dot()</code> / <code>graph_mermaid()</code> 无门控，默认可用）。</td><td>—</td></tr>
+<tr><td><code>presets</code></td><td><code>confers</code></td><td>预设模块包：<code>ConfersConfigModule</code>（配置中心作为 Kit 模块）+ 组合 builder。</td><td>—</td></tr>
+<tr><td><code>compose</code></td><td>—</td><td>子 Kit 组合：子 <code>Kit</code> 注册为父 <code>Kit</code> 的单一模块（能力命名空间隔离 + 跨 Kit 依赖校验）。</td><td>—</td></tr>
+<tr><td><code>presets-remote</code></td><td><code>presets</code>, <code>confers/remote</code>, <code>async</code></td><td>远程配置桥接：<code>ConfersConfigModule</code> 走 confers 远程 <code>AsyncSource</code>（remote 模块以 <code>AsyncKit</code> 为构建载体，故 imply <code>async</code>）。</td><td>—</td></tr>
+<tr><td><code>version-negotiation</code></td><td>—</td><td>能力版本协商：<code>ModuleMeta::VERSION</code> 与 <code>required_versions</code> 在 <code>build()</code> 时做 semver 兼容校验。</td><td>—</td></tr>
+</table>
+
+向后兼容别名：旧 feature 名 `interface` / `scope` / `negotiate` 仍可启用，分别转发到 `di` / `request-scope` / `version-negotiation`（已标记 deprecated，新代码请使用新名）。
+
+在 `Cargo.toml` 中启用所需级别：
+
+```toml
+[dependencies]
+trait-kit = { version = "0.5.0-rc.12", features = ["encryption"] }
+```

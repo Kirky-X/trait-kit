@@ -13,6 +13,8 @@ Thank you for your interest in the trait-kit project! This document describes th
 - [📐 Code Conventions](#-code-conventions)
 - [🚀 Commits and PR Process](#-commits-and-pr-process)
 - [📜 Code of Conduct](#-code-of-conduct)
+- [🧪 Test Strategy](#-test-strategy)
+- [🗺️ Roadmap](#️-roadmap)
 
 </details>
 
@@ -43,24 +45,24 @@ pre-commit install
 ### Common Commands
 
 ```sh
-# Build (all features / no default features, same as CI)
+# 构建（全特性 / 无默认特性，与 CI 一致）
 cargo build --all-features --workspace
 cargo build --no-default-features --workspace
 
-# Test (all features, same as CI)
+# 测试（全特性，与 CI 一致）
 cargo test --workspace --all-features
 
-# Formatting and lint
+# 格式化与 Lint
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-# Docs (zero-warning standard)
+# 文档（零告警标准）
 RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
 
-# Dependency audit
+# 依赖审计
 cargo deny check
 
-# MSRV verification
+# MSRV 验证
 cargo +1.97.1 check
 ```
 
@@ -81,8 +83,8 @@ Every development task follows the Red → Green → Commit → Analyze → Next
 Features in trait-kit have inheritance relationships (`encryption` → `reload` → `confers`); before committing, cover at least the following combinations (aligned with CI and the acceptance matrix):
 
 ```sh
-cargo test --workspace --all-features   # same as the CI test job
-cargo test                              # default features
+cargo test --workspace --all-features   # 与 CI test job 一致
+cargo test                              # 默认特性
 cargo test --no-default-features
 cargo test --features confers
 cargo test --features shutdown
@@ -143,3 +145,58 @@ Releases are performed by Kirky.X: a tag push triggers `release.yml` (build veri
 ## 📜 Code of Conduct
 
 This project follows the [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-conduct). All contributors must comply: stay friendly, respectful, and professional, keeping the community welcoming for everyone.
+
+---
+
+## 🧪 Test Strategy
+
+| Type | Location | Description |
+|------|------|------|
+| Unit tests | `src/` (`#[cfg(test)]`) | Module-internal logic |
+| Integration tests | `tests/` (9 targets) + `tests/e2e/` (13 registered targets) | `basic`, `config_inheritance_e2e`, `e2e_core`, `e2e_async`, `e2e_concurrency`, `e2e_feature_combinations`, etc. |
+| Compile-time UI tests | `tests/compile_fail.rs` + `tests/ui/` (11 cases: 7 at the root + one each in `probe_sensitive/`, `observer_ready/`, `decorator_ready/`, `lifecycle_ready/`) | trybuild-based: assert typestate misuse (retrieve before build, etc.) fails to compile |
+| Macro-crate tests | `macros/tests/` | `#[derive(Module)]` expansion correctness and compile-fail cases |
+| Doc tests | `rust` code blocks in the README and doc comments | Compiled and run by `cargo test` |
+| Example validation | `examples/` (20) | Each example runs standalone; failed assertions panic |
+| Benchmarks | `benches/kit_bench.rs` | criterion benchmarks (requires the `toggle` feature) |
+
+Test scale: the main crate's `src/` and `tests/` contain **1040** `#[test]` functions (via `grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l`), plus 6 in `macros/tests/`.
+
+### Common Commands (same as CI)
+
+```sh
+# 全量测试（workspace + 全部 feature，与 CI test job 一致）
+cargo test --workspace --all-features
+
+# 按特性组合运行
+cargo test --features confers
+
+# Lint 与格式检查（CI 门禁，零告警）
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo fmt --all -- --check
+
+# 文档零告警
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
+
+# 依赖审计（advisories / licenses / bans / sources）
+cargo deny check
+
+# 覆盖率门禁（CI coverage job：行覆盖 ≥ 95%）
+cargo llvm-cov --workspace --all-features --fail-under-lines 95
+```
+
+## 🗺️ Roadmap
+
+Entries carry over the existing plan; status is aligned with the current repository state:
+
+<table>
+<tr><th>Status</th><th>Item</th><th>Description</th></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.12</b> (2026-10-31)</td><td>Current release: new <code>masking</code> feature — the PII/credential masking engine (<code>DataMasker</code> / <code>MaskRule</code> / <code>MaskRuleRegistry</code> / <code>AcMasker</code>) sunk from inklog into this crate as the single source, with the secret-scan egress gate family (<code>SecretScanGate</code> / <code>SecretPatternRegistry</code> / <code>EntropyScanner</code>) and <code>MaskError</code>; shared by inklog and limiteron with the 21 builtin rules' semantics and order unchanged (see the <a href="../CHANGELOG.md">CHANGELOG</a>).</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.11</b> (2026-10-28)</td><td>tightened <code>override_module</code> dependency-graph validation (unregistered dependencies rejected at injection time) and shared-overlay ownership isolation; full redaction of external text and error <code>Debug</code> output; master-key admission policy; <code>TypeMap</code> read-reference guard (unsafe exemptions 6→5); depth guard moved earlier for deeply nested JSON; <code>confers</code> dependency 0.6.0-rc.12 (see the <a href="../CHANGELOG.md">CHANGELOG</a>).</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.10</b> (2026-10-19)</td><td>strict-English default locale with domain-split <code>locales/{en,zh}/</code>, <code>rustls</code> 0.23.46 security upgrade, unified pure-MIT license, release switched to crates.io trusted publishing (OIDC) with the idempotency triple (see the <a href="../CHANGELOG.md">CHANGELOG</a>).</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.9</b> (2026-10-10)</td><td>service-probe registry (new <code>probe</code> feature), async health aggregation (<code>health_aggregate</code> / <code>health_json</code>), explicit <code>config_overrides</code> in build reports, feature-matrix and benchmark-regression CI gates; fixes for version-negotiation path parity, unified lazy retrieval semantics, and shutdown-coordinator hook panic isolation (see the <a href="../CHANGELOG.md">CHANGELOG</a>).</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.6</b> (2026-09-21)</td><td>rc.4–rc.6 released: observability ports and event bus, full Toggle implementation, <code>trait-kit-derive</code> merged into <code>trait-kit-macros</code>, <code>confers</code> dependency moved to crates.io (see the <a href="../CHANGELOG.md">CHANGELOG</a>).</td></tr>
+<tr><td>✅</td><td><b>Performance benchmarks</b></td><td>Criterion benchmarks in <code>benches/kit_bench.rs</code> and the <code>docs/cn/PERFORMANCE.md</code> baseline report are in place (current baseline 2026-09-29).</td></tr>
+<tr><td>📋</td><td><b>0.5.0 stable release</b></td><td>After the minor version bump, sync the <code>path + version</code> dependency requirements of downstream crates (oxcache, dbnexus, inklog, limiteron, sdforge) per the workspace release plan.</td></tr>
+<tr><td>✅</td><td><b>cfg gate completeness</b></td><td><code>--no-default-features --features async</code> and <code>async,observer</code> check combos, <code>clippy --features async --all-targets</code> are warning-free, and async doc tests all pass — the gate gap is resolved (re-verified 2026-09-27).</td></tr>
+</table>

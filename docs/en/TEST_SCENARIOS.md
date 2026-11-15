@@ -573,7 +573,7 @@ Pre-work (complete before landing E2E):
 | 20 | `config_inheritance` | confers | exit code 0; ConfigInherit/SharedConfig inheritance chain demo |
 
 Batch run command:
-`for e in default_basic confers_loader confers_macros hot_reload encryption async_basic lifecycle health_check observability scope_basic conditional factory decorator interface i18n shutdown validation snapshot_restore toggle_basic config_inheritance; do …pass features per the 5.2 table…; done`
+`for e in default_basic confers_loader confers_macros hot_reload encryption async_basic lifecycle health_check observability scope_basic conditional factory decorator interface i18n shutdown validation snapshot_restore toggle_basic config_inheritance; do …按 5.2 表传 feature…; done`
 
 ### 5.3 Scenario ID → E2E File Mapping Summary
 

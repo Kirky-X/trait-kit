@@ -13,6 +13,8 @@
 - [📐 代码规范](#-代码规范)
 - [🚀 提交与 PR 流程](#-提交与-pr-流程)
 - [📜 行为准则](#-行为准则)
+- [🧪 测试策略](#-测试策略)
+- [🗺️ 开发路线图](#️-开发路线图)
 
 </details>
 
@@ -143,3 +145,58 @@ cargo test --features i18n
 ## 📜 行为准则
 
 本项目遵循 [Rust 行为准则](https://www.rust-lang.org/policies/code-of-conduct)。所有贡献者均需遵守：保持友善、尊重与专业，让社区对每个人都友好。
+
+---
+
+## 🧪 测试策略
+
+| 类型 | 位置 | 说明 |
+|------|------|------|
+| 单元测试 | `src/`（`#[cfg(test)]`） | 模块内部逻辑 |
+| 集成测试 | `tests/`（9 个目标）+ `tests/e2e/`（13 个注册目标） | `basic`、`config_inheritance_e2e`、`e2e_core`、`e2e_async`、`e2e_concurrency`、`e2e_feature_combinations` 等 |
+| 编译期 UI 测试 | `tests/compile_fail.rs` + `tests/ui/`（11 个用例：根 7 个 + `probe_sensitive/`、`observer_ready/`、`decorator_ready/`、`lifecycle_ready/` 各 1 个） | 基于 trybuild，断言 typestate 误用（未构建即检索等）无法编译 |
+| 宏 crate 测试 | `macros/tests/` | `#[derive(Module)]` 展开正确性与编译失败用例 |
+| 文档测试 | README 与 doc 注释中的 `rust` 代码块 | 随 `cargo test` 编译运行 |
+| 示例验证 | `examples/`（20 个） | 每个示例独立运行，断言失败即 panic |
+| 基准测试 | `benches/kit_bench.rs` | criterion 基准（需 `toggle` feature） |
+
+测试规模：主 crate `src/` 与 `tests/` 共 **1040** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `macros/tests/` 6 个。
+
+### 常用命令（与 CI 一致）
+
+```sh
+# 全量测试（workspace + 全部 feature，与 CI test job 一致）
+cargo test --workspace --all-features
+
+# 按特性组合运行
+cargo test --features confers
+
+# Lint 与格式检查（CI 门禁，零告警）
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo fmt --all -- --check
+
+# 文档零告警
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
+
+# 依赖审计（advisories / licenses / bans / sources）
+cargo deny check
+
+# 覆盖率门禁（CI coverage job：行覆盖 ≥ 95%）
+cargo llvm-cov --workspace --all-features --fail-under-lines 95
+```
+
+## 🗺️ 开发路线图
+
+条目沿用既有规划，状态对齐当前仓库事实：
+
+<table>
+<tr><th>状态</th><th>条目</th><th>说明</th></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.12</b>（2026-10-31）</td><td>当前版本：新增 <code>masking</code> feature——PII/凭据掩码引擎（<code>DataMasker</code> / <code>MaskRule</code> / <code>MaskRuleRegistry</code> / <code>AcMasker</code>）自 inklog 下沉为本仓单一来源，含 secret-scan 出站门族（<code>SecretScanGate</code> / <code>SecretPatternRegistry</code> / <code>EntropyScanner</code>）与 <code>MaskError</code>；inklog 与 limiteron 共用同一实现，21 条内置规则语义与顺序不变（详见 <a href="../CHANGELOG.md">CHANGELOG</a>）。</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.11</b>（2026-10-28）</td><td><code>override_module</code> 依赖图校验收紧（未注册依赖注入期即拒绝）与共享 overlay 属主隔离；对外文本与错误 <code>Debug</code> 全面脱敏；主密钥准入策略；<code>TypeMap</code> 读引用守卫（unsafe 豁免 6→5 处）；深嵌套 JSON 深度守卫前移；<code>confers</code> 依赖 0.6.0-rc.12（详见 <a href="../CHANGELOG.md">CHANGELOG</a>）。</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.10</b>（2026-10-19）</td><td>i18n 默认语言严格英文与 <code>locales/{en,zh}/</code> 按域拆分、<code>rustls</code> 0.23.46 安全升级、统一纯 MIT 许可、发布切 crates.io trusted publishing（OIDC）与发布幂等三元组（详见 <a href="../CHANGELOG.md">CHANGELOG</a>）。</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.9</b>（2026-10-10）</td><td>服务探针注册面（新 <code>probe</code> feature）、async 健康聚合（<code>health_aggregate</code> / <code>health_json</code>）、构建报告 <code>config_overrides</code> 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一、关闭协调器 hook panic 隔离等（详见 <a href="../CHANGELOG.md">CHANGELOG</a>）。</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.6</b>（2026-09-21）</td><td>rc.4–rc.6 已发布：观测端口与事件总线、Toggle 完整落地、<code>trait-kit-derive</code> 并入 <code>trait-kit-macros</code>、<code>confers</code> 依赖改走 crates.io（详见 <a href="../CHANGELOG.md">CHANGELOG</a>）。</td></tr>
+<tr><td>✅</td><td><b>性能基准</b></td><td>criterion 基准 <code>benches/kit_bench.rs</code> 与 <code>docs/cn/PERFORMANCE.md</code> 基线报告已建立（现行基线 2026-09-29）。</td></tr>
+<tr><td>📋</td><td><b>0.5.0 正式发布</b></td><td>次版本位 +1 后，按工作区发布计划同步下游仓库（oxcache、dbnexus、inklog、limiteron、sdforge）的 <code>path + version</code> 依赖要求。</td></tr>
+<tr><td>✅</td><td><b>cfg 门控完整性</b></td><td><code>--no-default-features --features async</code> 与 <code>async,observer</code> 组合 check、<code>clippy --features async --all-targets</code> 零告警，async doc 测试全通过——门控缺口已消除（2026-09-27 复测确认）。</td></tr>
+</table>

@@ -14,6 +14,10 @@ This guide takes you from installation to mastery of trait-kit's core concepts a
 - [🔧 Advanced Usage](#-advanced-usage)
 - [✅ Best Practices](#-best-practices)
 - [🩺 Troubleshooting](#-troubleshooting)
+- [🧩 More Capabilities (registration modes, build reports, composition, negotiation)](#-more-capabilities-registration-modes-build-reports-composition-negotiation)
+- [💡 Why trait-kit?](#-why-trait-kit)
+- [🔗 Module with Dependencies](#-module-with-dependencies)
+- [🎨 Feature Flags](#-feature-flags)
 
 </details>
 
@@ -349,3 +353,126 @@ Other common issues:
 - **`!Sync` error when using `Kit` across threads**: switch to `AsyncKit` (`async` feature), or use `Kit` within a single thread.
 
 Still stuck? Search or ask on [GitHub Issues](https://github.com/Kirky-X/trait-kit/issues).
+
+---
+
+## 🧩 More Capabilities (registration modes, build reports, composition, negotiation)
+
+- **Flexible registration modes**: `register_lazy` (built and cached on first `require`), `register_multi` + `require_all` (multi-binding aggregation), `register_if` (runtime predicates), `override_module` (test injection), `factory::<M>()` (a fresh instance per call).
+- **Interface/implementation separation** (`di`): `register_as` / `resolve::<dyn Trait>()` type-erased registration and retrieval.
+- **Scoped dependencies** (`request-scope`): `Scope` / `AsyncScope` per-request instance isolation.
+- **Feature toggles** (`toggle`): `enable_toggle` / `is_toggle_enabled` / `register_if_toggle` runtime string-keyed enable/disable.
+- **Module decorators** (`decorator`): `decorate::<M>(fn)` post-build capability wrapping/enhancement.
+- **Structured build reports** (`report`): `BuildReport` JSON export plus `contract_manifest()`; the `graph_dot()` / `graph_mermaid()` dependency-graph text exports have no feature gate and are available by default.
+- **Preset modules** (`presets` / `presets-remote`): `ConfersConfigModule` turns the confers config hub into a first-class Kit module, with remote config source support.
+- **Sub-Kit composition** (`compose`): register a child `Kit` as a single module in a parent `Kit`, with namespaced capabilities.
+- **Version negotiation** (`version-negotiation`): `ModuleMeta::VERSION` vs `required_versions` semver-compat validation at `build()` time.
+- **Event bus and observation ports** (always available, no feature gate): `KitEvent` / `EventBus` lifecycle events and injectable `MetricsPort` / `LogPort`, with zero-cost `NoOp` defaults.
+
+## 💡 Why trait-kit?
+
+Compared with common dependency-wiring approaches, trait-kit sits between "raw manual wiring" and "full DI framework":
+
+| Approach | Pros | Cons |
+| --- | --- | --- |
+| **Manual wiring** | Simple, no deps. | Ad-hoc patterns, inconsistent per project. |
+| **trait-kit** | Standard pattern, type-safe, lightweight. | You still wire dependencies explicitly. |
+| **Full DI (shaku etc.)** | Auto-resolved, less glue code. | Heavier deps, magic, harder to debug. |
+
+trait-kit gives you the **standardization** of a DI framework with the **explicitness** of manual wiring.
+
+## 🔗 Module with Dependencies
+
+Modules declare dependencies via `ModuleMeta::dependencies()` (the `impl_module_meta!` macro supports a `deps = [...]` syntax). The Kit validates the dependency graph at `build()` and constructs modules in topological order:
+
+```rust
+use std::sync::Arc;
+use trait_kit::impl_module_meta;
+use trait_kit::prelude::*;
+
+struct Logger;
+impl Logger {
+    fn info(&self, msg: &str) { println!("[LOG] {msg}"); }
+}
+
+struct LoggerModule;
+impl ModuleMeta for LoggerModule {
+    const NAME: &'static str = "logger";
+    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+        &[]
+    }
+}
+
+impl AutoBuilder for LoggerModule {
+    type Capability = Arc<Logger>;
+    type Error = TraitKitError;
+    fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+        Ok(Arc::new(Logger))
+    }
+}
+
+struct Storage {
+    _logger: Arc<Logger>,
+}
+
+struct StorageModule;
+// One-line macro declaration of the name + dependencies
+// (equivalent to a hand-written dependencies())
+impl_module_meta!(StorageModule, "storage", deps = [LoggerModule]);
+
+impl AutoBuilder for StorageModule {
+    type Capability = Arc<Storage>;
+    type Error = TraitKitError;
+    fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
+        let logger = kit.require::<LoggerModule>()?;
+        Ok(Arc::new(Storage { _logger: logger }))
+    }
+}
+
+fn main() {
+    let mut kit = Kit::new();
+    kit.register::<LoggerModule>().unwrap();
+    kit.register::<StorageModule>().unwrap();
+    let kit = kit.build().unwrap();
+
+    let storage = kit.require::<StorageModule>().unwrap();
+    let _ = storage;
+}
+```
+
+## 🎨 Feature Flags
+
+`default = []`: no optional feature is enabled by default. Higher-level features automatically inherit lower ones (`encryption` → `reload` → `confers`).
+
+<table>
+<tr><th>Feature</th><th>Enables</th><th>Description</th><th>Default</th></tr>
+<tr><td><code>async</code></td><td>—</td><td><code>AsyncKit</code>: <code>Send + Sync</code> async capability management, no extra deps.</td><td>—</td></tr>
+<tr><td><code>confers</code></td><td><code>dep:confers</code>, <code>dep:serde</code>, <code>dep:serde_json</code>, <code>confers/feature-toggle</code></td><td><code>Configurable</code> + <code>ModuleConfig</code> trait + <code>Config</code> derive re-export.</td><td>—</td></tr>
+<tr><td><code>reload</code></td><td><code>confers</code>, <code>confers/dynamic</code></td><td><code>subscribe</code> / <code>reload_config</code> hot-reload subscriptions.</td><td>—</td></tr>
+<tr><td><code>masking</code></td><td><code>regex</code>, <code>fancy-regex</code>, <code>aho-corasick</code>, <code>toml</code>, <code>serde_json</code>, <code>tracing</code></td><td><code>DataMasker</code> / <code>MaskRule</code> / <code>MaskRuleRegistry</code> PII/credential masking engine and the secret-scan egress gate (single source sunk from inklog).</td><td>—</td></tr>
+<tr><td><code>encryption</code></td><td><code>reload</code>, <code>confers</code>, <code>confers/encryption</code>, <code>dep:zeroize</code></td><td><code>set_encrypted</code> / <code>get_encrypted</code> encrypted config storage.</td><td>—</td></tr>
+<tr><td><code>di</code></td><td>—</td><td>Interface/implementation separation: <code>register_as</code> / <code>resolve</code> with <code>dyn Trait</code> type erasure.</td><td>—</td></tr>
+<tr><td><code>lifecycle</code></td><td>—</td><td>Lifecycle hooks: <code>on_ready</code> (after build) + <code>on_shutdown</code> (cleanup).</td><td>—</td></tr>
+<tr><td><code>health</code></td><td>—</td><td>Health checks: <code>HealthCheck</code> trait + <code>HealthStatus</code> reporting; <code>AsyncHealthCheck</code> (health+async) <code>check</code> is intentionally synchronous — run network probes once in <code>on_ready</code> and cache the verdict, or use the <code>probe</code> feature's <code>ServiceProbe</code>; never do network I/O inside <code>check</code>.</td><td>—</td></tr>
+<tr><td><code>probe</code></td><td><code>health</code>, <code>dep:futures-timer</code></td><td>Service probe registry: object-safe async <code>ServiceProbe</code> probes — <code>register_probe</code>/<code>unregister_probe</code>/<code>probe_names</code> (dynamic, any state marker), <code>AsyncKit&lt;Ready&gt;::run_probes()</code> (per-probe records + worst-of aggregate + JSON; <code>latency_ms</code> is framework-measured wall time), <code>probe_aggregate()</code> (worst-of verdict), plus <code>run_probes_with_timeout()</code>/<code>probe_aggregate_with_timeout()</code> (hard per-probe bound; a hung probe is recorded unhealthy and the pass continues); probes auto-unregister on shutdown and the registry is marked stopped — post-shutdown <code>run_probes()</code> reports the explicit not-serviceable verdict (<code>stopped=true</code>); an empty registry ≠ all healthy. Division of labor: <code>check</code> reads cached state only — <code>ServiceProbe</code> is where real network probing belongs.</td><td>—</td></tr>
+<tr><td><code>request-scope</code></td><td>—</td><td>Scoped dependencies: <code>Scope</code> / <code>AsyncScope</code> per-request instance isolation.</td><td>—</td></tr>
+<tr><td><code>toggle</code></td><td>—</td><td>Feature toggle: runtime string-keyed module enable/disable.</td><td>—</td></tr>
+<tr><td><code>observer</code></td><td>—</td><td>Build observability: <code>BuildObserver</code> callbacks (start/complete/error).</td><td>—</td></tr>
+<tr><td><code>decorator</code></td><td>—</td><td>Module decorator: post-build capability wrapping/enhancement.</td><td>—</td></tr>
+<tr><td><code>shutdown</code></td><td>—</td><td>Graceful shutdown coordinator: phased ordered shutdown + timeout force-exit.</td><td>—</td></tr>
+<tr><td><code>i18n</code></td><td><code>dep:icu_collator</code>, <code>dep:icu_datetime</code>, <code>dep:icu_decimal</code>, <code>dep:icu_locale</code>, <code>dep:icu_plurals</code>, <code>dep:writeable</code>, <code>dep:sys-locale</code></td><td>ICU4X internationalization: locale-aware number/date/plural/collation formatting (component sub-crates, not the <code>icu</code> facade).</td><td>—</td></tr>
+<tr><td><code>report</code></td><td><code>dep:serde</code>, <code>dep:serde_json</code></td><td>Structured build report: <code>BuildReport</code> JSON and <code>contract_manifest()</code> (the dependency-graph DOT/Mermaid exports <code>graph_dot()</code> / <code>graph_mermaid()</code> are ungated, available by default).</td><td>—</td></tr>
+<tr><td><code>presets</code></td><td><code>confers</code></td><td>Preset module packages: <code>ConfersConfigModule</code> (the config hub as a Kit module) + composition builder.</td><td>—</td></tr>
+<tr><td><code>compose</code></td><td>—</td><td>Sub-Kit composition: register a child <code>Kit</code> as a single parent module (namespaced capabilities + cross-Kit dependency validation).</td><td>—</td></tr>
+<tr><td><code>presets-remote</code></td><td><code>presets</code>, <code>confers/remote</code>, <code>async</code></td><td>Remote config bridge: <code>ConfersConfigModule</code> over the confers remote <code>AsyncSource</code> (the remote module builds through <code>AsyncKit</code>, hence implies <code>async</code>).</td><td>—</td></tr>
+<tr><td><code>version-negotiation</code></td><td>—</td><td>Capability version negotiation: <code>ModuleMeta::VERSION</code> vs <code>required_versions</code> semver-compat validation at <code>build()</code> time.</td><td>—</td></tr>
+</table>
+
+Backward-compatible aliases: the legacy feature names `interface` / `scope` / `negotiate` still enable their targets and forward to `di` / `request-scope` / `version-negotiation` respectively (deprecated; use the new names in new code).
+
+Enable the desired level in `Cargo.toml`:
+
+```toml
+[dependencies]
+trait-kit = { version = "0.5.0-rc.12", features = ["encryption"] }
+```

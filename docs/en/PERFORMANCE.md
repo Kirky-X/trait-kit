@@ -7,12 +7,11 @@
 ## 🏃 How to Run
 
 ```sh
-# All benchmarks (the toggle benchmarks need the toggle feature; config/write_merge_config
-# additionally needs confers; do NOT run benchmarks with --all-features — see the
-# measurement note for the merge_config row below)
+# 全部基准（toggle 基准需要 toggle feature；config/write_merge_config 需追加 confers；
+# 注意不要用 --all-features 跑基准——见下方 merge_config 行的测量说明）
 cargo bench --features toggle,confers
 
-# Run a single benchmark
+# 仅跑某个基准
 cargo bench --features toggle -- build/three_module_chain
 ```
 
