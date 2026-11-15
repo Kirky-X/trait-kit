@@ -1,6 +1,6 @@
 # 🧪 Trait-Kit 验收测试场景
 
-> 适用版本：trait-kit **0.5.0-rc.2**（矩阵编写与对账基线；0.5.0-rc.3 起 feature 面扩展见 [CHANGELOG](CHANGELOG.md)，场景口径不变）
+> 适用版本：trait-kit **0.5.0-rc.2**（矩阵编写与对账基线；0.5.0-rc.3 起 feature 面扩展见 [CHANGELOG](../CHANGELOG.md)，场景口径不变）
 > 用途：穷举全部验收场景，作为 `tests/e2e/` E2E 测试的对账基线。
 > 编写依据（只读核对）：`Cargo.toml [features]`、`src/lib.rs` 导出面、`src/core`（meta/macros/health/lifecycle/observer）、`src/kit`（kit/graph/typemap/config/scope/toggle/shutdown/async_kit/async_typemap）、`src/i18n`（FTL 目录 + ICU4X）、`trait-kit-macros`（ConfigInherit/SharedConfig）、`tests/`、`tests/ui/`（编写时 4 个 + `probe_sensitive/` 1 个共 5 个 trybuild 用例；现为 11 个，见 §5.1 L2b）、`examples/`（20 个示例）。
 > 所有引用的既有测试名均经 `grep` 核实存在。
@@ -59,7 +59,7 @@
 
 ### 重要发现（编写时盘点得出）
 
-1. **`src/kit/toggle.rs` 已是完整开关实现（609 行；0.5.0-rc.2 编写时点为 10 行 doc-only，rc.4 起完整落地，见 [CHANGELOG](CHANGELOG.md)）**：除 `Kit`/`Kit<Ready>` 上的方法（`enable_toggle` / `is_toggle_enabled` / `register_if_toggle`、类型化 `set_toggle` / `get_toggle` 等）外，`src/kit/mod.rs` 还导出独立 API：`ToggleBackend` trait、`MemoryToggle` 内存后端、`ConfersToggle`（confers 门控）与 `ToggleValue` / `ToggleKey` / `ToggleHandle`。
+1. **`src/kit/toggle.rs` 已是完整开关实现（609 行；0.5.0-rc.2 编写时点为 10 行 doc-only，rc.4 起完整落地，见 [CHANGELOG](../CHANGELOG.md)）**：除 `Kit`/`Kit<Ready>` 上的方法（`enable_toggle` / `is_toggle_enabled` / `register_if_toggle`、类型化 `set_toggle` / `get_toggle` 等）外，`src/kit/mod.rs` 还导出独立 API：`ToggleBackend` trait、`MemoryToggle` 内存后端、`ConfersToggle`（confers 门控）与 `ToggleValue` / `ToggleKey` / `ToggleHandle`。
 2. **sync `Kit` 为 `RefCell` 实现（`!Sync`），`AsyncKit` 为 `AsyncTypeMap` 实现（`Send + Sync`）**：两条产品线并发模型不同。sync 线所有 API 仅限单线程使用；负向 `!Sync` 断言目前缺失（CCY-03）。
 3. **`tests/e2e/e2e_feature_combinations.rs` 与 `tests/e2e/e2e_advanced.rs` 内大量测试用 `#[cfg(all(test, feature = …))]` 门控**：裸 `cargo test`（无 feature）只执行 no-feature 组；验收必须按 feature 矩阵分别跑 `cargo test --features <组合>`，否则组合组静默不编译、不执行。
 4. **typestate 违规由 11 个 trybuild 用例守卫**（`tests/ui/` 根 7 个：`ready_cannot_build.rs`、`ready_cannot_register.rs`、`ready_cannot_set_config.rs`、`ready_cannot_override_module.rs`、`ready_cannot_with_metrics_port.rs`、`unbuilt_cannot_optional.rs`、`async_unbuilt_cannot_optional.rs`；门控子目录 4 个：`probe_sensitive/async_ready_cannot_register.rs`、`observer_ready/ready_cannot_with_observer.rs`、`decorator_ready/ready_cannot_decorate.rs`、`lifecycle_ready/ready_cannot_register_lifecycle.rs`），由 `tests/compile_fail.rs` 单 runner 驱动（5 组 glob）；Ready 态其余违规面（如 Ready 上不存在的注册类方法）随 API 增长需补 UI 用例。

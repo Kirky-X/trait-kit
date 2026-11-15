@@ -1,28 +1,28 @@
-# 🏗️ Trait-Kit 架构文档
+# 🏗️ Trait-Kit Architecture
 
-trait-kit 的架构设计围绕一个核心目标：**在应用启动时，以类型安全、可验证的方式装配模块依赖**。
+trait-kit's architecture is designed around one core goal: **assembling module dependencies at application startup in a type-safe, verifiable way**.
 
-## 📋 目录
+## 📋 Table of Contents
 
 <details open>
-<summary>📑 目录</summary>
+<summary>📑 Table of Contents</summary>
 
-- [🗺️ 整体架构](#️-整体架构)
-- [🧩 核心设计模式](#-核心设计模式)
-- [📦 模块系统](#-模块系统)
-- [🔗 自研库缺口登记](#自研库confers缺口登记)
-- [🔄 数据流](#-数据流)
-- [📁 目录结构](#-目录结构)
-- [🧵 线程安全模型](#-线程安全模型)
-- [🚪 错误处理](#-错误处理)
+- [🗺️ Overall Architecture](#️-overall-architecture)
+- [🧩 Core Design Patterns](#-core-design-patterns)
+- [📦 Module System](#-module-system)
+- [🔗 Self-Managed Library (confers) Gap Registry](#self-managed-library-confers-gap-registry)
+- [🔄 Data Flow](#-data-flow)
+- [📁 Directory Layout](#-directory-layout)
+- [🧵 Thread-Safety Model](#-thread-safety-model)
+- [🚪 Error Handling](#-error-handling)
 
 </details>
 
 ---
 
-## 🗺️ 整体架构
+## 🗺️ Overall Architecture
 
-trait-kit workspace 由三个成员组成（主 crate、过程宏 crate、示例 crate）。主 crate 的 `src/` 分三层：`core` 接口层、`kit` 能力管理中心、`i18n` 国际化。
+The trait-kit workspace consists of three members (the main crate, the proc-macro crate, and the examples crate). The main crate's `src/` is organized into three layers: the `core` interface layer, the `kit` capability management center, and `i18n` internationalization.
 
 ```mermaid
 flowchart TD
@@ -46,7 +46,7 @@ flowchart TD
     EX --> MAC
 ```
 
-`kit` 管理中心内部的组件关系：
+Relationships between components inside the `kit` management center:
 
 ```mermaid
 flowchart TD
@@ -70,11 +70,11 @@ flowchart TD
     K -.-> RP
 ```
 
-## 🧩 核心设计模式
+## 🧩 Core Design Patterns
 
-### Typestate 模式
+### Typestate Pattern
 
-Kit 使用 typestate 模式确保构建时验证：
+Kit uses the typestate pattern to ensure build-time validation:
 
 ```text
 Kit<Unbuilt>                    Kit<Ready>
@@ -90,52 +90,52 @@ Kit<Unbuilt>                    Kit<Ready>
                                 └─────────────────┘
 ```
 
-- `Kit<Unbuilt>`：注册模块、配置、生命周期钩子。
-- `kit.build()`：验证依赖图 → 拓扑排序 → 按序构建 → 返回 `Kit<Ready>`。
-- `Kit<Ready>`：只读检索能力，不可再注册。
+- `Kit<Unbuilt>`: register modules, configs, and lifecycle hooks.
+- `kit.build()`: validate the dependency graph → topological sort → build in order → return `Kit<Ready>`.
+- `Kit<Ready>`: read-only capability retrieval; no further registration.
 
-### 内部可变性
+### Interior Mutability
 
-- **同步 Kit**：基于 `RefCell`，单线程 `!Sync` 设计，避免锁开销。
-- **AsyncKit**：基于 `Arc<RwLock>`，多线程 `Send + Sync` 设计。
+- **Sync Kit**: based on `RefCell`, a single-threaded `!Sync` design that avoids lock overhead.
+- **AsyncKit**: based on `Arc<RwLock>`, a multi-threaded `Send + Sync` design.
 
-### 依赖图验证
+### Dependency-Graph Validation
 
-`DependencyGraph` 在 `build()` 时执行两阶段验证：
+`DependencyGraph` performs two-phase validation at `build()`:
 
-1. **缺失依赖检测**：确保所有声明的依赖已注册。
-2. **环检测 + 拓扑排序**：使用 Kahn 算法，发现环则返回错误。
+1. **Missing-dependency detection**: ensures all declared dependencies are registered.
+2. **Cycle detection + topological sort**: uses the Kahn algorithm; a cycle returns an error.
 
-构建按拓扑序执行，确保依赖先于消费者构建。
+Builds execute in topological order, ensuring dependencies build before their consumers.
 
-## 📦 模块系统
+## 📦 Module System
 
-### 能力注册模式
+### Capability Registration Modes
 
-| 模式 | 方法 | 说明 |
+| Mode | Method | Description |
 |---|---|---|
-| 即时构建 | `register::<M>()` | `build()` 时按拓扑序构建 |
-| 延迟构建 | `register_lazy::<M>()` | 首次 `require()` 时触发构建并缓存 |
-| 多绑定 | `register_multi::<M>()` | 同类型聚合为 Vec，`require_all()` 检索 |
-| 接口分离 | `register_as::<M>()` | `dyn Trait` 类型擦除注册 |
-| 条件注册 | `register_if::<M>(pred)` | 运行时谓词控制 |
-| 覆盖注入 | `override_module::<M>(cap)` | 测试注入，跳过 build_fn |
+| Eager build | `register::<M>()` | Built in topological order during `build()` |
+| Lazy build | `register_lazy::<M>()` | Built and cached on first `require()` |
+| Multi-binding | `register_multi::<M>()` | Same type aggregated into a Vec, retrieved via `require_all()` |
+| Interface separation | `register_as::<M>()` | `dyn Trait` type-erased registration |
+| Conditional registration | `register_if::<M>(pred)` | Runtime predicate control |
+| Override injection | `override_module::<M>(cap)` | Test injection, skipping build_fn |
 
-### Feature 分层
+### Feature Layering
 
-19 个正名 feature（另含 `interface`/`scope`/`negotiate` 三个 deprecated 兼容别名）中，confers 系列存在继承链，其余为零依赖独立 feature：
+Of the 19 canonical features (plus the 3 deprecated compatibility aliases `interface`/`scope`/`negotiate`), the confers family has an inheritance chain while the rest are zero-dependency standalone features:
 
 ```mermaid
 graph LR
     C["confers"] --> R["reload"]
     R --> E["encryption"]
 
-    subgraph zc["零依赖独立 feature"]
+    subgraph zc["zero-dependency standalone features"]
         Z["async / di / lifecycle / health<br/>request-scope / toggle / observer / decorator / shutdown<br/>version-negotiation / compose"]
     end
 
-    subgraph dep["带可选依赖的 feature"]
-        D1["i18n<br/>icu_* 组件 / writeable / sys-locale"]
+    subgraph dep["features with optional dependencies"]
+        D1["i18n<br/>icu_* components / writeable / sys-locale"]
         D2["report<br/>serde / serde_json"]
         PR["probe<br/>futures-timer（→health）"]
         P["presets / presets-remote"]
@@ -144,9 +144,9 @@ graph LR
     P --> C
 ```
 
-### 配置继承四层体系
+### Four-Layer Config Inheritance
 
-`confers` feature 提供四层配置继承机制，支持跨模块/跨项目的配置丝滑继承：
+The `confers` feature provides a four-layer config inheritance mechanism supporting seamless config reuse across modules/projects:
 
 ```mermaid
 graph TB
@@ -169,24 +169,24 @@ graph TB
     Layer4 --> Layer3 --> Layer2 --> Layer1
 ```
 
-**数据流**：`TraitKitConfig` → `extract_shared` → `shared_fields overlay` → `inject_shared` → `DbConfig`
+**Data flow**: `TraitKitConfig` → `extract_shared` → `shared_fields overlay` → `inject_shared` → `DbConfig`
 
-### 自研库（confers）缺口登记
+### Self-Managed Library (confers) Gap Registry
 
-trait-kit 的部分设施仍自管，迁移到 confers 需要对方先补齐以下缺口。完整证据链（confers 侧源码位置、被阻塞的迁移面、解锁收益）见 specmark 归档 `selfdev-lib-adoption-r1`（2026-10-10 快照）。
+Some of trait-kit's facilities remain self-managed; migrating them to confers requires confers to close the following gaps first. For the full evidence chain (confers-side source locations, blocked migration surfaces, unlock benefits) see the specmark archive `selfdev-lib-adoption-r1` (2026-10-10 snapshot).
 
-| # | 缺口 | confers 侧现状 | 被阻塞的迁移面 | 优先级 | 当前处置 |
+| # | Gap | confers-side status | Blocked migration surface | Priority | Current handling |
 |---|---|---|---|---|---|
-| 1 | `LocalDynamicField`（非 Send/Sync 变体） | `DynamicField<T>` 强制 `T: Clone + Send + Sync + 'static`，回调为 `Fn(&T) + Send + Sync` | 同步 `Kit` 订阅簿记（`Rc<dyn Fn()>`） | 中 | 继续自管 `SubscriberMap` |
-| 2 | `dynamic` 无 tokio 轻量特性 | `dynamic` 连带引入 `arc-swap`/`dashmap`/`tokio` | `reload` 特性的依赖体积 | 中 | 已接受该体积（AsyncKit 本就是 Send+Sync 场景） |
-| 3 | TypeId 异质注册表 | confers 无 TypeId keyed 的异质字段注册设施 | AsyncKit/Kit 每配置类型一槽的注册簿记 | 低 | 继续由使用侧自管 |
-| 4 | `SecretBytes: From<Vec<u8>>` | 仅 `new(Vec<u8>)`，孤儿规则下 trait-kit 无法代为实现 | `KeyBytes::from(vec)` 构造点 | 低 | 已迁移为 `KeyBytes::new(vec)` |
+| 1 | `LocalDynamicField` (non-Send/Sync variant) | `DynamicField<T>` requires `T: Clone + Send + Sync + 'static`, callbacks are `Fn(&T) + Send + Sync` | Sync `Kit` subscriber bookkeeping (`Rc<dyn Fn()>`) | Medium | Keep self-managing `SubscriberMap` |
+| 2 | `dynamic` has no lightweight non-tokio mode | `dynamic` pulls in `arc-swap`/`dashmap`/`tokio` | Dependency footprint of the `reload` feature | Medium | Footprint accepted (AsyncKit is a Send+Sync scenario anyway) |
+| 3 | TypeId-heterogeneous registry | confers has no TypeId-keyed heterogeneous field registry | Per-config-type slot registration bookkeeping in AsyncKit/Kit | Low | Stays user-side, self-managed |
+| 4 | `SecretBytes: From<Vec<u8>>` | Only `new(Vec<u8>)`; orphan rules prevent implementing it for trait-kit | `KeyBytes::from(vec)` construction sites | Low | Migrated to `KeyBytes::new(vec)` |
 
-> 本表是缺口登记的**唯一索引**；具体行号与代码引证随版本漂移，以 specmark 归档快照为准，不在本文件重复。
+> This table is the **sole index** of the gap registry; exact line numbers and code citations drift with versions — the specmark archive snapshot prevails and they are not duplicated here.
 
-## 🔄 数据流
+## 🔄 Data Flow
 
-### 构建流程
+### Build Flow
 
 ```mermaid
 sequenceDiagram
@@ -216,7 +216,7 @@ sequenceDiagram
     Kit-->>User: Kit Ready
 ```
 
-### 能力检索流程
+### Capability Retrieval Flow
 
 ```mermaid
 sequenceDiagram
@@ -240,7 +240,7 @@ sequenceDiagram
     end
 ```
 
-## 📁 目录结构
+## 📁 Directory Layout
 
 ```text
 src/
@@ -291,11 +291,11 @@ locales/               # FTL 语言包（仓库根，按域拆分，非 src/ 内
     └── examples.ftl   # 中文示例演示输出
 ```
 
-## 🧵 线程安全模型
+## 🧵 Thread-Safety Model
 
-| 类型 | Send | Sync | 说明 |
+| Type | Send | Sync | Notes |
 |---|---|---|---|
-| `Kit<S>` | ✗ | ✗ | `RefCell` 内部可变性 |
+| `Kit<S>` | ✗ | ✗ | `RefCell` interior mutability |
 | `AsyncKit<S>` | ✓ | ✓ | `Arc<RwLock>` |
 | `Scope` | ✗ | ✗ | `RefCell` |
 | `AsyncScope` | ✓ | ✓ | `Arc<RwLock>` |
@@ -305,6 +305,6 @@ locales/               # FTL 语言包（仓库根，按域拆分，非 src/ 内
 | `ShutdownCoordinator` | ✗ | ✗ | `RefCell` |
 | `AsyncShutdownCoordinator` | ✓ | ✓ | `Arc<RwLock>` |
 
-## 🚪 错误处理
+## 🚪 Error Handling
 
-`TraitKitError` 统一所有 Kit 操作错误，`Display` 通过 `tr()` 自动本地化。全部变体的触发场景与处理建议见 [用户指南 · 故障排查](USER_GUIDE.md#-故障排查)，枚举定义与字段见 [API 参考 · 错误类型](API_REFERENCE.md#-错误类型)。
+`TraitKitError` unifies all Kit operation errors; `Display` is automatically localized via `tr()`. For trigger scenarios and handling advice for every variant see the [User Guide · Troubleshooting](USER_GUIDE.md#-troubleshooting); for the enum definition and fields see [API Reference · Error Types](../API_REFERENCE.md#-错误类型).

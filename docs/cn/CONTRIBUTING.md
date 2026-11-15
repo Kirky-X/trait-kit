@@ -92,7 +92,7 @@ cargo test --features i18n
 新增 feature 时：
 
 - 在 `Cargo.toml` 的 `[features]` 中声明，并写清启用关系与说明注释。
-- 在 README（中/英）的「特性标志」表格与 [docs/API_REFERENCE.md](API_REFERENCE.md) 中同步登记。
+- 在 README（中/英）的「特性标志」表格与 [docs/API_REFERENCE.md](../API_REFERENCE.md) 中同步登记。
 - 如涉及 confers 集成，注意高级 feature 会自动启用低级 feature，方法需做 `cfg(feature = "...")` 门控。
 
 ## 📐 代码规范
@@ -102,7 +102,7 @@ cargo test --features i18n
 - **依赖必须通过 feature 门控**：可选依赖（`confers`、`serde`、`serde_json` 等）禁止进入默认特性；`icu_collator` / `icu_datetime` / `icu_decimal` / `icu_locale` / `icu_plurals`（ICU4X 组件子 crate，不引 `icu` 门面 crate）/ `writeable` / `sys-locale` 仅为 `i18n` feature 的可选依赖。
 - **无新增 unsafe**：crate 全局 `#![deny(unsafe_code)]`，生产代码现存仅 5 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×1：`AsyncTypeMap` 的 `RwLock` 读守卫；同步 `TypeMap` 改用 `Ref::map` 守卫包装，无需 unsafe），另有 1 处测试模块豁免（见 [安全文档](SECURITY.md)）。任何 PR 不得引入新的 `unsafe`；确有必要时须附 SAFETY 注释并在 PR 中单独论证。
 - **错误显性化**：新错误场景在 `TraitKitError` 中新增变体（或复用现有变体），错误消息接入 `tr()` 本地化（按域写入 `locales/en/*.ftl` 与 `locales/zh/*.ftl`，两份键集合必须齐平），严禁吞错或藏进默认值。
-- **文档示例必须可验证**：README / docs 中的代码示例与实际 API 签名一致；API 变更时同步 [docs/API_REFERENCE.md](API_REFERENCE.md) 与 [docs/USER_GUIDE.md](USER_GUIDE.md)。
+- **文档示例必须可验证**：README / docs 中的代码示例与实际 API 签名一致；API 变更时同步 [docs/API_REFERENCE.md](../API_REFERENCE.md) 与 [docs/USER_GUIDE.md](USER_GUIDE.md)。
 
 ### Pre-commit Hooks
 

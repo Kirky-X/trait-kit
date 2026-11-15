@@ -22,7 +22,7 @@
 
 - **当前线**：接收缺陷修复与安全修复，修复随该线的最新发布版本提供。
 - **旧 minor 线**：在下一个 minor 线的首个版本发布时即进入 EOL，不再提供任何修复，安全补丁也不回移。
-- **不设 LTS**：1.0 之前不承诺跨 minor 的 API 兼容性，minor 位升级可能包含破坏性变更，升级前请阅读 [CHANGELOG](CHANGELOG.md)。
+- **不设 LTS**：1.0 之前不承诺跨 minor 的 API 兼容性，minor 位升级可能包含破坏性变更，升级前请阅读 [CHANGELOG](../CHANGELOG.md)。
 - **crates.io 可见性 ≠ 受支持**：旧版本保持可下载（除非因严重缺陷执行 yank），但不属于受支持范围。
 
 | 版本线 | 状态 | 说明 |
@@ -30,7 +30,7 @@
 | `0.5.x`（当前） | ✅ 支持 | 唯一接收修复的版本线 |
 | `≤ 0.4.x` | ❌ EOL | 已被当前线取代，不再维护，请升级 |
 
-> 该 crate 遵循语义化版本：0.x 阶段 minor 位升级可能包含破坏性变更（如 0.4.0 的 BREAKING CHANGES），升级时请阅读 [CHANGELOG](CHANGELOG.md)。
+> 该 crate 遵循语义化版本：0.x 阶段 minor 位升级可能包含破坏性变更（如 0.4.0 的 BREAKING CHANGES），升级时请阅读 [CHANGELOG](../CHANGELOG.md)。
 
 ---
 
@@ -78,7 +78,7 @@
 
 - 算法：XChaCha20-Poly1305 认证加密（AEAD），静态配置加密存储。
 - 密钥派生：加密密钥通过 HKDF 从主密钥与 `ModuleConfig::PATH` 派生，同一主密钥为不同模块生成不同字段密钥，限制跨模块的密钥复用。
-- 防泄露：`EncryptedBlob` 的 `Debug` 实现不输出加密材料（0.4.1 中的安全修复，见 [CHANGELOG](CHANGELOG.md)）。
+- 防泄露：`EncryptedBlob` 的 `Debug` 实现不输出加密材料（0.4.1 中的安全修复，见 [CHANGELOG](../CHANGELOG.md)）。
 - 主密钥准入：直接传字节的入口（`set_encrypted` / `get_encrypted` / `rotate_master_key`）要求主密钥不短于 32 字节且非常量字节材料（全零、重复字节）；常量字节密钥可被任何人复算，接受即等于未加密。该口径与 provider 供给路径一致（`confers::SecretKeyProvider` 以 `WeakKey` 拒收同种材料），两条供给路径对同一材料不再给出相反结论。
 
 ### 错误信息与国际化
@@ -119,4 +119,4 @@
 4. **保持依赖更新**：定期运行 `cargo audit` 与 `cargo deny check`（CI 已内置），及时跟进传递依赖的安全通告。
 5. **按需启用 feature**：只启用实际需要的 feature，缩小编译进二进制的代码面；高级 confers feature 会自动继承低级 feature（`encryption` → `reload` → `confers`）。
 6. **单线程/多线程各取所需**：单线程场景使用 `Kit`（`!Sync`），不要绕过类型系统强行跨线程共享；多线程场景使用 `AsyncKit`。
-7. **及时升级**：关注 [CHANGELOG](CHANGELOG.md) 中的安全类条目（如 0.4.1 的 `EncryptedBlob` Debug 修复），升级到包含修复的版本。
+7. **及时升级**：关注 [CHANGELOG](../CHANGELOG.md) 中的安全类条目（如 0.4.1 的 `EncryptedBlob` Debug 修复），升级到包含修复的版本。

@@ -33,7 +33,7 @@ pub struct UserModule {
 ## 版本与支持
 
 - 版本经 `version.workspace = true` 随仓库统一，与 `trait-kit` 同号发布。
-- 仅维护当前 minor 版本线，详见 [trait-kit 安全文档 · 支持的版本](https://github.com/Kirky-X/trait-kit/blob/main/docs/SECURITY.md#-支持的版本与维护策略)。
+- 仅维护当前 minor 版本线，详见 [trait-kit 安全文档 · 支持的版本](https://github.com/Kirky-X/trait-kit/blob/main/docs/cn/SECURITY.md#-支持的版本与维护策略)。
 
 ## 许可证
 
