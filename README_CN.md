@@ -107,7 +107,7 @@ fn main() {
 | 文档 | 说明 |
 |------|------|
 | [📖 用户指南](docs/cn/USER_GUIDE.md) | 从安装到进阶用法的完整教程 |
-| [📘 API 参考](docs/API_REFERENCE.md) | 核心公开 API 速查，逐项标注 feature 门控（非穷尽全量，完整清单以 rustdoc / docs.rs 为准） |
+| [📘 API 参考](docs/cn/API_REFERENCE.md) | 核心公开 API 速查，逐项标注 feature 门控（非穷尽全量，完整清单以 rustdoc / docs.rs 为准） |
 | [🏗️ 架构文档](docs/cn/ARCHITECTURE.md) | 设计模式、数据流、线程安全模型与目录结构 |
 | [🧪 验收测试场景](docs/cn/TEST_SCENARIOS.md) | 验收场景穷举矩阵与 e2e 落地对账 |
 | [⚡ 性能基准](docs/cn/PERFORMANCE.md) | criterion 基准设施、基线数据与复现方法 |
@@ -120,7 +120,7 @@ fn main() {
 
 ## 💻 示例
 
-`examples/` 是一个独立的 workspace 成员 `trait-kit-examples`（`publish = false`），共 20 个可独立运行的示例，覆盖 13 个 feature 门控的核心用法（`probe` / `report` / `compose` / `presets` / `presets-remote` / `version-negotiation` 暂无专属示例，用法见 [📘 API 参考](docs/API_REFERENCE.md)）。运行方式：
+`examples/` 是一个独立的 workspace 成员 `trait-kit-examples`（`publish = false`），共 20 个可独立运行的示例，覆盖 13 个 feature 门控的核心用法（`probe` / `report` / `compose` / `presets` / `presets-remote` / `version-negotiation` 暂无专属示例，用法见 [📘 API 参考](docs/cn/API_REFERENCE.md)）。运行方式：
 
 ```sh
 cargo run -p trait-kit-examples --example <名称> --features <特性>

@@ -112,7 +112,7 @@ fn main() {
 | Document | Description |
 |----------|-------------|
 | [📖 User Guide](docs/en/USER_GUIDE.md) | Complete tutorial from installation to advanced usage |
-| [📘 API Reference](docs/API_REFERENCE.md) | Quick reference for the core public APIs, each annotated with its feature gate (not exhaustive; the full list lives in rustdoc / docs.rs) |
+| [📘 API Reference](docs/en/API_REFERENCE.md) | Quick reference for the core public APIs, each annotated with its feature gate (not exhaustive; the full list lives in rustdoc / docs.rs) |
 | [🏗️ Architecture](docs/en/ARCHITECTURE.md) | Design patterns, data flow, thread-safety model, and directory layout |
 | [🧪 Test Scenarios](docs/en/TEST_SCENARIOS.md) | Exhaustive acceptance-scenario matrix mapped to e2e tests |
 | [⚡ Performance](docs/en/PERFORMANCE.md) | Criterion benchmark setup, baseline data, and reproduction method |
@@ -125,7 +125,7 @@ fn main() {
 
 ## 💻 Examples
 
-`examples/` is a standalone workspace member `trait-kit-examples` (`publish = false`) with 20 standalone runnable examples covering the core usage of 13 feature gates (`probe` / `report` / `compose` / `presets` / `presets-remote` / `version-negotiation` have no dedicated example yet; see the [📘 API Reference](docs/API_REFERENCE.md)). Run with:
+`examples/` is a standalone workspace member `trait-kit-examples` (`publish = false`) with 20 standalone runnable examples covering the core usage of 13 feature gates (`probe` / `report` / `compose` / `presets` / `presets-remote` / `version-negotiation` have no dedicated example yet; see the [📘 API Reference](docs/en/API_REFERENCE.md)). Run with:
 
 ```sh
 cargo run -p trait-kit-examples --example <name> --features <feature>

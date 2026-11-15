@@ -6,7 +6,7 @@
 //!
 //! 1. **编译存在**：本文件中的 `_assert_*` 函数实际引用了该公开项
 //!    （编译期保证它是 crate 的 pub API 且签名未漂移）；
-//! 2. **文档收录**：`docs/API_REFERENCE.md` 中出现该标识符
+//! 2. **文档收录**：`docs/cn/API_REFERENCE.md` 中出现该标识符
 //!    （防止"文档同步型发版"回潮）。
 //!
 //! 后续可演进为 rustdoc JSON / `cargo public-api` 全量 diff。
@@ -16,9 +16,9 @@ use std::path::PathBuf;
 use trait_kit::core::ModuleMeta as _;
 
 fn api_reference_md() -> String {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/API_REFERENCE.md");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/cn/API_REFERENCE.md");
     std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("API_REFERENCE.md missing at {path:?}: {e}"))
+        .unwrap_or_else(|e| panic!("docs/cn/API_REFERENCE.md missing at {path:?}: {e}"))
 }
 
 // 编译期存在性断言：引用关键 pub 项
@@ -387,7 +387,7 @@ fn api_reference_lists_core_entries() {
     for entry in ALWAYS_REQUIRED_DOC_ENTRIES {
         assert!(
             doc.contains(entry),
-            "docs/API_REFERENCE.md must mention core API item `{entry}`"
+            "docs/cn/API_REFERENCE.md must mention core API item `{entry}`"
         );
     }
 }
@@ -545,7 +545,7 @@ fn doc_does_not_reference_removed_apis() {
     for ghost in removed {
         assert!(
             !doc.contains(ghost),
-            "docs/API_REFERENCE.md references removed API `{ghost}`"
+            "docs/cn/API_REFERENCE.md references removed API `{ghost}`"
         );
     }
 }
