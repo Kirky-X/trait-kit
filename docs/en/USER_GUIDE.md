@@ -32,7 +32,7 @@ The problem trait-kit solves: **assembling module dependencies at application st
 - **Capabilities** are stored and retrieved by module type (`kit.require::<LoggerModule>()`), with no string keys and no downcast.
 - The whole crate is annotated `#![deny(unsafe_code)]`; production code has only 5 locally audited exemptions with SAFETY justifications and code review (typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×1: the `AsyncTypeMap` `RwLock` read guard; the sync `TypeMap` now uses a `Ref::map` guard wrapper and needs no unsafe), plus 1 test-module exemption (the zeroize spare-capacity assertion in `src/kit/config.rs`); see the [Security document](SECURITY.md).
 
-It fits the middle ground where "manual wiring is too scattered and a full DI framework too heavy". For the full API see the [📘 API Reference](../API_REFERENCE.md); for design details see the [🏗️ Architecture document](ARCHITECTURE.md).
+It fits the middle ground where "manual wiring is too scattered and a full DI framework too heavy". For the full API see the [📘 API Reference](API_REFERENCE.md); for design details see the [🏗️ Architecture document](ARCHITECTURE.md).
 
 ---
 
@@ -59,7 +59,7 @@ use std::sync::Arc;
 use trait_kit::impl_module_meta;
 use trait_kit::prelude::*;
 
-// 1. 定义能力（任意 Clone 类型）
+// 1. Define the capability (any Clone type)
 struct StdoutLogger;
 impl StdoutLogger {
     fn info(&self, msg: &str) {
@@ -67,7 +67,7 @@ impl StdoutLogger {
     }
 }
 
-// 2. 定义模块（宏一行声明 ModuleMeta）
+// 2. Define the module (one-line ModuleMeta via the macro)
 struct LoggerModule;
 impl_module_meta!(LoggerModule, "logger");
 impl AutoBuilder for LoggerModule {
@@ -78,7 +78,7 @@ impl AutoBuilder for LoggerModule {
     }
 }
 
-// 3. 注册、构建、使用
+// 3. Register, build, use
 fn main() {
     let mut kit = Kit::new();
     kit.register::<LoggerModule>().unwrap();
@@ -102,7 +102,7 @@ For fully runnable examples see [examples/README.md](../../examples/README.md).
 - **`kit.build()`**: validates the dependency graph (missing-dependency detection, Kahn-algorithm cycle detection + topological sort) and builds all modules in topological order.
 - **`Kit<Ready>` (runtime phase)**: read-only retrieval of capabilities and configs; registration is no longer possible (registration and build methods are **rejected at compile time** in this phase).
 
-For the full method surface and flow diagrams of both phases see the [Architecture document](ARCHITECTURE.md); for per-method feature gates see the [API Reference](../API_REFERENCE.md).
+For the full method surface and flow diagrams of both phases see the [Architecture document](ARCHITECTURE.md); for per-method feature gates see the [API Reference](API_REFERENCE.md).
 
 ### Capability
 
@@ -159,7 +159,7 @@ impl AutoBuilder for DbPoolModule {
     type Error = TraitKitError;
 
     fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
-        let config: DbConfig = kit.config()?;   // 构建时读取配置
+        let config: DbConfig = kit.config()?;   // read the config set before build
         Ok(Arc::new(DbPool { config }))
     }
 }
@@ -200,7 +200,7 @@ impl Configurable for TraitKitConfig {
 }
 
 let mut kit = Kit::new();
-kit.load_config::<TraitKitConfig>()?;   // 从环境变量/默认值加载
+kit.load_config::<TraitKitConfig>()?;   // load from environment variables / defaults
 ```
 
 Companion APIs:
@@ -235,12 +235,12 @@ With the `encryption` feature enabled, static configs can be stored encrypted wi
 ```rust,ignore
 let mut kit = Kit::new();
 let secret = TraitKitConfig { host: "production-db".to_string() };
-let master_key = *b"demo-master-key-0123456789abcdef"; // 32 字节主密钥（演示用，生产环境请从密钥管理服务获取）
+let master_key = *b"demo-master-key-0123456789abcdef"; // 32-byte master key (demo only; fetch from a key-management service in production)
 
 kit.set_encrypted(&secret, &master_key)?;
 let kit = kit.build()?;
 
-let decrypted: TraitKitConfig = kit.get_encrypted(&master_key)?;  // 错误密钥会失败
+let decrypted: TraitKitConfig = kit.get_encrypted(&master_key)?;  // a wrong key fails
 ```
 
 ### Config Inheritance `confers`
@@ -260,10 +260,10 @@ struct DbConfig {
 }
 
 let mut kit = Kit::new();
-kit.populate_defaults::<DbConfig>();       // 零配置默认值
-kit.extract_shared::<TraitKitConfig>();         // 从 TraitKitConfig 提取共享字段
-kit.inject_shared::<DbConfig>();           // 注入到 DbConfig
-kit.merge_config::<DbConfig>(ovr);         // 编译期安全字段覆盖
+kit.populate_defaults::<DbConfig>();       // zero-config defaults
+kit.extract_shared::<TraitKitConfig>();         // extract shared fields from TraitKitConfig
+kit.inject_shared::<DbConfig>();           // inject into DbConfig
+kit.merge_config::<DbConfig>(ovr);         // compile-time-safe field override
 ```
 
 Four-layer mechanism: `merge_json_deep` deep merge → `ConfigInherit` field override (`Option<T>` overridden only when `Some`) → `SharedConfig` shared-field overlay → `populate_defaults` zero-config fill. See the [Architecture document](ARCHITECTURE.md) for the principles.
@@ -284,7 +284,7 @@ cargo run -p trait-kit-examples --example async_basic --features async
 
 ### Feature-Gated Capabilities at a Glance
 
-The following capabilities are all used via methods on `Kit` / `AsyncKit` (method-level feature gating; see the [API Reference](../API_REFERENCE.md) for details):
+The following capabilities are all used via methods on `Kit` / `AsyncKit` (method-level feature gating; see the [API Reference](API_REFERENCE.md) for details):
 
 | Capability | Feature | Typical use |
 |---|---|---|
@@ -474,5 +474,5 @@ Enable the desired level in `Cargo.toml`:
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.5.0-rc.12", features = ["encryption"] }
+trait-kit = { version = "0.5.0", features = ["encryption"] }
 ```

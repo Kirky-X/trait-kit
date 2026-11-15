@@ -307,4 +307,4 @@ locales/               # FTL 语言包（仓库根，按域拆分，非 src/ 内
 
 ## 🚪 错误处理
 
-`TraitKitError` 统一所有 Kit 操作错误，`Display` 通过 `tr()` 自动本地化。全部变体的触发场景与处理建议见 [用户指南 · 故障排查](USER_GUIDE.md#-故障排查)，枚举定义与字段见 [API 参考 · 错误类型](../API_REFERENCE.md#-错误类型)。
+`TraitKitError` 统一所有 Kit 操作错误，`Display` 通过 `tr()` 自动本地化。全部变体的触发场景与处理建议见 [用户指南 · 故障排查](USER_GUIDE.md#-故障排查)，枚举定义与字段见 [API 参考 · 错误类型](API_REFERENCE.md#-错误类型)。

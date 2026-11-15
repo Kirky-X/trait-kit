@@ -2,7 +2,7 @@
 
 > Applies to version: trait-kit **0.5.0-rc.2** (matrix authoring and reconciliation baseline; feature-surface extensions since 0.5.0-rc.3 are tracked in the [CHANGELOG](../CHANGELOG.md), scenario semantics unchanged)
 > Purpose: exhaustively enumerate all acceptance scenarios as the reconciliation baseline for the `tests/e2e/` E2E tests.
-> Authoring sources (read-only verification): `Cargo.toml [features]`, the `src/lib.rs` export surface, `src/core` (meta/macros/health/lifecycle/observer), `src/kit` (kit/graph/typemap/config/scope/toggle/shutdown/async_kit/async_typemap), `src/i18n` (FTL catalogs + ICU4X), `trait-kit-macros` (ConfigInherit/SharedConfig), `tests/`, `tests/ui/` (4 cases at authoring time + 1 in `probe_sensitive/`, 5 trybuild cases total; now 11, see §5.1 L2b), `examples/` (20 examples).
+> Authoring sources (read-only verification): `Cargo.toml [features]`, the `src/lib.rs` export surface, `src/core` (meta/macros/health/lifecycle/observer), `src/kit` (kit/graph/typemap/config/scope/toggle/shutdown/async_kit/async_typemap), `src/i18n` (FTL catalogs + ICU4X), `trait-kit-macros` (ConfigInherit/SharedConfig), `tests/`, `tests/ui/` (4 cases at authoring time + 1 in `probe_sensitive/`, 5 trybuild cases total; now 17 — 11 typestate + 6 macro diagnostics, see §5.1 L2b), `examples/` (20 examples).
 > All referenced existing test names were verified to exist via `grep`.
 > Combination compatibility was verified by running `cargo check --all-features` (exit 0).
 >
@@ -138,7 +138,7 @@ Total scenarios: **244** (100 Normal / 60 Error / 83 Boundary, plus 1 Normal/Err
 | REG-16 | `override_module` injects a pre-built capability, skipping `build_fn` (module need not be registered first; takes priority over `register_lazy` modules, lazy builder executes zero times); an unregistered override is appended at the end of build, does not enter the graph/contract manifest, and is recorded in `build_report.overrides` as `"(unregistered)"` (a never-registered type) | Normal | — | None | `tests/e2e/e2e_advanced.rs::a06_override_module_skips_build_fn`, `a07_override_module_on_unregistered_module`, `a27_override_module_takes_priority_over_register_lazy`, `src/kit/kit.rs::build_inserts_unregistered_override_after_topo_loop`, `build_override_takes_priority_over_register_lazy`, `src/kit/report.rs::build_report_marks_never_registered_override`, `build_report_keeps_name_for_override_registered_after_call`, `build_report_strict_override_of_unregistered_target`, `tests/e2e/e2e_config.rs::e2e_unregistered_override_outside_graph_and_manifest`, `e2e_override_wins_over_lazy_registration` | tests/e2e/e2e_core.rs |
 | REG-17 | `override_module` validates dependencies at injection: unregistered dependency → `DependencyMissing`; with dependencies present it succeeds (the original `override_module_strict` was removed; its behavior merged into `override_module`) | Error | — | None | `tests/e2e/e2e_advanced.rs::e19_override_module_missing_dep_returns_dependency_missing`, `a08_override_module_succeeds_when_deps_registered` | tests/e2e/e2e_core.rs |
 | REG-18 | Overrides-table lifecycle: empty after new, cleared after build (consume semantics) | Boundary | — | None | `src/kit/kit.rs::overrides_field_is_empty_on_new`, `overrides_field_is_empty_after_build` | tests/e2e/e2e_core.rs |
-| REG-19 | Typestate compile-time violations: calling `build()`/`register()` on `Kit<Ready>` and `optional()` on `Kit<Unbuilt>` all fail to compile (E0119/E0599-class errors, stderr snapshots pinned) | Error | — | None | `tests/compile_fail.rs::compile_fail_tests` (drives all 11 cases in `tests/ui/`: root 7 + 4 gated subdirectories, see Key Finding 4 and §5.1 L2b; 3 cases at authoring time) | tests/ui/ (new UI cases) |
+| REG-19 | Typestate compile-time violations: calling `build()`/`register()` on `Kit<Ready>` and `optional()` on `Kit<Unbuilt>` all fail to compile (E0119/E0599-class errors, stderr snapshots pinned) | Error | — | None | `tests/compile_fail.rs::compile_fail_tests` (drives all 17 cases in `tests/ui/`: 13 at root — 7 typestate + 6 macro diagnostics — plus 4 gated subdirectories, see Key Finding 4 and §5.1 L2b; 3 cases at authoring time) | tests/ui/ (new UI cases) |
 | REG-20 | Scale edges: diamond dependencies, a 10-layer deep chain, and 100-module register+build all succeed in correct order | Boundary | — | None | `tests/e2e/e2e_advanced.rs::c04_diamond_dependency_builds_successfully`, `c03_deep_dependency_chain_10_layers_builds_in_topo_order`, `c06_large_number_of_modules_100_registers_and_builds` | tests/e2e/e2e_core.rs |
 
 ### 2.3 Capability Retrieval (CAP, 12)
@@ -467,17 +467,17 @@ Total scenarios: **244** (100 Normal / 60 Error / 83 Boundary, plus 1 Normal/Err
 ### 3.1 Dependency Chains (fixed by `Cargo.toml [features]`; no separate verification needed in combination tests)
 
 ```text
-reload     → confers（已剪除 confers/watch 死链）
+reload     → confers (the confers/watch dead link has been pruned)
 encryption → confers, confers/encryption
 confers    → dep:confers, dep:serde, dep:serde_json
 i18n       → dep:icu_collator, dep:icu_datetime, dep:icu_decimal, dep:icu_locale,
-             dep:icu_plurals（ICU4X 组件子 crate）, dep:writeable, dep:sys-locale
-probe      → health, dep:futures-timer（运行时无关定时器）
+             dep:icu_plurals (ICU4X component sub-crate), dep:writeable, dep:sys-locale
+probe      → health, dep:futures-timer (executor-agnostic timer)
 presets / presets-remote / report / version-negotiation / compose / di
-           → 各自的依赖声明见 Cargo.toml（单一事实源）
-default    → （空，无任何隐式 feature）
+           → see each dependency declaration in Cargo.toml (single source of truth)
+default    → (empty; no implicit feature of any kind)
 async / di / lifecycle / health / request-scope / toggle / observer / decorator / shutdown
-           → 空 feature（零依赖、零传递项）
+           → empty feature (zero dependencies, zero transitive items)
 ```
 
 Conclusion: **no mutually exclusive features and no presets exist**: zero-dependency features can be stacked freely; the only constraint is that "enabling `reload`/`encryption`/`probe` automatically brings in their dependency engines". `cargo check --all-features` (all features on; current count per `prs02`) passed in testing (exit 0), giving compile-level verification that all features are mutually compatible.
@@ -538,7 +538,7 @@ Therefore: **the full E2E suite runs in a docker-free CI sandbox**; "error injec
 |------|------|------|-----------|
 | L1 unit | 726 inline `#[test]`s in src (45 `#[cfg(test)]` + 67 `#[cfg(all(test, feature = …))]` gated blocks, covering 28 files) | `cargo test --all-features --lib` | allowed |
 | L2 integration | 9 top-level integration files in `tests/` (`api_reference_gate` / `basic` / `compile_fail` (1 runner test) / `config_inherit_derive` / `config_inheritance_e2e` / `e2e_gap_round1` / `e2e_gap_round2` / `e2e_scenarios_26_50` / `shared_config_derive`, 109 test functions total) + 13 registered targets in `tests/e2e/` (205 test functions; `e2e_advanced` / `e2e_feature_combinations` etc. moved into the subdirectory, see §5.3; note Key Finding 3: feature groups run in separate rounds by `--features`) | `cargo test --features confers,reload,encryption && cargo test --features async,lifecycle,health,request-scope,toggle,observer,decorator,shutdown,di && cargo test --features i18n` | allowed (pure in-memory) |
-| L2b compile-time | 11 trybuild cases in `tests/ui/` (root 7 + 1 each in `probe_sensitive/`, `observer_ready/`, `decorator_ready/`, `lifecycle_ready/`; typestate violations) | `cargo test --test compile_fail` | — |
+| L2b compile-time | 17 trybuild cases in `tests/ui/` (13 at root: 7 typestate + 6 macro diagnostics; plus 1 each in `probe_sensitive/`, `observer_ready/`, `decorator_ready/`, `lifecycle_ready/`) | `cargo test --test compile_fail` | — |
 | L3 examples | run all 20 examples one by one (see 5.2; pass features per `required-features`) | `cargo run -p trait-kit-examples --features <f> --example <name>` | no mock |
 | L4 E2E | `tests/e2e/` (the §2 scenario-ID landing; 13 files landed) | `cargo test --features <combination> --test e2e_<name>` (subdirectories are not auto-discovered; 13 targets explicitly registered via root `Cargo.toml` `[[test]]`) | no mock |
 
@@ -590,14 +590,14 @@ Batch run command:
 | e2e_concurrency.rs | CCY-01…07 | No |
 | e2e_presets.rs | PRS-01…06, TGL-09, PRE-03 | No |
 | e2e_hooks.rs | LCY-05/07, HLT-07, OBS-05 (runtime hook gaps pinned; other LCY/HLT/OBS scenarios reference existing coverage) | No |
-| tests/ui/ (extended) | REG-19 (current 11 cases: 7 at `tests/ui/` root + 1 each in `probe_sensitive/`, `observer_ready/`, `decorator_ready/`, `lifecycle_ready/`); CCY-03 landed equivalently in tests/basic.rs (see header reconciliation 3) | No |
+| tests/ui/ (extended) | REG-19 (current 17 cases: 13 at `tests/ui/` root — 7 typestate + 6 macro diagnostics — plus 1 each in `probe_sensitive/`, `observer_ready/`, `decorator_ready/`, `lifecycle_ready/`); CCY-03 landed equivalently in tests/basic.rs (see header reconciliation 3) | No |
 
 > 13 files landed in total (the 11 above + the existing `e2e_advanced.rs` with 86 cases carrying the bulk of the B/A/E/C series scenarios + `e2e_i18n_en.rs` as the en-side separate-process target); top-level files such as `basic.rs` and `compile_fail.rs` remain under tests/ auto-discovery.
 
 ### 5.4 Suggested Execution Order
 
 1. L1 all green: `cargo test --all-features --lib` (726 inline tests).
-2. L2 all green per feature rounds (the §5.1 three-round commands) + L2b's 11 trybuild cases.
+2. L2 all green per feature rounds (the §5.1 three-round commands) + L2b's 17 trybuild cases.
 3. L3: run the 20 examples one by one with their features (the 5.2 list).
 4. Land `tests/e2e/` (10 files), prioritizing CMP-10…15, CCY-03/06, DEC-03/04/07/08, ASK-13, ERR-07, RLD-06, HLT-07, LCY-05, SHD-13, CAP-11 (19 pure gaps + 13 missing assertions, the thinnest existing coverage).
 5. PRS compile gates into CI: three tiers — no features / single feature ×13 / `--all-features`, each run per PR and nightly; examples-crate gated compilation pinned via PRS-06.
@@ -626,7 +626,7 @@ Batch run command:
 | Scenarios with no external dependencies at all (pure in-memory) | 240+ |
 
 > Existing test-asset baseline (rc.2 authoring-time grep measurements): **394** inline `#[test]`s in src; **185** test functions in `tests/` (basic 45 / e2e_advanced 84 / e2e_feature_combinations 42 / config_inherit_derive 6 / shared_config_derive 5 / config_inheritance_e2e 2 / compile_fail 1 runner→3 ui cases at the time; the e2e_* files were then at the `tests/` top level, moving into `tests/e2e/` after landing, see Key Finding 7); **20** examples.
-> Post-landing status (current repo grep measurements): **314** test functions in `tests/` — 205 in the 13 registered `tests/e2e/` targets, 109 in the 9 top-level integration files, and `compile_fail.rs` as 1 runner driving 11 ui cases (7 at root + 1 each in 4 gated subdirectories); **726** inline in src (1040 total for `src` + `tests`, matching the README's test-scale basis).
+> Post-landing status (current repo grep measurements): **323** test functions in `tests/` — 205 in the 13 registered `tests/e2e/` targets, 118 in the 10 top-level integration files, and `compile_fail.rs` as 1 runner driving 17 ui cases (13 at root + 1 each in 4 gated subdirectories); **957** inline in src (1280 total for `src` + `tests`).
 > Note: the existing-coverage basis allows legitimate overlaps (one scenario may reference both tests/ integration tests and src inline tests); "to add" takes the strongest-gap verdict. The landing phase may merge overly fine-grained scenarios into single implementations, but **IDs stay stable** for traceability.
 
 ### Authoring-Baseline Verification Notes

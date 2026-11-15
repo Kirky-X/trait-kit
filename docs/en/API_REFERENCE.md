@@ -1,6 +1,6 @@
 # 📘 Trait-Kit API Reference
 
-API reference for trait-kit. Covers the core and commonly used public items — not an exhaustive inventory; the full list lives in rustdoc / docs.rs. Organized by module, with each API annotated with the feature flag it requires (current version **0.5.0-rc.12**).
+API reference for trait-kit. Covers the core and commonly used public items — not an exhaustive inventory; the full list lives in rustdoc / docs.rs. Organized by module, with each API annotated with the feature flag it requires (current version **0.5.0**).
 
 ## 📋 Table of Contents
 
@@ -38,11 +38,11 @@ pub trait ModuleMeta: 'static {
     const NAME: &'static str;
     fn dependencies() -> &'static [(&'static str, TypeId)] { &[] }
 
-    // 版本协商（version-negotiation feature 在 build() 时校验，声明本身无门控）
+    // Version negotiation (checked by the version-negotiation feature during build(); the declaration itself is ungated)
     const VERSION: &'static str = "0.0.0";
     fn required_versions() -> &'static [(&'static str, &'static str)] { &[] }
 
-    // 模块自带 FTL 翻译片段（需 i18n feature）
+    // FTL translation fragments bundled with the module (requires the i18n feature)
     #[cfg(feature = "i18n")]
     fn i18n_ftl() -> &'static [(&'static str, &'static str)] { &[] }
 }
@@ -166,10 +166,10 @@ pub trait AutoBuilder: ModuleMeta {
 Generates a `ModuleMeta` implementation.
 
 ```rust
-// 无依赖
+// No dependencies
 impl_module_meta!(MyModule, "my-module");
 
-// 有依赖
+// With dependencies
 impl_module_meta!(MyModule, "my-module", deps = [DepA, DepB]);
 ```
 
@@ -237,9 +237,9 @@ Available by default (no feature gate); the default `NoOp` implementations are z
 #### `I18nManager`
 
 ```rust
-let mgr = I18nManager::init();                      // 默认英文（严格，不随宿主系统语言漂移）
-let mgr = I18nManager::init_with_locale("zh-CN");   // 指定 locale（无效 locale 回退英文目录）
-let mgr = I18nManager::init_with_system_locale();   // 按系统语言协商（opt-in，需 i18n feature）
+let mgr = I18nManager::init();                      // English by default (strict; never drifts with the host system language)
+let mgr = I18nManager::init_with_locale("zh-CN");   // explicit locale (an invalid locale falls back to the English catalog)
+let mgr = I18nManager::init_with_system_locale();   // negotiate from the system language (opt-in, requires the i18n feature)
 ```
 
 #### `tr()` — Message Translation
@@ -254,7 +254,7 @@ let msg = tr("trait-kit-error-cycle-detected", &[("cycle", "A → B → A")]);
 ```rust
 use trait_kit::i18n::I18nFormatter;
 let fmt = I18nFormatter::new("zh-CN")?;
-let text: String = fmt.format_number(1234567.89)?;  // 分组符按 locale 输出
+let text: String = fmt.format_number(1234567.89)?;  // grouping separators follow the locale
 fmt.format_date(2026, 9, 10)?;
 ```
 
@@ -454,7 +454,7 @@ pub trait InterfaceBuilder: ModuleMeta {
 ```rust
 pub trait Lifecycle: AutoBuilder {
     fn on_ready(kit: &Kit<Ready>) -> Result<(), Self::Error> { Ok(()) }
-    fn on_shutdown(cap: &Self::Capability) {}  // 默认空操作
+    fn on_shutdown(cap: &Self::Capability) {}  // no-op by default
 }
 ```
 
@@ -507,16 +507,16 @@ pub trait AsyncHealthCheck: AsyncAutoBuilder {
 
 ```rust
 pub struct HealthAggregate {
-    pub schema_version: u32,              // 载荷 schema 版本（HEALTH_SCHEMA_VERSION = 1）
-    pub status: &'static str,             // worst-of 整体状态名
-    pub healthy: bool,                    // 便捷位：status == "healthy"
-    pub modules: Vec<HealthModuleEntry>,  // 各模块明细
+    pub schema_version: u32,              // payload schema version (HEALTH_SCHEMA_VERSION = 1)
+    pub status: &'static str,             // worst-of overall status name
+    pub healthy: bool,                    // convenience flag: status == "healthy"
+    pub modules: Vec<HealthModuleEntry>,  // per-module detail
 }
 
 pub struct HealthModuleEntry {
-    pub module: &'static str,             // 模块名（ModuleMeta::NAME）
-    pub status: &'static str,             // 扁平状态名：healthy / degraded / unhealthy
-    pub detail: Option<String>,           // degraded / unhealthy 的明细，无则 None
+    pub module: &'static str,             // module name (ModuleMeta::NAME)
+    pub status: &'static str,             // flat status name: healthy / degraded / unhealthy
+    pub detail: Option<String>,           // detail for degraded / unhealthy; None when absent
 }
 ```
 
@@ -546,7 +546,7 @@ pub trait ServiceProbe: Send + Sync {
 impl<S> AsyncKit<S> {
     pub fn register_probe(&self, name: &'static str, probe: Arc<dyn ServiceProbe>);
     pub fn unregister_probe(&self, name: &str) -> bool;
-    pub fn probe_names(&self) -> Vec<&'static str>;   // 注册序 = 执行序；同名重注册落到尾部
+    pub fn probe_names(&self) -> Vec<&'static str>;   // registration order = execution order; re-registering an existing name moves it to the tail
 }
 ```
 
@@ -554,15 +554,17 @@ impl<S> AsyncKit<S> {
 
 ```rust
 impl AsyncKit<Ready> {
-    // 顺序执行全部探针；worst-of（unhealthy > degraded > healthy）聚合；
-    // 空注册表 healthy-by-convention（停机清空后除外，见 stopped）。
-    // probe+report 下 ProbeReport 可 to_json()。
+    // Runs all probes sequentially; worst-of aggregation
+    // (unhealthy > degraded > healthy); an empty registry is
+    // healthy-by-convention (except after shutdown cleared it, see stopped).
+    // Under probe+report, ProbeReport supports to_json().
     pub async fn run_probes(&self) -> ProbeReport;
-    // 只取 worst-of 结论；全部探针都会执行（无短路）。
+    // Returns only the worst-of verdict; every probe still runs (no short-circuit).
     pub async fn probe_aggregate(&self) -> HealthStatus;
-    // 单探针硬上限变体：悬挂探针记 unhealthy（detail 含 timed out），
-    // 继续跑其余探针；最坏总延迟 ≤ 探针数 × timeout。探针 future 在
-    // 超时处被 drop（须取消安全）。
+    // Hard per-probe deadline variant: a hanging probe is recorded as
+    // unhealthy (detail includes "timed out") and the remaining probes keep
+    // running; worst-case total latency <= probe count x timeout. The probe
+    // future is dropped at the deadline (must be cancel-safe).
     pub async fn run_probes_with_timeout(&self, timeout: Duration) -> ProbeReport;
     pub async fn probe_aggregate_with_timeout(&self, timeout: Duration) -> HealthStatus;
 }
@@ -578,13 +580,13 @@ The `report` feature solidifies the build process's observable artifacts into tw
 
 ```rust
 pub struct BuildReport {
-    pub schema_version: u32,                        // 报告结构版本，当前 SCHEMA_VERSION = 1
-    pub topo_order: Vec<&'static str>,              // 校验通过的拓扑序模块名
-    pub modules: Vec<ModuleReportEntry>,            // 按构建完成序的逐模块记录
-    pub overrides: Vec<OverrideRecord>,             // 注册期观察到的能力覆盖（override_module 家族）
-    pub config_overrides: Vec<ConfigOverrideRecord>, // 配置级覆盖记录（merge_config 家族，有界历史）
-    pub config_overrides_dropped: u64,              // 有界历史满后被丢弃的覆盖记录数
-    pub total_elapsed_us: Option<u64>,              // build 墙钟耗时（微秒）
+    pub schema_version: u32,                        // report structure version, currently SCHEMA_VERSION = 1
+    pub topo_order: Vec<&'static str>,              // module names in the validated topological order
+    pub modules: Vec<ModuleReportEntry>,            // per-module records in build-completion order
+    pub overrides: Vec<OverrideRecord>,             // capability overrides observed during registration (override_module family)
+    pub config_overrides: Vec<ConfigOverrideRecord>, // config-level override records (merge_config family, bounded history)
+    pub config_overrides_dropped: u64,              // override records dropped once the bounded history filled up
+    pub total_elapsed_us: Option<u64>,              // build wall-clock time (microseconds)
 }
 ```
 
@@ -600,26 +602,26 @@ pub struct BuildReport {
 ```rust
 pub struct ModuleReportEntry {
     pub name: &'static str,               // ModuleMeta::NAME
-    pub state: ModuleBuildState,          // 能力如何产出
-    pub deps: Vec<&'static str>,          // 声明的依赖名
-    pub elapsed_us: Option<u64>,          // 构建耗时（微秒）；仅 state == Built 时为 Some
+    pub state: ModuleBuildState,          // how the capability was produced
+    pub deps: Vec<&'static str>,          // declared dependency names
+    pub elapsed_us: Option<u64>,          // build time (microseconds); Some only when state == Built
 }
 
-pub enum ModuleBuildState {   // serde 以 snake_case 输出
-    Built,       // 由 build_fn 在 Kit::build 期间构建
-    Lazy,        // 延迟：build_fn 在首次 require() 时执行
-    Overridden,  // 由预构建的能力覆盖满足（override_module 家族）
+pub enum ModuleBuildState {   // serde emits snake_case
+    Built,       // built by build_fn during Kit::build
+    Lazy,        // lazy: build_fn runs on the first require()
+    Overridden,  // satisfied by a pre-built capability override (override_module family)
 }
 
 pub struct OverrideRecord {
-    pub module: &'static str,   // 被覆盖的模块名；从未注册过的类型覆盖为 "(unregistered)"
-    pub source: &'static str,   // 哪个 API 注入了该覆盖
+    pub module: &'static str,   // overridden module name; "(unregistered)" for a never-registered type
+    pub source: &'static str,   // which API injected the override
 }
 
 pub struct ConfigOverrideRecord {
-    pub config: &'static str,   // 被覆盖的配置类型名（std::any::type_name，仅供诊断，按后缀匹配）
-    pub source: &'static str,   // 应用该覆盖的 API（如 "merge_config"）
-    pub applied: bool,          // false = 目标配置不存在、该次覆盖被丢弃
+    pub config: &'static str,   // overridden config type name (std::any::type_name, diagnostic only, matched by suffix)
+    pub source: &'static str,   // API that applied the override (e.g. "merge_config")
+    pub applied: bool,          // false = target config absent, that override was dropped
 }
 ```
 
@@ -631,15 +633,15 @@ pub struct ConfigOverrideRecord {
 
 ```rust
 pub struct ContractManifest {
-    pub schema_version: u32,            // 清单结构版本，当前 CONTRACT_SCHEMA_VERSION = 1
-    pub modules: Vec<ContractEntry>,    // 每个已注册模块一条，注册序
+    pub schema_version: u32,            // manifest structure version, currently CONTRACT_SCHEMA_VERSION = 1
+    pub modules: Vec<ContractEntry>,    // one entry per registered module, in registration order
 }
 
 pub struct ContractEntry {
     pub module: &'static str,      // ModuleMeta::NAME
-    pub version: &'static str,     // 声明的能力版本 ModuleMeta::VERSION
-    pub capability: &'static str,  // 能力具体类型名（std::any::type_name，仅诊断用）
-    pub deps: Vec<&'static str>,   // 依赖模块名
+    pub version: &'static str,     // declared capability version, ModuleMeta::VERSION
+    pub capability: &'static str,  // concrete capability type name (std::any::type_name, diagnostic only)
+    pub deps: Vec<&'static str>,   // dependency module names
 }
 ```
 
@@ -651,9 +653,9 @@ pub struct ContractEntry {
 
 ```rust
 pub trait BuildObserver: Send + Sync + 'static {
-    fn on_module_start(&self, module_name: &'static str) {}                        // 默认 no-op
-    fn on_module_built(&self, module_name: &'static str, elapsed: Duration) {}      // 默认 no-op
-    fn on_build_error(&self, module_name: &'static str, error: &TraitKitError) {}   // 默认 no-op
+    fn on_module_start(&self, module_name: &'static str) {}                        // no-op by default
+    fn on_module_built(&self, module_name: &'static str, elapsed: Duration) {}      // no-op by default
+    fn on_build_error(&self, module_name: &'static str, error: &TraitKitError) {}   // no-op by default
 }
 ```
 
@@ -771,7 +773,7 @@ impl Configurable for TraitKitConfig {
 }
 
 let mut kit = Kit::new();
-kit.load_config::<TraitKitConfig>()?;  // 通过 confers 从环境变量/默认值加载
+kit.load_config::<TraitKitConfig>()?;  // loaded via confers from environment variables / defaults
 let kit = kit.build()?;
 let config: TraitKitConfig = kit.config()?;
 ```

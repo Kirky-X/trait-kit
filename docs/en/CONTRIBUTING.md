@@ -45,24 +45,24 @@ pre-commit install
 ### Common Commands
 
 ```sh
-# 构建（全特性 / 无默认特性，与 CI 一致）
+# Build (all features / no default features, same as CI)
 cargo build --all-features --workspace
 cargo build --no-default-features --workspace
 
-# 测试（全特性，与 CI 一致）
+# Test (all features, same as CI)
 cargo test --workspace --all-features
 
-# 格式化与 Lint
+# Format and lint
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-# 文档（零告警标准）
+# Docs (zero-warning standard)
 RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
 
-# 依赖审计
+# Dependency audit
 cargo deny check
 
-# MSRV 验证
+# MSRV check
 cargo +1.97.1 check
 ```
 
@@ -83,8 +83,8 @@ Every development task follows the Red → Green → Commit → Analyze → Next
 Features in trait-kit have inheritance relationships (`encryption` → `reload` → `confers`); before committing, cover at least the following combinations (aligned with CI and the acceptance matrix):
 
 ```sh
-cargo test --workspace --all-features   # 与 CI test job 一致
-cargo test                              # 默认特性
+cargo test --workspace --all-features   # same as the CI test job
+cargo test                              # default features
 cargo test --no-default-features
 cargo test --features confers
 cargo test --features shutdown
@@ -94,7 +94,7 @@ cargo test --features i18n
 When adding a feature:
 
 - Declare it in `Cargo.toml`'s `[features]` with clear enablement relationships and explanatory comments.
-- Register it in the "Feature Flags" table of the READMEs (CN/EN) and in [docs/API_REFERENCE.md](../API_REFERENCE.md).
+- Register it in the "Feature Flags" table of the READMEs (CN/EN) and in [docs/en/API_REFERENCE.md](API_REFERENCE.md).
 - If it involves confers integration, note that higher-level features automatically enable lower-level ones, and methods need `cfg(feature = "...")` gating.
 
 ## 📐 Code Conventions
@@ -104,7 +104,7 @@ When adding a feature:
 - **Dependencies must be feature-gated**: optional dependencies (`confers`, `serde`, `serde_json`, etc.) are forbidden in default features; `icu_collator` / `icu_datetime` / `icu_decimal` / `icu_locale` / `icu_plurals` (ICU4X component sub-crates, not the `icu` facade crate) / `writeable` / `sys-locale` are optional dependencies of the `i18n` feature only.
 - **No new unsafe**: the crate has a global `#![deny(unsafe_code)]`; production code currently has only 5 locally audited exemptions with SAFETY justifications and code review (typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×1: the `AsyncTypeMap` `RwLock` read guard; the sync `TypeMap` now uses a `Ref::map` guard wrapper and needs no unsafe), plus 1 test-module exemption (see the [Security document](SECURITY.md)). No PR may introduce new `unsafe`; if truly necessary, attach SAFETY comments and argue the case separately in the PR.
 - **Errors must be explicit**: new error scenarios get a new variant in `TraitKitError` (or reuse an existing one), with messages wired into `tr()` localization (written per domain into `locales/en/*.ftl` and `locales/zh/*.ftl`; both key sets must stay level); swallowing errors or hiding them in defaults is strictly forbidden.
-- **Doc examples must be verifiable**: code examples in the README / docs must match actual API signatures; when APIs change, keep [docs/API_REFERENCE.md](../API_REFERENCE.md) and [docs/USER_GUIDE.md](USER_GUIDE.md) in sync.
+- **Doc examples must be verifiable**: code examples in the README / docs must match actual API signatures; when APIs change, keep [docs/en/API_REFERENCE.md](API_REFERENCE.md) and [docs/en/USER_GUIDE.md](USER_GUIDE.md) in sync.
 
 ### Pre-commit Hooks
 
@@ -165,23 +165,23 @@ Test scale: the main crate's `src/` and `tests/` contain **1040** `#[test]` func
 ### Common Commands (same as CI)
 
 ```sh
-# 全量测试（workspace + 全部 feature，与 CI test job 一致）
+# Full test suite (workspace + all features, same as the CI test job)
 cargo test --workspace --all-features
 
-# 按特性组合运行
+# Run by feature combination
 cargo test --features confers
 
-# Lint 与格式检查（CI 门禁，零告警）
+# Lint and format checks (CI gate, zero warnings)
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check
 
-# 文档零告警
+# Docs with zero warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 
-# 依赖审计（advisories / licenses / bans / sources）
+# Dependency audit (advisories / licenses / bans / sources)
 cargo deny check
 
-# 覆盖率门禁（CI coverage job：行覆盖 ≥ 95%）
+# Coverage gate (CI coverage job: line coverage >= 95%)
 cargo llvm-cov --workspace --all-features --fail-under-lines 95
 ```
 
@@ -191,12 +191,12 @@ Entries carry over the existing plan; status is aligned with the current reposit
 
 <table>
 <tr><th>Status</th><th>Item</th><th>Description</th></tr>
-<tr><td>✅</td><td><b>0.5.0-rc.12</b> (2026-10-31)</td><td>Current release: new <code>masking</code> feature — the PII/credential masking engine (<code>DataMasker</code> / <code>MaskRule</code> / <code>MaskRuleRegistry</code> / <code>AcMasker</code>) sunk from inklog into this crate as the single source, with the secret-scan egress gate family (<code>SecretScanGate</code> / <code>SecretPatternRegistry</code> / <code>EntropyScanner</code>) and <code>MaskError</code>; shared by inklog and limiteron with the 21 builtin rules' semantics and order unchanged (see the <a href="../CHANGELOG.md">CHANGELOG</a>).</td></tr>
+<tr><td>✅</td><td><b>0.5.0-rc.12</b> (2026-10-31)</td><td>new <code>masking</code> feature — the PII/credential masking engine (<code>DataMasker</code> / <code>MaskRule</code> / <code>MaskRuleRegistry</code> / <code>AcMasker</code>) sunk from inklog into this crate as the single source, with the secret-scan egress gate family (<code>SecretScanGate</code> / <code>SecretPatternRegistry</code> / <code>EntropyScanner</code>) and <code>MaskError</code>; shared by inklog and limiteron with the 21 builtin rules' semantics and order unchanged (see the <a href="../CHANGELOG.md">CHANGELOG</a>).</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.11</b> (2026-10-28)</td><td>tightened <code>override_module</code> dependency-graph validation (unregistered dependencies rejected at injection time) and shared-overlay ownership isolation; full redaction of external text and error <code>Debug</code> output; master-key admission policy; <code>TypeMap</code> read-reference guard (unsafe exemptions 6→5); depth guard moved earlier for deeply nested JSON; <code>confers</code> dependency 0.6.0-rc.12 (see the <a href="../CHANGELOG.md">CHANGELOG</a>).</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.10</b> (2026-10-19)</td><td>strict-English default locale with domain-split <code>locales/{en,zh}/</code>, <code>rustls</code> 0.23.46 security upgrade, unified pure-MIT license, release switched to crates.io trusted publishing (OIDC) with the idempotency triple (see the <a href="../CHANGELOG.md">CHANGELOG</a>).</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.9</b> (2026-10-10)</td><td>service-probe registry (new <code>probe</code> feature), async health aggregation (<code>health_aggregate</code> / <code>health_json</code>), explicit <code>config_overrides</code> in build reports, feature-matrix and benchmark-regression CI gates; fixes for version-negotiation path parity, unified lazy retrieval semantics, and shutdown-coordinator hook panic isolation (see the <a href="../CHANGELOG.md">CHANGELOG</a>).</td></tr>
 <tr><td>✅</td><td><b>0.5.0-rc.6</b> (2026-09-21)</td><td>rc.4–rc.6 released: observability ports and event bus, full Toggle implementation, <code>trait-kit-derive</code> merged into <code>trait-kit-macros</code>, <code>confers</code> dependency moved to crates.io (see the <a href="../CHANGELOG.md">CHANGELOG</a>).</td></tr>
 <tr><td>✅</td><td><b>Performance benchmarks</b></td><td>Criterion benchmarks in <code>benches/kit_bench.rs</code> and the <code>docs/cn/PERFORMANCE.md</code> baseline report are in place (current baseline 2026-09-29).</td></tr>
-<tr><td>📋</td><td><b>0.5.0 stable release</b></td><td>After the minor version bump, sync the <code>path + version</code> dependency requirements of downstream crates (oxcache, dbnexus, inklog, limiteron, sdforge) per the workspace release plan.</td></tr>
+<tr><td>✅</td><td><b>0.5.0 stable release</b> (2026-11-14)</td><td>Finalized: no API or behavior changes relative to 0.5.0-rc.14; the <code>confers</code> dependency baseline moved from 0.6.0-rc.12 to the <code>0.6</code> stable line (see the <a href="../CHANGELOG.md">CHANGELOG</a>); syncing the <code>path + version</code> dependency requirements of downstream crates (oxcache, dbnexus, inklog, limiteron, sdforge) is tracked by the workspace release plan.</td></tr>
 <tr><td>✅</td><td><b>cfg gate completeness</b></td><td><code>--no-default-features --features async</code> and <code>async,observer</code> check combos, <code>clippy --features async --all-targets</code> are warning-free, and async doc tests all pass — the gate gap is resolved (re-verified 2026-09-27).</td></tr>
 </table>

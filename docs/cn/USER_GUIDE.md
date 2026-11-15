@@ -32,7 +32,7 @@ trait-kit 解决的问题是：**在应用启动时，以类型安全、可验�
 - **能力**按模块类型存储和检索（`kit.require::<LoggerModule>()`），无需字符串键、无需 downcast。
 - 整个 crate 标注 `#![deny(unsafe_code)]`，生产代码仅 5 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×1：`AsyncTypeMap` 的 `RwLock` 读守卫；同步 `TypeMap` 改用 `Ref::map` 守卫包装，无需 unsafe），另有 1 处测试模块豁免（`src/kit/config.rs` 的 zeroize spare-capacity 断言），详见 [安全文档](SECURITY.md)。
 
-适合"手动装配太散、完整 DI 框架太重"的中间场景。API 全集见 [📘 API 参考](../API_REFERENCE.md)，设计细节见 [🏗️ 架构文档](ARCHITECTURE.md)。
+适合"手动装配太散、完整 DI 框架太重"的中间场景。API 全集见 [📘 API 参考](API_REFERENCE.md)，设计细节见 [🏗️ 架构文档](ARCHITECTURE.md)。
 
 ---
 
@@ -102,7 +102,7 @@ fn main() {
 - **`kit.build()`**：验证依赖图（缺失依赖检测、Kahn 算法环检测 + 拓扑排序），按拓扑序构建所有模块。
 - **`Kit<Ready>`（运行阶段）**：只读检索能力与配置，不可再注册（注册与构建方法在此阶段被**编译期拒绝**）。
 
-两阶段的完整方法面与流程图见 [架构文档](ARCHITECTURE.md)，逐方法 feature 门控见 [API 参考](../API_REFERENCE.md)。
+两阶段的完整方法面与流程图见 [架构文档](ARCHITECTURE.md)，逐方法 feature 门控见 [API 参考](API_REFERENCE.md)。
 
 ### 能力（Capability）
 
@@ -284,7 +284,7 @@ cargo run -p trait-kit-examples --example async_basic --features async
 
 ### 特性门控能力一览
 
-以下能力均通过 `Kit` / `AsyncKit` 上的方法使用（方法级 feature 门控，详见 [API 参考](../API_REFERENCE.md)）：
+以下能力均通过 `Kit` / `AsyncKit` 上的方法使用（方法级 feature 门控，详见 [API 参考](API_REFERENCE.md)）：
 
 | 能力 | Feature | 典型用途 |
 |---|---|---|
@@ -473,5 +473,5 @@ fn main() {
 
 ```toml
 [dependencies]
-trait-kit = { version = "0.5.0-rc.12", features = ["encryption"] }
+trait-kit = { version = "0.5.0", features = ["encryption"] }
 ```
