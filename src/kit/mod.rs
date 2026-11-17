@@ -27,6 +27,9 @@ pub mod presets;
 #[cfg(feature = "compose")]
 pub mod sub_kit;
 
+#[cfg(feature = "visibility")]
+pub mod visibility;
+
 pub use graph::{DependencyGraph, GraphError, ModuleEntry};
 pub use kit::{Kit, Ready, Unbuilt};
 pub(crate) use typemap::TypeMap;
@@ -84,6 +87,9 @@ pub use presets::remote::{
 
 #[cfg(feature = "compose")]
 pub use sub_kit::{SubKitHandle, SubKitModule, SubKitSpec};
+
+#[cfg(feature = "visibility")]
+pub use visibility::CapabilityVisibility;
 
 // NOTE: derive macros (Module, ConfigInherit, SharedConfig) live in `trait-kit-macros`.
 // Users add `trait-kit-macros` as a dependency to use the derives.

@@ -3642,3 +3642,103 @@ mod short_type_name_in_errors_tests {
         assert!(!key.contains("::"), "内部模块路径不得进入错误文本: {key}");
     }
 }
+
+/// 能力可见性注册与查询（feature `visibility`）。
+#[cfg(all(test, feature = "visibility"))]
+mod visibility_tests {
+    use super::super::*;
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::visibility::CapabilityVisibility;
+
+    #[derive(Clone)]
+    struct VisCap;
+    #[derive(Debug)]
+    struct VisError;
+    impl std::fmt::Display for VisError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "vis test error")
+        }
+    }
+    impl std::error::Error for VisError {}
+
+    struct PublicModule;
+    impl ModuleMeta for PublicModule {
+        const NAME: &'static str = "vis::Public";
+    }
+    impl AutoBuilder for PublicModule {
+        type Capability = VisCap;
+        type Error = VisError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(VisCap)
+        }
+    }
+
+    struct RestrictedModule;
+    impl ModuleMeta for RestrictedModule {
+        const NAME: &'static str = "vis::Restricted";
+    }
+    impl AutoBuilder for RestrictedModule {
+        type Capability = VisCap;
+        type Error = VisError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(VisCap)
+        }
+    }
+
+    struct UnregisteredModule;
+    impl ModuleMeta for UnregisteredModule {
+        const NAME: &'static str = "vis::Unregistered";
+    }
+    impl AutoBuilder for UnregisteredModule {
+        type Capability = VisCap;
+        type Error = VisError;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(VisCap)
+        }
+    }
+
+    #[test]
+    fn register_with_visibility_records_visibility() {
+        let mut kit = Kit::new();
+        kit.register_with_visibility::<RestrictedModule>(CapabilityVisibility::Restricted(&[
+            "audit::*",
+        ]))
+        .expect("register succeeds");
+        let ready = kit.build().expect("build succeeds");
+        assert_eq!(
+            ready.visibility_of::<RestrictedModule>(),
+            Some(CapabilityVisibility::Restricted(&["audit::*"]))
+        );
+    }
+
+    #[test]
+    fn visibility_of_covers_public_and_unset() {
+        let mut kit = Kit::new();
+        kit.register_with_visibility::<PublicModule>(CapabilityVisibility::Public)
+            .expect("register succeeds");
+        kit.register::<RestrictedModule>()
+            .expect("register succeeds");
+        let ready = kit.build().expect("build succeeds");
+        assert_eq!(
+            ready.visibility_of::<PublicModule>(),
+            Some(CapabilityVisibility::Public)
+        );
+        // 无可见性记录的模块等同 Public（None）。
+        assert_eq!(ready.visibility_of::<RestrictedModule>(), None);
+    }
+
+    #[test]
+    fn set_visibility_overwrites_and_tolerates_unregistered() {
+        let mut kit = Kit::new();
+        kit.register::<PublicModule>().expect("register succeeds");
+        kit.set_visibility::<PublicModule>(CapabilityVisibility::Restricted(&["a"]));
+        kit.set_visibility::<PublicModule>(CapabilityVisibility::Public);
+        // 未注册模块补设可见性不 panic，仅记录。
+        kit.set_visibility::<UnregisteredModule>(CapabilityVisibility::Public);
+        let ready = kit.build().expect("build succeeds");
+        assert_eq!(
+            ready.visibility_of::<PublicModule>(),
+            Some(CapabilityVisibility::Public)
+        );
+    }
+}

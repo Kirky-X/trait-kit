@@ -388,6 +388,15 @@ struct I18nFields {
     module_catalog: RefCell<Option<crate::i18n::MessageCatalog>>,
 }
 
+/// Fields gated behind the `visibility` feature.
+#[cfg(feature = "visibility")]
+#[derive(Default)]
+struct VisibilityFields {
+    /// Module `TypeId` → declared capability visibility. Absent entries
+    /// behave as `Public`.
+    visibilities: HashMap<TypeId, crate::kit::visibility::CapabilityVisibility>,
+}
+
 /// The capability and configuration management center.
 ///
 /// # Thread safety
@@ -452,6 +461,8 @@ pub struct Kit<S = Unbuilt> {
     negotiate: NegotiateFields,
     #[cfg(feature = "i18n")]
     i18n: I18nFields,
+    #[cfg(feature = "visibility")]
+    visibility: VisibilityFields,
     #[cfg(feature = "report")]
     report: super::report::ReportFields,
     ports: PortsFields,
@@ -496,6 +507,8 @@ impl Kit {
             negotiate: NegotiateFields::default(),
             #[cfg(feature = "i18n")]
             i18n: I18nFields::default(),
+            #[cfg(feature = "visibility")]
+            visibility: VisibilityFields::default(),
             #[cfg(feature = "report")]
             report: super::report::ReportFields::default(),
             ports: PortsFields::default(),
@@ -643,6 +656,49 @@ impl Kit {
         self.record_module_versions::<M>();
         self.record_module_contract::<M>(std::any::type_name::<M::Capability>());
         Ok(())
+    }
+
+    /// Register a module and declare which caller modules may require its
+    /// capability.
+    ///
+    /// Behaves exactly like [`Kit::register`] (including the
+    /// `AlreadyRegistered` check), then stores `visibility` for `M`.
+    /// Retrieval via `require` (no caller identity) ignores the
+    /// restriction; `require_for` / `require_as` enforce it.
+    ///
+    /// Requires the `visibility` feature.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::AlreadyRegistered` if a module with the same
+    /// `TypeId` was already registered.
+    #[cfg(feature = "visibility")]
+    pub fn register_with_visibility<M: AutoBuilder>(
+        &mut self,
+        visibility: crate::kit::visibility::CapabilityVisibility,
+    ) -> Result<(), TraitKitError> {
+        self.register::<M>()?;
+        self.visibility
+            .visibilities
+            .insert(TypeId::of::<M>(), visibility);
+        Ok(())
+    }
+
+    /// Set (or overwrite) the capability visibility of an already
+    /// registered module — the companion to `register_lazy` /
+    /// `register_multi`, which have no visibility-aware entry point.
+    ///
+    /// Idempotent and forgiving: setting a visibility for a module that was
+    /// never registered is recorded without error (it simply never matches
+    /// a built capability). Requires the `visibility` feature.
+    #[cfg(feature = "visibility")]
+    pub fn set_visibility<M: AutoBuilder>(
+        &mut self,
+        visibility: crate::kit::visibility::CapabilityVisibility,
+    ) {
+        self.visibility
+            .visibilities
+            .insert(TypeId::of::<M>(), visibility);
     }
 
     /// Register a module for interface-based construction.
@@ -1161,6 +1217,8 @@ impl Kit {
             negotiate: self.negotiate,
             #[cfg(feature = "i18n")]
             i18n: self.i18n,
+            #[cfg(feature = "visibility")]
+            visibility: self.visibility,
             #[cfg(feature = "report")]
             report: self.report,
             ports: self.ports,
@@ -2708,6 +2766,22 @@ impl<S> Kit<S> {
 }
 
 impl Kit<Ready> {
+    /// Read-only query of the capability visibility declared for `M`.
+    ///
+    /// Returns `None` when no visibility was declared (the module behaves
+    /// as `Public`). Consumed by the security-posture audit to report the
+    /// public/restricted distribution. Requires the `visibility` feature.
+    #[cfg(feature = "visibility")]
+    #[must_use]
+    pub fn visibility_of<M: AutoBuilder>(
+        &self,
+    ) -> Option<crate::kit::visibility::CapabilityVisibility> {
+        self.visibility
+            .visibilities
+            .get(&TypeId::of::<M>())
+            .copied()
+    }
+
     /// Retrieve an optional capability. Returns `None` if not built.
     ///
     /// Read-only: never triggers a lazy build. For `register_lazy` modules
