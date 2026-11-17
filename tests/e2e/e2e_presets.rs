@@ -102,6 +102,7 @@ fn prs02_feature_table_lists_all_features() {
     names.sort();
     let expected = [
         "async",
+        "audit",
         "compose",
         "confers",
         "decorator",
@@ -135,7 +136,7 @@ fn prs02_feature_table_lists_all_features() {
             "Cargo.toml [features] is missing feature '{f}': got {names:?}"
         );
     }
-    // 除 27 个 feature 外仅允许空集 default（PRS-01 的可编译前提；数量
+    // 除 28 个 feature 外仅允许空集 default（PRS-01 的可编译前提；数量
     // 与 prs02 期望表一致）。
     assert_eq!(
         features.get("default").map(Vec::is_empty),
@@ -145,7 +146,7 @@ fn prs02_feature_table_lists_all_features() {
     assert_eq!(
         names.len(),
         expected.len() + 1,
-        "[features] should contain exactly 27 features plus default: got {names:?}"
+        "[features] should contain exactly 28 features plus default: got {names:?}"
     );
 }
 
@@ -187,6 +188,7 @@ fn prs05_encryption_chain_expansion() {
 /// 该测试仅在全 feature 组合编译时存在（cfg 段即门禁本体）。
 #[cfg(all(
     feature = "async",
+    feature = "audit",
     feature = "compose",
     feature = "confers",
     feature = "decorator",
@@ -213,10 +215,10 @@ fn prs05_encryption_chain_expansion() {
 ))]
 #[test]
 fn prs03_all_features_gate_reached() {
-    // 能编译并执行到此处 = 27 项 feature 全部激活（cfg 列表覆盖全部非
-    // 别名 feature，数量与下一行断言的「27 feature + default」一致）。
+    // 能编译并执行到此处 = 28 项 feature 全部激活（cfg 列表覆盖全部非
+    // 别名 feature，数量与下一行断言的「28 feature + default」一致）。
     let features = parse_features();
-    assert_eq!(features.len(), 28, "27 features plus the empty default set");
+    assert_eq!(features.len(), 29, "28 features plus the empty default set");
 }
 
 /// examples crate 24 个示例全部显式 `[[example]]` 注册，且

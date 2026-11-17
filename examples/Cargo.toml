@@ -52,6 +52,7 @@ visibility = ["trait-kit/visibility"]
 guard = ["trait-kit/guard"]
 policy = ["trait-kit/policy"]
 resource-guard = ["lifecycle", "trait-kit/resource-guard"]
+audit = ["report", "trait-kit/audit"]
 
 [[example]]
 name = "default_basic"
