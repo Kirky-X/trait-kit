@@ -3340,6 +3340,34 @@ impl Kit<Ready> {
         report
     }
 
+    /// Sensitive modules whose cleanup hooks may have been skipped because
+    /// the bridged shutdown phase(s) in `result` timed out.
+    ///
+    /// Hooks bridged via
+    /// [`AsyncKit::register_shutdown_into`](crate::AsyncKit::register_shutdown_into)
+    /// (typically `CloseConnections`) are phase-granular: any timed-out
+    /// phase that can carry lifecycle hooks puts **all** sensitive modules
+    /// at risk. This is a conservative approximation — the coordinator
+    /// records no hook-to-module mapping, so a module may be named even if
+    /// its own hook completed. Returns an empty list for a healthy result.
+    ///
+    /// Requires the `resource-guard` and `shutdown` features.
+    #[cfg(all(feature = "resource-guard", feature = "shutdown"))]
+    pub fn sensitive_at_risk(
+        &self,
+        result: &crate::kit::shutdown::ShutdownResult,
+    ) -> Vec<&'static str> {
+        let bridged_phase_timed_out = result.phases.iter().any(|phase_result| {
+            phase_result.timed_out
+                && phase_result.phase == crate::kit::shutdown::ShutdownPhase::CloseConnections
+        });
+        if bridged_phase_timed_out {
+            self.sensitive_modules()
+        } else {
+            Vec::new()
+        }
+    }
+
     // ─── Health Check ──────────────────────────────────────────────────
 
     /// Check the health of a specific module.
@@ -5939,5 +5967,66 @@ mod build_rollback_tests {
             READY_CLEANED.load(Ordering::SeqCst),
             "on_shutdown of the built-and-readied module must run during rollback"
         );
+    }
+}
+
+/// `sensitive_at_risk` coordinator-timeout attribution tests
+/// (features `resource-guard` + `shutdown`).
+#[cfg(all(test, feature = "resource-guard", feature = "shutdown"))]
+mod sensitive_at_risk_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::Kit;
+    use crate::kit::shutdown::{ShutdownPhase, ShutdownPhaseResult, ShutdownResult};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    struct AtRiskPoolModule;
+    impl ModuleMeta for AtRiskPoolModule {
+        const NAME: &'static str = "at-risk-pool";
+    }
+    impl AutoBuilder for AtRiskPoolModule {
+        type Capability = Arc<u32>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(1))
+        }
+    }
+
+    /// `CloseConnections` 超时的结果 → 全部敏感模块被点名（R-res-006）。
+    #[test]
+    fn timed_out_close_connections_names_all_sensitive_modules() {
+        let mut kit = Kit::new();
+        kit.register::<AtRiskPoolModule>().expect("register");
+        kit.mark_sensitive::<AtRiskPoolModule>();
+        let ready = kit.build().expect("build");
+
+        let timed_out = ShutdownResult {
+            phases: vec![ShutdownPhaseResult {
+                phase: ShutdownPhase::CloseConnections,
+                timed_out: true,
+                elapsed: Duration::from_secs(1),
+                hook_failures: 0,
+            }],
+        };
+        assert_eq!(ready.sensitive_at_risk(&timed_out), vec!["at-risk-pool"]);
+    }
+
+    /// 正常完成的结果 → 无点名（R-res-006）。
+    #[test]
+    fn healthy_result_names_nothing() {
+        let mut kit = Kit::new();
+        kit.register::<AtRiskPoolModule>().expect("register");
+        kit.mark_sensitive::<AtRiskPoolModule>();
+        let ready = kit.build().expect("build");
+
+        let healthy = ShutdownResult {
+            phases: vec![ShutdownPhaseResult {
+                phase: ShutdownPhase::CloseConnections,
+                timed_out: false,
+                elapsed: Duration::from_millis(5),
+                hook_failures: 0,
+            }],
+        };
+        assert!(ready.sensitive_at_risk(&healthy).is_empty());
     }
 }
