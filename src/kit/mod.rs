@@ -34,6 +34,8 @@ pub mod visibility;
 pub mod policy;
 
 pub use graph::{DependencyGraph, GraphError, ModuleEntry};
+#[cfg(feature = "resource-guard")]
+pub use kit::SensitiveShutdownReport;
 pub use kit::{Kit, Ready, Unbuilt};
 pub(crate) use typemap::TypeMap;
 

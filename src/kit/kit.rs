@@ -415,6 +415,21 @@ struct ResourceGuardFields {
     sensitive: std::collections::BTreeSet<TypeId>,
 }
 
+/// Per-module shutdown verification (feature `resource-guard`).
+///
+/// Produced by [`Kit::shutdown_with_report`]. Names appear in the kit's
+/// validated topological order.
+#[cfg(feature = "resource-guard")]
+#[derive(Debug, Clone, Default)]
+pub struct SensitiveShutdownReport {
+    /// Sensitive modules whose `on_shutdown` ran to completion.
+    pub verified: Vec<&'static str>,
+    /// Sensitive modules skipped: `on_shutdown` panicked, or no lifecycle
+    /// callback was registered (`register_lifecycle` never called / lazy
+    /// capability never built).
+    pub skipped: Vec<&'static str>,
+}
+
 /// The capability and configuration management center.
 ///
 /// # Thread safety
@@ -3149,6 +3164,11 @@ impl Kit<Ready> {
     /// constructed `Kit<Ready>` is discarded as a whole and no `on_shutdown`
     /// callback runs (sync and async behave identically).
     ///
+    /// With the `resource-guard` feature, see
+    /// [`shutdown_with_report`](Kit::shutdown_with_report) for a per-module
+    /// verification of sensitive cleanup instead of this fire-and-forget
+    /// variant.
+    ///
     /// Requires the `lifecycle` feature.
     #[cfg(feature = "lifecycle")]
     pub fn shutdown(&self) {
@@ -3174,6 +3194,69 @@ impl Kit<Ready> {
             .filter(|entry| self.resource_guard.sensitive.contains(&entry.type_id))
             .map(|entry| entry.name)
             .collect()
+    }
+
+    /// Shut down all lifecycle modules (reverse topological order) and
+    /// report, per sensitive module, whether `on_shutdown` verifiably
+    /// completed.
+    ///
+    /// Mirrors [`shutdown`](Kit::shutdown) for every callback (panics are
+    /// isolated, the remaining callbacks still run); the difference is the
+    /// returned per-module verdict for modules marked via
+    /// [`mark_sensitive`](Kit::mark_sensitive). A sensitive module lands in
+    /// [`SensitiveShutdownReport::skipped`] when its `on_shutdown` panicked
+    /// or when no lifecycle callback exists for it at all.
+    ///
+    /// Consumes the one-shot callback set exactly like `shutdown`:
+    /// whichever of the two runs first executes the callbacks; a second
+    /// call of either method is a no-op that reports empty lists.
+    ///
+    /// Requires the `resource-guard` feature.
+    #[cfg(feature = "resource-guard")]
+    pub fn shutdown_with_report(&self) -> SensitiveShutdownReport {
+        let callbacks: Vec<(TypeId, ShutdownCallback)> = self.take_shutdown_callbacks();
+        // Sensitive (TypeId, name) pairs in topological order — the report
+        // follows this order, not the reverse-execution order.
+        let sensitive: Vec<(TypeId, &'static str)> = self
+            .graph
+            .entries()
+            .iter()
+            .filter(|entry| self.resource_guard.sensitive.contains(&entry.type_id))
+            .map(|entry| (entry.type_id, entry.name))
+            .collect();
+
+        // Reverse-order execution identical to `shutdown()`; only the
+        // outcome for sensitive modules is recorded (`true` = completed).
+        let mut outcomes: HashMap<TypeId, bool> = HashMap::with_capacity(sensitive.len());
+        for (type_id, callback) in callbacks.iter().rev() {
+            let completed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                callback(&self.capabilities);
+            }))
+            .is_ok();
+            if self.resource_guard.sensitive.contains(type_id) {
+                outcomes.insert(*type_id, completed);
+            }
+        }
+
+        let mut report = SensitiveShutdownReport::default();
+        for (type_id, name) in sensitive {
+            match outcomes.get(&type_id) {
+                Some(true) => report.verified.push(name),
+                Some(false) => {
+                    let message = tr("trait-kit-log-sensitive-skipped", &[("module", name)]);
+                    log::warn!("{message}");
+                    report.skipped.push(name);
+                }
+                None => {
+                    // No lifecycle callback for a marked module: cleanup is
+                    // unverifiable by construction, not merely unobserved.
+                    let message = tr("trait-kit-log-sensitive-skipped", &[("module", name)]);
+                    log::warn!("{message}");
+                    report.skipped.push(name);
+                }
+            }
+        }
+        report
     }
 
     // ─── Health Check ──────────────────────────────────────────────────
@@ -5542,5 +5625,107 @@ mod sensitive_modules_tests {
             ready.sensitive_modules(),
             vec!["chain-a", "chain-b", "chain-c"]
         );
+    }
+}
+
+/// `shutdown_with_report` per-module verification tests
+/// (feature `resource-guard`).
+#[cfg(all(test, feature = "resource-guard"))]
+mod shutdown_with_report_tests {
+    use crate::core::{AutoBuilder, Lifecycle, ModuleMeta};
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    /// Well-behaved sensitive module: `on_shutdown` completes.
+    struct CleanPoolModule;
+    impl ModuleMeta for CleanPoolModule {
+        const NAME: &'static str = "clean-pool";
+    }
+    impl AutoBuilder for CleanPoolModule {
+        type Capability = Arc<u32>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(1))
+        }
+    }
+    impl Lifecycle for CleanPoolModule {}
+
+    /// Sensitive module whose `on_shutdown` panics.
+    struct PanickingPoolModule;
+    impl ModuleMeta for PanickingPoolModule {
+        const NAME: &'static str = "panicking-pool";
+    }
+    impl AutoBuilder for PanickingPoolModule {
+        type Capability = Arc<u32>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(2))
+        }
+    }
+    impl Lifecycle for PanickingPoolModule {
+        fn on_shutdown(_cap: &Self::Capability) {
+            panic!("simulated pool cleanup failure");
+        }
+    }
+
+    /// Sensitive module marked but never registered with `register_lifecycle`.
+    struct UnhookedPoolModule;
+    impl ModuleMeta for UnhookedPoolModule {
+        const NAME: &'static str = "unhooked-pool";
+    }
+    impl AutoBuilder for UnhookedPoolModule {
+        type Capability = Arc<u32>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(3))
+        }
+    }
+
+    /// 全部敏感模块正常关闭 → 全 verified（R-res-003）。
+    #[test]
+    fn all_clean_sensitive_modules_verified() {
+        let mut kit = Kit::new();
+        kit.register::<CleanPoolModule>().expect("register");
+        kit.register_lifecycle::<CleanPoolModule>();
+        kit.mark_sensitive::<CleanPoolModule>();
+        let ready = kit.build().expect("build");
+        let report = ready.shutdown_with_report();
+        assert_eq!(report.verified, vec!["clean-pool"]);
+        assert!(report.skipped.is_empty());
+    }
+
+    /// 敏感模块 `on_shutdown` panic → 进 skipped，且不阻断其他模块的
+    /// 回调执行与报告（R-res-003）。
+    #[test]
+    fn panicking_sensitive_module_skipped_without_blocking_others() {
+        let quiet = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let result = {
+            let mut kit = Kit::new();
+            kit.register::<CleanPoolModule>().expect("register");
+            kit.register_lifecycle::<CleanPoolModule>();
+            kit.mark_sensitive::<CleanPoolModule>();
+            kit.register::<PanickingPoolModule>().expect("register");
+            kit.register_lifecycle::<PanickingPoolModule>();
+            kit.mark_sensitive::<PanickingPoolModule>();
+            let ready = kit.build().expect("build");
+            ready.shutdown_with_report()
+        };
+        std::panic::set_hook(quiet);
+        assert_eq!(result.verified, vec!["clean-pool"]);
+        assert_eq!(result.skipped, vec!["panicking-pool"]);
+    }
+
+    /// mark 了但未 `register_lifecycle` → 进 skipped（回调不存在即无法
+    /// 验证清理）（R-res-003）。
+    #[test]
+    fn marked_but_unregistered_lifecycle_module_skipped() {
+        let mut kit = Kit::new();
+        kit.register::<UnhookedPoolModule>().expect("register");
+        kit.mark_sensitive::<UnhookedPoolModule>();
+        let ready = kit.build().expect("build");
+        let report = ready.shutdown_with_report();
+        assert!(report.verified.is_empty());
+        assert_eq!(report.skipped, vec!["unhooked-pool"]);
     }
 }
