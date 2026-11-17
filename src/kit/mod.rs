@@ -88,6 +88,8 @@ pub use presets::remote::{
 #[cfg(feature = "compose")]
 pub use sub_kit::{SubKitHandle, SubKitModule, SubKitSpec};
 
+#[cfg(feature = "guard")]
+pub use visibility::CapabilityGuard;
 #[cfg(feature = "visibility")]
 pub use visibility::CapabilityVisibility;
 

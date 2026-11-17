@@ -53,6 +53,8 @@ pub use crate::kit::AsyncShutdownCoordinator;
 #[cfg(feature = "shutdown")]
 pub use crate::kit::{ShutdownCoordinator, ShutdownPhase, ShutdownPhaseResult, ShutdownResult};
 
+#[cfg(feature = "guard")]
+pub use crate::kit::CapabilityGuard;
 #[cfg(feature = "visibility")]
 pub use crate::kit::CapabilityVisibility;
 

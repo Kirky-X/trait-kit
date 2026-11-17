@@ -43,6 +43,19 @@ impl CapabilityVisibility {
     }
 }
 
+/// Runtime policy hook on the require path (feature `guard`).
+///
+/// Implemented by ecosystem crates — e.g. limiteron (tenant not
+/// rate-limited) or garrison (session authenticated) — this crate only
+/// defines the trait and never depends on them. Unlike
+/// [`CapabilityVisibility`] (a static boundary declared at registration),
+/// a guard consults runtime context on every guarded retrieval.
+pub trait CapabilityGuard: Send + Sync {
+    /// Decide whether `caller` may retrieve the capability of the module
+    /// named `target` (`ModuleMeta::NAME`).
+    fn allow(&self, caller: &'static str, target: &'static str) -> bool;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -76,5 +89,43 @@ mod tests {
     fn restricted_empty_patterns_deny_everything() {
         let vis = CapabilityVisibility::Restricted(&[]);
         assert!(!vis.allows("audit::AuditModule"));
+    }
+}
+
+/// `CapabilityGuard` 参数透传与判定（feature `guard`，R-guard-001）。
+#[cfg(all(test, feature = "guard"))]
+mod guard_tests {
+    use super::*;
+
+    /// 记录调用参数的 mock guard。
+    struct RecordingGuard {
+        allowed_caller: &'static str,
+        seen: std::sync::Mutex<Vec<(&'static str, &'static str)>>,
+    }
+
+    impl CapabilityGuard for RecordingGuard {
+        fn allow(&self, caller: &'static str, target: &'static str) -> bool {
+            self.seen.lock().expect("lock").push((caller, target));
+            caller == self.allowed_caller
+        }
+    }
+
+    #[test]
+    fn guard_receives_caller_and_target_verbatim() {
+        let guard = RecordingGuard {
+            allowed_caller: "audit::AuditModule",
+            seen: std::sync::Mutex::new(Vec::new()),
+        };
+        assert!(guard.allow("audit::AuditModule", "data::Database"));
+        assert!(!guard.allow("plugin::PluginModule", "data::Database"));
+        let seen = guard.seen.lock().expect("lock");
+        assert_eq!(
+            *seen,
+            vec![
+                ("audit::AuditModule", "data::Database"),
+                ("plugin::PluginModule", "data::Database"),
+            ],
+            "caller/target must be forwarded verbatim"
+        );
     }
 }
