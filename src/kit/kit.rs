@@ -2991,6 +2991,30 @@ impl Kit<Ready> {
             .map(|p| (p.forbid.len(), p.required.len()))
     }
 
+    /// Read-only summary of the declared capability visibilities:
+    /// `Some((total_declared, restricted_count))`, or `None` when no
+    /// visibility was declared (every registered capability behaves as
+    /// `Public`). Consumed by the security-posture audit. Requires the
+    /// `visibility` feature.
+    #[cfg(feature = "visibility")]
+    #[must_use]
+    pub fn visibility_summary(&self) -> Option<(usize, usize)> {
+        let visibilities = &self.visibility.visibilities;
+        if visibilities.is_empty() {
+            return None;
+        }
+        let restricted = visibilities
+            .values()
+            .filter(|v| {
+                matches!(
+                    v,
+                    crate::kit::visibility::CapabilityVisibility::Restricted(_)
+                )
+            })
+            .count();
+        Some((visibilities.len(), restricted))
+    }
+
     /// Read-only query of the capability visibility declared for `M`.
     ///
     /// Returns `None` when no visibility was declared (the module behaves
