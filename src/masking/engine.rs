@@ -1539,7 +1539,8 @@ mod tests {
 
     #[test]
     fn test_credit_card_apply_on_v051_scale_input_does_not_panic() {
-        // V051（12306 站点种子 250KB 级）真实场景规模：credit_card 规则
+        // （12306 站点种子 250KB 级）真实场景规模：credit_card 规则
+
         // 扫描长 SQL 语句曾触发同型 panic；断言不 panic 且输出非空即可
         // （掩码成功或优雅跳过均为合法终态）。
         let rule = MaskRule::new_credit_card_rule();
@@ -2357,7 +2358,7 @@ mod tests {
 
     #[test]
     fn test_name_field_patterns_coverage() {
-        // R-maskcn-001：命中集
+        // 命中集
         for key in [
             "full_name",
             "real_name",
@@ -2389,7 +2390,7 @@ mod tests {
 
     #[test]
     fn test_cjk_name_value_masked_by_key_context() {
-        // R-maskcn-002：姓名键 + 2-4 汉字值 → 保留首字 + **
+        // 姓名键 + 2-4 汉字值 → 保留首字 + **
         let masker = DataMasker::new();
         let mut fields = serde_json::json!({
             "real_name": "张三丰",

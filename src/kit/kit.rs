@@ -4515,7 +4515,7 @@ mod sync_config_surface_tests {
     }
 
     /// 序列化必定失败的配置：命中受限序列化器的 `Serialize` 错误分支
-    ///（与深度超限不同的另一条序列化失败路径）。
+    /// （与深度超限不同的另一条序列化失败路径）。
     #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
     struct SerializeFailCfg;
 

@@ -44,7 +44,7 @@ use std::future::Future;
 ///     "prompt-store",
 ///     load_remote_prompts,
 ///     PromptStore::in_memory,
-///)
+/// )
 /// .await;
 /// ```
 pub async fn soft_build<C, E, F>(module: &'static str, build: F, fallback: C) -> C

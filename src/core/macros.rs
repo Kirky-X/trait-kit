@@ -83,7 +83,7 @@ macro_rules! impl_module_meta {
 ///     Arc<Cap>,
 ///     MockErr,
 ///     |_kit| Ok(Arc::new(Cap { v: 42 }))
-///);
+/// );
 /// ```
 #[macro_export]
 macro_rules! impl_auto_builder {
@@ -139,7 +139,7 @@ macro_rules! impl_auto_builder {
 ///         let _ = kit;
 ///         Ok(Arc::new(Cap { v: 42 }))
 ///     })
-///);
+/// );
 /// ```
 #[cfg(feature = "async")]
 #[macro_export]

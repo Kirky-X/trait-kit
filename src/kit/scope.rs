@@ -748,7 +748,7 @@ mod async_tests {
     }
 
     /// `AsyncScopeModule` 的 build 体也必须在 `AsyncKit` 构建路径上执行
-    ///（insert 直插不是它唯一的产生能力方式）。
+    /// （insert 直插不是它唯一的产生能力方式）。
     #[test]
     fn async_scope_module_builds_through_async_kit() {
         use crate::test_helpers::block_on;
