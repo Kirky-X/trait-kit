@@ -405,6 +405,16 @@ struct PolicyFields {
     policy: Option<super::policy::DependencyPolicy>,
 }
 
+/// Fields gated behind the `resource-guard` feature.
+#[cfg(feature = "resource-guard")]
+#[derive(Default)]
+struct ResourceGuardFields {
+    /// `TypeId`s of modules marked as holding sensitive resources.
+    /// `BTreeSet`: stable membership output; the user-facing name order is
+    /// derived from the graph's topological iteration, not from this set.
+    sensitive: std::collections::BTreeSet<TypeId>,
+}
+
 /// The capability and configuration management center.
 ///
 /// # Thread safety
@@ -473,6 +483,8 @@ pub struct Kit<S = Unbuilt> {
     visibility: VisibilityFields,
     #[cfg(feature = "policy")]
     policy: PolicyFields,
+    #[cfg(feature = "resource-guard")]
+    resource_guard: ResourceGuardFields,
     #[cfg(feature = "report")]
     report: super::report::ReportFields,
     ports: PortsFields,
@@ -521,6 +533,8 @@ impl Kit {
             visibility: VisibilityFields::default(),
             #[cfg(feature = "policy")]
             policy: PolicyFields::default(),
+            #[cfg(feature = "resource-guard")]
+            resource_guard: ResourceGuardFields::default(),
             #[cfg(feature = "report")]
             report: super::report::ReportFields::default(),
             ports: PortsFields::default(),
@@ -1253,6 +1267,8 @@ impl Kit {
             visibility: self.visibility,
             #[cfg(feature = "policy")]
             policy: self.policy,
+            #[cfg(feature = "resource-guard")]
+            resource_guard: self.resource_guard,
             #[cfg(feature = "report")]
             report: self.report,
             ports: self.ports,
@@ -1653,6 +1669,19 @@ impl Kit {
             .ready_callbacks
             .borrow_mut()
             .push((TypeId::of::<M>(), ready_cb));
+    }
+
+    /// Mark `M` as holding sensitive resources (connection pools, keys,
+    /// session stores). Idempotent: marking the same module twice keeps a
+    /// single entry. [`shutdown_with_report`](Kit::shutdown_with_report) and
+    /// the build-failure rollback then verify this module's `on_shutdown`
+    /// explicitly.
+    ///
+    /// Requires the `resource-guard` feature.
+    #[cfg(feature = "resource-guard")]
+    pub fn mark_sensitive<M: AutoBuilder>(&mut self) -> &mut Self {
+        self.resource_guard.sensitive.insert(TypeId::of::<M>());
+        self
     }
 
     // Health Check
@@ -5366,6 +5395,44 @@ mod sync_health_and_encryption_branch_tests {
         assert!(
             matches!(&err, TraitKitError::BuildFailed { context, .. } if context == "get_encrypted"),
             "expected BuildFailed with the asserted context, got {err:?}"
+        );
+    }
+}
+
+// ─── resource-guard: sensitive marking + shutdown verification ──────────
+
+/// Sensitive-resource marking and shutdown-verification unit tests
+/// (feature `resource-guard`).
+#[cfg(all(test, feature = "resource-guard"))]
+mod resource_guard_tests {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    /// Connection-pool-like module: the canonical sensitive-resource holder.
+    struct PoolModule;
+    impl ModuleMeta for PoolModule {
+        const NAME: &'static str = "pool";
+    }
+    impl AutoBuilder for PoolModule {
+        type Capability = Arc<u32>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(1))
+        }
+    }
+
+    /// `mark_sensitive` 幂等：重复 mark 后敏感集合只含一个 TypeId（R-res-001）。
+    #[test]
+    fn mark_sensitive_twice_keeps_single_entry() {
+        let mut kit = Kit::new();
+        kit.register::<PoolModule>().expect("register");
+        kit.mark_sensitive::<PoolModule>();
+        kit.mark_sensitive::<PoolModule>();
+        assert_eq!(
+            kit.resource_guard.sensitive.len(),
+            1,
+            "duplicate mark must not duplicate the sensitive entry"
         );
     }
 }
