@@ -40,6 +40,8 @@ pub use describe::{KitDescription, ModuleDescription};
 
 #[cfg(feature = "audit")]
 pub mod audit;
+#[cfg(feature = "audit")]
+pub use audit::{PostureCheck, PostureStatus, SecurityPosture};
 
 pub use graph::{DependencyGraph, GraphError, ModuleEntry};
 #[cfg(feature = "resource-guard")]

@@ -61,6 +61,9 @@ pub use crate::kit::CapabilityVisibility;
 #[cfg(feature = "resource-guard")]
 pub use crate::kit::SensitiveShutdownReport;
 
+#[cfg(feature = "audit")]
+pub use crate::kit::{PostureStatus, SecurityPosture};
+
 #[cfg(all(test, feature = "async"))]
 mod tests {
     //! Verify the async re-exports reachable through `prelude::*` compile

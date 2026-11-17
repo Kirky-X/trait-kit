@@ -56,6 +56,8 @@ pub use kit::{ShutdownCoordinator, ShutdownPhase, ShutdownPhaseResult, ShutdownR
 pub use kit::CapabilityGuard;
 #[cfg(feature = "visibility")]
 pub use kit::CapabilityVisibility;
+#[cfg(feature = "audit")]
+pub use kit::{PostureStatus, SecurityPosture};
 
 /// Shared test helpers for async test modules (`block_on` executor + `MockError`).
 ///
