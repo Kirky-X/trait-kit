@@ -122,6 +122,7 @@ fn prs02_feature_table_lists_all_features() {
         "reload",
         "report",
         "request-scope",
+        "resource-guard",
         "scope",
         "shutdown",
         "toggle",
@@ -134,7 +135,7 @@ fn prs02_feature_table_lists_all_features() {
             "Cargo.toml [features] is missing feature '{f}': got {names:?}"
         );
     }
-    // 除 26 个 feature 外仅允许空集 default（PRS-01 的可编译前提；数量
+    // 除 27 个 feature 外仅允许空集 default（PRS-01 的可编译前提；数量
     // 与 prs02 期望表一致）。
     assert_eq!(
         features.get("default").map(Vec::is_empty),
@@ -144,7 +145,7 @@ fn prs02_feature_table_lists_all_features() {
     assert_eq!(
         names.len(),
         expected.len() + 1,
-        "[features] should contain exactly 26 features plus default: got {names:?}"
+        "[features] should contain exactly 27 features plus default: got {names:?}"
     );
 }
 
@@ -205,19 +206,20 @@ fn prs05_encryption_chain_expansion() {
     feature = "reload",
     feature = "report",
     feature = "request-scope",
+    feature = "resource-guard",
     feature = "shutdown",
     feature = "toggle",
     feature = "visibility",
 ))]
 #[test]
 fn prs03_all_features_gate_reached() {
-    // 能编译并执行到此处 = 26 项 feature 全部激活（cfg 列表覆盖全部非
-    // 别名 feature，数量与下一行断言的「26 feature + default」一致）。
+    // 能编译并执行到此处 = 27 项 feature 全部激活（cfg 列表覆盖全部非
+    // 别名 feature，数量与下一行断言的「27 feature + default」一致）。
     let features = parse_features();
-    assert_eq!(features.len(), 27, "26 features plus the empty default set");
+    assert_eq!(features.len(), 28, "27 features plus the empty default set");
 }
 
-/// examples crate 23 个示例全部显式 `[[example]]` 注册，且
+/// examples crate 24 个示例全部显式 `[[example]]` 注册，且
 /// required-features 引用 examples crate 自身的 feature 名单
 /// （逐示例 `cargo check -p trait-kit-examples --features <组合>` 的
 /// 执行记录见 reviews/acceptance-report.md）。
@@ -265,8 +267,8 @@ fn prs06_examples_manifest_required_features_structure() {
 
     assert_eq!(
         examples.len(),
-        23,
-        "the examples crate should have exactly 23 [[example]] entries"
+        24,
+        "the examples crate should have exactly 24 [[example]] entries"
     );
     // 解析 examples crate 自身 [features] 名单。
     let ex_manifest = include_str!("../../examples/Cargo.toml");

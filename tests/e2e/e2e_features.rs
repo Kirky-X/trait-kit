@@ -305,11 +305,12 @@ mod ready_discard_on_ready_failure_e2e {
         }
     }
 
-    /// on_ready 返回 Err → build 返回 LifecycleFailed，已成功构建的
-    /// 其余模块（含 on_ready 失败模块自身）的 on_shutdown 一律不执行
-    /// （Kit<Ready> 未产出，shutdown 回调表随 Kit 一起丢弃）。
+    /// on_ready 返回 Err → build 返回 LifecycleFailed；失败路径回滚：
+    /// 已构建模块（含 on_ready 失败模块自身，其 capability 已构建）的
+    /// on_shutdown 逆拓扑序执行（resource-guard change 的契约变更——
+    /// 失败路径以确定性清理取代旧的"整体丢弃、无回调"语义）。
     #[test]
-    fn e2e_on_ready_failure_discards_ready_and_runs_no_shutdown() {
+    fn e2e_on_ready_failure_rolls_back_built_modules() {
         let before = SYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst);
         let mut kit = Kit::new();
         kit.register::<HealthyShutdownMod>().unwrap();
@@ -324,8 +325,8 @@ mod ready_discard_on_ready_failure_e2e {
 
         assert_eq!(
             SYNC_SHUTDOWN_COUNT.load(Ordering::SeqCst),
-            before,
-            "no on_shutdown should run after a failed on_ready"
+            before + 2,
+            "rollback must run on_shutdown for both built modules"
         );
     }
 }
