@@ -29,3 +29,9 @@ trait-kit-log-shared-overlay-refused = shared overlay: key `{ $key }` is already
 # KitEvent::ConfigChanged summary (event-bus payload)
 
 trait-kit-event-config-changed-merge = merge
+
+# resource-guard: build-failure rollback and sensitive-cleanup skip logs
+
+trait-kit-log-build-rollback = build failed: rolling back { $count } already-built module(s) (on_shutdown, reverse topological order)
+trait-kit-log-rollback-skipped = build rollback: on_shutdown of module `{ $module }` panicked and was skipped
+trait-kit-log-sensitive-skipped = sensitive shutdown report: module `{ $module }` skipped (on_shutdown panicked or no lifecycle callback registered)
