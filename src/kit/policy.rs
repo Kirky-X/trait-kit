@@ -26,11 +26,19 @@ pub enum ModulePattern {
 
 impl ModulePattern {
     /// Returns `true` when `name` matches this pattern.
+    ///
+    /// `Prefix` is namespace-boundary aware: it matches the prefix itself
+    /// or any name inside the `prefix::` namespace — `Prefix("business")`
+    /// matches `business` / `business::Orders` but not `businessx::Y`;
+    /// a prefix that already ends with `::` (e.g. `Prefix("pol::")`)
+    /// matches any continued path.
     #[must_use]
     pub fn matches(&self, name: &str) -> bool {
         match self {
             Self::Exact(want) => name == *want,
-            Self::Prefix(prefix) => name.starts_with(prefix),
+            Self::Prefix(prefix) => name.strip_prefix(prefix).is_some_and(|rest| {
+                rest.is_empty() || rest.starts_with("::") || prefix.ends_with("::")
+            }),
             Self::Any => true,
         }
     }
@@ -76,9 +84,9 @@ impl DependencyPolicy {
     /// by module name.
     #[must_use]
     pub fn forbids(&self, dependent: &str, dependency: &str) -> bool {
-        self.forbid.iter().any(|edge| {
-            edge.dependent.matches(dependent) && edge.dependency.matches(dependency)
-        })
+        self.forbid
+            .iter()
+            .any(|edge| edge.dependent.matches(dependent) && edge.dependency.matches(dependency))
     }
 }
 

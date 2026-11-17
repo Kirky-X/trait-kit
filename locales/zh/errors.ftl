@@ -14,6 +14,8 @@ trait-kit-error-missing-config = 缺少配置 `{ $key }`
 trait-kit-error-lifecycle-failed = `{ $context }` 生命周期钩子失败: { $source }
 trait-kit-error-shutdown-timed-out = 优雅关闭在以下阶段超时: { $phases }
 trait-kit-error-access-denied = 拒绝访问: 模块 `{ $module }` 对调用方 `{ $caller }` 不可见
+trait-kit-error-policy-forbidden = 依赖策略违规: 模块 `{ $dependent }` 不得依赖 `{ $dependency }`
+trait-kit-error-policy-required-missing = 依赖策略违规: 模块 `{ $dependent }` 必须依赖匹配 `{ $dependency }` 的模块
 trait-kit-error-decorator-target-missing = 装饰目标模块 `{ $module }` 未注册（注册时校验）
 trait-kit-error-version-incompatible = 模块 `{ $module }` 要求能力 `{ $dependency }` >= { $required }，但提供方声明为 { $provided }
 trait-kit-preset-remote-load-failed = 远程配置源加载失败: { $message }

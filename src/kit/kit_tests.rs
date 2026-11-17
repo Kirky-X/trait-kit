@@ -3990,3 +3990,223 @@ mod guarded_require_tests {
             .expect("visibility and guard both pass");
     }
 }
+
+/// 构建期依赖策略（feature `policy`）。
+#[cfg(all(test, feature = "policy"))]
+mod policy_tests {
+    use super::super::*;
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::error::TraitKitError;
+    use crate::kit::policy::{
+        DependencyPolicy, ForbiddenEdge, ModulePattern, PolicyRule, RequiredEdge,
+    };
+
+    #[derive(Clone, Debug)]
+    struct Cap;
+    #[derive(Debug)]
+    struct Err_;
+    impl std::fmt::Display for Err_ {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "policy test error")
+        }
+    }
+    impl std::error::Error for Err_ {}
+
+    macro_rules! decl_module {
+        ($t:ident, $name:literal, $($dep:ty),* $(,)?) => {
+            struct $t;
+            impl ModuleMeta for $t {
+                const NAME: &'static str = $name;
+                fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+                    static DEPS: &[(&str, std::any::TypeId)] = &[
+                        $((<$dep as ModuleMeta>::NAME, std::any::TypeId::of::<$dep>()),)*
+                    ];
+                    DEPS
+                }
+            }
+            impl AutoBuilder for $t {
+                type Capability = Cap;
+                type Error = Err_;
+                fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+                    Ok(Cap)
+                }
+            }
+        };
+    }
+
+    decl_module!(Auth, "pol::auth",);
+    decl_module!(Business, "pol::business", Auth);
+    decl_module!(Audit, "pol::audit",);
+    // business2 → auth：用于 required 满足场景。
+    decl_module!(BusinessSatisfied, "pol::business-satisfied", Auth);
+
+    #[test]
+    fn summary_reports_rule_counts_and_overwrite_replaces() {
+        let mut kit = Kit::new();
+        kit.register::<Auth>().expect("register auth");
+        kit.register::<Business>().expect("register business");
+        kit.dependency_policy(DependencyPolicy {
+            forbid: vec![ForbiddenEdge {
+                dependent: ModulePattern::Any,
+                dependency: ModulePattern::Exact("pol::audit"),
+            }],
+            required: Vec::new(),
+        });
+        // 二次设置覆盖首次：1 forbid → 2 forbid + 1 required。
+        kit.dependency_policy(DependencyPolicy {
+            forbid: vec![
+                ForbiddenEdge {
+                    dependent: ModulePattern::Exact("pol::business"),
+                    dependency: ModulePattern::Exact("pol::nonexistent"),
+                },
+                ForbiddenEdge {
+                    dependent: ModulePattern::Exact("pol::audit"),
+                    dependency: ModulePattern::Any,
+                },
+            ],
+            required: vec![RequiredEdge {
+                dependent: ModulePattern::Exact("pol::business"),
+                dependency: ModulePattern::Exact("pol::auth"),
+            }],
+        });
+        let ready = kit.build().expect("configured rules do not fire");
+        assert_eq!(
+            ready.dependency_policy_summary(),
+            Some((2, 1)),
+            "second dependency_policy call must replace the first"
+        );
+    }
+
+    #[test]
+    fn forbid_edge_violation_fails_build_with_both_names() {
+        let mut kit = Kit::new();
+        kit.register::<Auth>().expect("register auth");
+        kit.register::<Business>().expect("register business");
+        kit.dependency_policy(DependencyPolicy {
+            forbid: vec![ForbiddenEdge {
+                dependent: ModulePattern::Exact("pol::business"),
+                dependency: ModulePattern::Exact("pol::auth"),
+            }],
+            required: Vec::new(),
+        });
+        let err = kit.build().expect_err("business → auth is forbidden");
+        assert!(
+            matches!(
+                err,
+                TraitKitError::PolicyViolation {
+                    rule: PolicyRule::ForbiddenDependency,
+                    dependent: "pol::business",
+                    dependency: "pol::auth",
+                }
+            ),
+            "wrong error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn forbid_edge_not_hit_builds_normally() {
+        let mut kit = Kit::new();
+        kit.register::<Auth>().expect("register auth");
+        kit.register::<Business>().expect("register business");
+        // audit 也入图：禁令（audit 为被依赖方）在无边命中时不触发。
+        kit.register::<Audit>().expect("register audit");
+        // 禁令方向与图边相反：不命中。
+        kit.dependency_policy(DependencyPolicy {
+            forbid: vec![ForbiddenEdge {
+                dependent: ModulePattern::Exact("pol::auth"),
+                dependency: ModulePattern::Exact("pol::business"),
+            }],
+            required: Vec::new(),
+        });
+        let ready = kit.build().expect("no edge violates the policy");
+        assert_eq!(
+            ready.dependency_policy_summary(),
+            Some((1, 0)),
+            "summary must report the configured rule counts"
+        );
+    }
+
+    #[test]
+    fn required_edge_missing_fails_build() {
+        let mut kit = Kit::new();
+        kit.register::<Auth>().expect("register auth");
+        // auth 无依赖：required 要求 pol::* 依赖 audit → 缺失。
+        kit.dependency_policy(DependencyPolicy {
+            forbid: Vec::new(),
+            required: vec![RequiredEdge {
+                dependent: ModulePattern::Prefix("pol::"),
+                dependency: ModulePattern::Exact("pol::audit"),
+            }],
+        });
+        let err = kit
+            .build()
+            .expect_err("auth lacks the required audit dependency");
+        assert!(
+            matches!(
+                err,
+                TraitKitError::PolicyViolation {
+                    rule: PolicyRule::RequiredDependencyMissing,
+                    dependent: "pol::auth",
+                    dependency: "pol::audit",
+                }
+            ),
+            "wrong error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn required_edge_satisfied_builds_normally() {
+        let mut kit = Kit::new();
+        kit.register::<Auth>().expect("register auth");
+        kit.register::<BusinessSatisfied>()
+            .expect("register satisfied");
+        kit.dependency_policy(DependencyPolicy {
+            forbid: Vec::new(),
+            required: vec![RequiredEdge {
+                dependent: ModulePattern::Prefix("pol::business"),
+                dependency: ModulePattern::Exact("pol::auth"),
+            }],
+        });
+        let ready = kit
+            .build()
+            .expect("business-satisfied → auth satisfies the rule");
+        assert_eq!(ready.dependency_policy_summary(), Some((0, 1)));
+    }
+
+    #[test]
+    fn first_violation_wins_across_rules() {
+        let mut kit = Kit::new();
+        kit.register::<Auth>().expect("register auth");
+        kit.register::<Business>().expect("register business");
+        // forbid 段在前：business → auth 命中禁令，先于 required 违规返回。
+        kit.dependency_policy(DependencyPolicy {
+            forbid: vec![ForbiddenEdge {
+                dependent: ModulePattern::Any,
+                dependency: ModulePattern::Any,
+            }],
+            required: vec![RequiredEdge {
+                dependent: ModulePattern::Any,
+                dependency: ModulePattern::Exact("pol::audit"),
+            }],
+        });
+        let err = kit
+            .build()
+            .expect_err("forbid pass runs before required pass");
+        assert!(matches!(
+            err,
+            TraitKitError::PolicyViolation {
+                rule: PolicyRule::ForbiddenDependency,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn no_policy_keeps_current_build_behavior() {
+        let mut kit = Kit::new();
+        kit.register::<Auth>().expect("register auth");
+        kit.register::<Business>().expect("register business");
+        let ready = kit.build().expect("no policy, build unchanged");
+        assert_eq!(ready.dependency_policy_summary(), None);
+    }
+}

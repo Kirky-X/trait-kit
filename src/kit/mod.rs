@@ -30,6 +30,9 @@ pub mod sub_kit;
 #[cfg(feature = "visibility")]
 pub mod visibility;
 
+#[cfg(feature = "policy")]
+pub mod policy;
+
 pub use graph::{DependencyGraph, GraphError, ModuleEntry};
 pub use kit::{Kit, Ready, Unbuilt};
 pub(crate) use typemap::TypeMap;
@@ -92,6 +95,9 @@ pub use sub_kit::{SubKitHandle, SubKitModule, SubKitSpec};
 pub use visibility::CapabilityGuard;
 #[cfg(feature = "visibility")]
 pub use visibility::CapabilityVisibility;
+
+#[cfg(feature = "policy")]
+pub use policy::{DependencyPolicy, ForbiddenEdge, ModulePattern, PolicyRule, RequiredEdge};
 
 // NOTE: derive macros (Module, ConfigInherit, SharedConfig) live in `trait-kit-macros`.
 // Users add `trait-kit-macros` as a dependency to use the derives.

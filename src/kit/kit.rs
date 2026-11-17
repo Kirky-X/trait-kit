@@ -397,6 +397,14 @@ struct VisibilityFields {
     visibilities: HashMap<TypeId, crate::kit::visibility::CapabilityVisibility>,
 }
 
+/// Fields gated behind the `policy` feature.
+#[cfg(feature = "policy")]
+#[derive(Default)]
+struct PolicyFields {
+    /// Build-time dependency policy; `None` = no constraints.
+    policy: Option<super::policy::DependencyPolicy>,
+}
+
 /// The capability and configuration management center.
 ///
 /// # Thread safety
@@ -463,6 +471,8 @@ pub struct Kit<S = Unbuilt> {
     i18n: I18nFields,
     #[cfg(feature = "visibility")]
     visibility: VisibilityFields,
+    #[cfg(feature = "policy")]
+    policy: PolicyFields,
     #[cfg(feature = "report")]
     report: super::report::ReportFields,
     ports: PortsFields,
@@ -509,6 +519,8 @@ impl Kit {
             i18n: I18nFields::default(),
             #[cfg(feature = "visibility")]
             visibility: VisibilityFields::default(),
+            #[cfg(feature = "policy")]
+            policy: PolicyFields::default(),
             #[cfg(feature = "report")]
             report: super::report::ReportFields::default(),
             ports: PortsFields::default(),
@@ -682,6 +694,19 @@ impl Kit {
             .visibilities
             .insert(TypeId::of::<M>(), visibility);
         Ok(())
+    }
+
+    /// Set the dependency policy enforced at `build` (replaces any
+    /// previous policy).
+    ///
+    /// The policy is validated in `build()` right after topological
+    /// validation and before any module is constructed: a violation
+    /// returns `TraitKitError::PolicyViolation` with zero build side
+    /// effects. Requires the `policy` feature.
+    #[cfg(feature = "policy")]
+    pub fn dependency_policy(&mut self, policy: super::policy::DependencyPolicy) -> &mut Self {
+        self.policy.policy = Some(policy);
+        self
     }
 
     /// Set (or overwrite) the capability visibility of an already
@@ -1108,6 +1133,13 @@ impl Kit {
             }
         };
 
+        // Dependency policy (negative architecture constraints): validated
+        // after topological correctness, before any module is constructed —
+        // a violation leaves zero build side effects, mirroring the
+        // missing-dependency / cycle error paths.
+        #[cfg(feature = "policy")]
+        self.validate_dependency_policy()?;
+
         // Decorator targets registered but never wired into the graph are a
         // documented build-time panic (decorate is fire-and-forget;
         // try_decorate is the checking counterpart).
@@ -1219,6 +1251,8 @@ impl Kit {
             i18n: self.i18n,
             #[cfg(feature = "visibility")]
             visibility: self.visibility,
+            #[cfg(feature = "policy")]
+            policy: self.policy,
             #[cfg(feature = "report")]
             report: self.report,
             ports: self.ports,
@@ -1803,6 +1837,61 @@ impl Kit {
     // 泛型桩从不被调用也不会触发 dead_code；仅 clippy 需放行未用的 self。
     #[allow(clippy::unused_self)] // signature parity with the report arm
     fn record_module_contract<M: crate::core::ModuleMeta>(&self, _capability: &'static str) {}
+
+    /// Dependency policy validation pass: forbidden edges must not be
+    /// matched, required edges must be satisfied. Returns the first
+    /// violation (same first-error granularity as `graph.validate()`).
+    #[cfg(feature = "policy")]
+    fn validate_dependency_policy(&self) -> Result<(), TraitKitError> {
+        let Some(policy) = self.policy.policy.as_ref() else {
+            return Ok(());
+        };
+
+        // Forbidden edges: no registered (dependent → dependency) pair may
+        // match. Registration order drives which violation is reported
+        // first, mirroring `graph.validate()`'s deterministic scan.
+        for entry in self.graph.entries() {
+            for (dep_name, _) in &entry.dependencies {
+                if policy.forbids(entry.name, dep_name) {
+                    return Err(TraitKitError::PolicyViolation {
+                        rule: super::policy::PolicyRule::ForbiddenDependency,
+                        dependent: entry.name,
+                        dependency: dep_name,
+                    });
+                }
+            }
+        }
+
+        // Required edges: every module matching `dependent` must declare at
+        // least one dependency matching `dependency`.
+        for edge in &policy.required {
+            for entry in self.graph.entries() {
+                if !edge.dependent.matches(entry.name) {
+                    continue;
+                }
+                let satisfied = entry
+                    .dependencies
+                    .iter()
+                    .any(|(dep_name, _)| edge.dependency.matches(dep_name));
+                if !satisfied {
+                    // The pattern's representative name (Exact carries the
+                    // concrete name; Prefix/Any have none — fall back to a
+                    // readable marker).
+                    let dependency = match edge.dependency {
+                        super::policy::ModulePattern::Exact(name) => name,
+                        super::policy::ModulePattern::Prefix(prefix) => prefix,
+                        super::policy::ModulePattern::Any => "*",
+                    };
+                    return Err(TraitKitError::PolicyViolation {
+                        rule: super::policy::PolicyRule::RequiredDependencyMissing,
+                        dependent: entry.name,
+                        dependency,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
 
     /// Semver-compat validation pass: every declared requirement must
     /// be satisfied by the provider's declared version.
@@ -2766,6 +2855,19 @@ impl<S> Kit<S> {
 }
 
 impl Kit<Ready> {
+    /// Read-only summary of the configured dependency policy:
+    /// `Some((forbid_count, required_count))`, or `None` when no policy is
+    /// set. Consumed by the security-posture audit. Requires the `policy`
+    /// feature.
+    #[cfg(feature = "policy")]
+    #[must_use]
+    pub fn dependency_policy_summary(&self) -> Option<(usize, usize)> {
+        self.policy
+            .policy
+            .as_ref()
+            .map(|p| (p.forbid.len(), p.required.len()))
+    }
+
     /// Read-only query of the capability visibility declared for `M`.
     ///
     /// Returns `None` when no visibility was declared (the module behaves

@@ -107,6 +107,17 @@ pub enum TraitKitError {
         /// 被拒绝调用方声明的模块名。
         caller: &'static str,
     },
+
+    /// 已注册的依赖边违反配置的 `DependencyPolicy`。
+    #[cfg(feature = "policy")]
+    PolicyViolation {
+        /// 违反的规则类别。
+        rule: crate::kit::policy::PolicyRule,
+        /// 依赖发起方模块名。
+        dependent: &'static str,
+        /// 涉事的依赖模块名。
+        dependency: &'static str,
+    },
 }
 
 impl fmt::Display for TraitKitError {
@@ -244,6 +255,29 @@ impl fmt::Display for TraitKitError {
                     &[("module", *module), ("caller", *caller)],
                 )
             ),
+            #[cfg(feature = "policy")]
+            Self::PolicyViolation {
+                rule,
+                dependent,
+                dependency,
+            } => {
+                let message_id = match rule {
+                    crate::kit::policy::PolicyRule::ForbiddenDependency => {
+                        "trait-kit-error-policy-forbidden"
+                    }
+                    crate::kit::policy::PolicyRule::RequiredDependencyMissing => {
+                        "trait-kit-error-policy-required-missing"
+                    }
+                };
+                write!(
+                    f,
+                    "{}",
+                    tr(
+                        message_id,
+                        &[("dependent", *dependent), ("dependency", *dependency)],
+                    )
+                )
+            }
         }
     }
 }
@@ -351,6 +385,17 @@ impl fmt::Debug for TraitKitError {
                 .debug_struct("AccessDenied")
                 .field("module", module)
                 .field("caller", caller)
+                .finish(),
+            #[cfg(feature = "policy")]
+            Self::PolicyViolation {
+                rule,
+                dependent,
+                dependency,
+            } => f
+                .debug_struct("PolicyViolation")
+                .field("rule", rule)
+                .field("dependent", dependent)
+                .field("dependency", dependency)
                 .finish(),
         }
     }
@@ -539,6 +584,8 @@ impl TraitKitError {
             Self::ShutdownTimedOut { .. } => ErrorKind::Other,
             #[cfg(feature = "visibility")]
             Self::AccessDenied { .. } => ErrorKind::Other,
+            #[cfg(feature = "policy")]
+            Self::PolicyViolation { .. } => ErrorKind::Other,
         }
     }
 }
@@ -744,6 +791,62 @@ mod tests {
         assert!(
             msg.contains("db.url"),
             "should contain config key: got '{msg}'"
+        );
+    }
+
+    /// 依赖策略违规：中英 Display 文本都必须携带双方模块名
+    /// （R-pol-004）。
+    #[cfg(feature = "policy")]
+    #[test]
+    fn policy_violation_display_contains_both_modules_both_locales() {
+        use crate::i18n::MessageCatalog;
+        use crate::kit::policy::PolicyRule;
+        for rule in [
+            PolicyRule::ForbiddenDependency,
+            PolicyRule::RequiredDependencyMissing,
+        ] {
+            let err = TraitKitError::PolicyViolation {
+                rule,
+                dependent: "pol::business",
+                dependency: "pol::auth",
+            };
+            let msg = format!("{err}");
+            assert!(
+                msg.contains("pol::business"),
+                "dependent name missing ({rule:?}): '{msg}'"
+            );
+            assert!(
+                msg.contains("pol::auth"),
+                "dependency name missing ({rule:?}): '{msg}'"
+            );
+        }
+        let zh = MessageCatalog::global("zh-CN").translate(
+            "trait-kit-error-policy-forbidden",
+            &[("dependent", "甲"), ("dependency", "乙")],
+        );
+        assert!(
+            zh.contains("甲") && zh.contains("乙") && zh.contains("不得依赖"),
+            "zh forbidden wording wrong: '{zh}'"
+        );
+        let en = MessageCatalog::global("en-US").translate(
+            "trait-kit-error-policy-required-missing",
+            &[("dependent", "A"), ("dependency", "B")],
+        );
+        assert!(
+            en.contains("must depend on"),
+            "en required-missing wording wrong: '{en}'"
+        );
+        let debug = format!(
+            "{:?}",
+            TraitKitError::PolicyViolation {
+                rule: PolicyRule::ForbiddenDependency,
+                dependent: "pol::business",
+                dependency: "pol::auth",
+            }
+        );
+        assert!(
+            debug.contains("PolicyViolation") && debug.contains("pol::business"),
+            "debug shape wrong: '{debug}'"
         );
     }
 
