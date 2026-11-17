@@ -1,6 +1,6 @@
 # 📘 Trait-Kit API 参考
 
-trait-kit 的 API 参考。覆盖核心与常用公开项——非穷尽全量，完整清单以 rustdoc / docs.rs 为准；按模块组织，标注各 API 所需的 feature flag（当前版本 **0.5.0-rc.12**）。
+trait-kit 的 API 参考。覆盖核心与常用公开项——非穷尽全量，完整清单以 rustdoc / docs.rs 为准；按模块组织，标注各 API 所需的 feature flag（当前版本 **0.5.0**）。
 
 ## 📋 目录
 
@@ -791,7 +791,7 @@ let config: TraitKitConfig = kit.config()?;
 
 ### 更多示例
 
-全部可运行示例见 [examples/](../examples/README.md)，覆盖每个 feature 门控的完整用法。
+全部可运行示例见 [examples/](../../examples/README.md)，覆盖每个 feature 门控的完整用法。
 
 ---
 

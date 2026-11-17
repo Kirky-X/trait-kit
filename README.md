@@ -1,143 +1,73 @@
+English | [中文](README_CN.md)
+
 <div align="center">
 
 <img src="docs/assets/trait-kit.png" alt="trait-kit logo" width="240">
 
 [![Rust 2024](https://img.shields.io/badge/Rust-2024-edded?logo=rust&style=for-the-badge)](https://www.rust-lang.org/) [![Rustc 1.97.1+](https://img.shields.io/badge/Rustc-1.97.1+-orange.svg?style=for-the-badge)](https://www.rust-lang.org/) [![crates.io](https://img.shields.io/crates/v/trait-kit?style=for-the-badge)](https://crates.io/crates/trait-kit) [![docs.rs](https://img.shields.io/docsrs/trait-kit?style=for-the-badge)](https://docs.rs/trait-kit) [![downloads](https://img.shields.io/crates/d/trait-kit?style=for-the-badge)](https://crates.io/crates/trait-kit) [![CI](https://img.shields.io/github/actions/workflow/status/Kirky-X/trait-kit/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/Kirky-X/trait-kit/actions/workflows/ci.yml) [![coverage](https://img.shields.io/codecov/c/github/Kirky-X/trait-kit?style=for-the-badge)](https://codecov.io/gh/Kirky-X/trait-kit) [![license](https://img.shields.io/crates/l/trait-kit?style=for-the-badge)](./LICENSE)
 
-**中文** | [English](README_EN.md)
+**Standardized module interfaces + a `Kit` capability center**
 
-**模块标准接口 + `Kit` 能力管理中心**
-
-[✨ 功能特性](#-功能特性) • [🚀 快速开始](#-快速开始) • [📚 文档](#-文档) • [💻 示例](#-示例) • [🤝 参与贡献](#-参与贡献)
+[✨ Features](#-features) • [🚀 Quick Start](#-quick-start) • [📚 Documentation](#-documentation) • [💻 Examples](#-examples) • [🤝 Contributing](#-contributing)
 
 </div>
 
 ---
 
-<div align="center" style="padding: 32px; margin: 24px 0">
+## ✨ Features
 
-### 🧩 标准化模块装配
+<div align="center">
 
-模块以 `ModuleMeta` + `AutoBuilder` 声明契约，Kit 集中完成装配校验与能力检索：
-
-<table style="width:100%; border-collapse: collapse">
-<tr><td align="center" width="25%" style="padding: 12px">🧩<br><b>标准模块接口</b><br><span style="color:#64748B">ModuleMeta + AutoBuilder 统一契约，宏一行声明模块</span></td><td align="center" width="25%" style="padding: 12px">🏗️<br><b>构建期验证</b><br><span style="color:#64748B">typestate 依赖图校验，装配错误前置到启动之前</span></td><td align="center" width="25%" style="padding: 12px">🔎<br><b>类型安全检索</b><br><span style="color:#64748B">能力按模块类型存取，无字符串键、无 downcast</span></td><td align="center" width="25%" style="padding: 12px">⚡<br><b>按需扩展</b><br><span style="color:#64748B">19 个可选 feature 全部门控，默认零开销</span></td></tr>
+<table>
+<tr>
+<td width="50%">🧩 <b>Standardized Module Interface</b><br><sub>The <code>ModuleMeta</code> + <code>AutoBuilder</code> traits define a uniform contract; <code>impl_module_meta!</code> / <code>impl_auto_builder!</code> macros declare a module in one line.</sub></td>
+<td width="50%">🏗️ <b>Typestate Build Validation</b><br><sub><code>Kit&lt;Unbuilt&gt;</code> registers modules and configs; <code>build()</code> validates the dependency graph (missing deps + cycle detection) and returns <code>Kit&lt;Ready&gt;</code>, surfacing errors before startup.</sub></td>
+</tr>
+<tr>
+<td width="50%">🔎 <b>Type-Safe Capability Retrieval</b><br><sub>Capabilities are stored and retrieved by module type (<code>kit.require::&lt;M&gt;()</code>): no string keys, no downcast, no runtime lookup tables.</sub></td>
+<td width="50%">🗂️ <b>Configuration Center</b><br><sub><code>set_config</code> / <code>config::&lt;C&gt;</code> store and retrieve typed configs via a <code>TypeId</code>-keyed <code>TypeMap</code>.</sub></td>
+</tr>
+<tr>
+<td width="50%">⚙️ <b>confers Config Integration</b><br><sub>Three-level feature inheritance integrates <a href="https://crates.io/crates/confers">confers</a>: derive-macro config loading, hot-reload subscriptions, and XChaCha20-Poly1305 encrypted storage.</sub></td>
+<td width="50%">🌐 <b>AsyncKit Async Support</b><br><sub>The <code>async</code> feature provides a <code>Send + Sync</code> <code>AsyncKit</code> for DB pools, HTTP clients, and other async initialization scenarios.</sub></td>
+</tr>
+<tr>
+<td width="50%">🩺 <b>Runtime Observability</b><br><sub><code>lifecycle</code> hooks, <code>health</code> checks, <code>observer</code> build callbacks, and <code>shutdown</code> phased graceful shutdown.</sub></td>
+<td width="50%">🌍 <b>ICU4X Internationalization</b><br><sub>Locale-aware number / date / plural / collation formatting, plus built-in Fluent FTL translation (<code>tr()</code>) for English and Chinese.</sub></td>
+</tr>
+<tr>
+<td width="50%">🧱 <b>Minimal Default Dependencies</b><br><sub><code>default = []</code>: no optional feature enabled; only 3 mandatory deps ship by default (Fluent translation <code>fluent-bundle</code> / <code>unic-langid</code> and the <code>log</code> facade), while <code>confers</code>, <code>serde</code>, <code>serde_json</code>, <code>icu_*</code> (ICU4X components), etc. are all optional and feature-gated.</sub></td>
+<td width="50%">🚫 <b>unsafe denied by default</b><br><sub><code>#![deny(unsafe_code)]</code> is enforced crate-wide; only 5 locally audited exemptions exist in production code (SAFETY-justified & code-reviewed): typestate layout-assert casts ×3, volatile zeroization ×1, guard lifetime re-anchoring ×1 (<code>AsyncTypeMap</code> <code>RwLock</code> read guard; the sync <code>TypeMap</code> now uses a <code>Ref::map</code> guard wrapper and needs no unsafe), plus 1 test-only exemption (<code>src/kit/config.rs</code>, zeroize spare-capacity assertion).</sub></td>
+</tr>
 </table>
 
 </div>
 
----
-
-## 📋 目录
-
-<details open>
-<summary>📑 目录</summary>
-
-- [✨ 功能特性](#-功能特性)
-- [🚀 快速开始](#-快速开始)
-- [🎨 特性标志](#-特性标志)
-- [📚 文档](#-文档)
-- [💻 示例](#-示例)
-- [🏗️ 架构](#️-架构)
-- [🧪 测试](#-测试)
-- [📊 性能](#-性能)
-- [🔒 安全](#-安全)
-- [🗺️ 开发路线图](#️-开发路线图)
-- [🤝 参与贡献](#-参与贡献)
-- [📋 更新日志](#-更新日志)
-- [📄 许可证](#-许可证)
-- [🙏 致谢](#-致谢)
-- [📞 联系与支持](#-联系与支持)
-- [⭐ Star 历史](#-star-历史)
-
-</details>
+For more capabilities (registration modes, build reports, composition, negotiation) and the "Why trait-kit?" comparison, see the [📖 User Guide](docs/en/USER_GUIDE.md).
 
 ---
 
-## ✨ 功能特性
+## 🚀 Quick Start
 
-<table style="width:100%; border-collapse: collapse">
-<tr>
-<td width="50%" style="vertical-align:top; padding: 12px">🧩 <b>标准模块接口</b><br><span style="color:#64748B"><code>ModuleMeta</code> + <code>AutoBuilder</code> 定义统一契约，<code>impl_module_meta!</code> / <code>impl_auto_builder!</code> 宏一行声明模块。</span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">🏗️ <b>Typestate 构建验证</b><br><span style="color:#64748B"><code>Kit&lt;Unbuilt&gt;</code> 注册模块与配置，<code>build()</code> 做依赖图校验（缺失依赖 + 环检测）后返回 <code>Kit&lt;Ready&gt;</code>，错误在启动前暴露。</span></td>
-</tr>
-<tr>
-<td width="50%" style="vertical-align:top; padding: 12px">🔎 <b>类型安全能力检索</b><br><span style="color:#64748B">能力按模块类型存储与检索（<code>kit.require::&lt;M&gt;()</code>），无字符串键、无 downcast、无运行时查找表。</span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">🗂️ <b>配置中心</b><br><span style="color:#64748B"><code>set_config</code> / <code>config::&lt;C&gt;</code> 基于 <code>TypeId</code> 键的 <code>TypeMap</code> 存取类型化配置。</span></td>
-</tr>
-<tr>
-<td width="50%" style="vertical-align:top; padding: 12px">⚙️ <b>confers 配置集成</b><br><span style="color:#64748B">三级 feature 继承接入 <a href="https://crates.io/crates/confers">confers</a>：derive 宏配置加载、热重载订阅、XChaCha20-Poly1305 加密存储。</span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">🌐 <b>AsyncKit 异步支持</b><br><span style="color:#64748B"><code>async</code> feature 提供 <code>Send + Sync</code> 的 <code>AsyncKit</code>，适配连接池、HTTP 客户端等异步初始化场景。</span></td>
-</tr>
-<tr>
-<td width="50%" style="vertical-align:top; padding: 12px">🩺 <b>运行时可观测</b><br><span style="color:#64748B"><code>lifecycle</code> 生命周期钩子、<code>health</code> 健康检查、<code>observer</code> 构建回调、<code>shutdown</code> 分阶段优雅关闭。</span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">🌍 <b>ICU4X 国际化</b><br><span style="color:#64748B">区域感知的数字 / 日期 / 复数 / 排序格式化，内置 Fluent FTL 中英文消息翻译（<code>tr()</code>）。</span></td>
-</tr>
-<tr>
-<td width="50%" style="vertical-align:top; padding: 12px">🧱 <b>极简默认依赖</b><br><span style="color:#64748B"><code>default = []</code> 不启用任何可选 feature；仅固定携带 Fluent 翻译（<code>fluent-bundle</code> / <code>unic-langid</code>）与 <code>log</code> 门面 3 个必选依赖，<code>confers</code>、<code>serde</code>、<code>serde_json</code>、<code>icu_*</code>（ICU4X 组件）等其余依赖全部经 feature 门控可选。</span></td>
-<td width="50%" style="vertical-align:top; padding: 12px">🚫 <b>默认禁用 unsafe</b><br><span style="color:#64748B"><code>#![deny(unsafe_code)]</code> 全 crate 强制；生产代码仅 5 处经 SAFETY 论证与 code review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×1：<code>AsyncTypeMap</code> 的 <code>RwLock</code> 读守卫；同步 <code>TypeMap</code> 改用 <code>Ref::map</code> 守卫包装，无需 unsafe），另有 1 处测试模块豁免（<code>src/kit/config.rs</code> 的 zeroize spare-capacity 断言）。</span></td>
-</tr>
-</table>
+### 📦 Installation
 
-<details>
-<summary>更多能力（注册模式、构建报告、组合与协商）</summary>
-
-- **灵活注册模式**：`register_lazy`（首次 `require` 时构建并缓存）、`register_multi` + `require_all`（多绑定聚合）、`register_if`（运行时谓词）、`override_module`（测试注入）、`factory::<M>()`（每次调用创建新实例）。
-- **接口/实现分离**（`di`）：`register_as` / `resolve::<dyn Trait>()` 类型擦除注册与检索。
-- **作用域依赖**（`request-scope`）：`Scope` / `AsyncScope` 每请求实例隔离。
-- **特性开关**（`toggle`）：`enable_toggle` / `is_toggle_enabled` / `register_if_toggle` 运行时字符串键控启停。
-- **模块装饰器**（`decorator`）：`decorate::<M>(fn)` 构建后能力包装/增强。
-- **结构化构建报告**（`report`）：`BuildReport` JSON 导出与 `contract_manifest()` 契约清单；依赖图 `graph_dot()` / `graph_mermaid()` 文本导出无门控，默认可用。
-- **预设模块**（`presets` / `presets-remote`）：`ConfersConfigModule` 将 confers 配置中心纳入 Kit 模块体系，支持远程配置源。
-- **子 Kit 组合**（`compose`）：子 `Kit` 以单一模块身份注册进父 `Kit`，能力命名空间隔离。
-- **版本协商**（`version-negotiation`）：`ModuleMeta::VERSION` 与 `required_versions` 在 `build()` 时做 semver 兼容校验。
-- **事件总线与观测端口**（默认可用，无 feature 门控）：`KitEvent` / `EventBus` 生命周期事件与 `MetricsPort` / `LogPort` 注入式观测，默认 `NoOp` 实现零开销。
-
-</details>
-
-### 💡 为什么选择 trait-kit？
-
-对比常见的依赖装配方案，trait-kit 定位在"手动装配"和"完整 DI 框架"之间：
-
-| 方案 | 优点 | 缺点 |
-| --- | --- | --- |
-| **手动装配** | 简单，无依赖。 | 模式不统一，每个项目各自为政。 |
-| **trait-kit** | 标准化模式，类型安全，轻量级。 | 仍需显式声明依赖关系。 |
-| **完整 DI（shaku 等）** | 自动解析，更少胶水代码。 | 依赖更重，魔法行为，调试困难。 |
-
-trait-kit 提供 DI 框架的**标准化**，同时保持手动装配的**显式性**。
-
----
-
-## 🚀 快速开始
-
-### 📦 安装
-
-最低支持 Rust 版本（MSRV）：**1.97.1**（edition 2024）。
-
-<details>
-<summary>📄 代码 · sh</summary>
+Minimum Supported Rust Version (MSRV): **1.97.1** (edition 2024).
 
 ```sh
 cargo add trait-kit
 ```
 
-</details>
+Default features and dependency gating: see [📖 User Guide · Installation](docs/en/USER_GUIDE.md#installation).
 
-默认特性（`default = []`）只含核心 `ModuleMeta` + `AutoBuilder` + `Kit`；crate 固定携带 Fluent 翻译（`fluent-bundle` / `unic-langid`）与 `log` 门面 3 个必选依赖，其余依赖（`confers`、`serde`、`serde_json`、`icu_*` 等 ICU4X 组件）全部经 feature 门控可选。
+### 💡 Minimal Example
 
-### 💡 最小示例
-
-定义一个 logger 模块，注册、构建 Kit，然后检索能力（出处：[examples/src/core/default_basic.rs](examples/src/core/default_basic.rs)，有精简）：
-
-<details>
-<summary>📄 代码 · rust</summary>
+Define a logger module, register it, build the Kit, then retrieve the capability (source: [examples/src/core/default_basic.rs](examples/src/core/default_basic.rs), trimmed):
 
 ```rust
 use std::sync::Arc;
 use trait_kit::prelude::*;
 
-// 1. 定义能力（任意 Clone 类型）
+// 1. Define a capability (any Clone type)
 struct StdoutLogger;
 impl StdoutLogger {
     fn info(&self, msg: &str) {
@@ -145,7 +75,8 @@ impl StdoutLogger {
     }
 }
 
-// 2. 定义模块：ModuleMeta 声明名称与依赖，AutoBuilder 声明如何构建能力
+// 2. Define the module: ModuleMeta declares the name and dependencies,
+//    AutoBuilder declares how the capability is built
 struct LoggerModule;
 impl ModuleMeta for LoggerModule {
     const NAME: &'static str = "logger";
@@ -162,7 +93,7 @@ impl AutoBuilder for LoggerModule {
     }
 }
 
-// 3. 注册、构建、使用
+// 3. Register, build, and use
 fn main() {
     let mut kit = Kit::new();
     kit.register::<LoggerModule>().unwrap();
@@ -174,509 +105,108 @@ fn main() {
 }
 ```
 
-</details>
+---
 
-### 🧭 核心概念
+## 📚 Documentation
 
-- **模块**：实现 `ModuleMeta`（名称 + 依赖声明）与 `AutoBuilder`（构建能力）的类型，可用 `impl_module_meta!` 宏省去手写 impl。
-- **能力**：模块构建产出的 `Clone` 值，存入 `TypeMap`，按模块类型检索。
-- **Typestate**：`Kit<Unbuilt>` 注册模块与配置，`Kit<Ready>` 检索能力；编译期排除的误用是 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建方法（`require` / `require_all` / `resolve` / `config` / `get_arc` 等定义在 `impl<S> Kit<S>` 的检索方法两态均可编译，供 `AutoBuilder::build` 回调使用；`require_ref` / `contains` / `factory` 仅存在于 `Kit<Ready>`）。
-- **Feature 门控**：异步、配置、生命周期等能力按需启用，详见[特性标志](#-特性标志)。
-
-### ⚙️ 带配置的模块
-
-配置是存储在 Kit 的 `TypeMap` 中的类型化值，模块在构建时通过 `kit.config::<C>()` 检索：
-
-<details>
-<summary>📄 代码 · rust</summary>
-
-```rust
-use std::sync::Arc;
-use trait_kit::prelude::*;
-
-#[derive(Clone, Debug)]
-struct DbConfig {
-    url: String,
-    max_connections: u32,
-}
-
-struct DbPool {
-    config: DbConfig,
-}
-
-struct DbPoolModule;
-impl ModuleMeta for DbPoolModule {
-    const NAME: &'static str = "db-pool";
-    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-        &[]
-    }
-}
-
-impl AutoBuilder for DbPoolModule {
-    type Capability = Arc<DbPool>;
-    type Error = TraitKitError;
-    fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
-        let config: DbConfig = kit.config()?;
-        Ok(Arc::new(DbPool { config }))
-    }
-}
-
-fn main() {
-    let mut kit = Kit::new();
-    kit.set_config(DbConfig {
-        url: "postgres://localhost".into(),
-        max_connections: 10,
-    });
-    kit.register::<DbPoolModule>().unwrap();
-    let kit = kit.build().unwrap();
-
-    let pool = kit.require::<DbPoolModule>().unwrap();
-    assert_eq!(pool.config.max_connections, 10);
-}
-```
-
-</details>
-
-### 🔗 带依赖的模块
-
-模块通过 `ModuleMeta::dependencies()` 声明依赖（`impl_module_meta!` 宏支持 `deps = [...]` 语法）。Kit 在 `build()` 时验证依赖图，并按拓扑顺序构造模块：
-
-<details>
-<summary>📄 代码 · rust</summary>
-
-```rust
-use std::sync::Arc;
-use trait_kit::impl_module_meta;
-use trait_kit::prelude::*;
-
-struct Logger;
-impl Logger {
-    fn info(&self, msg: &str) { println!("[LOG] {msg}"); }
-}
-
-struct LoggerModule;
-impl ModuleMeta for LoggerModule {
-    const NAME: &'static str = "logger";
-    fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
-        &[]
-    }
-}
-
-impl AutoBuilder for LoggerModule {
-    type Capability = Arc<Logger>;
-    type Error = TraitKitError;
-    fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
-        Ok(Arc::new(Logger))
-    }
-}
-
-struct Storage {
-    _logger: Arc<Logger>,
-}
-
-struct StorageModule;
-// 宏一行声明名称 + 依赖（等价于手写 dependencies()）
-impl_module_meta!(StorageModule, "storage", deps = [LoggerModule]);
-
-impl AutoBuilder for StorageModule {
-    type Capability = Arc<Storage>;
-    type Error = TraitKitError;
-    fn build(kit: &Kit) -> Result<Self::Capability, Self::Error> {
-        let logger = kit.require::<LoggerModule>()?;
-        Ok(Arc::new(Storage { _logger: logger }))
-    }
-}
-
-fn main() {
-    let mut kit = Kit::new();
-    kit.register::<LoggerModule>().unwrap();
-    kit.register::<StorageModule>().unwrap();
-    let kit = kit.build().unwrap();
-
-    let storage = kit.require::<StorageModule>().unwrap();
-    let _ = storage;
-}
-```
-
-</details>
-
-完整的 `Kit<Unbuilt>` / `Kit<Ready>` 方法列表（含各 feature 门控）见 [📘 API 参考](docs/API_REFERENCE.md) 与 [docs.rs](https://docs.rs/trait-kit)。
+| Document | Description |
+|----------|-------------|
+| [📖 User Guide](docs/en/USER_GUIDE.md) | Complete tutorial from installation to advanced usage |
+| [📘 API Reference](docs/en/API_REFERENCE.md) | Quick reference for the core public APIs, each annotated with its feature gate (not exhaustive; the full list lives in rustdoc / docs.rs) |
+| [🏗️ Architecture](docs/en/ARCHITECTURE.md) | Design patterns, data flow, thread-safety model, and directory layout |
+| [🧪 Test Scenarios](docs/en/TEST_SCENARIOS.md) | Exhaustive acceptance-scenario matrix mapped to e2e tests |
+| [⚡ Performance](docs/en/PERFORMANCE.md) | Criterion benchmark setup, baseline data, and reproduction method |
+| [🔒 Security](docs/en/SECURITY.md) | Support policy, vulnerability reporting process, and security design |
+| [📋 Changelog](docs/CHANGELOG.md) | Release notes for every version |
+| [🤝 Contributing](docs/en/CONTRIBUTING.md) | Environment setup, TDD workflow, and commit conventions |
+| [📦 crates.io](https://crates.io/crates/trait-kit) / [docs.rs](https://docs.rs/trait-kit) | Released versions and the online API docs |
 
 ---
 
-## 🎨 特性标志
+## 💻 Examples
 
-`default = []`：默认不启用任何可选 feature。高级 feature 自动继承低级 feature（`encryption` → `reload` → `confers`）。
-
-<div align="center">
-
-<details>
-<summary>📋 表格</summary>
-
-<table>
-<tr><th>Feature</th><th>启用</th><th>说明</th><th>默认</th></tr>
-<tr><td><code>async</code></td><td>—</td><td><code>AsyncKit</code>：<code>Send + Sync</code> 异步能力管理，无额外依赖。</td><td>—</td></tr>
-<tr><td><code>confers</code></td><td><code>dep:confers</code>, <code>dep:serde</code>, <code>dep:serde_json</code>, <code>confers/feature-toggle</code></td><td><code>Configurable</code> + <code>ModuleConfig</code> trait + <code>Config</code> derive 宏再导出。</td><td>—</td></tr>
-<tr><td><code>reload</code></td><td><code>confers</code>, <code>confers/dynamic</code></td><td><code>subscribe</code> / <code>reload_config</code> 热重载订阅。</td><td>—</td></tr>
-<tr><td><code>masking</code></td><td><code>regex</code>, <code>fancy-regex</code>, <code>aho-corasick</code>, <code>toml</code>, <code>serde_json</code>, <code>tracing</code></td><td><code>DataMasker</code> / <code>MaskRule</code> / <code>MaskRuleRegistry</code> PII/凭据掩码引擎与 secret-scan 出站门（自 inklog 下沉的单一来源）。</td><td>—</td></tr>
-<tr><td><code>encryption</code></td><td><code>reload</code>, <code>confers</code>, <code>confers/encryption</code>, <code>dep:zeroize</code></td><td><code>set_encrypted</code> / <code>get_encrypted</code> 加密配置存储。</td><td>—</td></tr>
-<tr><td><code>di</code></td><td>—</td><td>接口/实现分离：<code>register_as</code> / <code>resolve</code> 支持 <code>dyn Trait</code> 类型擦除。</td><td>—</td></tr>
-<tr><td><code>lifecycle</code></td><td>—</td><td>生命周期钩子：<code>on_ready</code>（构建后）+ <code>on_shutdown</code>（清理）。</td><td>—</td></tr>
-<tr><td><code>health</code></td><td>—</td><td>健康检查：<code>HealthCheck</code> trait + <code>HealthStatus</code> 状态报告；<code>AsyncHealthCheck</code>（health+async）的 <code>check</code> 刻意保持同步——网络探活应走 <code>on_ready</code> 探测一次并缓存结论，或用 <code>probe</code> 特性的 <code>ServiceProbe</code>；勿在 <code>check</code> 内做网络 I/O。</td><td>—</td></tr>
-<tr><td><code>probe</code></td><td><code>health</code>, <code>dep:futures-timer</code></td><td>服务探针注册面：对象安全 <code>ServiceProbe</code> 异步探针——<code>register_probe</code>/<code>unregister_probe</code>/<code>probe_names</code>（任意状态可动态增减）、<code>AsyncKit&lt;Ready&gt;::run_probes()</code>（明细 + worst-of 聚合 + JSON；<code>latency_ms</code> 为框架实测墙钟）、<code>probe_aggregate()</code>（worst-of 结论）及 <code>run_probes_with_timeout()</code>/<code>probe_aggregate_with_timeout()</code>（单探针硬上限，悬挂探针记 unhealthy 继续跑完）；shutdown 自动注销并标记 stopped——停机后 <code>run_probes()</code> 返回显性不可服务（<code>stopped=true</code>），空注册表 ≠ 全部健康。与 <code>health</code> 的分工：<code>check</code> 只读缓存状态，<code>ServiceProbe</code> 才做真正的网络探活。</td><td>—</td></tr>
-<tr><td><code>request-scope</code></td><td>—</td><td>作用域依赖：<code>Scope</code> / <code>AsyncScope</code> 每请求实例隔离。</td><td>—</td></tr>
-<tr><td><code>toggle</code></td><td>—</td><td>特性开关：运行时字符串键控的模块启用/禁用。</td><td>—</td></tr>
-<tr><td><code>observer</code></td><td>—</td><td>构建可观测：<code>BuildObserver</code> 回调（开始/完成/错误）。</td><td>—</td></tr>
-<tr><td><code>decorator</code></td><td>—</td><td>模块装饰器：构建后能力包装/增强。</td><td>—</td></tr>
-<tr><td><code>shutdown</code></td><td>—</td><td>优雅关闭协调器：分阶段有序关闭 + 超时强退。</td><td>—</td></tr>
-<tr><td><code>i18n</code></td><td><code>dep:icu_collator</code>, <code>dep:icu_datetime</code>, <code>dep:icu_decimal</code>, <code>dep:icu_locale</code>, <code>dep:icu_plurals</code>, <code>dep:writeable</code>, <code>dep:sys-locale</code></td><td>ICU4X 国际化：本地化数字/日期/复数/排序格式化（按组件引入，不引 <code>icu</code> 门面 crate）。</td><td>—</td></tr>
-<tr><td><code>report</code></td><td><code>dep:serde</code>, <code>dep:serde_json</code></td><td>结构化构建报告：<code>BuildReport</code> JSON 与 <code>contract_manifest()</code> 契约清单（依赖图 DOT/Mermaid 导出 <code>graph_dot()</code> / <code>graph_mermaid()</code> 无门控，默认可用）。</td><td>—</td></tr>
-<tr><td><code>presets</code></td><td><code>confers</code></td><td>预设模块包：<code>ConfersConfigModule</code>（配置中心作为 Kit 模块）+ 组合 builder。</td><td>—</td></tr>
-<tr><td><code>compose</code></td><td>—</td><td>子 Kit 组合：子 <code>Kit</code> 注册为父 <code>Kit</code> 的单一模块（能力命名空间隔离 + 跨 Kit 依赖校验）。</td><td>—</td></tr>
-<tr><td><code>presets-remote</code></td><td><code>presets</code>, <code>confers/remote</code>, <code>async</code></td><td>远程配置桥接：<code>ConfersConfigModule</code> 走 confers 远程 <code>AsyncSource</code>（remote 模块以 <code>AsyncKit</code> 为构建载体，故 imply <code>async</code>）。</td><td>—</td></tr>
-<tr><td><code>version-negotiation</code></td><td>—</td><td>能力版本协商：<code>ModuleMeta::VERSION</code> 与 <code>required_versions</code> 在 <code>build()</code> 时做 semver 兼容校验。</td><td>—</td></tr>
-</table>
-
-</details>
-
-</div>
-
-向后兼容别名：旧 feature 名 `interface` / `scope` / `negotiate` 仍可启用，分别转发到 `di` / `request-scope` / `version-negotiation`（已标记 deprecated，新代码请使用新名）。
-
-在 `Cargo.toml` 中启用所需级别：
-
-<details>
-<summary>📄 代码 · toml</summary>
-
-```toml
-[dependencies]
-trait-kit = { version = "0.5.0-rc.12", features = ["encryption"] }
-```
-
-</details>
-
----
-
-## 📚 文档
-
-<details>
-<summary>📋 表格</summary>
-
-| 文档 | 说明 |
-|------|------|
-| [📖 用户指南](docs/USER_GUIDE.md) | 从安装到进阶用法的完整教程 |
-| [📘 API 参考](docs/API_REFERENCE.md) | 核心公开 API 速查，逐项标注 feature 门控（非穷尽全量，完整清单以 rustdoc / docs.rs 为准） |
-| [🏗️ 架构文档](docs/ARCHITECTURE.md) | 设计模式、数据流、线程安全模型与目录结构 |
-| [🧪 验收测试场景](docs/TEST_SCENARIOS.md) | 验收场景穷举矩阵与 e2e 落地对账 |
-| [⚡ 性能基准](docs/PERFORMANCE.md) | criterion 基准设施、基线数据与复现方法 |
-| [🔒 安全文档](docs/SECURITY.md) | 支持策略、漏洞报告流程与安全设计 |
-| [📋 更新日志](docs/CHANGELOG.md) | 每个版本的变更记录 |
-| [🤝 贡献指南](docs/CONTRIBUTING.md) | 环境准备、TDD 工作流与提交规范 |
-| [📦 crates.io](https://crates.io/crates/trait-kit) / [docs.rs](https://docs.rs/trait-kit) | 发布版本与在线 API 文档 |
-
-</details>
-
----
-
-## 💻 示例
-
-`examples/` 是一个独立的 workspace 成员 `trait-kit-examples`（`publish = false`），共 20 个可独立运行的示例，覆盖 13 个 feature 门控的核心用法（`probe` / `report` / `compose` / `presets` / `presets-remote` / `version-negotiation` 暂无专属示例，用法见 [📘 API 参考](docs/API_REFERENCE.md)）。运行方式：
-
-<details>
-<summary>📄 代码 · sh</summary>
+`examples/` is a standalone workspace member `trait-kit-examples` (`publish = false`) with 20 standalone runnable examples covering the core usage of 13 feature gates (`probe` / `report` / `compose` / `presets` / `presets-remote` / `version-negotiation` have no dedicated example yet; see the [📘 API Reference](docs/en/API_REFERENCE.md)). Run with:
 
 ```sh
-cargo run -p trait-kit-examples --example <名称> --features <特性>
+cargo run -p trait-kit-examples --example <name> --features <feature>
 ```
 
-</details>
-
-<details>
-<summary>📋 表格</summary>
-
-| 示例 | Feature | 说明 |
-|------|---------|------|
-| `default_basic` | — | `ModuleMeta` + `AutoBuilder` + `Kit` 注册/构建/检索基础流程 |
-| `conditional` | — | `register_if::<M>(predicate)` 运行时谓词条件注册 |
-| `factory` | — | `Kit<Ready>::factory::<M>()` 每次调用创建新实例（对比单例 `require()`） |
-| `interface` | `di` | `InterfaceBuilder` + `register_as` / `resolve::<dyn Trait>()` 类型擦除 DI |
-| `lifecycle` | `lifecycle` | `Lifecycle` trait（`on_ready` + `on_shutdown`）+ `Kit::shutdown()` |
-| `health_check` | `health` | `HealthCheck` trait + `HealthStatus` + `health_report` |
-| `observability` | `observer` | `BuildObserver` 回调（`on_module_start` / `on_module_built`） |
-| `confers_loader` | `confers` | `#[derive(Config)]` + `Configurable` + `Kit::load_config`（环境变量加载） |
-| `confers_macros` | `confers` | `ModuleConfig` trait（`PATH` + `default_value`）+ 构建时消费配置 |
-| `validation` | `confers` | `Validatable` trait + `Kit::load_and_validate` 配置验证 |
-| `snapshot_restore` | `confers` | `snapshot_config` / `restore_config` / `has_snapshot` 配置快照与回滚 |
-| `config_inheritance` | `confers` | 四层配置继承体系（`merge_json_deep` → `ConfigInherit` → `SharedConfig` → `populate_defaults`） |
-| `hot_reload` | `reload` | `subscribe::<C>` + `reload_config::<C>` 热重载订阅 |
-| `encryption` | `encryption` | `set_encrypted` / `get_encrypted` 加密存取 + 错误密钥拒绝 |
-| `async_basic` | `async` | `AsyncAutoBuilder` + `AsyncKit` 异步注册/构建/检索 |
-| `scope_basic` | `request-scope` | `Scope` 每请求实例隔离 + 懒构建缓存 |
-| `toggle_basic` | `toggle` | `enable_toggle` / `is_toggle_enabled` / `register_if_toggle` 运行时开关 |
-| `decorator` | `decorator` | `Kit::decorate::<M>(fn)` 构建后能力包装 |
-| `shutdown` | `shutdown` | `ShutdownCoordinator` 分阶段优雅关闭（`StopRequests` → `DrainQueue` → `CloseConnections`）+ 超时控制 |
-| `i18n` | `i18n` | `I18nFormatter` 本地化数字/日期/复数/排序 |
-
-</details>
-
-示例详情见 [examples/README.md](examples/README.md)。
+See [examples/README.md](examples/README.md) for details.
 
 ---
 
-## 🏗️ 架构
+## 🏗️ Architecture
 
-trait-kit workspace 由三个成员组成：主 crate `trait-kit`、过程宏 crate `trait-kit-macros`（`trait-kit-derive` 已于 0.5.0-rc.5 并入退役）、示例 crate `trait-kit-examples`；主 crate 的 `src/` 分 `core` 接口层、`kit` 能力管理中心、`i18n` 国际化三层。
+The trait-kit workspace has three members: the main `trait-kit` crate, the proc-macro crate `trait-kit-macros` (`trait-kit-derive` was merged into it and retired in 0.5.0-rc.5), and the examples crate `trait-kit-examples`; the main crate's `src/` is organized into the `core` interface layer, the `kit` capability management center, and the `i18n` layer.
 
-**核心设计**：
-
-- **Typestate 模式**：`Kit<Unbuilt>` → `Kit<Ready>`，构建时验证依赖图，运行时零开销。
-- **内部可变性**：同步 `Kit` 基于 `RefCell`，单线程 `!Sync` 设计，避免锁开销；`AsyncKit` 使用 `Arc<RwLock>` 支持多线程。
-- **三级 Feature 继承**（confers 集成）：各 feature 的启用关系见[特性标志](#-特性标志)。
-
-workspace 结构图、依赖图验证、数据流、线程安全模型与目录结构等完整设计见 [架构文档](docs/ARCHITECTURE.md)。
+The workspace diagram, dependency-graph validation, data flow, thread-safety model, and directory layout are documented in full in the [Architecture document](docs/en/ARCHITECTURE.md).
 
 ---
 
-### 🔄 构建生命周期
+## 🧪 Testing
 
-`Kit` 的能力检索以 `build()` 之后为主：注册期方法位于 `Kit<Unbuilt>`，检索期方法位于 `Kit<Ready>`。- **编译期排除的误用**（trybuild UI 测试断言，见 `tests/ui/` 共 11 个夹具）包括 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建/配置/override 等方法；`require()` / `require_all()` / `resolve()` / `config()` / `get_arc()` 等定义在 `impl<S> Kit<S>` 的检索方法在 `Kit<Unbuilt>` 上亦可编译调用（供 `AutoBuilder::build` 回调读取依赖与配置），对未构建模块返回运行时错误；`require_ref` / `contains` / `factory` 仅存在于 `Kit<Ready>`。
-
-| 阶段 | 类型状态 | 可用操作 |
-|------|----------|----------|
-| 注册期 | `Kit<Unbuilt>` | `register` / `register_lazy` / `register_multi` / `register_if` / `register_as` / `override_module` / `set_config` / `build` |
-| 运行期 | `Kit<Ready>` | `require` / `require_ref` / `require_all` / `optional` / `factory` / `resolve` / `contains` / `config` / `health_check` / `shutdown` |
-
-`build()` 内部的真实执行路径（缺失依赖检测 → 环检测与拓扑排序 → 按拓扑序逐模块构建 → 返回 `Kit<Ready>`，依据 `src/kit/kit.rs`）的完整时序图见 [架构文档 · 数据流](docs/ARCHITECTURE.md#-数据流)。
+The test strategy (unit / integration / compile-time UI / macro / doc tests / examples / benchmarks) and common commands (same as CI) live in the [🤝 Contributing Guide](docs/en/CONTRIBUTING.md#-test-strategy); the exhaustive acceptance-scenario matrix is in [🧪 Test Scenarios](docs/en/TEST_SCENARIOS.md).
 
 ---
 
-### ⚙️ 配置：confers 集成
+## 📊 Performance
 
-trait-kit 通过 `confers` → `reload` → `encryption` 三级 feature 继承链集成 [`confers`](https://crates.io/crates/confers) 0.6.0-rc.12（0.6 线预发布版）；下表按能力面展开五层，其中第 1、2 层同属 `confers` feature，第 5 层的 `ConfigInherit` / `SharedConfig` derive 来自 `trait-kit-macros`（需另行直接依赖）。
+Performance comes from design: typestate moves dependency-graph validation entirely into `build()`, and capability retrieval on `Kit<Ready>` is a `TypeId` lookup + clone; the sync `Kit` is lock-free via `RefCell`.
 
-| 层级 | Feature | 能力 |
-|------|---------|------|
-| 1. 配置加载 | `confers` | `Configurable` 桥接 confers `#[derive(Config)]`，`load_config::<C>()` 从环境变量/默认值加载 |
-| 2. 模块配置元数据 | `confers` | `ModuleConfig` trait 声明 `PATH` 与 `default_value()`，将配置类型绑定到模块配置路径 |
-| 3. 热重载 | `reload` | `subscribe::<C>()` 订阅 + `reload_config::<C>()` 重载并通知订阅者 |
-| 4. 加密存储 | `encryption` | `set_encrypted` / `get_encrypted`：XChaCha20-Poly1305 认证加密，密钥经 HKDF 从主密钥与 `ModuleConfig::PATH` 派生 |
-| 5. 配置继承 | `confers` + `trait-kit-macros` | 四层继承体系：`merge_json_deep` 深合并 → `ConfigInherit` 编译期安全字段覆盖 → `SharedConfig` 跨类型共享字段 → `populate_defaults` 零配置默认值 |
-
-配置加载与配置继承的典型用法（完整可运行版本见 `confers_loader` 与 `config_inheritance` 示例）：
-
-<details>
-<summary>📄 代码 · rust</summary>
-
-```rust,ignore
-use trait_kit::prelude::*;
-use trait_kit_macros::{ConfigInherit, SharedConfig};
-
-// 第一/二级：derive 配置加载 + 模块配置元数据
-#[derive(Debug, Clone, serde::Deserialize, confers::Config)]
-#[config(env_prefix = "APP_")]
-struct TraitKitConfig {
-    #[config(default = "localhost".to_string())]
-    host: String,
-}
-
-// 第五级：跨类型共享字段继承
-#[derive(Clone, ConfigInherit, SharedConfig)]
-#[shared(host)]
-struct DbConfig {
-    host: String,
-    port: u16,
-}
-
-let mut kit = Kit::new();
-kit.load_config::<TraitKitConfig>()?;        // 经 confers 从环境变量/默认值加载
-kit.populate_defaults::<DbConfig>();         // 零配置默认值（返回是否实际写入）
-kit.extract_shared::<TraitKitConfig>();      // 提取共享字段
-kit.inject_shared::<DbConfig>();             // 注入到 DbConfig
-```
-
-</details>
-
-- `trait-kit-macros` 提供 `#[derive(Module)]`（生成 `ModuleMeta` 实现，等价于 `impl_module_meta!`）、`#[derive(ConfigInherit)]` 与 `#[derive(SharedConfig)]` 宏，共享字段以 `serde_json::Value` 保留类型信息。
-- `AsyncKit` 提供完全对称的 `Send + Sync` 配置 API。
+Baseline numbers, the measurement environment, and reproduction commands live in [docs/en/PERFORMANCE.md](docs/en/PERFORMANCE.md).
 
 ---
 
-## 🧪 测试
+## 🔒 Security
 
-### 测试策略
+- **Vulnerability reporting**: do not open public issues; use GitHub's private [Security Advisories](https://github.com/Kirky-X/trait-kit/security/policy) channel ("Report a vulnerability"). The maintainer commits to acknowledging reports within 48 hours and providing an initial assessment within 7 days (see [docs/en/SECURITY.md](docs/en/SECURITY.md)).
 
-<details>
-<summary>📋 表格</summary>
-
-| 类型 | 位置 | 说明 |
-|------|------|------|
-| 单元测试 | `src/`（`#[cfg(test)]`） | 模块内部逻辑 |
-| 集成测试 | `tests/`（9 个目标）+ `tests/e2e/`（13 个注册目标） | `basic`、`config_inheritance_e2e`、`e2e_core`、`e2e_async`、`e2e_concurrency`、`e2e_feature_combinations` 等 |
-| 编译期 UI 测试 | `tests/compile_fail.rs` + `tests/ui/`（11 个用例：根 7 个 + `probe_sensitive/`、`observer_ready/`、`decorator_ready/`、`lifecycle_ready/` 各 1 个） | 基于 trybuild，断言 typestate 误用（未构建即检索等）无法编译 |
-| 宏 crate 测试 | `macros/tests/` | `#[derive(Module)]` 展开正确性与编译失败用例 |
-| 文档测试 | README 与 doc 注释中的 `rust` 代码块 | 随 `cargo test` 编译运行 |
-| 示例验证 | `examples/`（20 个） | 每个示例独立运行，断言失败即 panic |
-| 基准测试 | `benches/kit_bench.rs` | criterion 基准（需 `toggle` feature） |
-
-</details>
-
-测试规模：主 crate `src/` 与 `tests/` 共 **1040** 个 `#[test]` 函数（`grep -rEo '#\[(tokio::)?test\]' --include='*.rs' src tests | wc -l` 统计），另有 `macros/tests/` 6 个。
-
-### 常用命令（与 CI 一致）
-
-<details>
-<summary>📄 代码 · sh</summary>
-
-```sh
-# 全量测试（workspace + 全部 feature，与 CI test job 一致）
-cargo test --workspace --all-features
-
-# 按特性组合运行
-cargo test --features confers
-
-# Lint 与格式检查（CI 门禁，零告警）
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo fmt --all -- --check
-
-# 文档零告警
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
-
-# 依赖审计（advisories / licenses / bans / sources）
-cargo deny check
-
-# 覆盖率门禁（CI coverage job：行覆盖 ≥ 95%）
-cargo llvm-cov --workspace --all-features --fail-under-lines 95
-```
-
-</details>
+For the complete security design, best practices, and fix history, see [docs/en/SECURITY.md](docs/en/SECURITY.md).
 
 ---
 
-## 📊 性能
+## 🤝 Contributing
 
-性能来自设计层面：typestate 把依赖图验证全部前置到 `build()`，`Kit<Ready>` 上的能力检索是 `TypeId` 查表 + 克隆；同步 `Kit` 基于 `RefCell` 无锁设计。criterion 基准设施覆盖 build / require / config / toggle 四个热路径轴（`benches/kit_bench.rs`，基准目标需 `--features toggle`，全量 7 项需 `cargo bench --features toggle,confers`——`config/write_merge_config` 依赖 `confers`，且在 `report` 开启时因环形驱逐簿记混入测量被编译排除）；基线（2026-09-29 安静复测）实测 `require`（≈16 ns）与裸 `Arc::clone` + `TypeId` 查找同量级，验证了"零开销能力检索"的设计目标，大结构能力建议改用 `require_ref`（借用读）。
-
-基线数字、测量环境与复现命令见 [⚡ 性能基准](docs/PERFORMANCE.md)。
+Contributions are welcome! For full environment setup, the TDD workflow, and commit conventions, see the [Contributing Guide](docs/en/CONTRIBUTING.md).
 
 ---
 
-## 🔒 安全
+## 📋 Changelog
 
-- **漏洞报告**：请勿通过公开 Issue 报告，使用 GitHub 私密通道 [Security Advisories](https://github.com/Kirky-X/trait-kit/security/policy)（"Report a vulnerability"）。维护者承诺 48 小时内确认、7 天内给出初步评估（见 [SECURITY.md](docs/SECURITY.md)）。
-- **默认禁用 unsafe**：`#![deny(unsafe_code)]` 全 crate 强制；生产代码仅 5 处经 SAFETY 论证与 review 的局部豁免（typestate 布局断言 cast ×3、volatile 清零 ×1、guard 生命周期重锚 ×1：`AsyncTypeMap` 的 `RwLock` 读守卫；同步 `TypeMap` 改用 `Ref::map` 守卫包装，无需 unsafe），另有 1 处测试模块豁免（`src/kit/config.rs` 的 zeroize spare-capacity 断言）。
-- **编译期排除误用**：typestate 将 `Kit<Unbuilt>` 上的 `optional()` 与 `Kit<Ready>` 上的注册/构建/配置/override 等误用前置为编译错误（trybuild UI 测试断言，`tests/ui/` 共 11 个夹具，含 decorator / lifecycle / observer / probe 门控组）；依赖图在 `build()` 时做缺失依赖与环检测。
-- **明确的线程安全边界**：同步 `Kit` 为 `!Sync`（编译器强制，见 `static_assertions` 断言），多线程用 `AsyncKit`（`Send + Sync`）。
-- **加密配置存储**（`encryption`）：XChaCha20-Poly1305 AEAD，HKDF 从主密钥与 `ModuleConfig::PATH` 派生字段密钥；`EncryptedBlob` 的 `Debug` 实现不泄露加密材料。
-- **供应链门禁**：`cargo deny check`（`deny.toml`：advisories / licenses / bans / sources）+ `cargo audit` 为 CI 必过项；CodeQL 静态分析常开；lefthook 私钥扫描拦截凭据入库。
-
-完整的安全设计、最佳实践与安全修复记录见 [docs/SECURITY.md](docs/SECURITY.md)。
+See [CHANGELOG.md](docs/CHANGELOG.md).
 
 ---
 
-## 🗺️ 开发路线图
+## 📄 License
 
-条目沿用既有规划，状态对齐当前仓库事实：
-
-<div align="center">
-
-<details>
-<summary>📋 表格</summary>
-
-<table>
-<tr><th>状态</th><th>条目</th><th>说明</th></tr>
-<tr><td>✅</td><td><b>0.5.0-rc.12</b>（2026-10-31）</td><td>当前版本：新增 <code>masking</code> feature——PII/凭据掩码引擎（<code>DataMasker</code> / <code>MaskRule</code> / <code>MaskRuleRegistry</code> / <code>AcMasker</code>）自 inklog 下沉为本仓单一来源，含 secret-scan 出站门族（<code>SecretScanGate</code> / <code>SecretPatternRegistry</code> / <code>EntropyScanner</code>）与 <code>MaskError</code>；inklog 与 limiteron 共用同一实现，21 条内置规则语义与顺序不变（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
-<tr><td>✅</td><td><b>0.5.0-rc.11</b>（2026-10-28）</td><td><code>override_module</code> 依赖图校验收紧（未注册依赖注入期即拒绝）与共享 overlay 属主隔离；对外文本与错误 <code>Debug</code> 全面脱敏；主密钥准入策略；<code>TypeMap</code> 读引用守卫（unsafe 豁免 6→5 处）；深嵌套 JSON 深度守卫前移；<code>confers</code> 依赖 0.6.0-rc.12（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
-<tr><td>✅</td><td><b>0.5.0-rc.10</b>（2026-10-19）</td><td>i18n 默认语言严格英文与 <code>locales/{en,zh}/</code> 按域拆分、<code>rustls</code> 0.23.46 安全升级、统一纯 MIT 许可、发布切 crates.io trusted publishing（OIDC）与发布幂等三元组（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
-<tr><td>✅</td><td><b>0.5.0-rc.9</b>（2026-10-10）</td><td>服务探针注册面（新 <code>probe</code> feature）、async 健康聚合（<code>health_aggregate</code> / <code>health_json</code>）、构建报告 <code>config_overrides</code> 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一、关闭协调器 hook panic 隔离等（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
-<tr><td>✅</td><td><b>0.5.0-rc.6</b>（2026-09-21）</td><td>rc.4–rc.6 已发布：观测端口与事件总线、Toggle 完整落地、<code>trait-kit-derive</code> 并入 <code>trait-kit-macros</code>、<code>confers</code> 依赖改走 crates.io（详见 <a href="docs/CHANGELOG.md">CHANGELOG</a>）。</td></tr>
-<tr><td>✅</td><td><b>性能基准</b></td><td>criterion 基准 <code>benches/kit_bench.rs</code> 与 <code>docs/PERFORMANCE.md</code> 基线报告已建立（现行基线 2026-09-29）。</td></tr>
-<tr><td>📋</td><td><b>0.5.0 正式发布</b></td><td>次版本位 +1 后，按工作区发布计划同步下游仓库（oxcache、dbnexus、inklog、limiteron、sdforge）的 <code>path + version</code> 依赖要求。</td></tr>
-<tr><td>✅</td><td><b>cfg 门控完整性</b></td><td><code>--no-default-features --features async</code> 与 <code>async,observer</code> 组合 check、<code>clippy --features async --all-targets</code> 零告警，async doc 测试全通过——门控缺口已消除（2026-09-27 复测确认）。</td></tr>
-</table>
-
-</details>
-
-</div>
-
----
-
-## 🤝 参与贡献
-
-欢迎参与贡献！完整的开发环境准备、TDD 工作流与提交规范请参见 [贡献指南](docs/CONTRIBUTING.md)。
-
-### 构建要求
-
-- Rust **1.97.1** 或更高版本（stable，见 `rust-toolchain.toml`，edition 2024）。
-- 无需外部工具链（无 protoc、无 openssl、无系统库；`confers` 依赖走 crates.io，全 workspace 均无需 `protobuf-compiler`）。
-
-### 提交规范与本地门禁
-
-- 提交信息遵循 **conventional commits**（`feat(scope): ...`、`fix(scope): ...`、`docs: ...` 等），由 lefthook `commit-msg` 钩子校验。
-- **lefthook** 钩子门禁（`lefthook.yml`）：
-  - `pre-commit`：`cargo fmt --check`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo deny check`、私钥内容扫描；
-  - `pre-push`：`cargo audit`、覆盖率 ≥ 95% 行覆盖。
-- 禁止使用 `--no-verify` 跳过钩子。
-
-### 开发命令
-
-与 CI 一致的常用命令（全量测试、lint、文档零告警、依赖审计、覆盖率门禁）见[🧪 测试](#-测试)章节与 [贡献指南](docs/CONTRIBUTING.md)。
-
-### PR 流程
-
-1. 本仓工作流为 **main 直提**（`.pre-commit-config.yaml` 注明：未配置 `no-commit-to-branch` 类分支保护钩子，该钩子保护的是 `master`，在本仓不会生效）；如需评审流程，可从 `main` 创建 feature 分支（`feat/<功能>` / `fix/<问题>`）提 PR。
-2. 确保所有测试通过且 Clippy 零告警，新功能附带测试。
-3. 保持 README 与 API 变更同步（`docs/API_REFERENCE.md`、`docs/USER_GUIDE.md`）。
-4. CI（fmt / clippy / check / test / 三平台构建 / doc / 安全 / 覆盖率）全部通过后等待 review。
-
-本项目遵循 [Rust 行为准则](https://www.rust-lang.org/policies/code-of-conduct)。
-
----
-
-## 📋 更新日志
-
-详见 [CHANGELOG.md](docs/CHANGELOG.md)。近期版本要点：
-
-- **0.5.0-rc.12**（2026-10-31）：新增 `masking` feature——PII/凭据掩码引擎自 inklog 下沉为本仓单一来源，含 secret-scan 出站门族与 `MaskError`；inklog 与 limiteron 共用同一实现，21 条内置规则语义与顺序不变。
-- **0.5.0-rc.11**（2026-10-28）：`override_module` 依赖图校验收紧与共享 overlay 属主隔离；对外文本与错误 `Debug` 全面脱敏；主密钥准入；`TypeMap` 读引用守卫去 unsafe；深嵌套 JSON 深度守卫前移；`confers` 依赖 0.6.0-rc.12。
-- **0.5.0-rc.10**（2026-10-19）：i18n 默认语言严格英文与 `locales/{en,zh}/` 按域拆分；`rustls` 0.23.46 安全升级；统一纯 MIT 许可；发布切 crates.io trusted publishing（OIDC）与发布幂等三元组。
-- **0.5.0-rc.9**（2026-10-10）：服务探针注册面（新 `probe` feature）、async 健康聚合、构建报告 `config_overrides` 显式化、feature 组合矩阵与性能回归 CI 门禁；修复版本协商四路径奇偶、lazy 检索口径统一等。
-- **0.5.0-rc.6**（2026-09-21）：`confers` 依赖改走 crates.io；依赖升级（syn 3.0、criterion 0.8、rustls 0.23.45）；发布流程加固（先发 `trait-kit-macros` 再发主 crate）。
-- **0.5.0-rc.5**（2026-09-14）：`trait-kit-derive` 并入 `trait-kit-macros`（`ConfigInherit` / `SharedConfig` 迁移，derive 子包退役）。
-- **0.5.0-rc.4**（2026-09-13）：观测端口（`MetricsPort` / `LogPort`）、运行时事件总线 `EventBus`、Toggle 完整落地、AsyncKit 配置对称补齐（rc.3 未单独发布，并入本节）。
-- **0.4.2**（2026-08-06）：修复 `AsyncKit::decorate()` 装饰器存储键错误（decorator 此前从未生效）。
-
----
-
-## 📄 许可证
-
-本项目基于 [MIT](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE) 许可证发布。
+This project is licensed under the [MIT](https://github.com/Kirky-X/trait-kit/blob/main/LICENSE) License.
 
 Copyright (c) 2026 Kirky.X🌠
 
 ---
 
-## 🙏 致谢
+## 🙏 Acknowledgments
 
-- [`confers`](https://crates.io/crates/confers) — 配置加载、热重载与加密存储的底层能力。
-- [ICU4X](https://github.com/unicode-org/icu4x) — 国际化格式化（数字/日期/复数/排序）。
-- [Project Fluent](https://projectfluent.org/) — Fluent FTL 消息本地化方案。
-- [syn](https://github.com/dtolnay/syn) / [quote](https://github.com/dtolnay/quote) / [proc-macro2](https://github.com/dtolnay/proc-macro2) — 过程宏基础设施（`trait-kit-macros`）。
-- [Rust 社区](https://www.rust-lang.org/community) — 优秀的语言生态与工具链。
-
----
-
-## 📞 联系与支持
-
-- **Bug 与功能建议**：[GitHub Issues](https://github.com/Kirky-X/trait-kit/issues)
-- **安全漏洞**：请勿通过公开 Issue 报告，参见 [安全文档](docs/SECURITY.md) 的漏洞报告流程。
-- **维护者**：Kirky.X
+- [`confers`](https://crates.io/crates/confers) — the underlying config loading, hot-reload, and encrypted storage capabilities.
+- [ICU4X](https://github.com/unicode-org/icu4x) — internationalization formatting (number/date/plural/collation).
+- [Project Fluent](https://projectfluent.org/) — the Fluent FTL message localization approach.
+- [syn](https://github.com/dtolnay/syn) / [quote](https://github.com/dtolnay/quote) / [proc-macro2](https://github.com/dtolnay/proc-macro2) — the proc-macro foundation (for `trait-kit-macros`).
+- [The Rust Community](https://www.rust-lang.org/community) — for the excellent language ecosystem and tooling.
 
 ---
 
-## ⭐ Star 历史
+## 📞 Contact & Support
+
+- **Bugs & feature requests**: [GitHub Issues](https://github.com/Kirky-X/trait-kit/issues)
+- **Security vulnerabilities**: do not report via public issues; see the vulnerability reporting process in the [Security document](docs/en/SECURITY.md).
+- **Maintainer**: Kirky.X
+
+---
+
+## ⭐ Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=Kirky-X/trait-kit&type=Date)](https://star-history.com/#Kirky-X/trait-kit&Date)
 
-### 💝 支持本项目
+### 💝 Support the Project
 
-如果您觉得这个项目有用，请考虑给它一个 ⭐️！
+If you find this project useful, please consider giving it a ⭐️!
