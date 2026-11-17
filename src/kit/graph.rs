@@ -210,6 +210,26 @@ impl DependencyGraph {
         }
     }
 
+    /// Get the registered names of all modules that declare a dependency
+    /// on `type_id` (reverse edges), in registration order.
+    ///
+    /// Single pass over the entries' dependency lists — same granularity as
+    /// [`dependency_names`](Self::dependency_names); no cache (the graph is
+    /// read-only after validation and bounded in size).
+    #[must_use]
+    pub fn dependents(&self, type_id: TypeId) -> Vec<&'static str> {
+        self.entries
+            .iter()
+            .filter(|entry| {
+                entry
+                    .dependencies
+                    .iter()
+                    .any(|(_, dep_id)| *dep_id == type_id)
+            })
+            .map(|entry| entry.name)
+            .collect()
+    }
+
     /// Get all entries in registration order.
     #[must_use]
     pub fn entries(&self) -> &[ModuleEntry] {
@@ -372,6 +392,7 @@ mod tests {
         pub struct A;
         pub struct B;
         pub struct C;
+        pub struct D;
     }
 
     fn typed_entry<T: 'static>(
@@ -741,5 +762,31 @@ mod tests {
         };
         let debug2 = format!("{err2:?}");
         assert!(debug2.contains("CycleDetected"));
+    }
+
+    /// 反向边查询：A→B、C→B、D→A 图上 `dependents(B)` 按注册序返回
+    /// `["A", "C"]`，无人依赖 D → 空（R-des-001）。
+    #[test]
+    fn dependents_returns_reverse_edges_in_registration_order() {
+        let mut g = DependencyGraph::new();
+        g.add(typed_entry::<types::A>(
+            "A",
+            vec![("B", TypeId::of::<types::B>())],
+        ))
+        .expect("add A");
+        g.add(typed_entry::<types::C>(
+            "C",
+            vec![("B", TypeId::of::<types::B>())],
+        ))
+        .expect("add C");
+        g.add(typed_entry::<types::D>(
+            "D",
+            vec![("A", TypeId::of::<types::A>())],
+        ))
+        .expect("add D");
+
+        assert_eq!(g.dependents(TypeId::of::<types::B>()), vec!["A", "C"]);
+        assert_eq!(g.dependents(TypeId::of::<types::A>()), vec!["D"]);
+        assert_eq!(g.dependents(TypeId::of::<types::D>()), Vec::<&str>::new());
     }
 }
