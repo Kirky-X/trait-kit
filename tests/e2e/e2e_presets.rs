@@ -221,7 +221,7 @@ fn prs03_all_features_gate_reached() {
     assert_eq!(features.len(), 29, "28 features plus the empty default set");
 }
 
-/// examples crate 24 个示例全部显式 `[[example]]` 注册，且
+/// examples crate 25 个示例全部显式 `[[example]]` 注册，且
 /// required-features 引用 examples crate 自身的 feature 名单
 /// （逐示例 `cargo check -p trait-kit-examples --features <组合>` 的
 /// 执行记录见 reviews/acceptance-report.md）。
@@ -269,8 +269,8 @@ fn prs06_examples_manifest_required_features_structure() {
 
     assert_eq!(
         examples.len(),
-        24,
-        "the examples crate should have exactly 24 [[example]] entries"
+        25,
+        "the examples crate should have exactly 25 [[example]] entries"
     );
     // 解析 examples crate 自身 [features] 名单。
     let ex_manifest = include_str!("../../examples/Cargo.toml");
