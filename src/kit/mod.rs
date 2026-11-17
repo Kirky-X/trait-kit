@@ -38,6 +38,9 @@ pub mod describe;
 #[cfg(feature = "report")]
 pub use describe::{KitDescription, ModuleDescription};
 
+#[cfg(feature = "audit")]
+pub mod audit;
+
 pub use graph::{DependencyGraph, GraphError, ModuleEntry};
 #[cfg(feature = "resource-guard")]
 pub use kit::SensitiveShutdownReport;
