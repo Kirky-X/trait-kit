@@ -48,6 +48,7 @@ compose = ["trait-kit/compose"]
 presets = ["confers", "trait-kit/presets"]
 presets-remote = ["presets", "trait-kit/presets-remote"]
 request-scope = ["trait-kit/request-scope"]
+visibility = ["trait-kit/visibility"]
 
 [[example]]
 name = "default_basic"
@@ -140,6 +141,11 @@ required-features = ["confers"]
 name = "toggle_basic"
 path = "src/kit/toggle_basic.rs"
 required-features = ["toggle"]
+
+[[example]]
+name = "visibility"
+path = "src/kit/visibility.rs"
+required-features = ["visibility"]
 
 [[example]]
 name = "config_inheritance"

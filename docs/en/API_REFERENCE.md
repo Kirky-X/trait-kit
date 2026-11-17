@@ -107,6 +107,8 @@ pub trait AutoBuilder: ModuleMeta {
 | `is_toggle_enabled(key)` | `toggle` | Queries flag state |
 | `set_toggle` / `get_toggle` / `remove_toggle` / `list_toggles` | `toggle` | Typed toggle handles (`ToggleValue`: Bool/Int/Float/Str) |
 | `register_if_toggle::<M>(key)` | `toggle` | Registers a module conditionally on a toggle |
+| `register_with_visibility::<M>(vis)` | `visibility` | Registers a module and declares its capability visibility (`CapabilityVisibility::Public` / `Restricted(patterns)`; a pattern ending in `*` matches by prefix, otherwise exact `ModuleMeta::NAME`) |
+| `set_visibility::<M>(vis)` | `visibility` | Sets/overwrites the visibility of an already registered module (companion to `register_lazy` / `register_multi`; recording a visibility for an unregistered module is a silent no-op) |
 | `subscribe::<C>(cb)` | `reload` | Subscribes a config hot-reload callback |
 | `reload_config::<C>()` | `reload` | Reloads config and notifies subscribers |
 | `set_encrypted::<C>(val, key)` | `encryption` | Stores config encrypted (XChaCha20-Poly1305) |
@@ -125,6 +127,9 @@ pub trait AutoBuilder: ModuleMeta {
 | Method | Feature | Description |
 |---|---|---|
 | `require::<M>()` | — | Retrieves a capability (Clone, errors when missing; the first call for a `register_lazy` module triggers the build and caches it) |
+| `require_for::<M>(caller)` | `visibility` | Caller-identified retrieval (defined on `impl Kit<Ready>`); returns `AccessDenied` when `M` is `Restricted` and the caller matches no allow-list pattern; caller-less `require` keeps container-holder semantics |
+| `require_as::<M, Caller>()` | `visibility` | Type-driven variant of `require_for`: caller identity comes from `Caller::NAME` (no string typos) |
+| `visibility_of::<M>()` | `visibility` | Read-only visibility query (`None` = undeclared, behaves as `Public`); consumed by the security-posture audit |
 | `require_ref::<M>()` | — | Zero-copy retrieval (returns `Ref<'_, Cap>`; a lazy module can be borrowed once built; while the guard is alive, do not trigger another lazy module's first build — it panics) |
 | `get_arc::<M, T>()` | — | Clone-free `Arc` capability retrieval (returns `Arc<T>`, same pointer; lazy-cache aware) |
 | `optional::<M>()` | — | Optional retrieval (returns `Option`; lazy-cache aware) |
@@ -381,6 +386,7 @@ pub enum TraitKitError {
     MissingConfig { key: String },
     LifecycleFailed { context: String, source: Box<dyn Error + Send + 'static> }, // lifecycle
     ShutdownTimedOut { phases: Vec<ShutdownPhase> },                              // shutdown
+    AccessDenied { module: &'static str, caller: &'static str },                 // visibility
 }
 ```
 
@@ -397,6 +403,22 @@ pub type TraitKitResult<T> = Result<T, TraitKitError>;
 ---
 
 ## 🎛️ Feature-Gated APIs
+
+### `visibility` — Capability Visibility
+
+Restricts which caller modules may require a capability. Soft in-process boundary: prevents misuse and unauthorized retrieval by code holding a `Kit<Ready>` reference (e.g. untrusted plugins); not a defense against adversarial memory access.
+
+```rust
+pub enum CapabilityVisibility {
+    Public,
+    Restricted(&'static [&'static str]),
+}
+```
+
+- Patterns match against `ModuleMeta::NAME`: trailing `*` = prefix match, otherwise exact.
+- `register_with_visibility::<M>(vis)` registers + declares; `set_visibility::<M>(vis)` patches afterwards.
+- Enforcement applies only to caller-identified retrieval (`require_for` / `require_as`); caller-less `require` acts as the container-level holder.
+- Denials return `TraitKitError::AccessDenied { module, caller }` (module existence is not revealed via `ModuleNotFound`).
 
 ### `async` — Asynchronous Module Building
 
