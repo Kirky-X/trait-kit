@@ -50,6 +50,7 @@ presets-remote = ["presets", "trait-kit/presets-remote"]
 request-scope = ["trait-kit/request-scope"]
 visibility = ["trait-kit/visibility"]
 guard = ["trait-kit/guard"]
+policy = ["trait-kit/policy"]
 
 [[example]]
 name = "default_basic"
@@ -152,6 +153,11 @@ required-features = ["visibility"]
 name = "guard"
 path = "src/kit/guard.rs"
 required-features = ["guard"]
+
+[[example]]
+name = "policy"
+path = "src/kit/policy.rs"
+required-features = ["policy"]
 
 [[example]]
 name = "config_inheritance"

@@ -107,6 +107,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `is_toggle_enabled(key)` | `toggle` | 查询 flag 状态 |
 | `set_toggle` / `get_toggle` / `remove_toggle` / `list_toggles` | `toggle` | 类型化开关句柄（`ToggleValue`：Bool/Int/Float/Str） |
 | `register_if_toggle::<M>(key)` | `toggle` | 按 toggle 条件注册模块 |
+| `dependency_policy(policy)` | `policy` | 设置构建期依赖策略（覆盖式）；拓扑校验后、任何模块构造前执行 |
 | `register_with_visibility::<M>(vis)` | `visibility` | 注册模块并声明能力可见性（`CapabilityVisibility::Public` / `Restricted(patterns)`；`*` 结尾按前缀匹配，否则全等 `ModuleMeta::NAME`） |
 | `set_visibility::<M>(vis)` | `visibility` | 为已注册模块补设/覆盖可见性（`register_lazy` / `register_multi` 的配套入口；对未注册模块记录不报错） |
 | `subscribe::<C>(cb)` | `reload` | 订阅配置热重载回调 |
@@ -127,6 +128,7 @@ pub trait AutoBuilder: ModuleMeta {
 | 方法 | Feature | 说明 |
 |---|---|---|
 | `require::<M>()` | — | 检索能力（Clone，缺失则报错；`register_lazy` 模块首次调用触发构建并缓存） |
+| `dependency_policy_summary()` | `policy` | 只读摘要 `Some((forbid 数, required 数))`，未设置返回 `None` |
 | `require_for::<M>(caller)` | `visibility` | 调用方身份检索（定义在 `impl Kit<Ready>`）；`M` 为 `Restricted` 且 caller 不匹配允许列表时返回 `AccessDenied`；无 caller 的 `require` 保持容器级持有者语义 |
 | `require_as::<M, Caller>()` | `visibility` | `require_for` 的类型驱动变体：调用方身份取自 `Caller::NAME`（无字符串笔误） |
 | `require_guarded::<M>(caller, guard)` | `guard` | 条件检索：运行时 `CapabilityGuard` 与静态可见性边界双关卡；任一拒绝都返回同一个 `AccessDenied`（先 visibility 后 guard） |
@@ -395,6 +397,8 @@ pub enum TraitKitError {
     LifecycleFailed { context: String, source: Box<dyn Error + Send + 'static> }, // lifecycle
     ShutdownTimedOut { phases: Vec<ShutdownPhase> },                              // shutdown
     AccessDenied { module: &'static str, caller: &'static str },                 // visibility
+    PolicyViolation { rule: PolicyRule, dependent: &'static str,                    // policy
+                      dependency: &'static str },
 }
 ```
 

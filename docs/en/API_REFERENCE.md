@@ -107,6 +107,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `is_toggle_enabled(key)` | `toggle` | Queries flag state |
 | `set_toggle` / `get_toggle` / `remove_toggle` / `list_toggles` | `toggle` | Typed toggle handles (`ToggleValue`: Bool/Int/Float/Str) |
 | `register_if_toggle::<M>(key)` | `toggle` | Registers a module conditionally on a toggle |
+| `dependency_policy(policy)` | `policy` | Sets the dependency policy enforced at `build` (replaces any previous policy); validated after topological validation, before any module is constructed |
 | `register_with_visibility::<M>(vis)` | `visibility` | Registers a module and declares its capability visibility (`CapabilityVisibility::Public` / `Restricted(patterns)`; a pattern ending in `*` matches by prefix, otherwise exact `ModuleMeta::NAME`) |
 | `set_visibility::<M>(vis)` | `visibility` | Sets/overwrites the visibility of an already registered module (companion to `register_lazy` / `register_multi`; recording a visibility for an unregistered module is a silent no-op) |
 | `subscribe::<C>(cb)` | `reload` | Subscribes a config hot-reload callback |
@@ -127,6 +128,7 @@ pub trait AutoBuilder: ModuleMeta {
 | Method | Feature | Description |
 |---|---|---|
 | `require::<M>()` | — | Retrieves a capability (Clone, errors when missing; the first call for a `register_lazy` module triggers the build and caches it) |
+| `dependency_policy_summary()` | `policy` | Read-only summary `Some((forbid_count, required_count))` of the configured policy, `None` when unset |
 | `require_for::<M>(caller)` | `visibility` | Caller-identified retrieval (defined on `impl Kit<Ready>`); returns `AccessDenied` when `M` is `Restricted` and the caller matches no allow-list pattern; caller-less `require` keeps container-holder semantics |
 | `require_as::<M, Caller>()` | `visibility` | Type-driven variant of `require_for`: caller identity comes from `Caller::NAME` (no string typos) |
 | `require_guarded::<M>(caller, guard)` | `guard` | Conditional retrieval: the runtime `CapabilityGuard` and the static visibility boundary must both pass; either denial yields the same `AccessDenied` (evaluation order: visibility first, guard second) |
@@ -388,6 +390,8 @@ pub enum TraitKitError {
     LifecycleFailed { context: String, source: Box<dyn Error + Send + 'static> }, // lifecycle
     ShutdownTimedOut { phases: Vec<ShutdownPhase> },                              // shutdown
     AccessDenied { module: &'static str, caller: &'static str },                 // visibility
+    PolicyViolation { rule: PolicyRule, dependent: &'static str,                    // policy
+                      dependency: &'static str },
 }
 ```
 
@@ -432,6 +436,22 @@ pub trait CapabilityGuard: Send + Sync {
 ```
 
 - `require_guarded::<M>(caller, &guard)`: visibility (static boundary) is checked first, then `guard.allow(caller, M::NAME)`; either denial returns `AccessDenied` — callers cannot distinguish boundary from policy denials, so error differences cannot probe policy state.
+
+### `policy` — Build-Time Dependency Policy
+
+Negative architecture constraints on the module dependency graph, enforced at `build()` right after topological validation and before any module is constructed (violations leave zero build side effects).
+
+```rust
+pub enum ModulePattern { Exact(&'static str), Prefix(&'static str), Any }
+pub struct ForbiddenEdge { pub dependent: ModulePattern, pub dependency: ModulePattern }
+pub struct RequiredEdge  { pub dependent: ModulePattern, pub dependency: ModulePattern }
+pub struct DependencyPolicy { pub forbid: Vec<ForbiddenEdge>, pub required: Vec<RequiredEdge> }
+```
+
+- `ForbiddenEdge { dependent, dependency }` = "no module matching `dependent` may depend on a module matching `dependency`"; to forbid anyone depending on audit use `{ dependent: Any, dependency: Exact("audit::AuditModule") }`.
+- `RequiredEdge { dependent, dependency }` = "every module matching `dependent` must depend on at least one module matching `dependency`".
+- `Prefix` is namespace-boundary aware (`Prefix("business")` matches `business::Orders` but not `businessx::Y`); `Any` matches everything.
+- Violations return `TraitKitError::PolicyViolation { rule, dependent, dependency }` (first violation wins, same granularity as `DependencyMissing`).
 
 ### `async` — Asynchronous Module Building
 
