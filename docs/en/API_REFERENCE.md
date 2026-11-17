@@ -129,6 +129,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `require::<M>()` | — | Retrieves a capability (Clone, errors when missing; the first call for a `register_lazy` module triggers the build and caches it) |
 | `require_for::<M>(caller)` | `visibility` | Caller-identified retrieval (defined on `impl Kit<Ready>`); returns `AccessDenied` when `M` is `Restricted` and the caller matches no allow-list pattern; caller-less `require` keeps container-holder semantics |
 | `require_as::<M, Caller>()` | `visibility` | Type-driven variant of `require_for`: caller identity comes from `Caller::NAME` (no string typos) |
+| `require_guarded::<M>(caller, guard)` | `guard` | Conditional retrieval: the runtime `CapabilityGuard` and the static visibility boundary must both pass; either denial yields the same `AccessDenied` (evaluation order: visibility first, guard second) |
 | `visibility_of::<M>()` | `visibility` | Read-only visibility query (`None` = undeclared, behaves as `Public`); consumed by the security-posture audit |
 | `require_ref::<M>()` | — | Zero-copy retrieval (returns `Ref<'_, Cap>`; a lazy module can be borrowed once built; while the guard is alive, do not trigger another lazy module's first build — it panics) |
 | `get_arc::<M, T>()` | — | Clone-free `Arc` capability retrieval (returns `Arc<T>`, same pointer; lazy-cache aware) |
@@ -419,6 +420,18 @@ pub enum CapabilityVisibility {
 - `register_with_visibility::<M>(vis)` registers + declares; `set_visibility::<M>(vis)` patches afterwards.
 - Enforcement applies only to caller-identified retrieval (`require_for` / `require_as`); caller-less `require` acts as the container-level holder.
 - Denials return `TraitKitError::AccessDenied { module, caller }` (module existence is not revealed via `ModuleNotFound`).
+
+### `guard` — Conditional Retrieval Guard
+
+Runtime policy hook on the require path (implies `visibility`). The trait is defined here and implemented by ecosystem crates (limiteron: tenant not rate-limited; garrison: session authenticated) — this crate never depends on them.
+
+```rust
+pub trait CapabilityGuard: Send + Sync {
+    fn allow(&self, caller: &'static str, target: &'static str) -> bool;
+}
+```
+
+- `require_guarded::<M>(caller, &guard)`: visibility (static boundary) is checked first, then `guard.allow(caller, M::NAME)`; either denial returns `AccessDenied` — callers cannot distinguish boundary from policy denials, so error differences cannot probe policy state.
 
 ### `async` — Asynchronous Module Building
 

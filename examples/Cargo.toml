@@ -49,6 +49,7 @@ presets = ["confers", "trait-kit/presets"]
 presets-remote = ["presets", "trait-kit/presets-remote"]
 request-scope = ["trait-kit/request-scope"]
 visibility = ["trait-kit/visibility"]
+guard = ["trait-kit/guard"]
 
 [[example]]
 name = "default_basic"
@@ -146,6 +147,11 @@ required-features = ["toggle"]
 name = "visibility"
 path = "src/kit/visibility.rs"
 required-features = ["visibility"]
+
+[[example]]
+name = "guard"
+path = "src/kit/guard.rs"
+required-features = ["guard"]
 
 [[example]]
 name = "config_inheritance"
