@@ -2833,6 +2833,39 @@ impl Kit<Ready> {
         self.require_for::<M>(Caller::NAME)
     }
 
+    /// Conditional retrieval: the runtime [`CapabilityGuard`] and the
+    /// static [`CapabilityVisibility`] boundary must both pass; either
+    /// denial yields `AccessDenied` (callers cannot distinguish boundary
+    /// from policy denials, so error differences cannot be used to probe
+    /// policy state).
+    ///
+    /// Evaluation order: visibility first (static denial is cheaper and
+    /// yields the more precise message), guard second.
+    ///
+    /// Requires the `guard` feature.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::AccessDenied` when the visibility boundary
+    /// or the guard denies the retrieval. Otherwise delegates to
+    /// [`Kit::require`] error semantics.
+    #[cfg(feature = "guard")]
+    pub fn require_guarded<M: AutoBuilder>(
+        &self,
+        caller: &'static str,
+        guard: &dyn crate::kit::visibility::CapabilityGuard,
+    ) -> Result<M::Capability, TraitKitError> {
+        // 静态边界优先；require_for 复用其拒绝语义与 AccessDenied 构造。
+        self.require_for::<M>(caller)?;
+        if !guard.allow(caller, M::NAME) {
+            return Err(TraitKitError::AccessDenied {
+                module: M::NAME,
+                caller,
+            });
+        }
+        self.require::<M>()
+    }
+
     /// Retrieve an optional capability. Returns `None` if not built.
     ///
     /// Read-only: never triggers a lazy build. For `register_lazy` modules

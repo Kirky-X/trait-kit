@@ -3849,3 +3849,93 @@ mod visibility_require_tests {
         assert!(ready.require_for::<Plain>("anyone::Anywhere").is_ok());
     }
 }
+
+/// 双重关卡检索：visibility + guard（feature `guard`，R-guard-001）。
+#[cfg(all(test, feature = "guard"))]
+mod guarded_require_tests {
+    use super::super::*;
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::error::TraitKitError;
+    use crate::kit::visibility::{CapabilityGuard, CapabilityVisibility};
+
+    #[derive(Clone, Debug)]
+    struct Cap;
+    #[derive(Debug)]
+    struct Err_;
+    impl std::fmt::Display for Err_ {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "guarded test error")
+        }
+    }
+    impl std::error::Error for Err_ {}
+
+    struct Database;
+    impl ModuleMeta for Database {
+        const NAME: &'static str = "grd::Database";
+    }
+    impl AutoBuilder for Database {
+        type Capability = Cap;
+        type Error = Err_;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Cap)
+        }
+    }
+
+    /// 固定判定结果的 mock guard。
+    struct FixedGuard(bool);
+    impl CapabilityGuard for FixedGuard {
+        fn allow(&self, _caller: &'static str, _target: &'static str) -> bool {
+            self.0
+        }
+    }
+
+    fn ready_with(restricted: bool) -> Kit<Ready> {
+        let mut kit = Kit::new();
+        if restricted {
+            kit.register_with_visibility::<Database>(CapabilityVisibility::Restricted(&[
+                "audit::*",
+            ]))
+            .expect("register restricted");
+        } else {
+            kit.register_with_visibility::<Database>(CapabilityVisibility::Public)
+                .expect("register public");
+        }
+        kit.build().expect("build succeeds")
+    }
+
+    #[test]
+    fn guard_denial_yields_access_denied() {
+        let ready = ready_with(false);
+        let err = ready
+            .require_guarded::<Database>("audit::AuditModule", &FixedGuard(false))
+            .expect_err("guard denial must block retrieval");
+        assert!(
+            matches!(
+                err,
+                TraitKitError::AccessDenied {
+                    module: "grd::Database",
+                    caller: "audit::AuditModule"
+                }
+            ),
+            "wrong error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn guard_pass_but_restricted_denial_yields_access_denied() {
+        let ready = ready_with(true);
+        // caller 不在 audit::* 允许列表：guard 放行也无济于事。
+        let err = ready
+            .require_guarded::<Database>("plugin::PluginModule", &FixedGuard(true))
+            .expect_err("static boundary must block retrieval");
+        assert!(matches!(err, TraitKitError::AccessDenied { .. }));
+    }
+
+    #[test]
+    fn both_pass_yields_capability() {
+        let ready = ready_with(true);
+        let _cap = ready
+            .require_guarded::<Database>("audit::AuditModule", &FixedGuard(true))
+            .expect("visibility and guard both pass");
+    }
+}
