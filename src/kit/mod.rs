@@ -33,6 +33,9 @@ pub mod visibility;
 #[cfg(feature = "policy")]
 pub mod policy;
 
+#[cfg(feature = "report")]
+pub mod describe;
+
 pub use graph::{DependencyGraph, GraphError, ModuleEntry};
 #[cfg(feature = "resource-guard")]
 pub use kit::SensitiveShutdownReport;
