@@ -89,7 +89,8 @@ fn required_edge_satisfied_builds() {
     kit.dependency_policy(DependencyPolicy {
         forbid: Vec::new(),
         required: vec![RequiredEdge {
-            dependent: ModulePattern::Prefix("e2e::"),
+            // 只要求 business 依赖 auth：auth 自身无依赖不违反规则。
+            dependent: ModulePattern::Prefix("e2e::business"),
             dependency: ModulePattern::Exact("e2e::auth"),
         }],
     });
