@@ -169,6 +169,8 @@ pub trait AutoBuilder: ModuleMeta {
 | `build_report()` | `report` | 结构化构建报告（JSON） |
 | `contract_manifest()` | `report` | 契约清单导出 |
 | `take_config_overrides()` | `report` | 任意状态可用（`impl<S>`，与 `merge_config` 同 impl 块，列于本表仅因排空轮转点多在运行期）；排空并返回 `config_overrides` 历史（记录序）——历史已自带上界（1024 条环形语义），排空用于在轮转点取回记录继续处理，兼防满容量后 `merge_config` 的 O(n) 头删与 `build_report()` 快照整段 clone 的持续成本 |
+| `describe()` | `report` | 只读能力图谱快照（`KitDescription`：逐模块 deps/dependents/状态 + 拓扑序） |
+| `security_posture()` | `audit` | 安全姿态报告（8 个稳定 id 检查项；`is_ok()` + JSON 导出） |
 | `emit_event(event)` | — | 发布自定义 `KitEvent`（`impl<S>`，两态可用） |
 
 ### 声明宏
@@ -689,6 +691,63 @@ pub struct ContractEntry {
 
 `ContractManifest::to_json()` 产出机器可读契约清单（供消费方做版本/依赖门禁）；`CONTRACT_SCHEMA_VERSION` 为当前版本常量。
 `capability` 取自 `std::any::type_name`，其格式不承诺跨编译器/跨版本稳定——只作诊断用途，按后缀匹配、勿按全等比较；稳定的模块标识是 `module`（`ModuleMeta::NAME`）。
+
+#### `KitDescription` — 能力图谱快照
+
+```rust
+pub struct KitDescription {
+    pub modules: Vec<ModuleDescription>,  // 每模块一行，拓扑序
+    pub topo_order: Vec<&'static str>,    // 校验后的拓扑序
+}
+
+pub struct ModuleDescription {
+    pub name: &'static str,               // ModuleMeta::NAME
+    pub state: ModuleBuildState,          // 复用 report 的 ModuleBuildState
+    pub deps: Vec<&'static str>,          // 声明的依赖（正向边）
+    pub dependents: Vec<&'static str>,    // 依赖本模块的模块（反向边）
+}
+```
+
+`Kit<Ready>::describe()` 把 `build_report()` 的构建数据与反向边聚合为单一只读快照（`KitDescription::to_json()` 序列化）。`BuildReport` 记录构建*过程*（override、耗时），`describe()` 是运行时*快照*：谁依赖谁、处于何种状态。
+
+### `audit` — 安全姿态自审计
+
+对当前 feature 集与注册状态下架构级安全能力的可验证报告（蕴含 `report`；全部检查本地计算——零 IO、零网络）。宿主可按 `is_ok()` 或单项状态决定是否上线；示例：`cargo run -p trait-kit-examples --example describe --features audit,policy,visibility`。
+
+```rust
+pub struct SecurityPosture {
+    pub checks: Vec<PostureCheck>,
+}
+
+pub struct PostureCheck {
+    pub id: &'static str,        // 稳定检查 id（id 不变；背后的阈值可调）
+    pub status: PostureStatus,
+    pub detail: String,          // 人读证据（英文；诊断信息，非 API 契约）
+}
+
+pub enum PostureStatus { Pass, Warn, Info, Fail }
+```
+
+| 方法 | 说明 |
+|------|------|
+| `SecurityPosture::is_ok()` | 无 `Fail` 即 `true`（允许 Warn/Info——是否让 Warn 姿态上线由宿主决策） |
+| `SecurityPosture::to_json()` | 序列化为 JSON 字符串（`serde_json::Result`） |
+| `Kit<Ready>::security_posture()` | 产出报告（`audit` feature） |
+
+检查项 id 与状态规则：
+
+| id | 状态规则 |
+|----|------|
+| `unsafe-code` | Pass（crate 级 `#![deny(unsafe_code)]`；豁免须显式 allow 并附 SAFETY 论证） |
+| `typestate` | Pass（Unbuilt/Ready 编译期拆分） |
+| `dependency-policy` | 已配置规则 > 0 → Pass；policy 启用未配置 → Warn；feature 未启用 → Info |
+| `capability-visibility` | restricted 计数 > 0 → Pass；全 Public → Warn；feature 未启用 → Warn |
+| `config-encryption` | encryption → Pass（蕴含 reload）；仅 reload/confers → Info；全无 → Info |
+| `masking` | 启用 → Pass；未启用 → Info |
+| `sensitive-resources` | 标记计数 > 0 → Pass（resource-guard）；0 或 feature 未启用 → Info |
+| `lifecycle-shutdown` | lifecycle + shutdown 全启用 → Pass；否则 Info |
+
+`Fail` 预留给"声明了但校验失败"的可编程检查（当前无此类项，枚举完整性保留）。
 
 ### `observer` — 构建可观测
 

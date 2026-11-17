@@ -165,6 +165,8 @@ pub trait AutoBuilder: ModuleMeta {
 | `build_report()` | `report` | Structured build report (JSON) |
 | `contract_manifest()` | `report` | Contract manifest export |
 | `take_config_overrides()` | `report` | Usable in any state (`impl<S>`, same impl block as `merge_config`; listed in this table only because drain rotation points usually fall at runtime); drains and returns the `config_overrides` history (in record order) — the history is already bounded (1024-entry ring semantics); draining retrieves the records at a rotation point for further processing and also prevents, once at capacity, the recurring costs of `merge_config`'s O(n) front deletion and `build_report()`'s whole-history clone on every snapshot |
+| `describe()` | `report` | Read-only capability-graph snapshot (`KitDescription`: per-module deps/dependents/states + topo order) |
+| `security_posture()` | `audit` | Security posture report (8 stable-id checks; `is_ok()` + JSON export) |
 | `emit_event(event)` | — | Publishes a custom `KitEvent` (`impl<S>`, usable in both states) |
 
 ### Declarative Macros
@@ -718,6 +720,63 @@ pub struct ContractEntry {
 ```
 
 `ContractManifest::to_json()` produces a machine-readable contract manifest (for consumers to enforce version/dependency gates); `CONTRACT_SCHEMA_VERSION` is the current version constant. `capability` comes from `std::any::type_name`, whose format is not promised stable across compilers/versions — diagnostic use only, match by suffix and never compare for equality; the stable module identifier is `module` (`ModuleMeta::NAME`).
+
+#### `KitDescription` — Capability Graph Snapshot
+
+```rust
+pub struct KitDescription {
+    pub modules: Vec<ModuleDescription>,  // one row per module, in topological order
+    pub topo_order: Vec<&'static str>,    // validated topological order
+}
+
+pub struct ModuleDescription {
+    pub name: &'static str,               // ModuleMeta::NAME
+    pub state: ModuleBuildState,          // reuses report's ModuleBuildState
+    pub deps: Vec<&'static str>,          // declared dependencies (forward edges)
+    pub dependents: Vec<&'static str>,    // modules that depend on this one (reverse edges)
+}
+```
+
+`Kit<Ready>::describe()` aggregates the `build_report()` build data with reverse edges into a single read-only snapshot (`KitDescription::to_json()` serializes it). Where `BuildReport` records the build *process* (overrides, elapsed time), `describe()` is the runtime *snapshot*: who depends on whom, in which state.
+
+### `audit` — Security Posture Audit
+
+Verifiable report of architecture-level safety capabilities under the current feature set and registration state (implies `report`; all checks are computed locally — zero IO, zero network). A host may gate go-live on `is_ok()` or on individual check statuses; example: `cargo run -p trait-kit-examples --example describe --features audit,policy,visibility`.
+
+```rust
+pub struct SecurityPosture {
+    pub checks: Vec<PostureCheck>,
+}
+
+pub struct PostureCheck {
+    pub id: &'static str,        // stable check id (ids do not change; thresholds may be tuned)
+    pub status: PostureStatus,
+    pub detail: String,          // human-readable evidence (English; diagnostics, not API contract)
+}
+
+pub enum PostureStatus { Pass, Warn, Info, Fail }
+```
+
+| Method | Description |
+|------|------|
+| `SecurityPosture::is_ok()` | `true` when no check is `Fail` (Warn/Info allowed — the host decides whether a Warn posture may go live) |
+| `SecurityPosture::to_json()` | Serializes to a JSON string (`serde_json::Result`) |
+| `Kit<Ready>::security_posture()` | Produces the report (`audit` feature) |
+
+Check ids and status rules:
+
+| id | Status rule |
+|----|------|
+| `unsafe-code` | Pass (crate-wide `#![deny(unsafe_code)]`; exemptions need an explicit allow with a SAFETY justification) |
+| `typestate` | Pass (Unbuilt/Ready compile-time split) |
+| `dependency-policy` | Configured rules > 0 → Pass; policy enabled without rules → Warn; feature off → Info |
+| `capability-visibility` | Restricted count > 0 → Pass; all Public → Warn; feature off → Warn |
+| `config-encryption` | encryption → Pass (implies reload); reload/confers only → Info; none → Info |
+| `masking` | Enabled → Pass; off → Info |
+| `sensitive-resources` | Marked count > 0 → Pass (resource-guard); 0 or feature off → Info |
+| `lifecycle-shutdown` | lifecycle + shutdown both on → Pass; otherwise Info |
+
+`Fail` is reserved for programmatic checks whose declared invariant failed to verify (no such check ships today; the variant keeps the enum complete).
 
 ### `observer` — Build Observability
 

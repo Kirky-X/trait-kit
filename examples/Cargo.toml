@@ -167,6 +167,11 @@ path = "src/kit/resource_guard.rs"
 required-features = ["resource-guard"]
 
 [[example]]
+name = "describe"
+path = "src/kit/describe.rs"
+required-features = ["audit", "policy", "visibility"]
+
+[[example]]
 name = "config_inheritance"
 path = "src/kit/config_inheritance.rs"
 required-features = ["confers"]
