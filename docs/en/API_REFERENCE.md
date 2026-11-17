@@ -453,6 +453,23 @@ pub struct DependencyPolicy { pub forbid: Vec<ForbiddenEdge>, pub required: Vec<
 - `Prefix` is namespace-boundary aware (`Prefix("business")` matches `business::Orders` but not `businessx::Y`); `Any` matches everything.
 - Violations return `TraitKitError::PolicyViolation { rule, dependent, dependency }` (first violation wins, same granularity as `DependencyMissing`).
 
+### `resource-guard` — Sensitive Resource Shutdown Assurance
+
+Explicit marking of modules that hold sensitive resources (connection pools, keys, session stores) plus a verifiable shutdown report and build-failure rollback (implies `lifecycle`).
+
+```rust
+pub struct SensitiveShutdownReport {
+    pub verified: Vec<&'static str>, // on_shutdown ran to completion
+    pub skipped:  Vec<&'static str>, // panicked, or no lifecycle callback registered
+}
+```
+
+- `mark_sensitive::<M>()` (`Kit<Unbuilt>`): mark `M` as sensitive; idempotent.
+- `sensitive_modules()` (`Kit<Ready>`): marked module names in validated topological order.
+- `shutdown_with_report()` (`Kit<Ready>`): runs every `on_shutdown` like `shutdown()` (reverse topological order, panics isolated) and reports the per-module verdict for sensitive modules; consumes the one-shot callback set — whichever of `shutdown` / `shutdown_with_report` runs first wins.
+- `sensitive_at_risk(&ShutdownResult)` (`Kit<Ready>`, `resource-guard` + `shutdown`): conservative attribution — a timed-out `CloseConnections` phase (where `register_shutdown_into`-bridged lifecycle hooks live) puts **all** sensitive modules on the at-risk list.
+- Build-failure rollback is **not** feature-gated (correctness, enabled with `lifecycle` alone): when `build()` fails, `on_shutdown` runs (reverse topological order, panics isolated) for every already-constructed module before the original error is returned.
+
 ### `async` — Asynchronous Module Building
 
 #### `AsyncAutoBuilder` `async`

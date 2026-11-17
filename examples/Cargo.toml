@@ -51,6 +51,7 @@ request-scope = ["trait-kit/request-scope"]
 visibility = ["trait-kit/visibility"]
 guard = ["trait-kit/guard"]
 policy = ["trait-kit/policy"]
+resource-guard = ["lifecycle", "trait-kit/resource-guard"]
 
 [[example]]
 name = "default_basic"
@@ -158,6 +159,11 @@ required-features = ["guard"]
 name = "policy"
 path = "src/kit/policy.rs"
 required-features = ["policy"]
+
+[[example]]
+name = "resource_guard"
+path = "src/kit/resource_guard.rs"
+required-features = ["resource-guard"]
 
 [[example]]
 name = "config_inheritance"

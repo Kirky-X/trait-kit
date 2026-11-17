@@ -108,6 +108,7 @@ pub trait AutoBuilder: ModuleMeta {
 | `set_toggle` / `get_toggle` / `remove_toggle` / `list_toggles` | `toggle` | 类型化开关句柄（`ToggleValue`：Bool/Int/Float/Str） |
 | `register_if_toggle::<M>(key)` | `toggle` | 按 toggle 条件注册模块 |
 | `dependency_policy(policy)` | `policy` | 设置构建期依赖策略（覆盖式）；拓扑校验后、任何模块构造前执行 |
+| `mark_sensitive::<M>()` | `resource-guard` | 标记 `M` 持有敏感资源（连接池/密钥/会话存储）；幂等，重复标记只保留一个条目 |
 | `register_with_visibility::<M>(vis)` | `visibility` | 注册模块并声明能力可见性（`CapabilityVisibility::Public` / `Restricted(patterns)`；`*` 结尾按前缀匹配，否则全等 `ModuleMeta::NAME`） |
 | `set_visibility::<M>(vis)` | `visibility` | 为已注册模块补设/覆盖可见性（`register_lazy` / `register_multi` 的配套入口；对未注册模块记录不报错） |
 | `subscribe::<C>(cb)` | `reload` | 订阅配置热重载回调 |
@@ -129,6 +130,9 @@ pub trait AutoBuilder: ModuleMeta {
 |---|---|---|
 | `require::<M>()` | — | 检索能力（Clone，缺失则报错；`register_lazy` 模块首次调用触发构建并缓存） |
 | `dependency_policy_summary()` | `policy` | 只读摘要 `Some((forbid 数, required 数))`，未设置返回 `None` |
+| `sensitive_modules()` | `resource-guard` | 拓扑序列出被标记的敏感模块名 |
+| `shutdown_with_report()` | `resource-guard` | 与 `shutdown()` 同语义执行全部回调，另按模块报告敏感模块的 `on_shutdown` 是否确认执行（`SensitiveShutdownReport { verified, skipped }`）；一次性回调集合——先调用者生效 |
+| `sensitive_at_risk(&result)` | `resource-guard` + `shutdown` | 保守归因：`CloseConnections` 阶段超时（`register_shutdown_into` 桥接的生命周期钩子落位）→ 全部敏感模块进疑似未清理名单 |
 | `require_for::<M>(caller)` | `visibility` | 调用方身份检索（定义在 `impl Kit<Ready>`）；`M` 为 `Restricted` 且 caller 不匹配允许列表时返回 `AccessDenied`；无 caller 的 `require` 保持容器级持有者语义 |
 | `require_as::<M, Caller>()` | `visibility` | `require_for` 的类型驱动变体：调用方身份取自 `Caller::NAME`（无字符串笔误） |
 | `require_guarded::<M>(caller, guard)` | `guard` | 条件检索：运行时 `CapabilityGuard` 与静态可见性边界双关卡；任一拒绝都返回同一个 `AccessDenied`（先 visibility 后 guard） |
@@ -415,6 +419,23 @@ pub type TraitKitResult<T> = Result<T, TraitKitError>;
 ---
 
 ## 🎛️ 特性门控 API
+
+### `resource-guard` — 敏感资源关闭保障
+
+敏感资源（连接池、密钥、会话存储）模块的显式标记 + shutdown 可核查报告 + build 失败回滚（蕴含 `lifecycle`）。
+
+```rust
+pub struct SensitiveShutdownReport {
+    pub verified: Vec<&'static str>, // on_shutdown 确认执行完毕
+    pub skipped:  Vec<&'static str>, // panic 或未注册生命周期回调
+}
+```
+
+- `mark_sensitive::<M>()`（`Kit<Unbuilt>`）：标记敏感模块；幂等。
+- `sensitive_modules()`（`Kit<Ready>`）：拓扑序敏感模块名清单。
+- `shutdown_with_report()`（`Kit<Ready>`）：与 `shutdown()` 同语义执行全部回调（逆拓扑序、panic 隔离），并按模块报告敏感模块的清理裁决；一次性回调集合——`shutdown` / `shutdown_with_report` 先调用者生效。
+- `sensitive_at_risk(&ShutdownResult)`（`Kit<Ready>`，`resource-guard` + `shutdown`）：保守归因——`CloseConnections` 阶段（`register_shutdown_into` 桥接钩子落位）超时 → 全部敏感模块进疑似未清理名单。
+- build 失败回滚**不**按 feature 门控（属正确性，仅 `lifecycle` 即生效）：`build()` 失败时对每个已构造模块逆拓扑序执行 `on_shutdown`（panic 隔离）后返回原错误。
 
 ### `async` — 异步模块构建
 
