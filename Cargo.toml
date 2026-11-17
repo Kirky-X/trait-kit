@@ -141,6 +141,8 @@ visibility = []
 guard = ["visibility"]
 # Dependency policy: build-time architecture constraints (forbidden/required dependency edges).
 policy = []
+# Resource guard: explicit sensitive-resource marking + verifiable shutdown reporting + build-failure rollback.
+resource-guard = ["lifecycle"]
 
 # E2E 源在 tests/e2e/，需显式注册；zh/en 分进程隔离（I18nManager 为进程级单例）
 [[test]]
