@@ -4201,6 +4201,45 @@ mod policy_tests {
         ));
     }
 
+    /// R-pol-003：违规时零构建副作用——模块构造回调不得执行。
+    #[test]
+    fn policy_violation_leaves_zero_build_side_effects() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static BUILDS: AtomicUsize = AtomicUsize::new(0);
+
+        struct Counting;
+        impl ModuleMeta for Counting {
+            const NAME: &'static str = "pol::counting";
+        }
+        impl AutoBuilder for Counting {
+            type Capability = Cap;
+            type Error = Err_;
+            fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+                BUILDS.fetch_add(1, Ordering::SeqCst);
+                Ok(Cap)
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.register::<Auth>().expect("register auth");
+        kit.register::<Business>().expect("register business");
+        kit.register::<Counting>().expect("register counting");
+        kit.dependency_policy(DependencyPolicy {
+            forbid: vec![ForbiddenEdge {
+                dependent: ModulePattern::Exact("pol::business"),
+                dependency: ModulePattern::Exact("pol::auth"),
+            }],
+            required: Vec::new(),
+        });
+        let err = kit.build().expect_err("policy violation");
+        assert!(matches!(err, TraitKitError::PolicyViolation { .. }));
+        assert_eq!(
+            BUILDS.load(Ordering::SeqCst),
+            0,
+            "no module constructor may run when the policy rejects the graph"
+        );
+    }
+
     #[test]
     fn no_policy_keeps_current_build_behavior() {
         let mut kit = Kit::new();
