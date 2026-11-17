@@ -14,6 +14,7 @@ trait-kit-error-capability-type-mismatch = capability type mismatch for `{ $key 
 trait-kit-error-missing-config = missing config `{ $key }`
 trait-kit-error-lifecycle-failed = lifecycle hook failed for `{ $context }`: { $source }
 trait-kit-error-shutdown-timed-out = graceful shutdown timed out in phases: { $phases }
+trait-kit-error-access-denied = access denied: module `{ $module }` is not visible to caller `{ $caller }`
 trait-kit-error-decorator-target-missing = decorator target module `{ $module }` is not registered (checked at registration time)
 trait-kit-error-version-incompatible = module `{ $module }` requires capability `{ $dependency }` >= { $required }, but the provider declares { $provided }
 trait-kit-preset-remote-load-failed = remote config source failed: { $message }

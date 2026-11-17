@@ -96,6 +96,17 @@ pub enum TraitKitError {
         /// 超时的关闭阶段列表。
         phases: Vec<crate::kit::shutdown::ShutdownPhase>,
     },
+
+    /// 受限能力被允许列表之外的调用方检索。
+    ///
+    /// 刻意不返回 `ModuleNotFound`：模块存在性不得经由拒绝路径泄露。
+    #[cfg(feature = "visibility")]
+    AccessDenied {
+        /// 能力所属模块名。
+        module: &'static str,
+        /// 被拒绝调用方声明的模块名。
+        caller: &'static str,
+    },
 }
 
 impl fmt::Display for TraitKitError {
@@ -224,6 +235,15 @@ impl fmt::Display for TraitKitError {
                     )
                 )
             }
+            #[cfg(feature = "visibility")]
+            Self::AccessDenied { module, caller } => write!(
+                f,
+                "{}",
+                tr(
+                    "trait-kit-error-access-denied",
+                    &[("module", *module), ("caller", *caller)],
+                )
+            ),
         }
     }
 }
@@ -325,6 +345,12 @@ impl fmt::Debug for TraitKitError {
             Self::ShutdownTimedOut { phases } => f
                 .debug_struct("ShutdownTimedOut")
                 .field("phases", phases)
+                .finish(),
+            #[cfg(feature = "visibility")]
+            Self::AccessDenied { module, caller } => f
+                .debug_struct("AccessDenied")
+                .field("module", module)
+                .field("caller", caller)
                 .finish(),
         }
     }
@@ -511,6 +537,8 @@ impl TraitKitError {
             | Self::VersionIncompatible { .. } => ErrorKind::Other,
             #[cfg(feature = "shutdown")]
             Self::ShutdownTimedOut { .. } => ErrorKind::Other,
+            #[cfg(feature = "visibility")]
+            Self::AccessDenied { .. } => ErrorKind::Other,
         }
     }
 }
@@ -716,6 +744,54 @@ mod tests {
         assert!(
             msg.contains("db.url"),
             "should contain config key: got '{msg}'"
+        );
+    }
+
+    /// 可见性拒绝：中英 Display 文本都必须携带模块名与调用方名
+    /// （R-vis-004）。
+    #[cfg(feature = "visibility")]
+    #[test]
+    fn access_denied_display_contains_module_and_caller_both_locales() {
+        use crate::i18n::MessageCatalog;
+        let err = TraitKitError::AccessDenied {
+            module: "db::Database",
+            caller: "plugin::Plugin",
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("db::Database"), "module name missing: '{msg}'");
+        assert!(
+            msg.contains("plugin::Plugin"),
+            "caller name missing: '{msg}'"
+        );
+
+        let zh = MessageCatalog::global("zh-CN").translate(
+            "trait-kit-error-access-denied",
+            &[("module", "db::Database"), ("caller", "plugin::Plugin")],
+        );
+        assert!(
+            zh.contains("db::Database") && zh.contains("plugin::Plugin"),
+            "zh text must carry both names: '{zh}'"
+        );
+        assert!(
+            zh.contains("不可见") || zh.contains("拒绝"),
+            "zh denial wording missing: '{zh}'"
+        );
+
+        let en = MessageCatalog::global("en-US").translate(
+            "trait-kit-error-access-denied",
+            &[("module", "db::Database"), ("caller", "plugin::Plugin")],
+        );
+        assert!(
+            en.contains("access denied"),
+            "en denial wording missing: '{en}'"
+        );
+
+        let debug = format!("{err:?}");
+        assert!(
+            debug.contains("AccessDenied")
+                && debug.contains("db::Database")
+                && debug.contains("plugin::Plugin"),
+            "debug shape wrong: '{debug}'"
         );
     }
 
