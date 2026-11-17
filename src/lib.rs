@@ -52,6 +52,11 @@ pub use kit::AsyncShutdownCoordinator;
 #[cfg(feature = "shutdown")]
 pub use kit::{ShutdownCoordinator, ShutdownPhase, ShutdownPhaseResult, ShutdownResult};
 
+#[cfg(feature = "guard")]
+pub use kit::CapabilityGuard;
+#[cfg(feature = "visibility")]
+pub use kit::CapabilityVisibility;
+
 /// Shared test helpers for async test modules (`block_on` executor + `MockError`).
 ///
 /// Extracted to deduplicate between `core::meta::async_tests` and

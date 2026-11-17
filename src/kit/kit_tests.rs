@@ -3727,6 +3727,28 @@ mod visibility_tests {
         assert_eq!(ready.visibility_of::<RestrictedModule>(), None);
     }
 
+    /// R-vis-002：重复注册仍走 `AlreadyRegistered` 判定。
+    #[test]
+    fn register_with_visibility_twice_yields_already_registered() {
+        let mut kit = Kit::new();
+        kit.register_with_visibility::<RestrictedModule>(CapabilityVisibility::Restricted(&[
+            "audit::*",
+        ]))
+        .expect("first register succeeds");
+        let err = kit
+            .register_with_visibility::<RestrictedModule>(CapabilityVisibility::Public)
+            .expect_err("duplicate registration must be rejected");
+        assert!(
+            matches!(
+                err,
+                TraitKitError::AlreadyRegistered {
+                    module: "vis::Restricted"
+                }
+            ),
+            "wrong error: {err:?}"
+        );
+    }
+
     #[test]
     fn set_visibility_overwrites_and_tolerates_unregistered() {
         let mut kit = Kit::new();
@@ -3929,6 +3951,35 @@ mod guarded_require_tests {
             .require_guarded::<Database>("plugin::PluginModule", &FixedGuard(true))
             .expect_err("static boundary must block retrieval");
         assert!(matches!(err, TraitKitError::AccessDenied { .. }));
+    }
+
+    /// 记录调用参数的 guard，验证 `require_guarded` 透传 caller / `M::NAME`。
+    struct RecordingGuard {
+        seen: std::sync::Mutex<Vec<(&'static str, &'static str)>>,
+    }
+    impl CapabilityGuard for RecordingGuard {
+        fn allow(&self, caller: &'static str, target: &'static str) -> bool {
+            self.seen.lock().expect("lock").push((caller, target));
+            true
+        }
+    }
+
+    /// R-guard-001：guard 收到的 caller/target 与调用传入一致（target == `M::NAME`）。
+    #[test]
+    fn require_guarded_forwards_caller_and_target_verbatim() {
+        let ready = ready_with(true);
+        let guard = RecordingGuard {
+            seen: std::sync::Mutex::new(Vec::new()),
+        };
+        let _cap = ready
+            .require_guarded::<Database>("audit::AuditModule", &guard)
+            .expect("recording guard always allows");
+        let seen = guard.seen.lock().expect("lock");
+        assert_eq!(
+            *seen,
+            vec![("audit::AuditModule", "grd::Database")],
+            "caller and target (M::NAME) must be forwarded verbatim"
+        );
     }
 
     #[test]
