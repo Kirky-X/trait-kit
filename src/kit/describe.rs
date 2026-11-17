@@ -92,6 +92,74 @@ mod tests {
         assert!(description.topo_order.is_empty());
     }
 
+    /// 三模块链 A ← B ← C：B 行 `deps == ["A"]`、`dependents == ["C"]`，
+    /// modules 顺序与 `topo_order` 一致（R-des-002）。
+    #[test]
+    fn chain_describe_mirrors_forward_and_reverse_edges() {
+        use crate::core::{AutoBuilder, ModuleMeta};
+        use std::any::TypeId;
+        use std::sync::Arc;
+
+        struct ChainA;
+        impl ModuleMeta for ChainA {
+            const NAME: &'static str = "desc-a";
+        }
+        impl AutoBuilder for ChainA {
+            type Capability = Arc<u32>;
+            type Error = std::io::Error;
+            fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+                Ok(Arc::new(1))
+            }
+        }
+
+        struct ChainB;
+        impl ModuleMeta for ChainB {
+            const NAME: &'static str = "desc-b";
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                static DEPS: &[(&str, TypeId)] = &[("desc-a", TypeId::of::<ChainA>())];
+                DEPS
+            }
+        }
+        impl AutoBuilder for ChainB {
+            type Capability = Arc<u32>;
+            type Error = std::io::Error;
+            fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+                Ok(Arc::new(2))
+            }
+        }
+
+        struct ChainC;
+        impl ModuleMeta for ChainC {
+            const NAME: &'static str = "desc-c";
+            fn dependencies() -> &'static [(&'static str, TypeId)] {
+                static DEPS: &[(&str, TypeId)] = &[("desc-b", TypeId::of::<ChainB>())];
+                DEPS
+            }
+        }
+        impl AutoBuilder for ChainC {
+            type Capability = Arc<u32>;
+            type Error = std::io::Error;
+            fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+                Ok(Arc::new(3))
+            }
+        }
+
+        let mut kit = Kit::new();
+        kit.register::<ChainA>().expect("register a");
+        kit.register::<ChainB>().expect("register b");
+        kit.register::<ChainC>().expect("register c");
+        let ready = kit.build().expect("build");
+        let description = ready.describe();
+
+        assert_eq!(description.topo_order, vec!["desc-a", "desc-b", "desc-c"]);
+        let names: Vec<&str> = description.modules.iter().map(|m| m.name).collect();
+        assert_eq!(names, description.topo_order, "modules follow topo order");
+
+        let b = &description.modules[1];
+        assert_eq!(b.deps, vec!["desc-a"]);
+        assert_eq!(b.dependents, vec!["desc-c"]);
+    }
+
     /// `to_json()` 输出可被 `serde_json::from_str` 还原（schema 有效）。
     #[test]
     fn kit_description_to_json_round_trips() {

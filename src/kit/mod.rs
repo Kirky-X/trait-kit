@@ -35,6 +35,8 @@ pub mod policy;
 
 #[cfg(feature = "report")]
 pub mod describe;
+#[cfg(feature = "report")]
+pub use describe::{KitDescription, ModuleDescription};
 
 pub use graph::{DependencyGraph, GraphError, ModuleEntry};
 #[cfg(feature = "resource-guard")]
