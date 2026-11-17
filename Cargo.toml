@@ -139,6 +139,8 @@ negotiate = ["version-negotiation"]
 visibility = []
 # Conditional retrieval guard: runtime policy hook on the require path (implies visibility).
 guard = ["visibility"]
+# Dependency policy: build-time architecture constraints (forbidden/required dependency edges).
+policy = []
 
 # E2E 源在 tests/e2e/，需显式注册；zh/en 分进程隔离（I18nManager 为进程级单例）
 [[test]]
