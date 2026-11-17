@@ -1141,6 +1141,13 @@ impl Kit {
     ///
     /// After this call, all capabilities are available via `require`.
     ///
+    /// With the `lifecycle` feature, a failed build rolls back: for every
+    /// module whose capability was already constructed (including modules
+    /// whose `on_ready` already ran), `on_shutdown` executes in reverse
+    /// topological order — panics isolated, skipped modules logged —
+    /// before the original error is returned. The failure path trades
+    /// instant failure for deterministic cleanup of built resources.
+    ///
     /// # Errors
     ///
     /// Returns `TraitKitError::DependencyMissing` if a registered module depends on an unregistered module.
@@ -1151,6 +1158,9 @@ impl Kit {
         clippy::too_many_lines,
         reason = "build 的拓扑校验/能力构建/接口装配/生命周期登记为同一事务的顺序阶段，拆分会散落状态所有权"
     )]
+    // 三处构建失败收口点必须先回滚再返回错误，`?` 会跳过回滚
+    // （expect 在此处对 cfg 剥离后的语句 fulfillment 判定不稳定，故用 allow）。
+    #[allow(clippy::question_mark)]
     pub fn build(self) -> Result<Kit<Ready>, TraitKitError> {
         let sorted = match self.graph.validate() {
             Ok(sorted) => sorted,
@@ -1161,6 +1171,24 @@ impl Kit {
                 return Err(TraitKitError::CycleDetected { cycle });
             }
         };
+
+        // Drain the shutdown callbacks right after validation: every
+        // construction failure path below can then roll back the modules
+        // that were already built (see `rollback_partial_build`) without
+        // touching the registry again. The callbacks were complete at
+        // registration time; taking them earlier changes nothing for the
+        // success path.
+        //
+        // Stable topological sort so `shutdown`'s reverse iteration really
+        // runs in reverse topological order: dependents (consumers) shut
+        // down before the modules they depend on. Callbacks whose module
+        // is absent from the graph sort last (relative order preserved via
+        // stable sort).
+        #[cfg(feature = "lifecycle")]
+        let mut shutdown_callbacks: Vec<(TypeId, ShutdownCallback)> =
+            self.take_shutdown_callbacks();
+        #[cfg(feature = "lifecycle")]
+        crate::core::lifecycle::sort_by_topo_order(&mut shutdown_callbacks, &sorted);
 
         // Dependency policy (negative architecture constraints): validated
         // after topological correctness, before any module is constructed —
@@ -1188,31 +1216,36 @@ impl Kit {
         #[cfg(feature = "version-negotiation")]
         self.validate_version_requirements()?;
 
-        // Step 1: Build eager modules (overrides + build_fn in topo order)
-        self.build_eager_modules(&sorted)?;
+        // Step 1: Build eager modules (overrides + build_fn in topo order).
+        // Failure rolls back every already-built module before the error
+        // is returned.
+        if let Err(err) = self.build_eager_modules(&sorted) {
+            #[cfg(feature = "lifecycle")]
+            Self::rollback_partial_build(&self.capabilities, &self.graph, &shutdown_callbacks);
+            return Err(err);
+        }
 
         // Step 2: Transfer lazy builders to lazy slots
         self.transfer_lazy_builders();
 
-        // Step 3: Build multi-binding modules
-        self.build_multi_bindings()?;
+        // Step 3: Build multi-binding modules (failure rolls back).
+        if let Err(err) = self.build_multi_bindings() {
+            #[cfg(feature = "lifecycle")]
+            Self::rollback_partial_build(&self.capabilities, &self.graph, &shutdown_callbacks);
+            return Err(err);
+        }
 
-        // Step 4: Build interface modules
+        // Step 4: Build interface modules (failure rolls back).
         #[cfg(feature = "di")]
-        self.build_interface_modules()?;
+        if let Err(err) = self.build_interface_modules() {
+            #[cfg(feature = "lifecycle")]
+            Self::rollback_partial_build(&self.capabilities, &self.graph, &shutdown_callbacks);
+            return Err(err);
+        }
 
         // Extract ready_callbacks before moving self
         #[cfg(feature = "lifecycle")]
         let ready_callbacks: Vec<(TypeId, ReadyCallback)> = self.take_ready_callbacks();
-        // Stable topological sort so `shutdown`'s reverse iteration really
-        // runs in reverse topological order: dependents (consumers) shut down
-        // before the modules they depend on. Callbacks whose module is absent
-        // from the graph sort last (relative order preserved via stable sort).
-        #[cfg(feature = "lifecycle")]
-        let mut shutdown_callbacks: Vec<(TypeId, ShutdownCallback)> =
-            self.take_shutdown_callbacks();
-        #[cfg(feature = "lifecycle")]
-        crate::core::lifecycle::sort_by_topo_order(&mut shutdown_callbacks, &sorted);
 
         // Structural build time stops here (lifecycle on_ready callbacks are
         // excluded from the report's total).
@@ -1290,14 +1323,20 @@ impl Kit {
             _state: std::marker::PhantomData,
         };
 
-        // Call lifecycle on_ready callbacks in topological order
+        // Call lifecycle on_ready callbacks in topological order. Failure
+        // rolls back every built module (its callbacks now live inside the
+        // ready kit, so they are drained from there).
         #[cfg(feature = "lifecycle")]
         {
             let mut callbacks: std::collections::HashMap<TypeId, ReadyCallback> =
                 ready_callbacks.into_iter().collect();
             for type_id in &sorted {
-                if let Some(callback) = callbacks.remove(type_id) {
-                    callback(&kit)?;
+                if let Some(callback) = callbacks.remove(type_id)
+                    && let Err(err) = callback(&kit)
+                {
+                    let built_callbacks = kit.take_shutdown_callbacks();
+                    Self::rollback_partial_build(&kit.capabilities, &kit.graph, &built_callbacks);
+                    return Err(err);
                 }
             }
         }
@@ -2725,6 +2764,46 @@ impl<S> Kit<S> {
             .collect()
     }
 
+    /// Roll back a partially-built kit: run `on_shutdown` (reverse
+    /// topological order, panics isolated) for every lifecycle module whose
+    /// capability was already constructed, then let `build()` return its
+    /// original error.
+    ///
+    /// "Already constructed" is decided by presence in the capability map:
+    /// lazy modules that never built and failed modules are absent by
+    /// construction, so they are skipped. Not gated behind `resource-guard`
+    /// — failure-path cleanup is correctness, not an optional capability.
+    #[cfg(feature = "lifecycle")]
+    fn rollback_partial_build(
+        capabilities: &TypeMap,
+        graph: &DependencyGraph,
+        shutdown_callbacks: &[(TypeId, ShutdownCallback)],
+    ) {
+        let built: Vec<&(TypeId, ShutdownCallback)> = shutdown_callbacks
+            .iter()
+            .filter(|(type_id, _)| capabilities.contains_by_type_id(*type_id))
+            .collect();
+        let rolled_back = built.len();
+        let message = tr(
+            "trait-kit-log-build-rollback",
+            &[("count", &rolled_back.to_string())],
+        );
+        log::warn!("{message}");
+        // Reverse iteration over the topologically sorted callbacks:
+        // dependents (consumers) shut down before their dependencies.
+        for (type_id, callback) in built.iter().rev() {
+            let module = graph.name_of(*type_id).unwrap_or("<unknown>");
+            let completed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                callback(capabilities);
+            }))
+            .is_ok();
+            if !completed {
+                let message = tr("trait-kit-log-rollback-skipped", &[("module", module)]);
+                log::warn!("{message}");
+            }
+        }
+    }
+
     /// Populate the config `TypeMap` with `C::default_value()` if no value of
     /// type `C` is present.
     ///
@@ -3160,9 +3239,11 @@ impl Kit<Ready> {
     /// Calls `on_shutdown` for each module registered via `register_lifecycle`.
     /// A failed shutdown does not prevent other modules from shutting down
     /// (a panicking `on_shutdown` is isolated; the remaining callbacks still
-    /// run). If any `on_ready` callback fails during `build()`, the
-    /// constructed `Kit<Ready>` is discarded as a whole and no `on_shutdown`
-    /// callback runs (sync and async behave identically).
+    /// run). If any `on_ready` callback fails during `build()`, the sync
+    /// `build` rolls back instead: the already-built modules' `on_shutdown`
+    /// callbacks run (reverse topological order) before the error is
+    /// returned. The async `build_async` still discards the kit as a whole
+    /// without running `on_shutdown` — sync and async differ here.
     ///
     /// With the `resource-guard` feature, see
     /// [`shutdown_with_report`](Kit::shutdown_with_report) for a per-module
@@ -5727,5 +5808,136 @@ mod shutdown_with_report_tests {
         let report = ready.shutdown_with_report();
         assert!(report.verified.is_empty());
         assert_eq!(report.skipped, vec!["unhooked-pool"]);
+    }
+}
+
+/// `build()` 失败回滚：已构建模块的 `on_shutdown` 在错误返回前执行
+/// （feature `lifecycle`；回滚不 gate 在 `resource-guard` 之后）。
+#[cfg(all(test, feature = "lifecycle"))]
+mod build_rollback_tests {
+    use crate::core::{AutoBuilder, Lifecycle, ModuleMeta};
+    use crate::error::TraitKitError;
+    use crate::kit::Kit;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// Eager 成功模块的清理标记（`on_shutdown` 置位）。
+    static EAGER_CLEANED: AtomicBool = AtomicBool::new(false);
+
+    struct EagerOkModule;
+    impl ModuleMeta for EagerOkModule {
+        const NAME: &'static str = "rollback-eager-ok";
+    }
+    impl AutoBuilder for EagerOkModule {
+        type Capability = Arc<u32>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(1))
+        }
+    }
+    impl Lifecycle for EagerOkModule {
+        fn on_shutdown(_cap: &Self::Capability) {
+            EAGER_CLEANED.store(true, Ordering::SeqCst);
+        }
+    }
+
+    struct EagerFailModule;
+    impl ModuleMeta for EagerFailModule {
+        const NAME: &'static str = "rollback-eager-fail";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            static DEPS: &[(&str, std::any::TypeId)] =
+                &[("rollback-eager-ok", std::any::TypeId::of::<EagerOkModule>())];
+            DEPS
+        }
+    }
+    impl AutoBuilder for EagerFailModule {
+        type Capability = Arc<u32>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Err(std::io::Error::other("simulated build failure"))
+        }
+    }
+
+    /// `on_ready` 成功模块的清理标记（`on_shutdown` 置位）。
+    static READY_CLEANED: AtomicBool = AtomicBool::new(false);
+
+    struct ReadyOkModule;
+    impl ModuleMeta for ReadyOkModule {
+        const NAME: &'static str = "rollback-ready-ok";
+    }
+    impl AutoBuilder for ReadyOkModule {
+        type Capability = Arc<u32>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(2))
+        }
+    }
+    impl Lifecycle for ReadyOkModule {
+        fn on_shutdown(_cap: &Self::Capability) {
+            READY_CLEANED.store(true, Ordering::SeqCst);
+        }
+    }
+
+    struct ReadyFailModule;
+    impl ModuleMeta for ReadyFailModule {
+        const NAME: &'static str = "rollback-ready-fail";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            static DEPS: &[(&str, std::any::TypeId)] =
+                &[("rollback-ready-ok", std::any::TypeId::of::<ReadyOkModule>())];
+            DEPS
+        }
+    }
+    impl AutoBuilder for ReadyFailModule {
+        type Capability = Arc<u32>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(3))
+        }
+    }
+    impl Lifecycle for ReadyFailModule {
+        fn on_ready(_kit: &Kit<crate::kit::Ready>) -> Result<(), Self::Error> {
+            Err(std::io::Error::other("simulated on_ready failure"))
+        }
+    }
+
+    /// 模块 1 构建成功 + 模块 2 build 失败 → `build()` 返回 `BuildFailed`
+    /// 且模块 1 的清理标记已置位（R-res-004）。
+    #[test]
+    fn eager_build_failure_runs_rollback_before_returning() {
+        EAGER_CLEANED.store(false, Ordering::SeqCst);
+        let mut kit = Kit::new();
+        kit.register::<EagerOkModule>().expect("register");
+        kit.register_lifecycle::<EagerOkModule>();
+        kit.register::<EagerFailModule>().expect("register");
+        let err = kit.build().expect_err("build must fail");
+        assert!(
+            matches!(err, TraitKitError::BuildFailed { .. }),
+            "expected BuildFailed, got {err:?}"
+        );
+        assert!(
+            EAGER_CLEANED.load(Ordering::SeqCst),
+            "on_shutdown of the already-built module must run during rollback"
+        );
+    }
+
+    /// `on_ready` 失败路径同样回滚：已构建（且 `on_ready` 已执行）模块的
+    /// `on_shutdown` 在错误返回前执行。
+    #[test]
+    fn on_ready_failure_runs_rollback_before_returning() {
+        READY_CLEANED.store(false, Ordering::SeqCst);
+        let mut kit = Kit::new();
+        kit.register::<ReadyOkModule>().expect("register");
+        kit.register_lifecycle::<ReadyOkModule>();
+        kit.register::<ReadyFailModule>().expect("register");
+        kit.register_lifecycle::<ReadyFailModule>();
+        let err = kit.build().expect_err("build must fail");
+        assert!(
+            matches!(err, TraitKitError::LifecycleFailed { .. }),
+            "expected LifecycleFailed, got {err:?}"
+        );
+        assert!(
+            READY_CLEANED.load(Ordering::SeqCst),
+            "on_shutdown of the built-and-readied module must run during rollback"
+        );
     }
 }
