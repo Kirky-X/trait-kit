@@ -3162,6 +3162,20 @@ impl Kit<Ready> {
         }
     }
 
+    /// Sensitive module names in validated topological order (empty when
+    /// none are marked via [`mark_sensitive`](Kit::mark_sensitive)).
+    ///
+    /// Requires the `resource-guard` feature.
+    #[cfg(feature = "resource-guard")]
+    pub fn sensitive_modules(&self) -> Vec<&'static str> {
+        self.graph
+            .entries()
+            .iter()
+            .filter(|entry| self.resource_guard.sensitive.contains(&entry.type_id))
+            .map(|entry| entry.name)
+            .collect()
+    }
+
     // ─── Health Check ──────────────────────────────────────────────────
 
     /// Check the health of a specific module.
@@ -5433,6 +5447,100 @@ mod resource_guard_tests {
             kit.resource_guard.sensitive.len(),
             1,
             "duplicate mark must not duplicate the sensitive entry"
+        );
+    }
+}
+
+/// Chain A ← B ← C for topological-order assertions (B in the middle).
+#[cfg(all(test, feature = "resource-guard"))]
+mod resource_guard_chain_modules {
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::kit::Kit;
+    use std::sync::Arc;
+
+    pub struct ChainA;
+    impl ModuleMeta for ChainA {
+        const NAME: &'static str = "chain-a";
+    }
+    impl AutoBuilder for ChainA {
+        type Capability = Arc<u32>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(1))
+        }
+    }
+
+    pub struct ChainB;
+    impl ModuleMeta for ChainB {
+        const NAME: &'static str = "chain-b";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            static DEPS: &[(&str, std::any::TypeId)] =
+                &[("chain-a", std::any::TypeId::of::<ChainA>())];
+            DEPS
+        }
+    }
+    impl AutoBuilder for ChainB {
+        type Capability = Arc<u32>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(2))
+        }
+    }
+
+    pub struct ChainC;
+    impl ModuleMeta for ChainC {
+        const NAME: &'static str = "chain-c";
+        fn dependencies() -> &'static [(&'static str, std::any::TypeId)] {
+            static DEPS: &[(&str, std::any::TypeId)] =
+                &[("chain-b", std::any::TypeId::of::<ChainB>())];
+            DEPS
+        }
+    }
+    impl AutoBuilder for ChainC {
+        type Capability = Arc<u32>;
+        type Error = std::io::Error;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Arc::new(3))
+        }
+    }
+}
+
+/// `sensitive_modules` topological-order and empty-default tests
+/// (feature `resource-guard`).
+#[cfg(all(test, feature = "resource-guard"))]
+mod sensitive_modules_tests {
+    use crate::kit::Kit;
+
+    use super::resource_guard_chain_modules::{ChainA, ChainB, ChainC};
+
+    fn register_chain(kit: &mut Kit) {
+        kit.register::<ChainA>().expect("register chain-a");
+        kit.register::<ChainB>().expect("register chain-b");
+        kit.register::<ChainC>().expect("register chain-c");
+    }
+
+    /// 无标记时 `sensitive_modules` 返回空（R-res-002）。
+    #[test]
+    fn sensitive_modules_empty_without_marks() {
+        let mut kit = Kit::new();
+        register_chain(&mut kit);
+        let ready = kit.build().expect("build");
+        assert!(ready.sensitive_modules().is_empty());
+    }
+
+    /// 标记 A/B/C 链中间的 B 时只返回 `["chain-b"]`，且顺序来自拓扑序
+    /// （R-res-002）。
+    #[test]
+    fn sensitive_modules_returns_marked_in_topo_order() {
+        let mut kit = Kit::new();
+        register_chain(&mut kit);
+        kit.mark_sensitive::<ChainA>();
+        kit.mark_sensitive::<ChainB>();
+        kit.mark_sensitive::<ChainC>();
+        let ready = kit.build().expect("build");
+        assert_eq!(
+            ready.sensitive_modules(),
+            vec!["chain-a", "chain-b", "chain-c"]
         );
     }
 }
