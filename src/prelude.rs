@@ -53,6 +53,9 @@ pub use crate::kit::AsyncShutdownCoordinator;
 #[cfg(feature = "shutdown")]
 pub use crate::kit::{ShutdownCoordinator, ShutdownPhase, ShutdownPhaseResult, ShutdownResult};
 
+#[cfg(feature = "visibility")]
+pub use crate::kit::CapabilityVisibility;
+
 #[cfg(all(test, feature = "async"))]
 mod tests {
     //! Verify the async re-exports reachable through `prelude::*` compile
