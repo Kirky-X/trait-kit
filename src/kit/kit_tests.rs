@@ -3742,3 +3742,110 @@ mod visibility_tests {
         );
     }
 }
+
+/// 受控检索：`require_for` / `require_as` 三态（R-vis-003）。
+#[cfg(all(test, feature = "visibility"))]
+mod visibility_require_tests {
+    use super::super::*;
+    use crate::core::{AutoBuilder, ModuleMeta};
+    use crate::error::TraitKitError;
+    use crate::kit::visibility::CapabilityVisibility;
+
+    #[derive(Clone, Debug)]
+    struct Cap;
+    #[derive(Debug)]
+    struct Err_;
+    impl std::fmt::Display for Err_ {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "require test error")
+        }
+    }
+    impl std::error::Error for Err_ {}
+
+    struct Database;
+    impl ModuleMeta for Database {
+        const NAME: &'static str = "vis::Database";
+    }
+    impl AutoBuilder for Database {
+        type Capability = Cap;
+        type Error = Err_;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Cap)
+        }
+    }
+
+    struct Plain;
+    impl ModuleMeta for Plain {
+        const NAME: &'static str = "vis::Plain";
+    }
+    impl AutoBuilder for Plain {
+        type Capability = Cap;
+        type Error = Err_;
+        fn build(_kit: &Kit) -> Result<Self::Capability, Self::Error> {
+            Ok(Cap)
+        }
+    }
+
+    struct AuditCaller;
+    impl ModuleMeta for AuditCaller {
+        const NAME: &'static str = "audit::AuditModule";
+    }
+
+    struct PluginCaller;
+    impl ModuleMeta for PluginCaller {
+        const NAME: &'static str = "plugin::PluginModule";
+    }
+
+    fn kit_with_restricted_database() -> Kit<Ready> {
+        let mut kit = Kit::new();
+        kit.register_with_visibility::<Database>(CapabilityVisibility::Restricted(&["audit::*"]))
+            .expect("register succeeds");
+        kit.register::<Plain>().expect("register plain");
+        kit.build().expect("build succeeds")
+    }
+
+    #[test]
+    fn require_as_denies_caller_outside_allow_list() {
+        let ready = kit_with_restricted_database();
+        let err = ready
+            .require_as::<Database, PluginCaller>()
+            .expect_err("plugin caller must be denied");
+        assert!(
+            matches!(
+                err,
+                TraitKitError::AccessDenied {
+                    module: "vis::Database",
+                    caller: "plugin::PluginModule",
+                }
+            ),
+            "wrong error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn require_as_allows_caller_matching_pattern() {
+        let ready = kit_with_restricted_database();
+        let _cap = ready
+            .require_as::<Database, AuditCaller>()
+            .expect("audit caller is allowed");
+    }
+
+    #[test]
+    fn require_without_caller_still_succeeds_on_restricted() {
+        let ready = kit_with_restricted_database();
+        // 无 caller 的 require 视为容器级持有者，仅受 Public 约束。
+        let _cap = ready.require::<Database>().expect("container holder");
+    }
+
+    #[test]
+    fn require_for_string_caller_enforces_same_boundary() {
+        let ready = kit_with_restricted_database();
+        assert!(ready.require_for::<Database>("audit::AuditModule").is_ok());
+        let err = ready
+            .require_for::<Database>("plugin::PluginModule")
+            .expect_err("string caller must be denied");
+        assert!(matches!(err, TraitKitError::AccessDenied { .. }));
+        // 无可见性记录的模块等同 Public：任意 caller 放行。
+        assert!(ready.require_for::<Plain>("anyone::Anywhere").is_ok());
+    }
+}

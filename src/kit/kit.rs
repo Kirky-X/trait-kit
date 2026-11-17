@@ -2782,6 +2782,57 @@ impl Kit<Ready> {
             .copied()
     }
 
+    /// Require `M` on behalf of an explicit caller, honoring
+    /// [`CapabilityVisibility`](crate::kit::visibility::CapabilityVisibility).
+    ///
+    /// The plain [`Kit::require`] (no caller identity) keeps its current
+    /// semantics: it acts as the container-level holder and is only bound
+    /// by `Public` restrictions — visibility applies exclusively to
+    /// caller-identified retrieval. Modules without a visibility record
+    /// behave as `Public`.
+    ///
+    /// Requires the `visibility` feature.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TraitKitError::AccessDenied` when `M` is `Restricted` and
+    /// `caller` matches none of its patterns (module existence is not
+    /// revealed through the denial). Otherwise delegates to
+    /// [`Kit::require`] error semantics.
+    #[cfg(feature = "visibility")]
+    pub fn require_for<M: AutoBuilder>(
+        &self,
+        caller: &'static str,
+    ) -> Result<M::Capability, TraitKitError> {
+        let denied = self
+            .visibility
+            .visibilities
+            .get(&TypeId::of::<M>())
+            .is_some_and(|vis| !vis.allows(caller));
+        if denied {
+            return Err(TraitKitError::AccessDenied {
+                module: M::NAME,
+                caller,
+            });
+        }
+        self.require::<M>()
+    }
+
+    /// Type-driven variant of [`Kit::require_for`]: the caller identity
+    /// comes from `Caller::NAME` (no string typos).
+    ///
+    /// Requires the `visibility` feature.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Kit::require_for`].
+    #[cfg(feature = "visibility")]
+    pub fn require_as<M: AutoBuilder, Caller: crate::core::ModuleMeta>(
+        &self,
+    ) -> Result<M::Capability, TraitKitError> {
+        self.require_for::<M>(Caller::NAME)
+    }
+
     /// Retrieve an optional capability. Returns `None` if not built.
     ///
     /// Read-only: never triggers a lazy build. For `register_lazy` modules
