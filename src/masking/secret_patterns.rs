@@ -13,6 +13,8 @@
 
 use fancy_regex::Regex;
 
+use crate::i18n::tr;
+
 use super::error::MaskError;
 
 /// 注册表单条模式：名称、已编译正则、替换标记。
@@ -39,8 +41,13 @@ impl SecretPattern {
     /// # Errors
     /// 正则编译失败返回 `Err(MaskError::ConfigError)`（与 `MaskRule` 构建同源）。
     pub fn new(name: &str, pattern: &str, replacement: &str) -> Result<Self, MaskError> {
-        let compiled = Regex::new(pattern)
-            .map_err(|e| MaskError::ConfigError(format!("invalid regex in rule '{name}': {e}")))?;
+        let compiled = Regex::new(pattern).map_err(|e| {
+            let error = e.to_string();
+            MaskError::ConfigError(tr(
+                "mask-invalid-regex-in-rule",
+                &[("name", name), ("error", &error)],
+            ))
+        })?;
         Ok(Self {
             name: name.to_string(),
             pattern: compiled,
@@ -82,7 +89,7 @@ impl SecretPattern {
                     pattern = self.name.as_str(),
                     error = %e,
                     "{}",
-                    "regex match error during secret pattern scan; skipping this match"
+                    tr("mask-log-regex-match-error-secret-scan", &[])
                 );
                 Err(e)
             }
@@ -247,8 +254,9 @@ impl SecretPatternRegistry {
         replacement: &str,
     ) -> Result<(), MaskError> {
         if self.patterns.iter().any(|p| p.name == name) {
-            return Err(MaskError::ConfigError(format!(
-                "rule '{name}' already registered"
+            return Err(MaskError::ConfigError(tr(
+                "mask-rule-already-registered",
+                &[("name", name)],
             )));
         }
         self.patterns

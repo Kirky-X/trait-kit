@@ -76,3 +76,43 @@ trait-kit-context-readiness-hook = readiness hook
 trait-kit-context-shutdown = shutdown
 trait-kit-context-hook-registration = hook registration
 trait-kit-context-master-key-provider = master key provider
+
+# security posture audit: verification evidence (PostureCheck.detail)
+
+trait-kit-audit-unsafe-code = #![deny(unsafe_code)] enforced crate-wide at compile time; any exemption requires an explicit allow with a SAFETY justification
+trait-kit-audit-typestate = Unbuilt/Ready typestate split enforced at compile time: capability queries only exist on Kit<Ready>
+trait-kit-audit-dependency-policy-configured = policy configured: { $forbidden } forbidden, { $required } required edges
+trait-kit-audit-dependency-policy-no-rules = policy feature enabled but no rules configured — violations undetectable
+trait-kit-audit-dependency-policy-no-policy = policy feature enabled but no policy set — violations undetectable
+trait-kit-audit-dependency-policy-disabled = policy feature not enabled — architecture violations undetectable
+trait-kit-audit-capability-visibility-restricted = { $restricted } of { $total } declared capabilities restricted
+trait-kit-audit-capability-visibility-all-public = all { $total } declared capabilities Public — plugins can retrieve everything
+trait-kit-audit-capability-visibility-no-declaration = no visibility declared — every capability Public
+trait-kit-audit-capability-visibility-disabled = visibility feature not enabled — every capability Public
+trait-kit-audit-sensitive-resources-marked = { $marked } sensitive modules marked and auditable
+trait-kit-audit-sensitive-resources-none-marked = resource-guard enabled; no sensitive modules marked
+trait-kit-audit-sensitive-resources-disabled = resource-guard feature not enabled — sensitive cleanup unverifiable
+trait-kit-audit-config-encryption-enabled = config encryption enabled (feature chain: encryption → reload → confers)
+trait-kit-audit-config-encryption-reload = hot reload enabled without encryption (chain: reload → confers)
+trait-kit-audit-config-encryption-confers = config integration enabled without encryption/reload
+trait-kit-audit-config-encryption-disabled = no config persistence feature (confers/reload/encryption) enabled
+trait-kit-audit-masking-enabled = PII/credential masking engine enabled
+trait-kit-audit-masking-disabled = masking feature not enabled — secrets pass through unredacted
+trait-kit-audit-lifecycle-shutdown-both = lifecycle hooks and graceful shutdown coordinator both enabled
+trait-kit-audit-lifecycle-shutdown-lifecycle-only = lifecycle hooks enabled; graceful shutdown coordinator not enabled
+trait-kit-audit-lifecycle-shutdown-shutdown-only = shutdown coordinator enabled; lifecycle hooks not enabled
+trait-kit-audit-lifecycle-shutdown-disabled = neither lifecycle hooks nor graceful shutdown enabled
+
+# masking engine diagnostics (MaskError display + config validation)
+
+mask-config-error = Masking config error: { $message }
+mask-secret-scan-limit = Secret scan limit exceeded: pattern '{ $pattern }' hit { $count } times in one input (limit { $limit }); output withheld
+mask-secret-scan-oversized = Secret scan oversized input: { $size } bytes exceeds the { $limit }-byte masking limit; output withheld (fail-closed)
+mask-rule-already-registered = rule '{ $name }' already registered
+mask-toml-parse-failed = failed to parse TOML: { $error }
+mask-toml-missing-rules-array = TOML missing '[[masking_rules]]' array
+mask-toml-missing-name = masking_rules entry missing 'name' field
+mask-toml-duplicate-name-skipped = duplicate masking rule name in TOML config; keeping the first definition and skipping the later one
+mask-toml-missing-pattern = masking_rules entry '{ $name }' missing 'pattern' field
+mask-rule-requires-pattern = masking rule '{ $name }' requires a `pattern`
+mask-invalid-regex-in-rule = invalid regex in rule '{ $name }': { $error }

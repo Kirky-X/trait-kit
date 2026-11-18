@@ -70,6 +70,8 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
 
+use crate::i18n::tr;
+
 use super::error::MaskError;
 
 /// mask 入口的单条输入上限（字节）：超过则跳过脱敏扫描（21 趟线性扫描对
@@ -340,7 +342,7 @@ impl DataMasker {
                 size = text.len(),
                 limit = MAX_MASK_INPUT_BYTES,
                 "{}",
-                "Masking skipped: input exceeds the 1 MiB limit; content fully redacted (not scanned means not provably safe)"
+                tr("mask-log-oversized-input-redacted", &[])
             );
             return OVERSIZED_INPUT_REDACTION.to_string();
         }
@@ -867,7 +869,7 @@ fn report_engine_error_for(rule: &str, error: &fancy_regex::Error) {
         rule = rule,
         error = %error,
         "{}",
-        "regex match error during detect; skipping this match"
+        tr("mask-log-regex-match-error-detect", &[])
     );
     // 锁中毒时放弃本次首报登记：错误路径不传播 panic
     let Ok(mut reported) = REPORTED.lock() else {
@@ -1425,10 +1427,17 @@ impl MaskRuleBuilder {
     pub fn build(self) -> Result<MaskRule, MaskError> {
         let rule_name = self.name.clone();
         let pattern_str = self.pattern.ok_or_else(|| {
-            MaskError::ConfigError(format!("masking rule '{}' requires a `pattern`", self.name))
+            MaskError::ConfigError(tr(
+                "mask-rule-requires-pattern",
+                &[("name", self.name.as_str())],
+            ))
         })?;
         let regex = Regex::new(&pattern_str).map_err(|e| {
-            MaskError::ConfigError(format!("invalid regex in rule '{rule_name}': {e}"))
+            let error = e.to_string();
+            MaskError::ConfigError(tr(
+                "mask-invalid-regex-in-rule",
+                &[("name", rule_name.as_str()), ("error", &error)],
+            ))
         })?;
         Ok(MaskRule {
             name: self.name,

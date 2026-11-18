@@ -29,9 +29,18 @@ trait-kit-log-shared-overlay-refused = shared overlay: key `{ $key }` is already
 # KitEvent::ConfigChanged summary (event-bus payload)
 
 trait-kit-event-config-changed-merge = merge
+trait-kit-event-config-changed-remote-load = remote load from { $source }
 
 # resource-guard: build-failure rollback and sensitive-cleanup skip logs
 
 trait-kit-log-build-rollback = build failed: rolling back { $count } already-built module(s) (on_shutdown, reverse topological order)
 trait-kit-log-rollback-skipped = build rollback: on_shutdown of module `{ $module }` panicked and was skipped
 trait-kit-log-sensitive-skipped = sensitive shutdown report: module `{ $module }` skipped (on_shutdown panicked or no lifecycle callback registered)
+
+# masking engine diagnostics (tracing warn logs)
+
+mask-log-oversized-input-redacted = Masking skipped: input exceeds the 1 MiB limit; content fully redacted (not scanned means not provably safe)
+mask-log-regex-match-error-detect = regex match error during detect; skipping this match
+mask-log-regex-match-error-secret-scan = regex match error during secret pattern scan; skipping this match
+mask-log-oversized-input-rejected = oversized input rejected by the fail-closed secret scan exit
+mask-log-scan-limit-exceeded = secret scan limit exceeded; output withheld (fail-closed)

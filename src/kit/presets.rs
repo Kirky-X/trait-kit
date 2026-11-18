@@ -402,6 +402,7 @@ pub mod remote {
     use super::{ConfersConfigHandle, PresetError};
     use crate::core::{AsyncAutoBuilder, ModuleMeta};
     use crate::error::TraitKitError;
+    use crate::i18n::tr;
     use crate::kit::AsyncKit;
     use confers::{AnnotatedValue, ConfigProvider, ConfigValue};
     use std::sync::Arc;
@@ -515,7 +516,10 @@ pub mod remote {
                 // Audit: surface the remote load on the kit event bus.
                 kit.emit_event(crate::kit::events::KitEvent::ConfigChanged {
                     key: "confers-config-remote".to_string(),
-                    summary: format!("remote load from {source_name}"),
+                    summary: tr(
+                        "trait-kit-event-config-changed-remote-load",
+                        &[("source", source_name.as_str())],
+                    ),
                 });
                 Ok(ConfersConfigHandle { provider })
             })

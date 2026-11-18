@@ -5,6 +5,8 @@
 //! 提供 [`MaskRuleRegistry`] 用于管理内置和自定义脱敏规则。
 //! 支持规则的增删改查、启用/禁用、优先级排序，以及从 TOML 配置加载自定义规则。
 
+use crate::i18n::tr;
+
 use super::engine::MaskRule;
 use super::error::MaskError;
 
@@ -54,9 +56,9 @@ impl MaskRuleRegistry {
     /// 若已存在同名规则，返回 `Err(MaskError)`。
     pub fn register(&mut self, rule: MaskRule) -> Result<(), MaskError> {
         if self.rules.iter().any(|r| r.name() == rule.name()) {
-            return Err(MaskError::ConfigError(format!(
-                "rule '{}' already registered",
-                rule.name()
+            return Err(MaskError::ConfigError(tr(
+                "mask-rule-already-registered",
+                &[("name", rule.name())],
             )));
         }
         self.rules.push(rule);
@@ -160,26 +162,27 @@ impl MaskRuleRegistry {
     /// - 缺少 `name` 或 `pattern` 字段返回 `Err(MaskError)`
     /// - 无效正则在构建规则时返回 `Err(MaskError)`
     pub fn load_from_toml(toml_str: &str) -> Result<Vec<MaskRule>, MaskError> {
-        let parsed: toml::Value = toml::from_str(toml_str)
-            .map_err(|e| MaskError::ConfigError(format!("failed to parse TOML: {e}")))?;
+        let parsed: toml::Value = toml::from_str(toml_str).map_err(|e| {
+            let error = e.to_string();
+            MaskError::ConfigError(tr("mask-toml-parse-failed", &[("error", &error)]))
+        })?;
 
         let rules_tables = parsed
             .get("masking_rules")
             .and_then(|v| v.as_array())
-            .ok_or_else(|| {
-                MaskError::ConfigError("TOML missing '[[masking_rules]]' array".to_string())
-            })?;
+            .ok_or_else(|| MaskError::ConfigError(tr("mask-toml-missing-rules-array", &[])))?;
 
         let mut rules: Vec<MaskRule> = Vec::new();
         for table in rules_tables {
-            let name = table.get("name").and_then(|v| v.as_str()).ok_or_else(|| {
-                MaskError::ConfigError("masking_rules entry missing 'name' field".to_string())
-            })?;
+            let name = table
+                .get("name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| MaskError::ConfigError(tr("mask-toml-missing-name", &[])))?;
             if rules.iter().any(|r| r.name() == name) {
                 tracing::warn!(
                     rule = name,
                     "{}",
-                    "duplicate masking rule name in TOML config; keeping the first definition and skipping the later one"
+                    tr("mask-toml-duplicate-name-skipped", &[])
                 );
                 continue;
             }
@@ -187,9 +190,7 @@ impl MaskRuleRegistry {
                 .get("pattern")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| {
-                    MaskError::ConfigError(format!(
-                        "masking_rules entry '{name}' missing 'pattern' field"
-                    ))
+                    MaskError::ConfigError(tr("mask-toml-missing-pattern", &[("name", name)]))
                 })?;
             let replacement = table
                 .get("replacement")

@@ -20,6 +20,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::i18n::tr;
+
 use super::engine::MAX_MASK_INPUT_BYTES;
 use super::error::MaskError;
 use super::secret_entropy::{EntropyScanner, HIGH_ENTROPY_PATTERN, HIGH_ENTROPY_REPLACEMENT};
@@ -125,7 +127,7 @@ impl SecretScanGate {
                 size = text.len(),
                 limit = MAX_MASK_INPUT_BYTES,
                 "{}",
-                "oversized input rejected by the fail-closed secret scan exit"
+                tr("mask-log-oversized-input-rejected", &[])
             );
             return Err(MaskError::SecretScanOversizedInput {
                 size: text.len(),
@@ -140,7 +142,7 @@ impl SecretScanGate {
                 count = count,
                 limit,
                 "{}",
-                "secret scan limit exceeded; output withheld (fail-closed)"
+                tr("mask-log-scan-limit-exceeded", &[])
             );
             return Err(MaskError::SecretScanLimit {
                 pattern: pattern.clone(),
@@ -241,7 +243,7 @@ impl SecretScanGate {
                 size = text.len(),
                 limit = MAX_MASK_INPUT_BYTES,
                 "{}",
-                "Masking skipped: input exceeds the 1 MiB limit; content fully redacted (not scanned means not provably safe)"
+                tr("mask-log-oversized-input-redacted", &[])
             );
             return (
                 super::engine::OVERSIZED_INPUT_REDACTION.to_string(),

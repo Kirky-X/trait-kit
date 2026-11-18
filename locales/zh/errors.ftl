@@ -75,3 +75,43 @@ trait-kit-context-readiness-hook = 就绪钩子
 trait-kit-context-shutdown = 关闭
 trait-kit-context-hook-registration = 钩子注册
 trait-kit-context-master-key-provider = 主密钥供给方
+
+# 安全态势审计：验证证据（PostureCheck.detail）
+
+trait-kit-audit-unsafe-code = crate 全局在编译期强制 `#![deny(unsafe_code)]`；任何豁免都必须显式 allow 并附 SAFETY 论证
+trait-kit-audit-typestate = Unbuilt/Ready 类型状态拆分在编译期强制：能力查询只存在于 Kit<Ready> 上
+trait-kit-audit-dependency-policy-configured = 已配置策略: { $forbidden } 条禁止边，{ $required } 条必需边
+trait-kit-audit-dependency-policy-no-rules = 已启用 policy feature 但未配置规则 — 无法检测违规
+trait-kit-audit-dependency-policy-no-policy = 已启用 policy feature 但未设置策略 — 无法检测违规
+trait-kit-audit-dependency-policy-disabled = 未启用 policy feature — 无法检测架构违规
+trait-kit-audit-capability-visibility-restricted = 已声明的 { $total } 个能力中有 { $restricted } 个受限
+trait-kit-audit-capability-visibility-all-public = 已声明的 { $total } 个能力全部为 Public — 插件可获取一切
+trait-kit-audit-capability-visibility-no-declaration = 未声明可见性 — 所有能力均为 Public
+trait-kit-audit-capability-visibility-disabled = 未启用 visibility feature — 所有能力均为 Public
+trait-kit-audit-sensitive-resources-marked = 已标记 { $marked } 个敏感模块，可审计
+trait-kit-audit-sensitive-resources-none-marked = 已启用 resource-guard；未标记任何敏感模块
+trait-kit-audit-sensitive-resources-disabled = 未启用 resource-guard feature — 无法验证敏感清理
+trait-kit-audit-config-encryption-enabled = 已启用配置加密（feature 链: encryption → reload → confers）
+trait-kit-audit-config-encryption-reload = 已启用热重载但未启用加密（链: reload → confers）
+trait-kit-audit-config-encryption-confers = 已启用配置集成但未启用加密/重载
+trait-kit-audit-config-encryption-disabled = 未启用任何配置持久化 feature（confers/reload/encryption）
+trait-kit-audit-masking-enabled = PII/凭据脱敏引擎已启用
+trait-kit-audit-masking-disabled = 未启用 masking feature — 密钥未经脱敏直接透传
+trait-kit-audit-lifecycle-shutdown-both = 生命周期钩子与优雅关闭协调器均已启用
+trait-kit-audit-lifecycle-shutdown-lifecycle-only = 已启用生命周期钩子；未启用优雅关闭协调器
+trait-kit-audit-lifecycle-shutdown-shutdown-only = 已启用关闭协调器；未启用生命周期钩子
+trait-kit-audit-lifecycle-shutdown-disabled = 生命周期钩子与优雅关闭均未启用
+
+# 掩码引擎诊断（MaskError display 与配置校验）
+
+mask-config-error = 脱敏配置错误: { $message }
+mask-secret-scan-limit = 超出 secret 扫描门限: 模式 '{ $pattern }' 在单条输入中命中 { $count } 次（门限 { $limit }）；输出已扣留
+mask-secret-scan-oversized = secret 扫描输入过大: { $size } 字节超过 { $limit } 字节脱敏上限；输出已扣留（fail-closed）
+mask-rule-already-registered = 规则 '{ $name }' 已注册
+mask-toml-parse-failed = TOML 解析失败: { $error }
+mask-toml-missing-rules-array = TOML 缺少 '[[masking_rules]]' 数组
+mask-toml-missing-name = masking_rules 条目缺少 'name' 字段
+mask-toml-duplicate-name-skipped = TOML 配置中脱敏规则名重复；保留首个定义并跳过后续定义
+mask-toml-missing-pattern = masking_rules 条目 '{ $name }' 缺少 'pattern' 字段
+mask-rule-requires-pattern = 脱敏规则 '{ $name }' 缺少 `pattern`
+mask-invalid-regex-in-rule = 规则 '{ $name }' 中的正则无效: { $error }

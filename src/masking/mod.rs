@@ -8,8 +8,8 @@
 //! limiteron 共用同一实现，规则语义与内置规则集顺序保持不变。
 //!
 //! 与 inklog 实现的两点差异：错误类型由 `InklogError` 收敛为本模块的
-//! [`MaskError`]；诊断与 panic 文案为英文字面量（inklog 侧 i18n 目录不随
-//! 引擎迁移）。
+//! [`MaskError`]；诊断文案统一经 `tr()` 查询 `mask-*` FTL 键（inklog 侧
+//! i18n 目录不随引擎迁移），开发期 panic 断言信息仍为英文字面量。
 
 pub mod ac;
 mod engine;

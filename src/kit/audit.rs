@@ -7,6 +7,7 @@
 //! locally (`cfg!` constants plus the query APIs from previous changes) —
 //! zero IO, zero network.
 
+use crate::i18n::tr;
 use crate::kit::Ready;
 use crate::kit::kit::Kit;
 
@@ -35,7 +36,7 @@ pub struct PostureCheck {
     pub id: &'static str,
     /// Verdict for this check.
     pub status: PostureStatus,
-    /// Human-readable evidence (English; diagnostics, not API contract).
+    /// Human-readable localized evidence (diagnostics, not API contract).
     pub detail: String,
 }
 
@@ -85,16 +86,12 @@ impl Kit<Ready> {
             PostureCheck {
                 id: "unsafe-code",
                 status: PostureStatus::Pass,
-                detail: "#![deny(unsafe_code)] enforced crate-wide at compile time; any \
-                         exemption requires an explicit allow with a SAFETY justification"
-                    .to_string(),
+                detail: tr("trait-kit-audit-unsafe-code", &[]),
             },
             PostureCheck {
                 id: "typestate",
                 status: PostureStatus::Pass,
-                detail: "Unbuilt/Ready typestate split enforced at compile time: capability \
-                         queries only exist on Kit<Ready>"
-                    .to_string(),
+                detail: tr("trait-kit-audit-typestate", &[]),
             },
         ];
         checks.push(self.dependency_policy_check());
@@ -111,23 +108,27 @@ impl Kit<Ready> {
     #[cfg(feature = "policy")]
     fn dependency_policy_check(&self) -> PostureCheck {
         match self.dependency_policy_summary() {
-            Some((forbid, required)) if forbid + required > 0 => PostureCheck {
-                id: "dependency-policy",
-                status: PostureStatus::Pass,
-                detail: format!("policy configured: {forbid} forbidden, {required} required edges"),
-            },
+            Some((forbid, required)) if forbid + required > 0 => {
+                let forbidden = forbid.to_string();
+                let required = required.to_string();
+                PostureCheck {
+                    id: "dependency-policy",
+                    status: PostureStatus::Pass,
+                    detail: tr(
+                        "trait-kit-audit-dependency-policy-configured",
+                        &[("forbidden", &forbidden), ("required", &required)],
+                    ),
+                }
+            }
             Some(_) => PostureCheck {
                 id: "dependency-policy",
                 status: PostureStatus::Warn,
-                detail: "policy feature enabled but no rules configured — violations \
-                         undetectable"
-                    .to_string(),
+                detail: tr("trait-kit-audit-dependency-policy-no-rules", &[]),
             },
             None => PostureCheck {
                 id: "dependency-policy",
                 status: PostureStatus::Warn,
-                detail: "policy feature enabled but no policy set — violations undetectable"
-                    .to_string(),
+                detail: tr("trait-kit-audit-dependency-policy-no-policy", &[]),
             },
         }
     }
@@ -138,7 +139,7 @@ impl Kit<Ready> {
         PostureCheck {
             id: "dependency-policy",
             status: PostureStatus::Info,
-            detail: "policy feature not enabled — architecture violations undetectable".to_string(),
+            detail: tr("trait-kit-audit-dependency-policy-disabled", &[]),
         }
     }
 
@@ -147,22 +148,30 @@ impl Kit<Ready> {
     #[cfg(feature = "visibility")]
     fn capability_visibility_check(&self) -> PostureCheck {
         match self.visibility_summary() {
-            Some((total, restricted)) if restricted > 0 => PostureCheck {
-                id: "capability-visibility",
-                status: PostureStatus::Pass,
-                detail: format!("{restricted} of {total} declared capabilities restricted"),
-            },
+            Some((total, restricted)) if restricted > 0 => {
+                let restricted = restricted.to_string();
+                let total = total.to_string();
+                PostureCheck {
+                    id: "capability-visibility",
+                    status: PostureStatus::Pass,
+                    detail: tr(
+                        "trait-kit-audit-capability-visibility-restricted",
+                        &[("restricted", &restricted), ("total", &total)],
+                    ),
+                }
+            }
             Some((total, _)) => PostureCheck {
                 id: "capability-visibility",
                 status: PostureStatus::Warn,
-                detail: format!(
-                    "all {total} declared capabilities Public — plugins can retrieve everything"
+                detail: tr(
+                    "trait-kit-audit-capability-visibility-all-public",
+                    &[("total", &total.to_string())],
                 ),
             },
             None => PostureCheck {
                 id: "capability-visibility",
                 status: PostureStatus::Warn,
-                detail: "no visibility declared — every capability Public".to_string(),
+                detail: tr("trait-kit-audit-capability-visibility-no-declaration", &[]),
             },
         }
     }
@@ -174,7 +183,7 @@ impl Kit<Ready> {
         PostureCheck {
             id: "capability-visibility",
             status: PostureStatus::Warn,
-            detail: "visibility feature not enabled — every capability Public".to_string(),
+            detail: tr("trait-kit-audit-capability-visibility-disabled", &[]),
         }
     }
 
@@ -187,13 +196,16 @@ impl Kit<Ready> {
             PostureCheck {
                 id: "sensitive-resources",
                 status: PostureStatus::Pass,
-                detail: format!("{marked} sensitive modules marked and auditable"),
+                detail: tr(
+                    "trait-kit-audit-sensitive-resources-marked",
+                    &[("marked", &marked.to_string())],
+                ),
             }
         } else {
             PostureCheck {
                 id: "sensitive-resources",
                 status: PostureStatus::Info,
-                detail: "resource-guard enabled; no sensitive modules marked".to_string(),
+                detail: tr("trait-kit-audit-sensitive-resources-none-marked", &[]),
             }
         }
     }
@@ -204,8 +216,7 @@ impl Kit<Ready> {
         PostureCheck {
             id: "sensitive-resources",
             status: PostureStatus::Info,
-            detail: "resource-guard feature not enabled — sensitive cleanup unverifiable"
-                .to_string(),
+            detail: tr("trait-kit-audit-sensitive-resources-disabled", &[]),
         }
     }
 }
@@ -218,26 +229,25 @@ fn config_encryption_check() -> PostureCheck {
         PostureCheck {
             id: "config-encryption",
             status: PostureStatus::Pass,
-            detail: "config encryption enabled (feature chain: encryption → reload → confers)"
-                .to_string(),
+            detail: tr("trait-kit-audit-config-encryption-enabled", &[]),
         }
     } else if cfg!(feature = "reload") {
         PostureCheck {
             id: "config-encryption",
             status: PostureStatus::Info,
-            detail: "hot reload enabled without encryption (chain: reload → confers)".to_string(),
+            detail: tr("trait-kit-audit-config-encryption-reload", &[]),
         }
     } else if cfg!(feature = "confers") {
         PostureCheck {
             id: "config-encryption",
             status: PostureStatus::Info,
-            detail: "config integration enabled without encryption/reload".to_string(),
+            detail: tr("trait-kit-audit-config-encryption-confers", &[]),
         }
     } else {
         PostureCheck {
             id: "config-encryption",
             status: PostureStatus::Info,
-            detail: "no config persistence feature (confers/reload/encryption) enabled".to_string(),
+            detail: tr("trait-kit-audit-config-encryption-disabled", &[]),
         }
     }
 }
@@ -248,13 +258,13 @@ fn masking_check() -> PostureCheck {
         PostureCheck {
             id: "masking",
             status: PostureStatus::Pass,
-            detail: "PII/credential masking engine enabled".to_string(),
+            detail: tr("trait-kit-audit-masking-enabled", &[]),
         }
     } else {
         PostureCheck {
             id: "masking",
             status: PostureStatus::Info,
-            detail: "masking feature not enabled — secrets pass through unredacted".to_string(),
+            detail: tr("trait-kit-audit-masking-disabled", &[]),
         }
     }
 }
@@ -267,23 +277,22 @@ fn lifecycle_shutdown_check() -> PostureCheck {
         (true, true) => PostureCheck {
             id: "lifecycle-shutdown",
             status: PostureStatus::Pass,
-            detail: "lifecycle hooks and graceful shutdown coordinator both enabled".to_string(),
+            detail: tr("trait-kit-audit-lifecycle-shutdown-both", &[]),
         },
         (true, false) => PostureCheck {
             id: "lifecycle-shutdown",
             status: PostureStatus::Info,
-            detail: "lifecycle hooks enabled; graceful shutdown coordinator not enabled"
-                .to_string(),
+            detail: tr("trait-kit-audit-lifecycle-shutdown-lifecycle-only", &[]),
         },
         (false, true) => PostureCheck {
             id: "lifecycle-shutdown",
             status: PostureStatus::Info,
-            detail: "shutdown coordinator enabled; lifecycle hooks not enabled".to_string(),
+            detail: tr("trait-kit-audit-lifecycle-shutdown-shutdown-only", &[]),
         },
         (false, false) => PostureCheck {
             id: "lifecycle-shutdown",
             status: PostureStatus::Info,
-            detail: "neither lifecycle hooks nor graceful shutdown enabled".to_string(),
+            detail: tr("trait-kit-audit-lifecycle-shutdown-disabled", &[]),
         },
     }
 }

@@ -4,6 +4,8 @@
 
 use std::fmt;
 
+use crate::i18n::tr;
+
 /// 掩码引擎错误：规则构建/注册失败与 secret-scan fail-closed 拒绝。
 #[derive(Debug, Clone)]
 pub enum MaskError {
@@ -31,21 +33,39 @@ pub enum MaskError {
 impl fmt::Display for MaskError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ConfigError(msg) => write!(f, "Masking config error: {msg}"),
+            Self::ConfigError(msg) => write!(f, "{}", tr("mask-config-error", &[("message", msg)])),
             Self::SecretScanLimit {
                 pattern,
                 count,
                 limit,
-            } => write!(
-                f,
-                "Secret scan limit exceeded: pattern '{pattern}' hit {count} times in one input \
-                 (limit {limit}); output withheld"
-            ),
-            Self::SecretScanOversizedInput { size, limit } => write!(
-                f,
-                "Secret scan oversized input: {size} bytes exceeds the {limit}-byte masking \
-                 limit; output withheld (fail-closed)"
-            ),
+            } => {
+                let count = count.to_string();
+                let limit = limit.to_string();
+                write!(
+                    f,
+                    "{}",
+                    tr(
+                        "mask-secret-scan-limit",
+                        &[
+                            ("pattern", pattern.as_str()),
+                            ("count", &count),
+                            ("limit", &limit),
+                        ]
+                    )
+                )
+            }
+            Self::SecretScanOversizedInput { size, limit } => {
+                let size = size.to_string();
+                let limit = limit.to_string();
+                write!(
+                    f,
+                    "{}",
+                    tr(
+                        "mask-secret-scan-oversized",
+                        &[("size", &size), ("limit", &limit)]
+                    )
+                )
+            }
         }
     }
 }
